@@ -192,26 +192,94 @@ body.pdf-shelf-active #stack-container {
   font-style: italic;
 }
 
-/* Search-filtered cards drop out of the grid entirely. */
-.pdf-shelf-card.pdf-shelf-filtered {
-  display: none;
+/* ===== Search-results view =====
+   Replaces the grid while the search field carries a query: one row per
+   matching PDF — the shelf card on the left, the list of matches inside
+   that PDF (term highlighted) on the right. */
+.pdf-shelf-results {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
-/* Why a card matched the search (bookmarks / annotations). */
-.pdf-shelf-card-match {
-  margin-top: 3px;
-  font-size: 10.5px;
-  letter-spacing: 0.02em;
-  opacity: 0.6;
-  font-style: italic;
+.pdf-shelf-result {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 22px;
+  align-items: start;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--panel-border, rgba(128, 128, 128, 0.18));
 }
-.pdf-shelf-card-match:empty {
-  display: none;
+.pdf-shelf-result:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
 }
 
-/* Pin toggle — upper-left thumbnail corner; hover-revealed, persistent
-   (and filled) once pinned. */
-.pdf-shelf-pin-btn {
+/* The left card reuses the grid card's look, fixed to the column width. */
+.pdf-shelf-result-card {
+  width: 150px;
+}
+
+.pdf-shelf-result-matches {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.pdf-shelf-match-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+  padding: 5px 8px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.pdf-shelf-match-row:hover {
+  background: rgba(128, 128, 128, 0.1);
+  border-color: var(--panel-border, rgba(128, 128, 128, 0.25));
+}
+
+.pdf-shelf-match-kind {
+  flex: 0 0 auto;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.5;
+  padding-top: 1px;
+  min-width: 58px;
+}
+
+.pdf-shelf-match-text {
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pdf-shelf-match-page {
+  flex: 0 0 auto;
+  font-size: 11px;
+  opacity: 0.5;
+  white-space: nowrap;
+}
+
+.pdf-shelf-hl {
+  background: color-mix(in srgb, var(--accent, #4a86e8) 40%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* Flag toggle — upper-left thumbnail corner; hover-revealed, persistent
+   (and filled) once flagged. */
+.pdf-shelf-flag-btn {
   position: absolute;
   top: 6px;
   left: 6px;
@@ -231,12 +299,12 @@ body.pdf-shelf-active #stack-container {
   transition: opacity 0.15s;
   z-index: 2;
 }
-.pdf-shelf-card:hover .pdf-shelf-pin-btn {
+.pdf-shelf-card:hover .pdf-shelf-flag-btn {
   opacity: 1;
   pointer-events: auto;
 }
-.pdf-shelf-pin-btn:hover { background: rgba(0, 0, 0, 0.78); }
-.pdf-shelf-pin-btn svg {
+.pdf-shelf-flag-btn:hover { background: rgba(0, 0, 0, 0.78); }
+.pdf-shelf-flag-btn svg {
   width: 12px;
   height: 12px;
   fill: none;
@@ -244,7 +312,7 @@ body.pdf-shelf-active #stack-container {
   stroke-width: 1.2;
   stroke-linecap: round;
 }
-.pdf-shelf-pinned .pdf-shelf-pin-btn {
+.pdf-shelf-flagged .pdf-shelf-flag-btn {
   opacity: 1;
   pointer-events: auto;
   background: var(--fg);

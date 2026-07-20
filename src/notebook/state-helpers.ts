@@ -1,13 +1,19 @@
 /** Helper functions for state operations (split from state.ts for file size). */
 
 /** Open a URL using Tauri's opener plugin (desktop) or window.open (web fallback). */
-export async function openExternalUrl(url: string) {
+export async function openExternalUrl(url: string, anchor?: { x: number; y: number }) {
   // PDF-bookmark deep links navigate inside the app. Routed through a
   // window hook (registered by pdf-bookmarks.js) so the canvas module
   // stays free of app-module imports — same pattern as wikilinks.
   if (url.startsWith("hush-pdf://")) {
     const hook = (window as unknown as { __hushOpenPdfBookmark?: (u: string) => void }).__hushOpenPdfBookmark;
     if (typeof hook === "function") { hook(url); return; }
+  }
+  // Zotero deep links open the "Open in Zotero" / "Open in Hush" tooltip
+  // menu at the click point (registered by zotero-link-menu.js).
+  if (url.startsWith("zotero://")) {
+    const hook = (window as unknown as { __hushOpenZoteroLink?: (u: string, a?: { x: number; y: number }) => void }).__hushOpenZoteroLink;
+    if (typeof hook === "function") { hook(url, anchor); return; }
   }
   try {
     const opener = await import("@tauri-apps/plugin-opener");

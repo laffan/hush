@@ -1287,7 +1287,7 @@ export class DrawingState extends EventTarget {
           // alongside the open, which surfaces the selection toolbar over
           // the just-opened note.
           e.preventDefault();
-          if (linkRun.kind === "url") { openExternalUrl(linkRun.target); return; }
+          if (linkRun.kind === "url") { openExternalUrl(linkRun.target, { x: e.clientX, y: e.clientY }); return; }
           if (linkRun.kind === "wikilink") {
             const asPane = e.shiftKey;
             const hookName = asPane ? "__hushOpenWikilinkAsPane" : "__hushOpenWikilink";

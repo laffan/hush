@@ -100,7 +100,7 @@ function buildDecorations(view, appState) {
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
-async function openUrl(url) {
+async function openUrl(url, anchor) {
   // Internal PDF-bookmark deep links (`hush-pdf://<fileId>/<bookmarkId>`)
   // navigate inside the app instead of hitting the OS opener.
   if (url && url.startsWith("hush-pdf://")) {
@@ -109,6 +109,15 @@ async function openUrl(url) {
       openPdfBookmarkUrl(url);
     } catch (e) { console.warn("PDF bookmark link failed:", e); }
     return;
+  }
+  // Zotero deep links get a tooltip menu at the click point — "Open in
+  // Zotero" vs "Open in Hush" / "Download to Hush" (see zotero-link-menu).
+  if (url && url.startsWith("zotero://")) {
+    try {
+      const { openZoteroLinkMenu } = await import("../../links/zotero-link-menu.js");
+      openZoteroLinkMenu(url, anchor);
+      return;
+    } catch (e) { console.warn("Zotero link menu failed:", e); /* fall through to opener */ }
   }
   if (IS_TAURI) {
     try {
@@ -129,7 +138,7 @@ function tryOpenLinkAt(e, view) {
   const target = e.target.closest(".cm-link-rendered");
   if (target && target.dataset.linkUrl) {
     e.preventDefault();
-    openUrl(target.dataset.linkUrl);
+    openUrl(target.dataset.linkUrl, target);
     return true;
   }
 
@@ -139,7 +148,7 @@ function tryOpenLinkAt(e, view) {
     const link = linkAtPos(view.state.doc, pos);
     if (link) {
       e.preventDefault();
-      openUrl(link.url);
+      openUrl(link.url, { x: e.clientX, y: e.clientY });
       return true;
     }
   }

@@ -21,14 +21,15 @@
 import { findNode, findParentOfNode } from "../state/tree-helpers.js";
 import { escHtml, showPromptModal } from "../sidebar/files-panel-shared.js";
 import { getPdfMeta, isPdfDownloaded, getPdfBookmarks } from "../sync/pdf-sync.js";
-import { enforcePinnedPdfOrder } from "../state/state-pdf-aliases.js";
+import { enforceFlaggedPdfOrder } from "../state/state-pdf-aliases.js";
 import { getCachedAnnotations } from "../zotero-annotations.js";
-import { loadPdfCoverUrl, ensurePdfCover } from "./pdf-covers.js";
+import { parseAnnotationPosition } from "./pdf-viewer-annotations.js";
+import { loadPdfCoverUrl, refreshPdfCoverIfStale } from "./pdf-covers.js";
 import { BOOKMARK_ICON, openBookmarkListPopup } from "./pdf-bookmarks.js";
 
 const PLACEHOLDER_SVG = `<svg viewBox="0 0 16 16" class="pdf-shelf-ph"><rect x="3" y="1" width="10" height="14" rx="1" fill="none"/><line x1="5" y1="8" x2="11" y2="8"/></svg>`;
-// Same pushpin glyph the pane title bar uses.
-const PIN_ICON = `<svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="7"/><line x1="2.5" y1="4" x2="7.5" y2="4"/><line x1="5" y1="7" x2="5" y2="9.5"/></svg>`;
+// Same flag glyph the Recent Files rows use.
+const FLAG_ICON = `<svg viewBox="0 0 16 16"><path d="M3 13V2.5l5 1.5 5-1.5V11l-5 1.5L3 11z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/></svg>`;
 
 const SORT_OPTIONS = [
   { key: "added", label: "Sort: Date added" },
@@ -48,12 +49,16 @@ let _selected = new Set();
 let _anchorId = null;
 // Display order of the current render, for shift-click ranges.
 let _displayIds = [];
-// Search query + card data of the last render (filtering runs against
-// the live DOM so typing never rebuilds — and never loses — the input).
+// Search query + card data of the last render. The header (including the
+// search input) is built once per render() and only the body below it
+// re-renders on each keystroke, so the input keeps focus while typing.
 let _query = "";
 let _lastCards = [];
-// fileId → array of lowercased annotation strings, built lazily from
-// the local Zotero cache the first time a search needs it.
+// fileId → array of { text, comment, pageLabel, jumpPage } annotation
+// entries (original case), built lazily from the local Zotero cache the
+// first time a search needs it. Original case so match text can be shown
+// + highlighted in the search-results view; jumpPage is the 1-based PDF
+// page for click-to-navigate.
 const _annotIndex = new Map();
 const _annotPending = new Set();
 
@@ -87,9 +92,12 @@ export function initPdfShelf(state) {
   state.on("pdf-bookmarks-changed", () => { if (_containerId) render(); });
   state.on("pdf-cover-ready", (fileId) => {
     if (!_containerId || !fileId) return;
-    const card = _host.querySelector(`.pdf-shelf-card[data-file-id="${CSS.escape(fileId)}"]`);
-    if (!card) return;
-    loadPdfCoverUrl(fileId).then((url) => { if (url) setCardCover(card, url); });
+    // Both the grid card and the search-view result card carry
+    // .pdf-shelf-thumb keyed on the fileId, so swap the cover in every
+    // instance that's currently mounted.
+    _host.querySelectorAll(`.pdf-shelf-card[data-file-id="${CSS.escape(fileId)}"]`).forEach((card) => {
+      loadPdfCoverUrl(fileId).then((url) => { if (url) setCardCover(card, url, { replace: true }); });
+    });
   });
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || !_containerId) return;
@@ -101,7 +109,7 @@ export function initPdfShelf(state) {
     if (searchEl && document.activeElement === searchEl && _query) {
       _query = "";
       searchEl.value = "";
-      applySearchFilter();
+      renderBody(); // back to the thumbnail grid
       return;
     }
     if (_selected.size) { _selected.clear(); _anchorId = null; render(); }
@@ -154,7 +162,7 @@ function shelfContext() {
   return { node, scopeName, pdfs };
 }
 
-/** Sort a card list per the active mode — pinned cards float above the
+/** Sort a card list per the active mode — flagged cards float above the
  *  rest, each group sorted the same way. Titles/authors ascend; dates
  *  descend (newest first); missing values sink to the bottom. */
 function sortCards(cards) {
@@ -172,13 +180,12 @@ function sortCards(cards) {
   else if (_sortMode === "author") arr.sort((a, b) => cmpStr(a, b, "author") || cmpStr(a, b, "title"));
   else if (_sortMode === "opened") arr.sort((a, b) => cmpDateDesc(a, b, "openedAt"));
   else arr.sort((a, b) => cmpDateDesc(a, b, "addedAt"));
-  return [...arr.filter((c) => c.pinned), ...arr.filter((c) => !c.pinned)];
+  return [...arr.filter((c) => c.flagged), ...arr.filter((c) => !c.flagged)];
 }
 
 function render() {
   const ctx = shelfContext();
   if (!ctx) { closePdfShelf(); return; }
-  const token = ++_renderToken;
   const { scopeName, pdfs } = ctx;
 
   const cards = sortCards(pdfs.map((node) => {
@@ -196,7 +203,7 @@ function render() {
       openedAt: meta?.openedAt || 0,
       pending: !isPdfDownloaded(node.fileId),
       bookmarks: getPdfBookmarks(node.fileId).length,
-      pinned: !!node.pinned,
+      flagged: !!(node.flagged || node.pinned),
       zoteroAttKey: node.zoteroAttKey || meta?.zoteroAttKey || "",
     };
   }));
@@ -205,6 +212,8 @@ function render() {
   // Prune selection entries that left the folder since the last paint.
   for (const id of [..._selected]) if (!_displayIds.includes(id)) _selected.delete(id);
 
+  // Header is stable across keystrokes; only the body below it re-renders
+  // on search input, so the search field keeps focus while typing.
   _host.innerHTML = `
     <div class="pdf-shelf-inner">
       <header class="pdf-shelf-header">
@@ -213,7 +222,7 @@ function render() {
           <input type="text" class="pdf-shelf-search" placeholder="Search bookmarks &amp; annotations…" value="${escHtml(_query)}" />
         </div>
         <div class="pdf-shelf-actions">
-          <span class="pdf-shelf-count">${cards.length} PDF${cards.length === 1 ? "" : "s"}</span>
+          <span class="pdf-shelf-count"></span>
           <select class="pdf-shelf-sort" title="Sort PDFs">
             ${SORT_OPTIONS.map((o) => `<option value="${o.key}"${o.key === _sortMode ? " selected" : ""}>${o.label}</option>`).join("")}
           </select>
@@ -221,9 +230,7 @@ function render() {
           <button type="button" class="pdf-shelf-btn" data-shelf-close>Close</button>
         </div>
       </header>
-      ${cards.length ? `<div class="pdf-shelf-grid">
-        ${cards.map((c) => cardHtml(c)).join("")}
-      </div>` : `<div class="pdf-shelf-empty">No PDFs here yet.</div>`}
+      <div class="pdf-shelf-body"></div>
     </div>
   `;
 
@@ -232,20 +239,57 @@ function render() {
   const sortSel = _host.querySelector(".pdf-shelf-sort");
   sortSel?.addEventListener("change", () => { _sortMode = sortSel.value; render(); });
 
-  // Search filters the live DOM (never a re-render, so the input keeps
-  // focus while typing). Annotation text indexes lazily on first use.
+  // Search re-renders just the body (grid ⇄ results), so the input keeps
+  // focus while typing. Annotation text indexes lazily on first use.
   const searchEl = _host.querySelector(".pdf-shelf-search");
   let searchTimer = null;
   searchEl?.addEventListener("input", () => {
     if (searchTimer) clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
       _query = searchEl.value.trim().toLowerCase();
-      if (_query) ensureAnnotIndex(cards);
-      applySearchFilter();
+      if (_query) ensureAnnotIndex(_lastCards);
+      renderBody();
     }, 150);
   });
 
-  _host.querySelectorAll(".pdf-shelf-card").forEach((card) => {
+  renderBody();
+}
+
+/** Render the body under the header — the thumbnail grid when the search
+ *  field is empty, or a match-list results view while a query is active.
+ *  Called on every keystroke; the header (and its input) stays put. */
+function renderBody() {
+  const body = _host.querySelector(".pdf-shelf-body");
+  if (!body) return;
+  const token = ++_renderToken;
+  const cards = _lastCards;
+
+  if (_query) renderSearchResults(body, cards);
+  else renderGrid(body, cards);
+
+  updateCount(cards);
+  hydrateCovers(token);
+}
+
+function updateCount(cards) {
+  const count = _host.querySelector(".pdf-shelf-count");
+  if (!count) return;
+  if (_query) {
+    const n = cards.filter((c) => cardSearchHits(c, _query).match).length;
+    count.textContent = `${n} of ${cards.length} PDF${cards.length === 1 ? "" : "s"}`;
+  } else {
+    count.textContent = `${cards.length} PDF${cards.length === 1 ? "" : "s"}`;
+  }
+}
+
+/** The default thumbnail grid. */
+function renderGrid(body, cards) {
+  body.className = "pdf-shelf-body";
+  body.innerHTML = cards.length
+    ? `<div class="pdf-shelf-grid">${cards.map((c) => cardHtml(c)).join("")}</div>`
+    : `<div class="pdf-shelf-empty">No PDFs here yet.</div>`;
+
+  body.querySelectorAll(".pdf-shelf-card").forEach((card) => {
     card.addEventListener("click", (e) => onCardClick(card, e));
     const badge = card.querySelector(".pdf-shelf-bm-badge");
     if (badge) {
@@ -258,85 +302,167 @@ function render() {
         });
       });
     }
-    const pinBtn = card.querySelector(".pdf-shelf-pin-btn");
-    if (pinBtn) {
-      pinBtn.addEventListener("click", (e) => {
+    const flagBtn = card.querySelector(".pdf-shelf-flag-btn");
+    if (flagBtn) {
+      flagBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        togglePin(pinBtn.dataset.nodeId);
+        toggleFlag(flagBtn.dataset.nodeId);
       });
     }
   });
-
-  applySearchFilter();
-  hydrateCovers(token);
 }
 
-/** Pin/unpin within this shelf's folder — the flag lives on the tree
- *  node (desk node or project alias), so pins are per-context and the
- *  PDF also rises to the top of its PDFs folder in the sidebar. */
-function togglePin(nodeId) {
+/** Search-results view: one row per matching PDF — the shelf card
+ *  (thumbnail + metadata) on the left, the list of matches inside that
+ *  PDF (bookmark names + annotation text, term highlighted) on the
+ *  right. Clicking a bookmark match jumps the PDF to that page; any
+ *  other click opens the PDF. */
+function renderSearchResults(body, cards) {
+  body.className = "pdf-shelf-body pdf-shelf-search-mode";
+  const matched = cards
+    .map((c) => ({ card: c, matches: collectMatches(c, _query) }))
+    .filter((r) => r.matches.length > 0);
+
+  if (!matched.length) {
+    body.innerHTML = `<div class="pdf-shelf-empty">No matches for “${escHtml(_query)}”.</div>`;
+    return;
+  }
+
+  body.innerHTML = `<div class="pdf-shelf-results">${matched.map(({ card: c, matches }) => `
+    <div class="pdf-shelf-result">
+      <div class="pdf-shelf-card pdf-shelf-result-card${c.pending ? " pdf-shelf-pending" : ""}${c.flagged ? " pdf-shelf-flagged" : ""}" data-file-id="${escHtml(c.fileId)}">
+        <div class="pdf-shelf-thumb">${PLACEHOLDER_SVG}</div>
+        <div class="pdf-shelf-card-title">${highlightHtml(c.title, _query)}</div>
+        ${[c.year, c.authors].filter(Boolean).length ? `<div class="pdf-shelf-card-sub">${highlightHtml([c.year, c.authors].filter(Boolean).join(" — "), _query)}</div>` : ""}
+      </div>
+      <div class="pdf-shelf-result-matches">
+        ${matches.map((m) => `
+          <div class="pdf-shelf-match-row" data-page="${m.jumpPage || 0}" data-bm-id="${escHtml(m.bmId || "")}">
+            <span class="pdf-shelf-match-kind">${escHtml(m.kindLabel)}</span>
+            <span class="pdf-shelf-match-text">${highlightHtml(m.text, _query)}</span>
+            ${m.pageLabel ? `<span class="pdf-shelf-match-page">p. ${escHtml(String(m.pageLabel))}</span>` : ""}
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `).join("")}</div>`;
+
+  body.querySelectorAll(".pdf-shelf-result").forEach((result) => {
+    const fid = result.querySelector(".pdf-shelf-card")?.dataset.fileId;
+    if (!fid) return;
+    const open = () => { if (isPdfDownloaded(fid)) _state.openPdf(fid); };
+    result.querySelector(".pdf-shelf-result-card")?.addEventListener("click", open);
+    result.querySelectorAll(".pdf-shelf-match-row").forEach((row) => {
+      row.addEventListener("click", async () => {
+        const bmId = row.dataset.bmId;
+        const page = parseInt(row.dataset.page, 10) || 0;
+        if (bmId) {
+          const { openPdfAtBookmark } = await import("./pdf-bookmarks.js");
+          openPdfAtBookmark(fid, bmId, page);
+        } else if (page && isPdfDownloaded(fid)) {
+          const { requestPdfJump } = await import("./pdf-bridge.js");
+          requestPdfJump(fid, page);
+          _state.openPdf(fid);
+        } else {
+          open();
+        }
+      });
+    });
+  });
+}
+
+/** Flag/unflag within this shelf's folder — the flag lives on the tree
+ *  node (desk node or project alias), so flags are per-context and the
+ *  PDF also rises to the top of its PDFs folder in the sidebar (plus
+ *  the sidebar's Flagged section, like any other flagged file). */
+function toggleFlag(nodeId) {
   const node = nodeId ? findNode(_state.fileTree, nodeId) : null;
   if (!node) return;
-  if (node.pinned) delete node.pinned;
-  else node.pinned = true;
-  enforcePinnedPdfOrder(_state.fileTree);
+  node.flagged = !(node.flagged || node.pinned);
+  delete node.pinned; // legacy marker from the feature's first vocabulary
+  enforceFlaggedPdfOrder(_state.fileTree);
   _state.saveFileTree(); // emits files-changed → shelf re-renders
 }
 
-/** Build the lazy annotation-text index for cards that have a Zotero
- *  attachment — local cache only, never the network. Re-applies the
- *  filter when new text lands (if a query is still active). */
+/** Build the lazy annotation index for cards that have a Zotero
+ *  attachment — local cache only, never the network. Stores original
+ *  case (so match text can be shown + highlighted) and re-renders the
+ *  results view when new text lands (if a query is still active). */
 function ensureAnnotIndex(cards) {
   for (const c of cards) {
     if (!c.zoteroAttKey || _annotIndex.has(c.fileId) || _annotPending.has(c.fileId)) continue;
     _annotPending.add(c.fileId);
     getCachedAnnotations(c.zoteroAttKey).then((annots) => {
-      _annotIndex.set(c.fileId, annots
-        .map((a) => `${a.text || ""} ${a.comment || ""}`.trim().toLowerCase())
-        .filter(Boolean));
+      _annotIndex.set(c.fileId, annots.map((a) => {
+        // pageIndex (0-based, from the position payload) is the reliable
+        // PDF page to jump to; pageLabel is the printed label to show.
+        const pos = parseAnnotationPosition(a);
+        const idx = pos && typeof pos.pageIndex === "number" ? pos.pageIndex : -1;
+        return {
+          text: a.text || "",
+          comment: a.comment || "",
+          pageLabel: a.pageLabel || "",
+          jumpPage: idx >= 0 ? idx + 1 : 0,
+        };
+      }));
     }).catch(() => {
       _annotIndex.set(c.fileId, []);
     }).finally(() => {
       _annotPending.delete(c.fileId);
-      if (_query && _containerId) applySearchFilter();
+      if (_query && _containerId) renderBody();
     });
   }
 }
 
+/** Does this card match the query at all (title/author/year, a bookmark
+ *  name, or annotation text/comment)? */
 function cardSearchHits(c, q) {
-  const base = `${c.title} ${c.authors} ${c.year}`.toLowerCase();
-  const bmHits = getPdfBookmarks(c.fileId)
-    .filter((b) => (b.name || "").toLowerCase().includes(q)).length;
-  const annHits = (_annotIndex.get(c.fileId) || [])
-    .filter((t) => t.includes(q)).length;
-  return { match: base.includes(q) || bmHits > 0 || annHits > 0, bmHits, annHits };
+  return { match: collectMatches(c, q).length > 0 };
 }
 
-/** Show/hide cards for the current query without rebuilding the grid. */
-function applySearchFilter() {
-  if (!_host || !_containerId) return;
-  const byId = new Map(_lastCards.map((c) => [c.fileId, c]));
-  let visible = 0;
-  _host.querySelectorAll(".pdf-shelf-card").forEach((card) => {
-    const c = byId.get(card.dataset.fileId);
-    if (!c) return;
-    const hits = _query ? cardSearchHits(c, _query) : { match: true };
-    card.classList.toggle("pdf-shelf-filtered", !hits.match);
-    if (hits.match) visible++;
-    const matchEl = card.querySelector(".pdf-shelf-card-match");
-    if (matchEl) {
-      const parts = [];
-      if (_query && hits.bmHits) parts.push(`${hits.bmHits} bookmark${hits.bmHits === 1 ? "" : "s"}`);
-      if (_query && hits.annHits) parts.push(`${hits.annHits} annotation${hits.annHits === 1 ? "" : "s"}`);
-      matchEl.textContent = parts.length ? `matches ${parts.join(" · ")}` : "";
+/** Every match inside a PDF for the query, in display order: title /
+ *  author / year, then bookmark names (page-linked), then annotation
+ *  text + comments. Each entry carries a `kindLabel`, the source `text`
+ *  (original case, for term highlighting), an optional `pageLabel` to
+ *  show, and — where the match is navigable — a `jumpPage` / `bmId`. */
+function collectMatches(c, q) {
+  const out = [];
+  const hit = (s) => s && s.toLowerCase().includes(q);
+
+  if (hit(c.title)) out.push({ kindLabel: "Title", text: c.title });
+  if (hit(c.authors)) out.push({ kindLabel: "Author", text: c.authors });
+  if (hit(String(c.year))) out.push({ kindLabel: "Year", text: String(c.year) });
+
+  for (const bm of getPdfBookmarks(c.fileId)) {
+    if (hit(bm.name)) {
+      out.push({ kindLabel: "Bookmark", text: bm.name, pageLabel: bm.page, jumpPage: bm.page, bmId: bm.id });
     }
-  });
-  const count = _host.querySelector(".pdf-shelf-count");
-  if (count) {
-    count.textContent = _query
-      ? `${visible} of ${_lastCards.length} PDF${_lastCards.length === 1 ? "" : "s"}`
-      : `${_lastCards.length} PDF${_lastCards.length === 1 ? "" : "s"}`;
   }
+
+  for (const a of _annotIndex.get(c.fileId) || []) {
+    const pageLabel = a.pageLabel || (a.jumpPage ? String(a.jumpPage) : "");
+    if (hit(a.text)) out.push({ kindLabel: "Highlight", text: a.text, pageLabel, jumpPage: a.jumpPage });
+    if (hit(a.comment)) out.push({ kindLabel: "Note", text: a.comment, pageLabel, jumpPage: a.jumpPage });
+  }
+  return out;
+}
+
+/** Escape `text` and wrap each case-insensitive occurrence of `q` in a
+ *  `<mark>`. Returns an HTML string. */
+function highlightHtml(text, q) {
+  if (!q) return escHtml(text);
+  const lower = (text || "").toLowerCase();
+  let out = "";
+  let last = 0;
+  let idx = lower.indexOf(q);
+  while (idx !== -1) {
+    out += escHtml(text.slice(last, idx));
+    out += `<mark class="pdf-shelf-hl">${escHtml(text.slice(idx, idx + q.length))}</mark>`;
+    last = idx + q.length;
+    idx = lower.indexOf(q, last);
+  }
+  out += escHtml(text.slice(last));
+  return out;
 }
 
 function onCardClick(card, e) {
@@ -373,6 +499,12 @@ function onCardClick(card, e) {
 function createStackFromSelected(cards) {
   const items = cards.filter((c) => _selected.has(c.fileId));
   if (items.length < 2) return;
+  // A project shelf files its stack inside the owning project; the desk
+  // shelf keeps the default (the desk's Inbox).
+  const ctx = shelfContext();
+  const parentId = ctx?.node?.pdfFolder
+    ? findParentOfNode(_state.fileTree, ctx.node.id)?.id || null
+    : null;
   showPromptModal({
     title: "New stack",
     label: "Name",
@@ -381,7 +513,7 @@ function createStackFromSelected(cards) {
     confirmLabel: "Create",
     onConfirm: async (name) => {
       closePdfShelf();
-      const result = await _state.createStack(name, null, { openImmediately: true });
+      const result = await _state.createStack(name, parentId, { openImmediately: true });
       if (!result) return;
       await new Promise((r) => setTimeout(r, 100));
       const { getStackInstance } = await import("../stack/stack-bridge.js");
@@ -398,26 +530,30 @@ function cardHtml(c) {
     "pdf-shelf-card",
     c.pending ? "pdf-shelf-pending" : "",
     _selected.has(c.fileId) ? "selected" : "",
-    c.pinned ? "pdf-shelf-pinned" : "",
+    c.flagged ? "pdf-shelf-flagged" : "",
   ].filter(Boolean).join(" ");
   return `
     <div class="${cls}" data-file-id="${escHtml(c.fileId)}">
       <div class="pdf-shelf-thumb">
         ${PLACEHOLDER_SVG}
-        <button type="button" class="pdf-shelf-pin-btn" data-node-id="${escHtml(c.nodeId)}" title="${c.pinned ? "Unpin" : "Pin to top"}">${PIN_ICON}</button>
+        <button type="button" class="pdf-shelf-flag-btn" data-node-id="${escHtml(c.nodeId)}" title="${c.flagged ? "Unflag" : "Flag"}">${FLAG_ICON}</button>
         ${c.bookmarks ? `<button type="button" class="pdf-shelf-bm-badge" title="Bookmarks (${c.bookmarks})">${BOOKMARK_ICON}</button>` : ""}
       </div>
       <div class="pdf-shelf-card-title">${escHtml(c.title)}</div>
       ${sub ? `<div class="pdf-shelf-card-sub">${escHtml(sub)}</div>` : ""}
       ${c.pending ? `<div class="pdf-shelf-card-sub pdf-shelf-dl">Downloading…</div>` : ""}
-      <div class="pdf-shelf-card-match"></div>
     </div>
   `;
 }
 
-function setCardCover(card, url) {
+function setCardCover(card, url, opts = {}) {
   const thumb = card.querySelector(".pdf-shelf-thumb");
-  if (!thumb || thumb.querySelector("img")) return;
+  if (!thumb) return;
+  const existing = thumb.querySelector("img");
+  if (existing) {
+    if (opts.replace && existing.src !== url) existing.src = url;
+    return;
+  }
   const img = document.createElement("img");
   img.alt = "";
   img.src = url;
@@ -425,10 +561,16 @@ function setCardCover(card, url) {
   thumb.querySelector(".pdf-shelf-ph")?.remove();
 }
 
+// fileIds whose cover has been checked against the cached annotations
+// this session — the staleness probe reads the annotation cache from
+// disk, so it runs once per PDF, not on every shelf repaint.
+const _coverChecked = new Set();
+
 /** Fill in covers one card at a time — cached covers land instantly,
  *  missing ones are rendered from the local binary (backfill for PDFs
- *  saved before covers shipped). Bails when a newer render supersedes
- *  this pass. */
+ *  saved before covers shipped), and covers whose baked-in annotation
+ *  marks fell behind the cache are re-rendered. Bails when a newer
+ *  render supersedes this pass. */
 async function hydrateCovers(token) {
   const cards = Array.from(_host.querySelectorAll(".pdf-shelf-card"));
   for (const card of cards) {
@@ -436,8 +578,12 @@ async function hydrateCovers(token) {
     const fid = card.dataset.fileId;
     if (!fid) continue;
     let url = await loadPdfCoverUrl(fid);
-    if (!url && isPdfDownloaded(fid)) url = await ensurePdfCover(fid);
+    const replace = !_coverChecked.has(fid) && isPdfDownloaded(fid);
+    if (replace) {
+      _coverChecked.add(fid);
+      url = (await refreshPdfCoverIfStale(fid)).url || url;
+    }
     if (token !== _renderToken) return;
-    if (url) setCardCover(card, url);
+    if (url) setCardCover(card, url, { replace });
   }
 }
