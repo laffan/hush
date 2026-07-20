@@ -20,11 +20,51 @@
  * app imports — the same pattern as wikilinks and PDF bookmarks.
  */
 
+import { findNode, findNodeByFileId, nearestAncestorProjectId } from "../state/tree-helpers.js";
+import { addPdfAliasToProject } from "../state/state-pdf-aliases.js";
+
 const OPEN_ICON = `<svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5H2v7.5h7.5V7"/><path d="M7 1.5h3.5V5"/><path d="M10.5 1.5 5.5 6.5"/></svg>`;
 
 let _state = null;
 let _menuEl = null;
 let _menuCleanup = null;
+
+/** Whether a cached Zotero attachment looks like a PDF. Prefers the
+ *  fetch-time `isPdf` flag but falls back to content type / filename /
+ *  title so existing caches (built before PDF detection was broadened)
+ *  still surface "Download to Hush" without a re-fetch — "Full Text PDF"
+ *  and `*.pdf` titles being the common shapes. */
+function attachmentIsPdf(a) {
+  if (!a) return false;
+  if (a.isPdf) return true;
+  if ((a.contentType || "").toLowerCase().includes("pdf")) return true;
+  const name = `${a.filename || ""} ${a.title || ""}`.toLowerCase();
+  return /\.pdf(\b|$)/.test(name) || /\bpdf\b/.test(name);
+}
+
+/** The project (id) that owns the doc / notebook the link was clicked in,
+ *  or null when it's a standalone file. A project open in the editor is
+ *  the direct context; otherwise walk up from the active doc / notebook
+ *  to its nearest ancestor project. */
+function projectContextId() {
+  if (!_state) return null;
+  if (_state.currentProjectId) return _state.currentProjectId;
+  const fileId = _state.currentNotebookFileId || _state.currentFileId;
+  if (!fileId) return null;
+  const node = findNodeByFileId(_state.fileTree, fileId);
+  return node ? nearestAncestorProjectId(_state.fileTree, node.id) : null;
+}
+
+/** Alias a just-downloaded desk PDF into `projectId`'s PDFs folder, so a
+ *  PDF pulled in from a link inside a project lands in that project too
+ *  (deduped by fileId; a no-op when it's already there). */
+async function aliasPdfIntoProject(fileId, projectId) {
+  if (!fileId || !projectId || !_state) return;
+  const project = findNode(_state.fileTree, projectId);
+  const pdfNode = findNodeByFileId(_state.fileTree, fileId);
+  if (!project || !pdfNode) return;
+  if (addPdfAliasToProject(project, pdfNode)) await _state.saveFileTree();
+}
 
 export function isZoteroLinkUrl(url) {
   return typeof url === "string" && url.startsWith("zotero://");
@@ -49,7 +89,6 @@ export function initZoteroLinkMenu(state) {
 // ── Popup plumbing ──────────────────────────────────────────────────
 
 export function closeZoteroLinkMenu() {
-  if (_menuEl) { import("../debug/link-debug.js").then((m) => m.dlog("menu CLOSED")).catch(() => {}); } // TEMP
   if (_menuCleanup) { _menuCleanup(); _menuCleanup = null; }
   if (_menuEl) { _menuEl.remove(); _menuEl = null; }
 }
@@ -178,8 +217,6 @@ function makeSpinner() {
  * against the PDF registry / reference cache.
  */
 export async function openZoteroLinkMenu(url, anchor) {
-  const { dlog } = await import("../debug/link-debug.js"); // TEMP
-  dlog("openZoteroLinkMenu ENTER", "url:", url, "anchor:", anchor, "hasState:", !!_state); // TEMP
   const parsed = parseZoteroUrl(url);
   const el = document.createElement("div");
   el.className = "zotero-link-menu";
@@ -192,9 +229,7 @@ export async function openZoteroLinkMenu(url, anchor) {
   el.appendChild(zRow);
 
   mountMenu(el, anchor);
-  const r = el.getBoundingClientRect(); // TEMP
-  dlog("menu MOUNTED", "rect:", { l: Math.round(r.left), t: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }, "inDOM:", el.isConnected); // TEMP
-  if (!parsed || !_state) { dlog("openZoteroLinkMenu early-return (parsed:", !!parsed, "state:", !!_state, ")"); return; } // TEMP
+  if (!parsed || !_state) return;
 
   // ── Hush row (async resolve) ──────────────────────────────────────
   let pdfSync = null;
@@ -209,7 +244,10 @@ export async function openZoteroLinkMenu(url, anchor) {
   } catch { /* Zotero not configured — the menu stays Zotero-only */ }
   if (_menuEl !== el || !pdfSync) return;
 
-  const pdfAtt = ref?.attachments?.find((a) => a.isPdf) || null;
+  const pdfAtt = ref?.attachments?.find(attachmentIsPdf) || null;
+  // Capture the project context now, at open time — the download may
+  // outlive the click, and the active file could change before it lands.
+  const projectId = projectContextId();
 
   const slot = document.createElement("div");
   el.appendChild(slot);
@@ -233,7 +271,7 @@ export async function openZoteroLinkMenu(url, anchor) {
       if (!inFlight) {
         slot.appendChild(makeRow("Download failed — retry", () => {
           pdfSync.triggerBackgroundDownload(entry.fileId, _state);
-          watchDownload(pdfSync, entry.fileId, parsed.page, el, renderHushRow);
+          watchDownload(pdfSync, entry.fileId, parsed.page, el, renderHushRow, projectId);
           renderHushRow();
         }));
         return;
@@ -241,7 +279,7 @@ export async function openZoteroLinkMenu(url, anchor) {
       const row = makeRow("Downloading…", null);
       row.prepend(makeSpinner());
       slot.appendChild(row);
-      watchDownload(pdfSync, entry.fileId, parsed.page, el, renderHushRow);
+      watchDownload(pdfSync, entry.fileId, parsed.page, el, renderHushRow, projectId);
       return;
     }
 
@@ -260,7 +298,12 @@ export async function openZoteroLinkMenu(url, anchor) {
           });
           if (result) {
             pdfSync.startBatchDownload([result.fileId], _state);
-            watchDownload(pdfSync, result.fileId, parsed.page, el, renderHushRow);
+            // Alias into the project right away (shows pending there,
+            // mirroring the desk entry) so it survives a superseded watch
+            // or an app quit mid-download; watchDownload re-aliases on
+            // completion (dedup-safe) for the already-in-flight paths.
+            void aliasPdfIntoProject(result.fileId, projectId);
+            watchDownload(pdfSync, result.fileId, parsed.page, el, renderHushRow, projectId);
           }
         } catch (err) {
           console.error("Download to Hush failed:", err);
@@ -281,14 +324,16 @@ let _watchUnsub = null;
 /** Watch a background download kicked off (or observed) from the menu.
  *  When the binary lands the PDF opens at the link's page — that's the
  *  second half of "Download to Hush" — whether or not the menu is
- *  still showing. A failed download stops the watch (the open menu
- *  repaints to the retry row). */
-function watchDownload(pdfSync, fileId, page, menuEl, repaint) {
+ *  still showing. When the link lived inside a project, the PDF is also
+ *  aliased into that project on completion. A failed download stops the
+ *  watch (the open menu repaints to the retry row). */
+function watchDownload(pdfSync, fileId, page, menuEl, repaint, projectId) {
   if (!_state?.on) return;
   _watchUnsub?.();
   const handler = () => {
     if (pdfSync.isPdfDownloaded(fileId)) {
       _watchUnsub?.();
+      void aliasPdfIntoProject(fileId, projectId);
       if (_menuEl === menuEl) closeZoteroLinkMenu();
       void openPdfInHush(fileId, page);
       return;

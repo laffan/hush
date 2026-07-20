@@ -8,7 +8,6 @@ import { ViewPlugin, Decoration, WidgetType, EditorView } from "@codemirror/view
 import { RangeSetBuilder } from "@codemirror/state";
 import { isIOS } from "../../settings/settings-ui.js";
 import { focusSentenceBounds } from "./focus-mode.js";
-import { dlog } from "../../debug/link-debug.js"; // TEMP debug
 
 // Matches [text](url) but not ![alt](img)
 const LINK_RE = /(?<!!)\[([^\]]+)\]\(([^)]+)\)/g;
@@ -45,12 +44,10 @@ class LinkWidget extends WidgetType {
     //      menu actually mounts.
     const url = this.url;
     span.addEventListener("pointerdown", (e) => {
-      dlog("WIDGET pointerdown", "hasMod:", hasModifier(e), "iOS:", isIOS(), "url:", url); // TEMP
       if (!hasModifier(e)) return;
       e.preventDefault();
       e.stopPropagation();
       const r = span.getBoundingClientRect();
-      dlog("WIDGET → openUrl", "rect:", { l: Math.round(r.left), t: Math.round(r.top), b: Math.round(r.bottom) }); // TEMP
       openUrl(url, { left: r.left, top: r.top, bottom: r.bottom });
     });
     return span;
@@ -131,9 +128,8 @@ const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 let _lastOpen = { url: null, t: 0 };
 
 async function openUrl(url, anchor) {
-  dlog("openUrl ENTER", "url:", url, "anchor:", anchor); // TEMP
   const now = Date.now();
-  if (url === _lastOpen.url && now - _lastOpen.t < 600) { dlog("openUrl DEDUPED"); return; } // TEMP
+  if (url === _lastOpen.url && now - _lastOpen.t < 600) return;
   _lastOpen = { url, t: now };
   // Internal PDF-bookmark deep links (`hush-pdf://<fileId>/<bookmarkId>`)
   // navigate inside the app instead of hitting the OS opener.
@@ -147,15 +143,12 @@ async function openUrl(url, anchor) {
   // Zotero deep links get a tooltip menu at the click point — "Open in
   // Zotero" vs "Open in Hush" / "Download to Hush" (see zotero-link-menu).
   if (url && url.startsWith("zotero://")) {
-    dlog("openUrl → ZOTERO branch (importing menu)"); // TEMP
     try {
       const { openZoteroLinkMenu } = await import("../../links/zotero-link-menu.js");
-      dlog("openUrl zotero import OK, calling openZoteroLinkMenu"); // TEMP
       openZoteroLinkMenu(url, anchor);
       return;
-    } catch (e) { dlog("openUrl ZOTERO import FAILED:", String(e)); console.warn("Zotero link menu failed:", e); /* fall through to opener */ }
+    } catch (e) { console.warn("Zotero link menu failed:", e); /* fall through to opener */ }
   }
-  dlog("openUrl → OPENER branch (opening externally):", url); // TEMP
   if (IS_TAURI) {
     try {
       // tauri-plugin-opener works on both macOS and iOS
@@ -233,8 +226,6 @@ function hasModifier(e) {
  */
 const linkClickHandler = EditorView.domEventHandlers({
   mousedown(e, view) {
-    const onLink = !!e.target?.closest?.(".cm-link-rendered"); // TEMP
-    if (onLink) dlog("CM mousedown handler", "hasMod:", hasModifier(e), "onLink:", onLink); // TEMP
     if (!hasModifier(e)) return false;
     return tryOpenLinkAt(e, view);
   },
