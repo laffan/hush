@@ -1086,7 +1086,10 @@ body.stack-mode .column-resizer { display: none !important; }
      scrollbar zone rather than a transparent floating overlay.
    ================================================================ */
 html.ios:not(.phone) .stack-root:not(.stack-vertical) .stack-spine-icon {
-  padding-top: calc(15px + var(--ipad-safe-top));
+  /* margin (not padding) so the whole icon box shifts down as a unit —
+     the colour-highlight dot (::before, centred on the box) rides along
+     and keeps surrounding the icon. */
+  margin-top: var(--ipad-safe-top);
 }
 html.ios:not(.phone) .stack-root:not(.stack-vertical) .stack-scroll-area {
   height: calc(100% - 40px - var(--ipad-safe-bottom));
@@ -1097,4 +1100,25 @@ html.ios:not(.phone) .stack-root:not(.stack-vertical)::after {
 html.ios:not(.phone) .stack-root:not(.stack-vertical) .stack-scrollbar-pills {
   bottom: var(--ipad-safe-bottom);
   background: var(--theme-bg, var(--bg));
+}
+
+/* Custom draggable scroll thumb for the reserved band (mounted only on
+   iPad by stack-component.js — WKWebView's native scrollbar isn't
+   grabbable). Fills the band vertically like the native macOS thumb;
+   JS sets left/width and toggles display. */
+.stack-scroll-thumb {
+  display: none;
+  position: absolute;
+  bottom: calc(var(--ipad-safe-bottom, 0px) + 5px);
+  height: 30px;
+  min-width: 40px;
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.3);
+  z-index: 3;
+  cursor: grab;
+  touch-action: none;
+}
+.stack-scroll-thumb.dragging {
+  background: rgba(128, 128, 128, 0.55);
+  cursor: grabbing;
 }

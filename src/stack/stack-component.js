@@ -14,7 +14,14 @@
 import { createSpine, resolveItemName } from "./stack-spine.js";
 import { mountItemContent, unmountItemContent, snapshotItemContent } from "./stack-item-mount.js";
 import { startReorder } from "./stack-reorder.js";
-import { updateScrollbarPills } from "./stack-scrollbar-pills.js";
+import { updateScrollbarPills, setupScrollThumb, updateScrollThumb } from "./stack-scrollbar-pills.js";
+
+// iPad (not iPhone): the reserved scrollbar band gets a custom draggable
+// thumb since WKWebView's native scrollbar isn't grabbable. Matches the
+// `html.ios:not(.phone)` scoping used by the stack's iPad CSS.
+const IPAD_STACK = typeof document !== "undefined"
+  && document.documentElement.classList.contains("ios")
+  && !document.documentElement.classList.contains("phone");
 
 const SPINE_WIDTH = 50;
 const SPINE_HEIGHT = 40;
@@ -128,6 +135,8 @@ export class StackComponent {
 
     this._pillResizeObs = new ResizeObserver(() => this._updateScrollbarPills());
     this._pillResizeObs.observe(this._scrollArea);
+
+    if (IPAD_STACK) setupScrollThumb(this);
 
     this._container.appendChild(this._el);
   }
@@ -627,6 +636,7 @@ export class StackComponent {
 
   _updateScrollbarPills() {
     updateScrollbarPills(this);
+    updateScrollThumb(this);
   }
 
   destroy() {

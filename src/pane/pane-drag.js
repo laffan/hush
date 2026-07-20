@@ -193,6 +193,10 @@ export function setupPaneDrag(pane, deps) {
         { allowDuplicate: true, ownerContext: getCurrentContext(), skipFocus: true });
       let clone = null;
       for (const [id, pv] of panes) { if (!before.has(id)) { clone = pv; break; } }
+      // Raise the original first so the clone — whose z is bumped *after*
+      // this (zForPane is a monotonically increasing counter) — lands
+      // ABOVE it while it's dragged away.
+      pane.el.style.zIndex = zForPane(pane);
       if (clone && clone.el) {
         // Make the copy a faithful stand-in for the original — same size,
         // same per-pane font size — and start it exactly on top of the
@@ -210,7 +214,6 @@ export function setupPaneDrag(pane, deps) {
         applyPaneFontSize(clone);
         dragTarget = clone;
       }
-      pane.el.style.zIndex = zForPane(pane);
     }
     if (pane.attached && appState.currentNotebookFileId) {
       startCanvasX = pane._canvasX;

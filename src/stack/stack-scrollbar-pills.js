@@ -41,6 +41,70 @@ function _trimPillText(text, maxDim, vertical) {
   return lo > 0 ? text.slice(0, lo) + "…" : "…";
 }
 
+/** iPad-only custom scrollbar thumb. WKWebView renders the native
+ *  `::-webkit-scrollbar` as a thin, non-draggable auto-hiding overlay
+ *  (custom sizing is ignored on iOS), so a horizontal stack has no
+ *  grabbable scroll control the way macOS does. This mounts a real,
+ *  draggable thumb into the reserved bottom band. Wired once at build;
+ *  `updateScrollThumb` re-positions it on every scroll / layout pass. */
+export function setupScrollThumb(stack) {
+  const thumb = document.createElement("div");
+  thumb.className = "stack-scroll-thumb";
+  stack._el.appendChild(thumb);
+  stack._scrollThumb = thumb;
+
+  thumb.addEventListener("pointerdown", (e) => {
+    if (stack._isVertical) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startScroll = stack._scrollArea.scrollLeft;
+    const scrollSize = stack._scrollArea.scrollWidth;
+    const viewSize = stack._scrollArea.clientWidth;
+    // Map thumb travel → content travel through the actual rendered thumb
+    // width (which honours the min-width clamp), so a long stack still
+    // tracks the finger precisely.
+    const w = Math.max(THUMB_MIN, (viewSize / scrollSize) * viewSize);
+    const maxLeft = viewSize - w;
+    const ratio = maxLeft > 0 ? (scrollSize - viewSize) / maxLeft : 0;
+    thumb.classList.add("dragging");
+    try { thumb.setPointerCapture(e.pointerId); } catch (_) {}
+    const onMove = (me) => {
+      stack._scrollArea.scrollLeft = startScroll + (me.clientX - startX) * ratio;
+    };
+    const onUp = (ue) => {
+      thumb.classList.remove("dragging");
+      thumb.removeEventListener("pointermove", onMove);
+      thumb.removeEventListener("pointerup", onUp);
+      try { thumb.releasePointerCapture(ue.pointerId); } catch (_) {}
+    };
+    thumb.addEventListener("pointermove", onMove);
+    thumb.addEventListener("pointerup", onUp);
+  });
+}
+
+const THUMB_MIN = 40;
+
+/** Size + position the thumb from the live scroll geometry. Horizontal
+ *  stacks only; hidden when there's nothing to scroll. */
+export function updateScrollThumb(stack) {
+  const thumb = stack._scrollThumb;
+  if (!thumb) return;
+  const scrollSize = stack._scrollArea.scrollWidth;
+  const viewSize = stack._scrollArea.clientWidth;
+  if (stack._isVertical || scrollSize <= viewSize || viewSize <= 0) {
+    thumb.style.display = "none";
+    return;
+  }
+  const w = Math.max(THUMB_MIN, (viewSize / scrollSize) * viewSize);
+  const maxLeft = viewSize - w;
+  const denom = scrollSize - viewSize;
+  const left = denom > 0 ? maxLeft * (stack._scrollArea.scrollLeft / denom) : 0;
+  thumb.style.display = "block";
+  thumb.style.width = w + "px";
+  thumb.style.left = left + "px";
+}
+
 export function updateScrollbarPills(stack) {
   if (stack._destroyed) return;
   stack._pillContainer.innerHTML = "";
