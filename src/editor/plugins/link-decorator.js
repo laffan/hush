@@ -30,22 +30,9 @@ class LinkWidget extends WidgetType {
     span.textContent = this.text;
     span.title = this.url;
     span.dataset.linkUrl = this.url;
-    // iOS: the `:hover` rule on `.cm-link-rendered` makes WebKit treat the
-    // first tap as a hover reveal (no mousedown/click), so the editor's
-    // document-level mousedown handler never fires. Give the widget its
-    // own tap handler — and mark it clickable with `cursor: pointer` so
-    // WebKit activates it on the first tap — to open the link (or the
-    // Zotero menu) directly. Desktop keeps using the mousedown path.
-    if (isIOS()) {
-      const url = this.url;
-      span.style.cursor = "pointer";
-      span.addEventListener("click", (e) => {
-        if (!hasModifier(e)) return;
-        e.preventDefault();
-        e.stopPropagation();
-        openUrl(url, span);
-      });
-    }
+    // Pointer cursor on iOS so a rendered link reads as tappable (the
+    // tap is handled by the editor-level pointerdown handler below).
+    if (isIOS()) span.style.cursor = "pointer";
     return span;
   }
 
@@ -211,9 +198,17 @@ function hasModifier(e) {
 /**
  * Editor-level Cmd+click handler. Checks if the click lands on a
  * rendered link widget OR inside raw link syntax, and opens the URL.
+ *
+ * `pointerdown`, not `mousedown`: on iPad, tapping a rendered link
+ * places the caret, which flips the decoration to "cursor inside" and
+ * re-renders — tearing down the widget span *before* a `mousedown` /
+ * `click` reaches it. `pointerdown` is the gesture's first event, so the
+ * widget (and the tap's real target) is still intact when it fires.
+ * Fires for mouse, pen, and touch alike. A no-op when the modifier
+ * isn't held, so ordinary taps still place the caret to edit the link.
  */
 const linkClickHandler = EditorView.domEventHandlers({
-  mousedown(e, view) {
+  pointerdown(e, view) {
     if (!hasModifier(e)) return false;
     return tryOpenLinkAt(e, view);
   },
