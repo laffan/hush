@@ -30,6 +30,22 @@ class LinkWidget extends WidgetType {
     span.textContent = this.text;
     span.title = this.url;
     span.dataset.linkUrl = this.url;
+    // iOS: the `:hover` rule on `.cm-link-rendered` makes WebKit treat the
+    // first tap as a hover reveal (no mousedown/click), so the editor's
+    // document-level mousedown handler never fires. Give the widget its
+    // own tap handler — and mark it clickable with `cursor: pointer` so
+    // WebKit activates it on the first tap — to open the link (or the
+    // Zotero menu) directly. Desktop keeps using the mousedown path.
+    if (isIOS()) {
+      const url = this.url;
+      span.style.cursor = "pointer";
+      span.addEventListener("click", (e) => {
+        if (!hasModifier(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openUrl(url, span);
+      });
+    }
     return span;
   }
 
@@ -100,7 +116,16 @@ function buildDecorations(view, appState) {
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
+// Dedupe: on iOS a single tap can surface both the document `mousedown`
+// path and the widget `click` handler (~10 ms apart). Suppressing a
+// repeat of the same URL inside a short window keeps them from opening
+// twice while staying well below any deliberate re-open cadence.
+let _lastOpen = { url: null, t: 0 };
+
 async function openUrl(url, anchor) {
+  const now = Date.now();
+  if (url === _lastOpen.url && now - _lastOpen.t < 150) return;
+  _lastOpen = { url, t: now };
   // Internal PDF-bookmark deep links (`hush-pdf://<fileId>/<bookmarkId>`)
   // navigate inside the app instead of hitting the OS opener.
   if (url && url.startsWith("hush-pdf://")) {
@@ -174,7 +199,13 @@ if (isIOS()) {
 }
 
 function hasModifier(e) {
-  return e.metaKey || e.ctrlKey || _modifierHeld;
+  // `_modifierHeld` tracks a real (hardware) Cmd/Ctrl on iOS. The
+  // touch-mode ⌘ pill instead exposes `window.__hushCmdHeld` (its
+  // synthetic Meta keydown is dispatched on `window`, so a `document`
+  // keydown listener never sees it) — honour it the way the notebook
+  // canvas does.
+  return e.metaKey || e.ctrlKey || _modifierHeld ||
+    (typeof window !== "undefined" && !!window.__hushCmdHeld);
 }
 
 /**
