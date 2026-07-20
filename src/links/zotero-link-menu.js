@@ -73,17 +73,26 @@ function mountMenu(el, anchor) {
   document.body.appendChild(el);
   positionMenu(el, anchor);
 
+  // Dismiss on `pointerdown`, not `mousedown`. The menu is opened
+  // mid-gesture — from a link tap's `mousedown` (docs) or `pointerdown`
+  // (notebook canvas) — and on iPad the *same tap's* synthetic
+  // `mousedown` is delivered after `touchend`, well past the frame that
+  // arms this listener, so a `mousedown` dismiss fires on the opening
+  // tap and closes the menu instantly (works on Mac, where the synthetic
+  // mousedown fires synchronously before the rAF). `pointerdown` is the
+  // gesture's very first event and isn't delayed/synthesized on touch,
+  // so the opening tap's pointerdown has already fired before the rAF
+  // arms this — only a *subsequent* tap dismisses.
   const onDown = (e) => { if (_menuEl && !_menuEl.contains(e.target)) closeZoteroLinkMenu(); };
   const onKey = (e) => {
     if (e.key === "Escape") { e.stopPropagation(); closeZoteroLinkMenu(); }
   };
-  // Defer a frame so the opening mousedown can't instantly dismiss.
   requestAnimationFrame(() => {
-    document.addEventListener("mousedown", onDown, true);
+    document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("keydown", onKey, true);
   });
   _menuCleanup = () => {
-    document.removeEventListener("mousedown", onDown, true);
+    document.removeEventListener("pointerdown", onDown, true);
     document.removeEventListener("keydown", onKey, true);
   };
 }
