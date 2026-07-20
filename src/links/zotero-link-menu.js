@@ -49,6 +49,7 @@ export function initZoteroLinkMenu(state) {
 // ── Popup plumbing ──────────────────────────────────────────────────
 
 export function closeZoteroLinkMenu() {
+  if (_menuEl) { import("../debug/link-debug.js").then((m) => m.dlog("menu CLOSED")).catch(() => {}); } // TEMP
   if (_menuCleanup) { _menuCleanup(); _menuCleanup = null; }
   if (_menuEl) { _menuEl.remove(); _menuEl = null; }
 }
@@ -177,6 +178,8 @@ function makeSpinner() {
  * against the PDF registry / reference cache.
  */
 export async function openZoteroLinkMenu(url, anchor) {
+  const { dlog } = await import("../debug/link-debug.js"); // TEMP
+  dlog("openZoteroLinkMenu ENTER", "url:", url, "anchor:", anchor, "hasState:", !!_state); // TEMP
   const parsed = parseZoteroUrl(url);
   const el = document.createElement("div");
   el.className = "zotero-link-menu";
@@ -189,7 +192,9 @@ export async function openZoteroLinkMenu(url, anchor) {
   el.appendChild(zRow);
 
   mountMenu(el, anchor);
-  if (!parsed || !_state) return;
+  const r = el.getBoundingClientRect(); // TEMP
+  dlog("menu MOUNTED", "rect:", { l: Math.round(r.left), t: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }, "inDOM:", el.isConnected); // TEMP
+  if (!parsed || !_state) { dlog("openZoteroLinkMenu early-return (parsed:", !!parsed, "state:", !!_state, ")"); return; } // TEMP
 
   // ── Hush row (async resolve) ──────────────────────────────────────
   let pdfSync = null;
