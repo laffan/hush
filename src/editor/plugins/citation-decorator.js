@@ -451,7 +451,6 @@ function hasModifier(e) {
  * the citation widget can be torn down while the menu module imports).
  */
 async function openCitationMenu(url, citekey, anchor) {
-  try { (await import("../../debug/link-debug.js")).dlog("openCitationMenu url:", url, "citekey:", citekey); } catch {} // TEMP
   let target = url || null;
   if (!target && citekey) {
     try {

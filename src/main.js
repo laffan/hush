@@ -239,8 +239,6 @@ async function init() {
   // Zotero link menu — Cmd+click on a zotero:// link offers "Open in
   // Zotero" / "Open in Hush" / "Download to Hush" (+ notebook hook).
   import("./links/zotero-link-menu.js").then(({ initZoteroLinkMenu }) => initZoteroLinkMenu(state));
-  // TEMP debug (round 2) for the annotation-text-in-citation-popup issue.
-  import("./debug/link-debug.js").then(({ initLinkDebug }) => initLinkDebug());
   // Initialize floating pane system (includes global click-outside-to-deactivate)
   initPaneManager(state);
   // Sticky notes — temporary reminders floating above every surface.

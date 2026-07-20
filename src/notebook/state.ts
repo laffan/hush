@@ -23,7 +23,7 @@ import type { AppearanceMode, CanvasTheme } from "./themes";
 import { THEMES, getEffectiveVariant } from "./themes";
 import {
   autoFitWidth, findShapeAtPoint, findPocketedShapeAtScreen,
-  hitTestLink, hitTestLinkRun, hitTestTaskCheckbox, toggleTaskLine,
+  hitTestLink, hitTestLinkRun, soleLinkRun, hitTestTaskCheckbox, toggleTaskLine,
   normalizeBox, moveShape,
   applyResize, applyCropResize, openExternalUrl,
 } from "./state-helpers";
@@ -1280,7 +1280,11 @@ export class DrawingState extends EventTarget {
       // cmd / cmd+shift drag-and-clone paths still run normally.
       const cmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
       if (hitShape && hitShape.type === "text" && cmdHeld) {
-        const linkRun = hitTestLinkRun(canvasPt, hitShape);
+        // Precise hit-test first; if it misses (canvas link geometry drifts
+        // on wrapped / blockquote / styled text — e.g. a dragged-in Zotero
+        // highlight is a blockquote plus one citation), fall back to the
+        // shape's sole link so a Cmd+click anywhere on it still opens it.
+        const linkRun = hitTestLinkRun(canvasPt, hitShape) || soleLinkRun(hitShape);
         if (linkRun) {
           // Prevent the click from falling through to select / drag once
           // we've identified a link target — otherwise the shape selects

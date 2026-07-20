@@ -112,6 +112,36 @@ export function hitTestLink(pt: Point, shape: TextShape): string | null {
  *  between regular markdown links (`[text](url)` → `kind: "url"`) and
  *  Obsidian-style wikilinks (`[[Title]]` → `kind: "wikilink"`). Callers
  *  that just want a yes/no can use {@link hitTestLink}. */
+/** The sole link / wikilink in a text shape, or null when it carries
+ *  zero or more than one distinct target. Lets a Cmd+click anywhere on a
+ *  single-link shape open it even when the precise {@link hitTestLinkRun}
+ *  geometry misses — the common case being a dragged-in Zotero highlight
+ *  (a blockquote plus one citation link) where wrap / blockquote layout
+ *  drifts the hit-zone away from the rendered link. */
+export function soleLinkRun(shape: TextShape): { kind: "url" | "wikilink"; target: string } | null {
+  const fs = shape.fontSize;
+  const measure = (t: string, s: number) => {
+    const c = getMeasureCtx();
+    c.font = `${s}px ${FONT_FAMILY}`;
+    return c.measureText(t).width;
+  };
+  const lines = parseText(shape.text, shape.width && shape.width > 0 ? shape.width : undefined, fs, measure);
+  let found: { kind: "url" | "wikilink"; target: string } | null = null;
+  for (const line of lines) {
+    for (const run of line.runs) {
+      const hit = run.wikilink
+        ? { kind: "wikilink" as const, target: run.wikilink }
+        : run.link
+          ? { kind: "url" as const, target: run.link }
+          : null;
+      if (!hit) continue;
+      if (found && found.target !== hit.target) return null; // more than one → ambiguous
+      found = hit;
+    }
+  }
+  return found;
+}
+
 export function hitTestLinkRun(
   pt: Point,
   shape: TextShape,
