@@ -229,6 +229,25 @@ function buildCommands(state) {
         const { x, y } = paneAnchorClickPoint(s);
         createPane(f.fileId, f.name, f.type, x, y);
       }) },
+    // === DESKTOPS (canvas overview of a desk / project) ===
+    { id: "open-desk-desktop", label: "Open Desk Desktop", icon: icons.desk, shortcutKey: null, ctx: "shared",
+      action: async (s) => {
+        const deskId = s.settings?.activeDeskId || s.fileTree.find((n) => n.type === "desk")?.id;
+        if (!deskId) return;
+        (await import("./desktop/desktop-view.js")).openDesktop(s, deskId);
+      } },
+    { id: "open-project-desktop", label: "Open Project Desktop", icon: icons.project, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !s.currentProjectId,
+      action: async (s) => {
+        (await import("./desktop/desktop-view.js")).openDesktop(s, s.currentProjectId);
+      } },
+    { id: "refresh-desktop-thumbnails", label: "Refresh Desktop Thumbnails", icon: icons.files, shortcutKey: null, ctx: "shared",
+      // Shown only while a Desktop is open (checked via the body class so
+      // the palette doesn't pull the notebook renderer into its graph).
+      hiddenIf: () => !document.body.classList.contains("desktop-active"),
+      action: async () => {
+        (await import("./desktop/desktop-view.js")).refreshDesktopThumbnails();
+      } },
     { id: "extract-selected", label: "Create New From Selected", icon: icons.newFile, shortcutKey: null, ctx: "shared",
       action: (s) => createNewFromSelected(s) },
     { id: "send-selected", label: "Send Selected", icon: icons.export, shortcutKey: null, ctx: "shared",

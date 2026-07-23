@@ -283,6 +283,12 @@ export function bindInputEvents(
 
   // Keyboard shortcuts
   on(window as unknown as HTMLElement, "keydown", ((e: KeyboardEvent) => {
+    // While a Desktop takeover is open, only the Desktop's own canvas
+    // (and pane canvases floating above it) may act on window keydowns
+    // — the hidden main-notebook canvas underneath would otherwise
+    // mirror deletes / undos invisibly into the covered file.
+    if (document.body.classList.contains("desktop-active")
+      && !ownPane && !canvas.closest(".desktop-view")) return;
     if (state.editingText) {
       if (e.key === "Escape") { state.endEditingText(); }
       return;

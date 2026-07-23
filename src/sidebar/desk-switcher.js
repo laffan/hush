@@ -21,6 +21,8 @@ let _refreshHandlers = null;
 let _outsideClickHandler = null;
 
 const CHEVRON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+// Same 2×2 grid glyph the PDF-shelf / Desktop row buttons use.
+const GRID = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" rx="0.6"/><rect x="14" y="3" width="7" height="7" rx="0.6"/><rect x="3" y="14" width="7" height="7" rx="0.6"/><rect x="14" y="14" width="7" height="7" rx="0.6"/></svg>`;
 const PLUS = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
 const CHECK = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 const PENCIL = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
@@ -94,6 +96,25 @@ function render() {
     header.innerHTML = `<span class="desk-switcher-name"></span><span class="desk-switcher-caret">${CHEVRON}</span>`;
     header.addEventListener("click", togglePopover);
     _container.insertBefore(header, _container.firstChild);
+  }
+  // Desktop button beside the dropdown — the canvas overview of the
+  // active desk (same glyph as the row-level Desktop / shelf buttons).
+  let desktopBtn = _container.querySelector(".desk-switcher-desktop-btn");
+  if (!desktopBtn) {
+    desktopBtn = document.createElement("button");
+    desktopBtn.className = "desk-switcher-desktop-btn";
+    desktopBtn.type = "button";
+    desktopBtn.dataset.tooltip = "View Desktop";
+    desktopBtn.setAttribute("aria-label", "View Desktop");
+    desktopBtn.innerHTML = GRID;
+    desktopBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closePopover();
+      const deskId = _state?.settings?.activeDeskId;
+      if (!deskId) return;
+      import("../desktop/desktop-view.js").then((m) => m.openDesktop(_state, deskId));
+    });
+    _container.insertBefore(desktopBtn, header.nextSibling);
   }
   const nameSpan = header.querySelector(".desk-switcher-name");
   if (nameSpan && nameSpan.textContent !== label) nameSpan.textContent = label;

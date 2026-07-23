@@ -132,6 +132,21 @@ export interface ImageCrop {
   x: number; y: number; w: number; h: number;
 }
 
+/** Marks an ImageShape as a Desktop file thumbnail — a live preview of
+ *  a real file (doc / notebook / pdf / stack) or project. `key` is the
+ *  Desktop reconcile identity (fileId, or node id for projects). These
+ *  shapes drag / group / scale like any image but are protected from
+ *  delete + rename: the Desktop mirrors the filesystem, so the file
+ *  itself is the source of truth. dataUrls are stripped on persist and
+ *  rehydrated from the thumbnail cache on open. */
+export interface DesktopFileRef {
+  key: string;
+  kind: "doc" | "notebook" | "pdf" | "stack" | "project";
+  fileId?: string | null;
+  nodeId?: string;
+  name: string;
+}
+
 export interface ImageShape extends ShapeBase {
   type: "image";
   position: Point;
@@ -146,6 +161,8 @@ export interface ImageShape extends ShapeBase {
   dataUrlDark?: string;
   name: string;
   crop?: ImageCrop;
+  /** Present only on Desktop file-thumbnail shapes. */
+  fileRef?: DesktopFileRef;
 }
 
 export interface DragAreaShape extends ShapeBase {

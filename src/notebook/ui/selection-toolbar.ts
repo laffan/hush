@@ -1,5 +1,5 @@
 import type { DrawingState } from "../state";
-import type { DragAreaShape } from "../types";
+import type { DragAreaShape, ImageShape } from "../types";
 import type { DrawingLayer } from "../drawing/drawing-layer-types";
 import { canvasToScreen, computePocketLayout, getShapeBounds } from "../utils";
 import { rasterizeSelectionToImage, recognizeSelection, canRecognizeSelection } from "../selection-raster";
@@ -481,7 +481,8 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
     // their contents, mixed shapes) into a single image. Pointless for
     // a lone image shape, so it's hidden there. Sits at the end of the
     // feature icons, right before Delete, for every object type.
-    if (access && !(selected.length === 1 && selected[0].type === "image")) {
+    if (access && !(selected.length === 1 && selected[0].type === "image")
+      && !selected.some((s) => s.type === "image" && (s as ImageShape).fileRef)) {
       container.appendChild(makeIconBtn("rasterize", "Rasterize as image", () => {
         rasterizeSelectionToImage({
           state, imageCache: access.getImageCache(), drawingLayer: access.getDrawingLayer(),
@@ -489,10 +490,18 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
       }));
     }
 
-    container.appendChild(makeIconBtn("trash", "Delete", () => state.deleteSelected()));
+    // Desktop file thumbnails mirror the filesystem — the delete and
+    // rename controls are withheld for them (deleteSelected refuses
+    // fileRef shapes anyway; hiding the button keeps the affordance
+    // honest). Mixed selections keep Delete for the deletable rest.
+    const allFileRefs = selected.length > 0
+      && selected.every((s) => s.type === "image" && (s as ImageShape).fileRef);
+    if (!allFileRefs) {
+      container.appendChild(makeIconBtn("trash", "Delete", () => state.deleteSelected()));
+    }
 
     // Inline image rename
-    if (hasImage && selected.length === 1 && selected[0].type === "image") {
+    if (hasImage && selected.length === 1 && selected[0].type === "image" && !(selected[0] as ImageShape).fileRef) {
       const imgShape = selected[0];
       const fullName = imgShape.name || "";
       const dotIdx = fullName.lastIndexOf(".");

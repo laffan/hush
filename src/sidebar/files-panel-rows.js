@@ -98,6 +98,26 @@ export function windowBadgesHtml(item, state) {
 export const actionButtons = renderRowMenuButton;
 export const flagOnlyButton = renderFlagOnlyMenuButton;
 
+/** Is this row the file/project currently open in the main editor?
+ *  Drives the active-row underline. (Moved from files-panel.js for the
+ *  line cap.) */
+export function isItemActive(item, state) {
+  if (item.type === "document" && item.fileId) {
+    return item.fileId === state.currentFileId && !state.currentProjectId;
+  }
+  if (item.type === "notebook" && item.fileId) {
+    return item.fileId === state.currentNotebookFileId;
+  }
+  if (item.type === "pdf" && item.fileId) {
+    return item.fileId === state.currentPdfFileId;
+  }
+  if (item.type === "stack" && item.fileId) {
+    return item.fileId === state.currentStackFileId;
+  }
+  if (item.type === "project") return item.id === state.currentProjectId;
+  return false;
+}
+
 /** Float flagged children to the top of each plain folder (projects
  *  keep their user ordering). Pure — returns a shallow-cloned tree. */
 export function sortFlaggedItems(tree) {

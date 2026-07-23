@@ -205,7 +205,10 @@ function computeContentBounds(shapes, fontFamily) {
   return any ? { minX, minY, maxX, maxY } : null;
 }
 
-function drawApproximateStrokes(ctx, shapes, camera, theme) {
+/** Approximate DrawShapes as plain polylines — the bake-engine canvas
+ *  only exists for a live notebook. Exported for the Desktop thumbnail
+ *  renderer, which previews notebooks that aren't mounted anywhere. */
+export function drawApproximateStrokes(ctx, shapes, camera, theme) {
   const drawShapes = shapes.filter((s) => s.type === "draw" && Array.isArray(s.points) && s.points.length);
   if (!drawShapes.length) return;
   ctx.save();

@@ -13,6 +13,7 @@ import {
   isInboxId, isImagesId, isPdfsId, isTrashId, isAnySpecialId, allSpecialIds,
   visibleTopLevel, isAllDesksMode, numberSkip, hasPairedGutter, getIcon, windowBadgesHtml,
   actionButtons, flagOnlyButton, getPdfSync, buildPdfRowHtml, sortFlaggedItems,
+  isItemActive,
 } from "./files-panel-rows.js";
 import { normalizePdfProjectAliases } from "../state/state-pdf-aliases.js";
 import { refreshTooltips } from "../tooltips.js";
@@ -363,7 +364,12 @@ function dispatchRowAction(action, nodeId, opts) {
   } else if (action === "empty-trash") {
     handleEmptyTrash(storedState, refresh);
   } else if (action === "view-shelf") {
+    // The two takeover views are mutually exclusive — opening the shelf
+    // dismisses an open Desktop and vice versa.
+    import("../desktop/desktop-view.js").then((m) => m.closeDesktop()).catch(() => {});
     import("../pdf/pdf-shelf.js").then((m) => m.openPdfShelf(storedState, nodeId));
+  } else if (action === "view-desktop") {
+    import("../desktop/desktop-view.js").then((m) => m.openDesktop(storedState, nodeId));
   } else if (action === "open-as-stack") {
     handleOpenAsStack(nodeId, storedState, refresh);
   } else if (action === "convert-project-to-doc") {
@@ -613,24 +619,6 @@ function revealAndOpen(item, state) {
     state.openProject(item.id);
     if (!isInset && storedHidePanel) storedHidePanel();
   }
-}
-
-
-function isItemActive(item, state) {
-  if (item.type === "document" && item.fileId) {
-    return item.fileId === state.currentFileId && !state.currentProjectId;
-  }
-  if (item.type === "notebook" && item.fileId) {
-    return item.fileId === state.currentNotebookFileId;
-  }
-  if (item.type === "pdf" && item.fileId) {
-    return item.fileId === state.currentPdfFileId;
-  }
-  if (item.type === "stack" && item.fileId) {
-    return item.fileId === state.currentStackFileId;
-  }
-  if (item.type === "project") return item.id === state.currentProjectId;
-  return false;
 }
 
 /** Re-place the Local Folders section above Trash. Thin wrapper over the

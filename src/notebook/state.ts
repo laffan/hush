@@ -2620,6 +2620,13 @@ export class DrawingState extends EventTarget {
   deleteSelected() {
     if (this.selectedIds.size === 0) return;
     const deletingIds = new Set(this.selectedIds);
+    // Desktop file thumbnails can't be deleted from the canvas — the
+    // Desktop mirrors the filesystem, so only deleting the file itself
+    // removes its thumbnail. Mixed selections still delete the rest.
+    for (const s of this.shapes) {
+      if ((s as ImageShape).fileRef && deletingIds.has(s.id)) deletingIds.delete(s.id);
+    }
+    if (deletingIds.size === 0) return;
     this.shapes = this.shapes
       .filter((s) => !deletingIds.has(s.id))
       .map((s) => s.parentId && deletingIds.has(s.parentId) ? { ...s, parentId: undefined } : s);

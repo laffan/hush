@@ -89,7 +89,7 @@ export function renderForExport(
       if (shape.type === "drag-area") continue;
       if (shape.type === "draw") continue;
       if (shape.type === "text") drawTextShape(ctx, shape, theme, fontFamily, omitTextGlyphs, flagColors);
-      else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, false);
+      else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, false, theme);
     }
   }
 

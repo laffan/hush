@@ -173,7 +173,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       if (pocketedIds.has(shape.id)) continue;
       if (shape.type === "draw") continue; // drawing layer owns strokes
       if (shape.type === "text") drawTextShape(ctx, shape, theme, state.fontFamily, false, state.flagColors);
-      else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId);
+      else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId, theme);
     }
   }
 
@@ -335,7 +335,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
 // Reorder-preview ghost — paints a clone via main-pass draw fns; strokes fall back to a polyline.
 function drawGhostShape(ctx: CanvasRenderingContext2D, s: Shape, state: RenderState, theme: CanvasTheme): void {
   if (s.type === "text") drawTextShape(ctx, s, theme, state.fontFamily, false, state.flagColors);
-  else if (s.type === "image") drawImageShape(ctx, s, state.imageCache, false);
+  else if (s.type === "image") drawImageShape(ctx, s, state.imageCache, false, theme);
   else if (s.type === "drag-area") drawDragArea(ctx, s);
   else if (s.type === "draw") drawStroke(ctx, s.points, s.color || theme.foreground, 3);
 }
@@ -609,7 +609,7 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
   ctx.restore();
 }
 
-export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape, imageCache: Map<string, HTMLImageElement>, isCropping?: boolean) {
+export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape, imageCache: Map<string, HTMLImageElement>, isCropping?: boolean, theme?: CanvasTheme) {
   const img = imageCache.get(shape.id);
   if (img && img.complete) {
     const c = shape.crop || { x: 0, y: 0, w: 1, h: 1 };
@@ -626,6 +626,17 @@ export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape,
     const sx = c.x * img.naturalWidth, sy = c.y * img.naturalHeight;
     const sw = c.w * img.naturalWidth, sh = c.h * img.naturalHeight;
     ctx.drawImage(img, sx, sy, sw, sh, shape.position.x, shape.position.y, shape.width, shape.height);
+    if (shape.fileRef) drawFileRefChrome(ctx, shape, theme);
+  } else if (shape.fileRef) {
+    // Thumbnail not hydrated yet — a quiet placeholder card so the
+    // Desktop reads as "loading", not broken.
+    ctx.save();
+    ctx.fillStyle = theme?.uiBackground || "#f3f4f6";
+    ctx.globalAlpha = 0.6;
+    ctx.fillRect(shape.position.x, shape.position.y, shape.width, shape.height);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    drawFileRefChrome(ctx, shape, theme);
   } else {
     ctx.save();
     ctx.fillStyle = "#e5e7eb";
@@ -640,6 +651,29 @@ export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape,
     ctx.fillText(shape.name || "Image", shape.position.x + shape.width / 2, shape.position.y + shape.height / 2);
     ctx.restore();
   }
+}
+
+/** Desktop file-thumbnail chrome: a hairline border so the preview
+ *  reads as a card against the canvas, plus the filename attached
+ *  underneath (PDF-shelf style). Both live in world space so they ride
+ *  drags and scale with zoom; the label keeps a fixed world size so
+ *  resizing the thumbnail doesn't balloon the caption. */
+function drawFileRefChrome(ctx: CanvasRenderingContext2D, shape: ImageShape, theme?: CanvasTheme) {
+  const { x, y } = shape.position;
+  ctx.save();
+  ctx.strokeStyle = theme?.uiBorder || "rgba(128,128,128,0.35)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, shape.width - 1, shape.height - 1);
+  const name = shape.fileRef?.name || shape.name || "";
+  if (name) {
+    ctx.fillStyle = theme?.foreground || "#666";
+    ctx.globalAlpha = 0.75;
+    ctx.font = `13px ${FONT_FAMILY}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(name, x + shape.width / 2, y + shape.height + 7, Math.max(120, shape.width * 1.3));
+  }
+  ctx.restore();
 }
 
 const POCKET_BLUE = "rgba(66, 153, 225, 0.18)";

@@ -1,0 +1,154 @@
+/* ===== Desktop (canvas overview of a desk / project) =====
+   Same takeover pattern as the PDF shelf: mounts inside #app,
+   `body.desktop-active` hides the editor surfaces underneath while
+   they keep their layout, so closing is a single class flip. The body
+   hosts a full NotesCanvas, so unlike the shelf nothing scrolls —
+   the canvas owns pan/zoom. */
+
+.desktop-view {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  overflow: hidden;
+  font-family: var(--font-family);
+  display: flex;
+  flex-direction: column;
+  padding-top: 30px; /* clear the drag region on macOS */
+}
+
+.desktop-view.hidden {
+  display: none;
+}
+
+/* Inset sidebar: shift with the panel exactly like the PDF shelf. */
+#panel-overlay.panel-inset:not(.hidden) ~ .desktop-view {
+  left: var(--panel-width, 300px);
+}
+#panel-overlay.panel-inset.hidden ~ .desktop-view {
+  left: var(--sidebar-grip-width, 24px);
+}
+
+body.desktop-active #editor-container,
+body.desktop-active #editor-empty-state,
+body.desktop-active #notebook-container,
+body.desktop-active #pdf-container,
+body.desktop-active #stack-container {
+  visibility: hidden;
+}
+
+/* ── Header ────────────────────────────────────────────────────── */
+
+.desktop-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 16px 8px;
+  flex: 0 0 auto;
+}
+
+.desktop-scope {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.desktop-header-note {
+  font-size: 12px;
+  opacity: 0.5;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding-top: 2px;
+}
+
+.desktop-header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.desktop-btn {
+  background: transparent;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
+  color: inherit;
+  border-radius: 5px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.desktop-btn:hover {
+  opacity: 1;
+}
+
+.desktop-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Canvas host ───────────────────────────────────────────────── */
+
+.desktop-canvas-host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.desktop-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  opacity: 0.7;
+  background: var(--theme-bg, var(--bg));
+  pointer-events: none;
+}
+
+/* ── Hover controls over a file thumbnail ──────────────────────── */
+
+.desktop-hover {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  gap: 4px;
+  /* Anchored at the shape's top-right screen corner — tuck the pair
+     just inside the thumbnail. */
+  transform: translate(calc(-100% - 6px), 6px);
+}
+
+.desktop-hover.hidden {
+  display: none;
+}
+
+.desktop-hover-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.92;
+  padding: 0;
+}
+
+.desktop-hover-btn:hover {
+  opacity: 1;
+  border-color: var(--fg);
+}
+
+.desktop-hover-btn svg {
+  width: 15px;
+  height: 15px;
+}
