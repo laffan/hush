@@ -48,6 +48,16 @@ function rewriteDocContent(content, oldName, newName) {
 
 function rewriteNotebookContent(content, oldName, newName) {
   if (!content) return null;
+  // Cheap pretest on the raw JSON string before paying for a full parse —
+  // stroke-heavy notebook envelopes can be megabytes, and this runs for
+  // every notebook in the library on every rename (including the 1.5 s
+  // idle-debounce title renames while a first line is typed). A name
+  // containing `"` or `\` would be JSON-escaped in the raw text, so only
+  // those rare names skip the shortcut and parse unconditionally.
+  if (!/["\\]/.test(oldName)) {
+    const pre = buildWikilinkRegex(oldName);
+    if (!pre.test(content)) return null;
+  }
   let parsed;
   try { parsed = JSON.parse(content); } catch { return null; }
   if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.shapes)) return null;

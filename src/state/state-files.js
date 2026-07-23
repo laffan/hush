@@ -297,7 +297,14 @@ export async function clearActiveFile(state, opts = {}) {
 
 export async function renameFile(state, id, newName) {
   if (IS_TAURI) {
-    try { await tauriInvoke("rename_file", { id, name: newName }); state.files = await tauriInvoke("list_files"); }
+    try {
+      await tauriInvoke("rename_file", { id, name: newName });
+      // In-place cache patch — list_files re-reads the whole library
+      // (see saveCurrentFile / renameTreeNode for the full story).
+      const cached = state.files.find((f) => f.id === id);
+      if (cached) cached.name = newName;
+      else state.files = await tauriInvoke("list_files");
+    }
     catch (e) { console.error("Rename failed:", e); }
   } else {
     const file = state.files.find((f) => f.id === id);

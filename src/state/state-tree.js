@@ -302,7 +302,18 @@ export async function renameTreeNode(state, nodeId, newName) {
   node.name = finalName;
   if ((node.type === "document" || node.type === "notebook" || node.type === "pdf") && node.fileId) {
     if (IS_TAURI) {
-      try { await tauriInvoke("rename_file", { id: node.fileId, name: finalName }); state.files = await tauriInvoke("list_files"); }
+      try {
+        await tauriInvoke("rename_file", { id: node.fileId, name: finalName });
+        // Patch the cache in place instead of re-reading the whole
+        // library. `list_files` loads every file's full content across
+        // the IPC bridge — and this path runs on every 1.5 s typing
+        // pause while a first line is being composed (the idle-debounce
+        // title rename), which stalled typing exactly the way the old
+        // autosave-path list_files did (see saveCurrentFile).
+        const cached = state.files.find((f) => f.id === node.fileId);
+        if (cached) cached.name = finalName;
+        else state.files = await tauriInvoke("list_files");
+      }
       catch (e) { console.error("Rename failed:", e); }
     } else {
       const file = state.files.find((f) => f.id === node.fileId);
