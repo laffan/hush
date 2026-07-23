@@ -659,6 +659,23 @@ body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection
   font-weight: 600;
   background: color-mix(in srgb, var(--style-fg, var(--fg)) 8%, transparent);
 }
+/* Inline formatting inside cells (see inlineCellHtml in table-renderer.js). */
+.cm-md-table code {
+  font-family: "Fira Code", "Consolas", monospace;
+  font-size: 0.9em;
+  padding: 0 0.25em;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--style-fg, var(--fg)) 10%, transparent);
+}
+.cm-md-table .cm-md-table-link {
+  text-decoration: underline;
+  color: var(--link, currentColor);
+}
+.cm-md-table mark {
+  background: color-mix(in srgb, #ffe066 55%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
 
 /* Tab marker (`---Tab name---`, plus nested `---A---/---B---`): a
    compact rounded pill that round-trips to a real Google Doc tab on

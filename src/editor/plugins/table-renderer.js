@@ -4,15 +4,24 @@
  * raw `| … |` source (pipes dimmed by the Lezer Table highlight) the
  * moment a cursor or selection lands inside, so the table stays editable
  * as plain text. Mirrors the cursor-aware reveal used by
- * checkbox-list.js / link-decorator.js, but with a block-level widget
- * that replaces the whole table span.
+ * checkbox-list.js / link-decorator.js.
  *
- * This is the first, rendering-only pass — there is no interactive
- * cell/row/column editing UI yet; you edit a table by clicking it (which
- * drops the caret into the source) and typing.
+ * The decoration set lives in a StateField, NOT a ViewPlugin: the widget
+ * is a block-level replace, and CodeMirror hard-errors on block
+ * decorations sourced from plugins ("Block decorations may not be
+ * specified via plugins"), which corrupts the whole view. The field
+ * recomputes on doc or selection changes — same triggers the plugin
+ * version used, minus viewportChanged (a state field can't see the
+ * viewport, and the line scan is cheap).
+ *
+ * Cells render the inline formatting the extended-syntax guide allows in
+ * tables — `code`, links, emphasis — plus Hush's ~~strike~~ and
+ * ==highlight==; `&#124;` shows a literal pipe. Links paint as link-
+ * coloured text only for now (following them, and a cell/row/column
+ * editing UI, come later — today you edit by clicking into the source).
  */
-import { ViewPlugin, Decoration, WidgetType } from "@codemirror/view";
-import { RangeSetBuilder } from "@codemirror/state";
+import { EditorView, Decoration, WidgetType } from "@codemirror/view";
+import { StateField, RangeSetBuilder } from "@codemirror/state";
 
 // A GFM delimiter row: pipe-separated cells of `:?-+:?`, with optional
 // surrounding whitespace and optional leading / trailing pipes. Requiring
@@ -95,6 +104,28 @@ function findTables(doc) {
   return tables;
 }
 
+function escHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// Basic inline markdown inside a cell. Everything is HTML-escaped first;
+// code spans are stashed so their contents dodge the emphasis passes, and
+// links resolve before emphasis so a URL's underscores can't italicise.
+function inlineCellHtml(raw) {
+  let s = escHtml(raw.replace(/&#124;/g, "|"));
+  const stash = [];
+  const put = (html) => { stash.push(html); return `\u0000${stash.length - 1}\u0000`; };
+  s = s.replace(/`([^`]+)`/g, (_, c) => put(`<code>${c}</code>`));
+  s = s.replace(/\[([^\]]+)\]\(([^)]*)\)/g, `<span class="cm-md-table-link">$1</span>`);
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  s = s.replace(/(^|\s)_([^_]+)_(?=\s|$)/g, "$1<em>$2</em>");
+  s = s.replace(/~~([^~]+)~~/g, "<s>$1</s>");
+  s = s.replace(/==([^=]+)==/g, "<mark>$1</mark>");
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => stash[+i]);
+}
+
 class TableWidget extends WidgetType {
   constructor(headerCells, aligns, bodyRows, from) {
     super();
@@ -122,7 +153,7 @@ class TableWidget extends WidgetType {
     const htr = document.createElement("tr");
     this.headerCells.forEach((text, idx) => {
       const th = document.createElement("th");
-      th.textContent = text;
+      th.innerHTML = inlineCellHtml(text);
       if (this.aligns[idx]) th.style.textAlign = this.aligns[idx];
       htr.appendChild(th);
     });
@@ -134,7 +165,7 @@ class TableWidget extends WidgetType {
       const tr = document.createElement("tr");
       for (let idx = 0; idx < cols; idx++) {
         const td = document.createElement("td");
-        td.textContent = row[idx] ?? "";
+        td.innerHTML = inlineCellHtml(row[idx] ?? "");
         if (this.aligns[idx]) td.style.textAlign = this.aligns[idx];
         tr.appendChild(td);
       }
@@ -148,10 +179,10 @@ class TableWidget extends WidgetType {
   ignoreEvent() { return false; }
 }
 
-function buildDecorations(view) {
+function buildDecorations(state) {
   const builder = new RangeSetBuilder();
-  const doc = view.state.doc;
-  const sel = view.state.selection.ranges.map((r) => ({
+  const doc = state.doc;
+  const sel = state.selection.ranges.map((r) => ({
     from: Math.min(r.from, r.to),
     to: Math.max(r.from, r.to),
   }));
@@ -177,34 +208,29 @@ function buildDecorations(view) {
 }
 
 export function createTableRendererPlugin() {
-  return ViewPlugin.fromClass(
-    class {
-      constructor(view) {
-        this.decorations = buildDecorations(view);
-      }
-      update(update) {
-        if (update.docChanged || update.viewportChanged || update.selectionSet) {
-          this.decorations = buildDecorations(update.view);
-        }
-      }
+  const field = StateField.define({
+    create: buildDecorations,
+    update(deco, tr) {
+      if (tr.docChanged || tr.selection) return buildDecorations(tr.state);
+      return deco;
     },
-    {
-      decorations: (v) => v.decorations,
-      eventHandlers: {
-        // Click a rendered table → drop the caret at its start, which
-        // reveals the raw source (the span now overlaps the selection) for
-        // editing. A later pass can add real in-cell editing UI.
-        mousedown(e, view) {
-          const wrap = e.target?.closest?.(".cm-md-table-wrap");
-          if (!wrap) return false;
-          const from = parseInt(wrap.dataset.tableFrom, 10);
-          if (!Number.isFinite(from)) return false;
-          e.preventDefault();
-          view.focus();
-          view.dispatch({ selection: { anchor: from } });
-          return true;
-        },
-      },
+    provide: (f) => EditorView.decorations.from(f),
+  });
+
+  // Click a rendered table → drop the caret at its start, which reveals
+  // the raw source (the span now overlaps the selection) for editing.
+  const clickHandler = EditorView.domEventHandlers({
+    mousedown(e, view) {
+      const wrap = e.target?.closest?.(".cm-md-table-wrap");
+      if (!wrap) return false;
+      const from = parseInt(wrap.dataset.tableFrom, 10);
+      if (!Number.isFinite(from)) return false;
+      e.preventDefault();
+      view.focus();
+      view.dispatch({ selection: { anchor: Math.min(from, view.state.doc.length) } });
+      return true;
     },
-  );
+  });
+
+  return [field, clickHandler];
 }
