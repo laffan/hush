@@ -18,7 +18,7 @@
  * haven't generalized yet.
  */
 
-import { specialNodeId, isSpecialNodeId, parseSpecialNodeId, ensureDeskSpecials } from "./state-desks.js";
+import { specialNodeId, isSpecialNodeId, parseSpecialNodeId, ensureDeskSpecials, seedNewArchivesCollapsed } from "./state-desks.js";
 
 function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -63,6 +63,9 @@ export async function convertFolderToDesk(state, folderId) {
     } else if (c.name === "Images" && c.type === "folder") {
       c.id = specialNodeId("__images__", deskId);
       desk.children.push(c);
+    } else if (c.name === "Archive" && c.type === "folder") {
+      c.id = specialNodeId("__archive__", deskId);
+      desk.children.push(c);
     } else if (c.name === "Trash" && c.type === "folder") {
       c.id = specialNodeId("__trash__", deskId);
       desk.children.push(c);
@@ -70,7 +73,7 @@ export async function convertFolderToDesk(state, folderId) {
       desk.children.push(c);
     }
   }
-  ensureDeskSpecials(desk);
+  seedNewArchivesCollapsed(state, ensureDeskSpecials(desk));
   tree.push(desk);
 
   const desks = [...(state.settings.desks || []), { id: deskId, name: deskName, createdAt }];
@@ -145,7 +148,7 @@ export async function collapseDeskToFolder(state, deskId) {
   }
   if (!Array.isArray(target.children)) target.children = [];
   target.children.push(folder);
-  ensureDeskSpecials(target);
+  seedNewArchivesCollapsed(state, ensureDeskSpecials(target));
 
   // Update settings: drop the collapsed desk, retarget activeDeskId if it
   // matched, and clear any per-desk meta the desk owned.

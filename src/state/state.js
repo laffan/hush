@@ -367,6 +367,7 @@ export class AppState {
   static INBOX_ID = "__inbox__";
   static IMAGES_ID = "__images__";
   static PDFS_ID = "__pdfs__";
+  static ARCHIVE_ID = "__archive__";
   static TRASH_ID = "__trash__";
 
   /** Resolve the special-node id for the active context. With desks
@@ -375,11 +376,13 @@ export class AppState {
   getInboxId() { return _desks.activeSpecialId(this, AppState.INBOX_ID); }
   getImagesId() { return _desks.activeSpecialId(this, AppState.IMAGES_ID); }
   getPdfsId() { return _desks.activeSpecialId(this, AppState.PDFS_ID); }
+  getArchiveId() { return _desks.activeSpecialId(this, AppState.ARCHIVE_ID); }
   getTrashId() { return _desks.activeSpecialId(this, AppState.TRASH_ID); }
   isSpecialNodeId(id) { return _desks.isSpecialNodeId(id); }
 
   ensureSpecialNodes() {
-    _desks.ensureDesksTreeSpecials(this, this.fileTree);
+    const created = _desks.ensureDesksTreeSpecials(this, this.fileTree);
+    _desks.seedNewArchivesCollapsed(this, created);
   }
 
   /** True if `nodeId` lives inside any Trash folder. */

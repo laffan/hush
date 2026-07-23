@@ -17,8 +17,9 @@ import { isTabMarkerItem } from "./files-panel-tabs.js";
 export const isInboxId = (id) => id === AppState.INBOX_ID || id?.startsWith(AppState.INBOX_ID + ":");
 export const isImagesId = (id) => id === AppState.IMAGES_ID || id?.startsWith(AppState.IMAGES_ID + ":");
 export const isPdfsId = (id) => id === AppState.PDFS_ID || id?.startsWith(AppState.PDFS_ID + ":");
+export const isArchiveId = (id) => id === AppState.ARCHIVE_ID || id?.startsWith(AppState.ARCHIVE_ID + ":");
 export const isTrashId = (id) => id === AppState.TRASH_ID || id?.startsWith(AppState.TRASH_ID + ":");
-export const isAnySpecialId = (id) => isInboxId(id) || isImagesId(id) || isPdfsId(id) || isTrashId(id);
+export const isAnySpecialId = (id) => isInboxId(id) || isImagesId(id) || isPdfsId(id) || isArchiveId(id) || isTrashId(id);
 export const allSpecialIds = (s, k) => [k, ...(s.settings?.desks || []).map(d => `${k}:${d.id}`)];
 
 /** True when the user has chosen the "show all desks" panel view. */
@@ -59,6 +60,7 @@ export function getIcon(item) {
   if (isInboxId(item.id)) return typeIcons.inbox;
   if (isImagesId(item.id)) return typeIcons.images;
   if (isPdfsId(item.id)) return typeIcons.pdf;
+  if (isArchiveId(item.id)) return typeIcons.archive;
   if (isTrashId(item.id)) return typeIcons.trash;
   // Individual image nodes render without an icon so the sidebar stays
   // readable — hovering the row is the primary affordance anyway.

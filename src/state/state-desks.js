@@ -20,7 +20,7 @@
  * persistence.
  */
 
-const SPECIAL_KINDS = ["__inbox__", "__images__", "__pdfs__", "__trash__"];
+const SPECIAL_KINDS = ["__inbox__", "__images__", "__pdfs__", "__archive__", "__trash__"];
 
 /** Fire-and-forget write-through of a desk's portable meta (style,
  *  last file, stickies) into its `.hushdesk` — see sync/desk-meta.js. */
@@ -81,31 +81,40 @@ export function activeSpecialId(state, kind) {
   return specialNodeId(kind, desk.id);
 }
 
-/** Ensure each desk node has its own Inbox / Images / Trash children
- *  with the correct ordering (Inbox first, Images / Trash pinned to
- *  the tail). */
+/** Ensure each desk node has its own Inbox / Images / Archive / Trash
+ *  children with the correct ordering (Inbox first; Images / Archive /
+ *  Trash pinned to the tail). Returns the ids of any specials it had to
+ *  create this call, so callers can react to a first-time appearance
+ *  (e.g. collapsing a freshly-added Archive on an existing install). */
 export function ensureDeskSpecials(deskNode) {
-  if (!deskNode || deskNode.type !== "desk") return;
+  if (!deskNode || deskNode.type !== "desk") return [];
   if (!Array.isArray(deskNode.children)) deskNode.children = [];
   const c = deskNode.children;
+  const created = [];
   const ensure = (kind, type, name) => {
     const id = specialNodeId(kind, deskNode.id);
     if (!c.some((n) => n.id === id)) {
       const node = { id, type, name, children: [], flagged: false };
       if (kind === "__inbox__") c.unshift(node); else c.push(node);
+      created.push(id);
     }
   };
   ensure("__inbox__", "project", "Inbox");
   ensure("__images__", "folder", "Images");
+  ensure("__archive__", "folder", "Archive");
   ensure("__trash__", "folder", "Trash");
-  // Order: Inbox first, Images then Trash pinned to the tail.
+  // Order: Inbox first; Images, Archive then Trash pinned to the tail
+  // (Archive sits directly above Trash). PDFs, minted lazily elsewhere,
+  // is slotted between Images and Archive by pinSpecialsInList at render.
   const moveTo = (id, idx) => {
     const i = c.findIndex((n) => n.id === id);
     if (i >= 0 && i !== idx) { const [n] = c.splice(i, 1); c.splice(idx, 0, n); }
   };
   moveTo(specialNodeId("__inbox__", deskNode.id), 0);
   moveTo(specialNodeId("__trash__", deskNode.id), c.length - 1);
-  moveTo(specialNodeId("__images__", deskNode.id), c.length - 2);
+  moveTo(specialNodeId("__archive__", deskNode.id), c.length - 2);
+  moveTo(specialNodeId("__images__", deskNode.id), c.length - 3);
+  return created;
 }
 
 /** Wrap the existing flat tree under a single new desk. Used by the
@@ -240,6 +249,24 @@ export function allSpecialOfKind(state, kind) {
   return out;
 }
 
+/** The Archive folder ships collapsed by default. Fresh installs get that
+ *  from the files panel's first-run defaults (no persisted collapse set
+ *  yet). Installs that predate Archive already carry a persisted
+ *  `collapsedFolderIds`, so when Archive is *first created* on such an
+ *  install (reported via `createdIds`), fold its id into that set once —
+ *  the "first created" signal is inherently one-shot, so a later
+ *  user-expand is never undone. `collapsedFolderIds` is a persisted
+ *  setting, so no extra flag is needed. */
+export function seedNewArchivesCollapsed(state, createdIds) {
+  const collapsed = state.settings?.collapsedFolderIds;
+  if (!Array.isArray(collapsed) || !Array.isArray(createdIds)) return;
+  const fresh = createdIds.filter((id) => id === "__archive__" || id.startsWith("__archive__:"));
+  if (fresh.length === 0) return;
+  const next = new Set(collapsed);
+  for (const id of fresh) next.add(id);
+  void state.updateSettings({ collapsedFolderIds: [...next] });
+}
+
 /** Mutates `tree` in place to drop any orphan global specials, fold
  *  loose top-level non-desk nodes into the active (or first) desk, and
  *  ensure every desk carries Inbox/Images/Trash. No-ops on a flat tree
@@ -269,12 +296,14 @@ export function ensureDesksTreeSpecials(state, tree) {
       if (!Array.isArray(target.children)) target.children = [];
       target.children.push(s);
     }
-    for (const id of ["__inbox__", "__images__", "__pdfs__", "__trash__"]) {
+    for (const id of ["__inbox__", "__images__", "__pdfs__", "__archive__", "__trash__"]) {
       const i = tree.findIndex((n) => n.id === id);
       if (i >= 0) tree.splice(i, 1);
     }
   }
-  for (const d of desks) ensureDeskSpecials(d);
+  const created = [];
+  for (const d of desks) created.push(...ensureDeskSpecials(d));
+  return created;
 }
 
 // Boot-time repair cluster (migrateLegacyTreeIfNeeded and friends)

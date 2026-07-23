@@ -17,7 +17,7 @@ import {
 import { normalizePdfProjectAliases } from "../state/state-pdf-aliases.js";
 import { refreshTooltips } from "../tooltips.js";
 import { renderLocalSyncSection, getLocalSyncContainer, onLocalDropExternal, positionLocalSync as positionLocalSyncImpl } from "./files-panel-local-sync.js";
-import { openRowMenu } from "./files-panel-row-menu.js";
+import { openRowMenu, rowColorRgba } from "./files-panel-row-menu.js";
 import { collectVisibleDocs, handleDocMultiClick, installDragSelect } from "./files-panel-multi-select.js";
 import {
   handleRename, handleRevealInFinder, handleConvertContainer,
@@ -106,7 +106,8 @@ export function createFilesPanel(container, state, hidePanel) {
         return targetItem.type === "project" && !isInboxId(targetItem.id);
       }
       if (draggedItem.type === "desk") return targetItem === null;
-      if (targetItem === null) return false;
+      // Desk root (null): allowed single-desk, rejected all-desks (desk list).
+      if (targetItem === null) return !isAllDesksMode(state);
       if (isImagesId(targetItem.id)) return draggedItem.type === "image";
       if (isPdfsId(targetItem.id)) return false;
       if (targetItem.pdfFolder) return false; // only PDFs (handled above)
@@ -317,14 +318,14 @@ export function createFilesPanel(container, state, hidePanel) {
 
   // Restore persisted folder collapse state. On first run (no persisted
   // set) apply the defaults: Inbox open (a fresh set leaves it expanded),
-  // Trash / Images / PDFs collapsed.
+  // Trash / Images / PDFs / Archive collapsed (existing installs collapse
+  // the new Archive once via seedNewArchivesCollapsed).
   const persistedCollapsed = state.settings?.collapsedFolderIds;
   if (Array.isArray(persistedCollapsed)) {
     for (const id of persistedCollapsed) sortableInstance.state.collapsedIds.add(id);
   } else {
-    for (const id of allSpecialIds(state, AppState.TRASH_ID)) sortableInstance.state.collapsedIds.add(id);
-    for (const id of allSpecialIds(state, AppState.IMAGES_ID)) sortableInstance.state.collapsedIds.add(id);
-    for (const id of allSpecialIds(state, AppState.PDFS_ID)) sortableInstance.state.collapsedIds.add(id);
+    for (const k of [AppState.TRASH_ID, AppState.IMAGES_ID, AppState.PDFS_ID, AppState.ARCHIVE_ID])
+      for (const id of allSpecialIds(state, k)) sortableInstance.state.collapsedIds.add(id);
   }
   sortableInstance.render();
   positionLocalSync(state);
@@ -510,6 +511,9 @@ function renderFlaggedNode(item, state, isBubbled) {
   const li = document.createElement("li");
   li.className = "sl-item flagged-link-item";
   li.dataset.id = item.id;
+  // Keep the row's highlight tint on its flagged copy (mirrors the main tree).
+  const bgRgba = rowColorRgba(item?.bgColor);
+  if (bgRgba) li.style.setProperty("--item-bg", bgRgba);
 
   const itemContent = document.createElement("div");
   itemContent.className = "sl-item-content";

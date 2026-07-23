@@ -632,6 +632,34 @@ body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection
   display: none;
 }
 
+/* Markdown tables: a GFM pipe table renders as a real <table> while the
+   cursor is elsewhere, reverting to editable raw source when the caret
+   enters it — see plugins/table-renderer.js. Colours derive from the
+   editor text colour so tables stay on-theme in light and dark. */
+.cm-md-table-wrap {
+  margin: 0.5em 0;
+  max-width: 100%;
+  overflow-x: auto;
+  cursor: text;
+}
+.cm-md-table {
+  border-collapse: collapse;
+  font: inherit;
+  color: inherit;
+  line-height: 1.4;
+}
+.cm-md-table th,
+.cm-md-table td {
+  border: 1px solid color-mix(in srgb, var(--style-fg, var(--fg)) 28%, transparent);
+  padding: 0.28em 0.6em;
+  text-align: left;
+  vertical-align: top;
+}
+.cm-md-table th {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--style-fg, var(--fg)) 8%, transparent);
+}
+
 /* Tab marker (`---Tab name---`, plus nested `---A---/---B---`): a
    compact rounded pill that round-trips to a real Google Doc tab on
    push/pull. Replaces the line contents while the cursor is on a

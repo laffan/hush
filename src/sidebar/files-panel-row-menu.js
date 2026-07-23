@@ -60,6 +60,7 @@ export function createColorPalette(currentKey, onPick) {
 const isInboxId = (id) => id === AppState.INBOX_ID || id?.startsWith(AppState.INBOX_ID + ":");
 const isImagesId = (id) => id === AppState.IMAGES_ID || id?.startsWith(AppState.IMAGES_ID + ":");
 const isPdfsId = (id) => id === AppState.PDFS_ID || id?.startsWith(AppState.PDFS_ID + ":");
+const isArchiveId = (id) => id === AppState.ARCHIVE_ID || id?.startsWith(AppState.ARCHIVE_ID + ":");
 const isTrashId = (id) => id === AppState.TRASH_ID || id?.startsWith(AppState.TRASH_ID + ":");
 
 const HAMBURGER_SVG = `<svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`;
@@ -129,7 +130,7 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
     return [{ action: "delete", label: "Remove from Project" }];
   }
 
-  const isSpecial = isInboxId(nodeId) || isImagesId(nodeId) || isPdfsId(nodeId);
+  const isSpecial = isInboxId(nodeId) || isImagesId(nodeId) || isPdfsId(nodeId) || isArchiveId(nodeId);
   const isDoc = nodeType === "document";
   const isImage = nodeType === "image";
   const isPdf = nodeType === "pdf";
@@ -146,7 +147,7 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   // is also typed as project but the new-here actions don't make sense
   // there (it only holds image refs), so it's explicitly skipped —
   // as is the PDFs folder (PDFs arrive via Zotero only).
-  if (isContainer && !isImagesId(nodeId) && !isPdfsId(nodeId)) {
+  if (isContainer && !isImagesId(nodeId) && !isPdfsId(nodeId) && !isArchiveId(nodeId)) {
     entries.push({ action: "new-doc-here", label: "New Doc" });
     entries.push({ action: "new-notebook-here", label: "New Notebook" });
   }
@@ -177,7 +178,7 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
     entries.push({ action: "split-at-headings", label: "Split Headings to Files" });
     entries.push({ action: "convert-headings-to-tabs", label: "Convert Headings to Tabs" });
   }
-  if (isContainer && !isImagesId(nodeId)) {
+  if (isContainer && !isImagesId(nodeId) && !isArchiveId(nodeId)) {
     entries.push({ action: "open-as-stack", label: "Open as Stack" });
   }
   if (!(isSpecial || isImage || isPdf)) {

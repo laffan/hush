@@ -2,7 +2,7 @@ import { EditorView, keymap, drawSelection, placeholder } from "@codemirror/view
 import { Prec, Compartment, Annotation, Transaction } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting } from "@codemirror/language";
-import { Strikethrough } from "@lezer/markdown";
+import { Strikethrough, Table } from "@lezer/markdown";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { wrapOnSelection } from "./wrap-on-selection.js";
 import { getActiveTheme } from "../themes/index.js";
@@ -34,6 +34,7 @@ import { createSpellcheckPlugin, spellcheckClickHandler } from "./plugins/spellc
 import { buildFoldingExtension } from "./folding.js";
 import { createFoldArrowPlugin } from "./fold-arrow.js";
 import { createPropertiesPlugin } from "./plugins/properties.js";
+import { createTableRendererPlugin } from "./plugins/table-renderer.js";
 
 /**
  * Marks a transaction as app-driven rather than user-typed: file loads,
@@ -167,7 +168,7 @@ export function createBaseExtensions(state, onChange, opts) {
     _highlightComp.of(syntaxHighlighting(
       getMarkdownHighlight(nh, nhc ? undefined : (headerOverride || activeTheme?.headingColor), hScale, { underline: underlineHeaders })
     )),
-    markdown({ extensions: [Strikethrough, CommentExtension, HighlightExtension] }),
+    markdown({ extensions: [Strikethrough, Table, CommentExtension, HighlightExtension] }),
     history(),
     drawSelection(),
     wrapOnSelection,
@@ -183,6 +184,7 @@ export function createBaseExtensions(state, onChange, opts) {
     createCitationPlugin(state),
     createTabMarkerPlugin(),
     createCheckboxListPlugin(),
+    createTableRendererPlugin(),
     createImageDecoratorPlugin(state, getImageContext),
     createImagePasteExtension(state, { getImageContext }),
     createGoogleDocsPasteExtension(),

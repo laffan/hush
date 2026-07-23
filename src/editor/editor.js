@@ -2,7 +2,7 @@ import { EditorView, keymap, drawSelection, placeholder, ViewPlugin } from "@cod
 import { EditorState, Prec, Compartment, Annotation } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting } from "@codemirror/language";
-import { Strikethrough } from "@lezer/markdown";
+import { Strikethrough, Table } from "@lezer/markdown";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { wrapOnSelection } from "./wrap-on-selection.js";
 import { getActiveTheme } from "../themes/index.js";
@@ -18,6 +18,7 @@ import { createCitationPlugin } from "./plugins/citation-decorator.js";
 import { createInlinePanePlugin, openInlinePaneForWikilink } from "../pane/pane-inline.js";
 import { createTabMarkerPlugin } from "./plugins/tab-marker.js";
 import { createCheckboxListPlugin } from "./plugins/checkbox-list.js";
+import { createTableRendererPlugin } from "./plugins/table-renderer.js";
 import { createImageDecoratorPlugin } from "./plugins/image-decorator.js";
 import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke, getEncourageDecorations } from "./plugins/encourage-typing.js";
 import {
@@ -268,6 +269,7 @@ export function createEditor(container, state) {
   const inlinePanePlugin = createInlinePanePlugin(state);
   const tabMarkerPlugin = createTabMarkerPlugin();
   const checkboxListPlugin = createCheckboxListPlugin();
+  const tableRendererPlugin = createTableRendererPlugin();
   const imageDecoratorPlugin = createImageDecoratorPlugin(state, () => defaultLocalSyncContext(state));
   const stickyHeadersPlugin = createStickyHeadersPlugin(state);
   const multiLineCommentPlugin = createMultiLineCommentPlugin();
@@ -300,7 +302,7 @@ export function createEditor(container, state) {
         const underline = _s?.underlineHeaders ?? state.settings.underlineHeaders ?? false;
         return getMarkdownHighlight(nh, nhc ? undefined : (headerOverride || getActiveTheme(state.settings)?.headingColor), hScale, { underline });
       })())),
-      markdown({ extensions: [Strikethrough, CommentExtension, HighlightExtension] }),
+      markdown({ extensions: [Strikethrough, Table, CommentExtension, HighlightExtension] }),
       history(),
       drawSelection(),
       wrapOnSelection,
@@ -326,6 +328,7 @@ export function createEditor(container, state) {
       inlinePanePlugin,
       tabMarkerPlugin,
       checkboxListPlugin,
+      tableRendererPlugin,
       imageDecoratorPlugin,
       createGoogleDocsPasteExtension(),
       headingIndentPlugin,

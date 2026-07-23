@@ -402,8 +402,14 @@ async function init() {
           });
         }
       }
-      // Re-apply background color to prevent black safe-area bars
+      // Re-apply background color to prevent black safe-area bars and to
+      // repaint the sidebar / shelf chrome, whose `var(--theme-bg)`
+      // surfaces read stale after a background→foreground transition on
+      // iOS. Run again on the next frame so the inline nudge lands after
+      // WKWebView finishes restoring its layers (a synchronous write can
+      // be clobbered by the restore).
       updatePrivateBoxColor(state);
+      requestAnimationFrame(() => updatePrivateBoxColor(state));
       // iOS has no filesystem watcher, so re-read the open Local Sync
       // file on foreground — the iPad stand-in for the desktop notify
       // watcher. No-ops when the buffer is dirty or unchanged.

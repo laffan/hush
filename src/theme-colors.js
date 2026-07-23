@@ -5,6 +5,13 @@
  */
 import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 
+// Chrome surfaces painted from the JS-only `--theme-bg` custom property.
+// On iOS WKWebView these do not repaint reliably when the app regains
+// focus, so `updatePrivateBoxColor` force-refreshes each with an inline
+// background. The left files sidebar's main panel and its grip strip,
+// plus the right-side outline / comments / PDF-shelf panels.
+const THEME_BG_SURFACES = "#panel-overlay, .sidebar-grip, #right-panel-overlay, #comments-panel, .pdf-shelf-view";
+
 export const fontFallbacks = {
   "Helvetica": "'Helvetica Neue', 'Helvetica', 'Arial', sans-serif",
   "EB Garamond": "'EB Garamond', 'Georgia', 'Times New Roman', serif",
@@ -123,20 +130,23 @@ export function updatePrivateBoxColor(state, overrideBg, overrideFg) {
 
     // iOS: set background color directly on html/body to avoid safe-area
     // black bars caused by CSS variable resolution lag during transitions.
-    // We also nudge the sidebar + panel-overlay directly because in
-    // production iOS WebView builds the sidebar's
-    // `background: var(--theme-bg)` reads stale on first paint and never
-    // refreshes — the explicit inline style brings it back into sync
-    // with the active theme. The text colour gets the same treatment
-    // so the icon column's foreground tracks light/dark switches.
+    // We also nudge the themed chrome surfaces directly because in
+    // production iOS WebView builds their `background: var(--theme-bg)`
+    // reads stale after a focus / visibility transition and never
+    // repaints on its own — the explicit inline style forces each surface
+    // back in sync with the active theme, so the text colour tracks the
+    // light/dark switch too.
     if (document.documentElement.classList.contains("ios")) {
       document.documentElement.style.backgroundColor = bg;
       document.body.style.backgroundColor = bg;
-      const panel = document.getElementById("panel-overlay");
-      if (panel) {
-        panel.style.backgroundColor = bg;
-        panel.style.color = uiFg;
+      // The left files sidebar (panel + its separate grip strip) and the
+      // right-side panels / shelves each need the explicit nudge; without
+      // it they revert to the fallback neutral grey on restore.
+      for (const el of document.querySelectorAll(THEME_BG_SURFACES)) {
+        el.style.backgroundColor = bg;
       }
+      const panel = document.getElementById("panel-overlay");
+      if (panel) panel.style.color = uiFg;
     }
   }
 }
