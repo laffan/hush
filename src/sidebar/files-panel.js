@@ -317,9 +317,8 @@ export function createFilesPanel(container, state, hidePanel) {
   });
 
   // Restore persisted folder collapse state. On first run (no persisted
-  // set) apply the defaults: Inbox open (a fresh set leaves it expanded),
-  // Trash / Images / PDFs / Archive collapsed (existing installs collapse
-  // the new Archive once via seedNewArchivesCollapsed).
+  // set) apply the defaults: Inbox open, Trash / Images / PDFs / Archive
+  // collapsed (existing installs collapse Archive once, see state-desks).
   const persistedCollapsed = state.settings?.collapsedFolderIds;
   if (Array.isArray(persistedCollapsed)) {
     for (const id of persistedCollapsed) sortableInstance.state.collapsedIds.add(id);
@@ -451,7 +450,8 @@ function renderFlaggedSection(state) {
   if (!flaggedContainerEl) return;
   flaggedContainerEl.innerHTML = "";
 
-  const flaggedItems = collectFlaggedItems(state.fileTree);
+  // Scope to the visible desk(s) so flagged items stay desk-specific.
+  const flaggedItems = collectFlaggedItems(visibleTopLevel(state));
   if (flaggedItems.length === 0) return;
 
   // Create the flagged folder as a regular li that looks like a folder
