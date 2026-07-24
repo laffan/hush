@@ -31,16 +31,16 @@ import { loadThumbRecord, saveThumbRecord, loadDesktopEnvelope } from "./desktop
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
-// Doc thumbnails read as a printed US-Letter page: 8.5 × 11 aspect at
-// 400 px tall, generous inner padding, and a pure white / black page
-// ground (by appearance) rather than the canvas colour.
-const DOC_H = 400;
-const DOC_W = Math.round(DOC_H * (8.5 / 11)); // 309
-const DOC_PAD = 20;
+// Doc thumbnails read as a printed page: 320 × 420, generous inner
+// margins, and a pure white / black page ground (by appearance) rather
+// than the canvas colour.
+const DOC_W = 320;
+const DOC_H = 420;
+const DOC_PAD = 40;
 const DOC_FONT_SIZE = 8;
 // Bump when thumbnail geometry / styling changes so cached renders
 // regenerate on the next Desktop open.
-const THUMB_STYLE_VERSION = 2;
+const THUMB_STYLE_VERSION = 3;
 const LONG_EDGE = 400;
 const NB_MARGIN = 10;
 const CARD_W = 220;
@@ -56,7 +56,9 @@ async function tauriInvoke(cmd, args) {
   return invoke(cmd, args);
 }
 
-async function loadFileContent(state, fileId) {
+/** Load a VC file's content (doc markdown / notebook envelope). Also
+ *  used by desktop-view's shelf search index. */
+export async function loadFileContent(state, fileId) {
   if (IS_TAURI) {
     try { return (await tauriInvoke("load_file", { id: fileId }))?.content || ""; }
     catch { return ""; }

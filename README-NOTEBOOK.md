@@ -31,6 +31,7 @@ src/notebook/
     selection-colors-menu.ts  Colors popup (text/bg/border rows + saved-style chips), split out of selection-toolbar
     bookmarks-panel.ts     Camera bookmark dropdown
     shelf-panel.ts         Right-side hierarchical shape browser
+    shelf-label.ts         Shelf label/search helpers (pure) — split from shelf-panel.ts
     text-editor.ts         Inline textarea overlay for text shapes
     brainstorm-input.ts    Persistent input for brainstorm mode
     reorder-banner.ts      Top-of-canvas "Reorder mode" pill + Exit button

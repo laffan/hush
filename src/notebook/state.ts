@@ -1115,6 +1115,9 @@ export class DrawingState extends EventTarget {
     for (const shape of this.shapes) {
       if (!this.selectedIds.has(shape.id)) continue;
       if (shape.type === "draw") continue;
+      // Desktop file thumbnails aren't resizable — their size is the
+      // thumbnail's natural size (drag / group still work as normal).
+      if ((shape as ImageShape).fileRef) continue;
       const b = getShapeBounds(shape, this.fontFamily);
       const pad = 6;
       const x1 = b.minX - pad, y1 = b.minY - pad;

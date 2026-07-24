@@ -94,6 +94,10 @@ export function drawSelectionHighlight(ctx: CanvasRenderingContext2D, shape: Sha
   ctx.strokeRect(x1, y1, w, h);
   ctx.setLineDash([]);
 
+  // Desktop file thumbnails aren't resizable — dashed selection border
+  // only, no handle squares (hitTestResizeHandles skips them too).
+  if ((shape as ImageShape).fileRef) { ctx.restore(); return; }
+
   const handleSize = 7 / zoom;
   const half = handleSize / 2;
   const mx = x1 + w / 2, my = y1 + h / 2;

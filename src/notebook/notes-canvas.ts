@@ -56,6 +56,15 @@ export function getActiveNotebookState(): DrawingState | null {
   return lastActiveNotebook ? lastActiveNotebook.state : null;
 }
 
+/** Explicitly make `c` the clipboard/undo routing target. The Desktop
+ *  takeover calls this on mount: the hidden main-notebook canvas
+ *  underneath may already hold the slot (the constructor's claim only
+ *  fires when the slot is empty), and without the hand-off Cmd+C / V
+ *  on the fresh Desktop would no-op until its first pointerdown. */
+export function claimActiveNotebook(c: NotesCanvas): void {
+  lastActiveNotebook = c;
+}
+
 /** Live registry of mounted NotesCanvas instances, used by the iOS
  *  pencil bridge to push `pencilOnly` into every drawing layer (main
  *  canvas + any pane snapshots) without each surface having to subscribe

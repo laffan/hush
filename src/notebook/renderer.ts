@@ -653,11 +653,52 @@ export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape,
   }
 }
 
+/** Greedily wrap `name` into at most `maxLines` lines that each fit
+ *  `maxW` at the current ctx font, ellipsis-truncating the last line
+ *  (and hard-splitting single words that are wider than the line). */
+function wrapLabelLines(ctx: CanvasRenderingContext2D, name: string, maxW: number, maxLines: number): string[] {
+  const words = name.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  const truncate = (text: string) => {
+    let t = text;
+    while (t.length > 1 && ctx.measureText(t + "…").width > maxW) t = t.slice(0, -1);
+    return t + "…";
+  };
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    const candidate = line ? line + " " + word : word;
+    if (ctx.measureText(candidate).width <= maxW) { line = candidate; continue; }
+    if (!line) {
+      // Single word wider than the line — hard-split it.
+      if (lines.length === maxLines - 1) { lines.push(truncate(word)); return lines; }
+      let head = word;
+      while (head.length > 1 && ctx.measureText(head).width > maxW) head = head.slice(0, -1);
+      lines.push(head);
+      words.splice(i + 1, 0, word.slice(head.length));
+      continue;
+    }
+    if (lines.length === maxLines - 1) {
+      // No room for another line — truncate what remains onto this one.
+      lines.push(truncate(words.slice(i).length ? line + " " + words.slice(i).join(" ") : line));
+      return lines;
+    }
+    lines.push(line);
+    line = word;
+  }
+  if (line) {
+    if (lines.length >= maxLines) lines[maxLines - 1] = truncate(lines[maxLines - 1]);
+    else lines.push(line);
+  }
+  return lines;
+}
+
 /** Desktop file-thumbnail chrome: a hairline border so the preview
  *  reads as a card against the canvas, plus the filename attached
- *  underneath (PDF-shelf style). Both live in world space so they ride
- *  drags and scale with zoom; the label keeps a fixed world size so
- *  resizing the thumbnail doesn't balloon the caption. */
+ *  underneath (PDF-shelf style) — wrapped to at most two centred lines
+ *  and ellipsis-truncated, never horizontally squeezed. Both live in
+ *  world space so they ride drags and scale with zoom; the label keeps
+ *  a fixed world size so a scaled thumbnail doesn't balloon the caption. */
 function drawFileRefChrome(ctx: CanvasRenderingContext2D, shape: ImageShape, theme?: CanvasTheme) {
   const { x, y } = shape.position;
   ctx.save();
@@ -671,7 +712,13 @@ function drawFileRefChrome(ctx: CanvasRenderingContext2D, shape: ImageShape, the
     ctx.font = `13px ${FONT_FAMILY}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    ctx.fillText(name, x + shape.width / 2, y + shape.height + 7, Math.max(120, shape.width * 1.3));
+    const maxW = Math.max(150, shape.width);
+    const lines = wrapLabelLines(ctx, name, maxW, 2);
+    let ly = y + shape.height + 7;
+    for (const line of lines) {
+      ctx.fillText(line, x + shape.width / 2, ly);
+      ly += 16;
+    }
   }
   ctx.restore();
 }

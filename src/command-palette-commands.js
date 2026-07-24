@@ -229,13 +229,7 @@ function buildCommands(state) {
         const { x, y } = paneAnchorClickPoint(s);
         createPane(f.fileId, f.name, f.type, x, y);
       }) },
-    // === DESKTOPS (canvas overview of a desk / project) ===
-    { id: "open-desk-desktop", label: "Open Desk Desktop", icon: icons.desk, shortcutKey: null, ctx: "shared",
-      action: async (s) => {
-        const deskId = s.settings?.activeDeskId || s.fileTree.find((n) => n.type === "desk")?.id;
-        if (!deskId) return;
-        (await import("./desktop/desktop-view.js")).openDesktop(s, deskId);
-      } },
+    // === DESKTOPS (canvas overview of a project) ===
     { id: "open-project-desktop", label: "Open Project Desktop", icon: icons.project, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.currentProjectId,
       action: async (s) => {

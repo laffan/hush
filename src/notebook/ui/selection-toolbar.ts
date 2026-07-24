@@ -558,6 +558,11 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
 
       container.appendChild(nameEl);
     }
+
+    // A selection can end up with no applicable controls at all — a
+    // Desktop file thumbnail withholds delete / crop / rename / raster
+    // — and an empty pill would render as a stray dot above the shape.
+    if (container.childElementCount === 0) container.style.display = "none";
   }
 
   // PERF-HUD (temporary): time the rebuild — it runs on EVERY change

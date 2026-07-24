@@ -76,12 +76,13 @@ const SHELF_SVG = `<svg viewBox="0 0 24 24"><path d="M14 20.4V14.6C14 14.2686 14
 export function renderRowMenuButton(nodeId, nodeType, inTrash, item, inProject) {
   const entries = getMenuEntries(nodeId, nodeType, inTrash, item, inProject);
   const isShelfRow = !inTrash && (isPdfsId(nodeId) || item?.pdfFolder === true);
-  // Desks (all-desks view) and real projects carry a Desktop button in
-  // the same slot — the canvas overview of everything inside them. The
-  // specials are internally typed as projects but aren't Desktops.
-  const isDesktopRow = !inTrash && (nodeType === "desk"
-    || (nodeType === "project" && !isInboxId(nodeId) && !isImagesId(nodeId)
-      && !isArchiveId(nodeId) && !item?.pdfFolder && !item?.syncFolderId));
+  // Real projects carry a Desktop button in the same slot — the canvas
+  // overview of everything inside them. The specials are internally
+  // typed as projects but aren't Desktops. (Desk-wide Desktops were
+  // tried and shelved — Desktops are a project feature for now.)
+  const isDesktopRow = !inTrash
+    && nodeType === "project" && !isInboxId(nodeId) && !isImagesId(nodeId)
+    && !isArchiveId(nodeId) && !item?.pdfFolder && !item?.syncFolderId;
   const shelfBtn = isShelfRow
     ? `<button class="tree-action-shelf" data-tree-action="view-shelf" data-tooltip="View Shelf" aria-label="View Shelf">${SHELF_SVG}</button>`
     : isDesktopRow

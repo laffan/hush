@@ -22,7 +22,7 @@ import {
 } from "./desktop-files.js";
 import {
   ensureDesktopThumb, computeDesktopGrid, themeSigOf,
-  evictSessionThumb, DESKTOP_GRID_GAP,
+  evictSessionThumb, DESKTOP_GRID_GAP, loadFileContent,
 } from "./desktop-thumbs.js";
 import { loadDesktopEnvelope, saveDesktopEnvelope } from "./desktop-store.js";
 
@@ -40,6 +40,10 @@ let _canvasListenersCleanup = null;
 let _background = null; // per-desktop bg override cached from the popup event
 let _refreshing = false;
 let _hydrated = false; // true once the open-time thumbnail pass landed
+// fileRef key → deep search text (doc body, notebook text, PDF metadata
+// + annotations). Read by the shape shelf via window.__hushDesktopSearchText
+// so its search box reaches file *contents*, not just filenames.
+const _searchText = new Map();
 
 export function isDesktopOpen() {
   return !!_containerId;
@@ -52,6 +56,9 @@ export function currentDesktopContainerId() {
 function initDesktop(state) {
   if (_host) return;
   _state = state;
+  // Deep-search hook for the shape shelf: while a Desktop is mounted,
+  // shelf rows for file thumbnails search the file's content too.
+  window.__hushDesktopSearchText = (key) => _searchText.get(key) || "";
   _host = document.createElement("div");
   _host.id = "desktop-view";
   _host.className = "desktop-view hidden";
@@ -207,7 +214,7 @@ async function mountCanvas() {
   const state = _state;
   setLoading(true);
 
-  const { NotesCanvas } = await import("../notebook/notes-canvas.ts");
+  const { NotesCanvas, claimActiveNotebook } = await import("../notebook/notes-canvas.ts");
   const { computeNotebookSettings } = await import("../notebook/notebook-style-settings.js");
   if (token !== _openToken || !_canvasHost) return;
 
@@ -225,9 +232,16 @@ async function mountCanvas() {
   };
 
   _canvas = new NotesCanvas(_canvasHost, shortcuts);
+  // Route clipboard / undo to this canvas immediately — a hidden main
+  // notebook underneath may still hold the active-canvas slot.
+  claimActiveNotebook(_canvas);
   // No flowchart on Desktops (for now): file thumbnails aren't chart
   // nodes, so drop-to-connect / ⌘→ edge creation stays off.
   _canvas.state.flowchartEnabled = false;
+  // The toolbar starts parked at the bottom and minimized — a Desktop
+  // leads with the thumbnails; the tools are one handle-click away.
+  _canvas.state.setDrawingToolbarPosition("bottom");
+  _canvas.state.setDrawingToolbarMinimized(true);
   const nbSettings = computeNotebookSettings(state, null);
   // Desktops default to the blank background; a per-desktop override
   // from the bg-settings popup is applied after the envelope loads.
@@ -282,6 +296,7 @@ async function mountCanvas() {
   attachCanvasListeners();
   setLoading(false);
   _hydrated = true;
+  buildSearchIndex(state, entries, token);
 }
 
 function teardownCanvas() {
@@ -293,6 +308,7 @@ function teardownCanvas() {
   _themeCtx = null;
   _refreshing = false;
   _hydrated = false;
+  _searchText.clear();
 }
 
 function attachCanvasListeners() {
@@ -311,6 +327,44 @@ function attachCanvasListeners() {
       onSecondary: openFileRefSecondary,
     });
   });
+}
+
+// ── Shelf deep-search index ─────────────────────────────────────────
+
+/** Build the per-file search text the shape shelf reads through
+ *  `window.__hushDesktopSearchText`: doc bodies, notebook text-shape
+ *  contents, PDF metadata + bookmark names + cached Zotero annotation
+ *  text. Fire-and-forget — the shelf reads the map live at query time,
+ *  so entries land as they resolve. */
+async function buildSearchIndex(state, entries, token) {
+  for (const entry of entries) {
+    if (token !== _openToken) return;
+    let text = entry.name || "";
+    try {
+      if (entry.kind === "doc") {
+        text += "\n" + (await loadFileContent(state, entry.fileId));
+      } else if (entry.kind === "notebook") {
+        const { extractSnapshotText } = await import("../sidebar/notebook-snapshot-preview.js");
+        text += "\n" + extractSnapshotText(await loadFileContent(state, entry.fileId));
+      } else if (entry.kind === "pdf") {
+        const { getPdfMeta, getPdfBookmarks } = await import("../sync/pdf-sync.js");
+        const meta = getPdfMeta(entry.fileId);
+        const parts = [meta?.title, meta?.authors, meta?.year];
+        for (const bm of getPdfBookmarks(entry.fileId)) parts.push(bm.name);
+        if (meta?.zoteroAttKey) {
+          const { getCachedAnnotations } = await import("../zotero-annotations.js");
+          const annots = await getCachedAnnotations(meta.zoteroAttKey).catch(() => []);
+          for (const a of annots) parts.push([a.text, a.comment].filter(Boolean).join(" "));
+        }
+        text += "\n" + parts.filter(Boolean).join("\n");
+      } else if (entry.kind === "project") {
+        const collected = collectDesktopFiles(state, entry.nodeId);
+        text += "\n" + (collected?.entries || []).map((e) => e.name).join("\n");
+      }
+    } catch { /* best effort — the name alone still matches */ }
+    if (token !== _openToken) return;
+    _searchText.set(entry.key, text);
+  }
 }
 
 // ── Shape reconstruction ────────────────────────────────────────────
@@ -517,6 +571,9 @@ async function reconcileLive() {
   st.notify("shapes");
   st.notify("selectedIds");
   scheduleSave();
+  // Entry set changed — refresh the shelf's deep-search index too.
+  for (const key of [..._searchText.keys()]) if (!byKey.has(key)) _searchText.delete(key);
+  buildSearchIndex(_state, collected.entries, token);
 }
 
 /** Swap one entry's thumbnail in place (PDF cover arriving, refresh). */
