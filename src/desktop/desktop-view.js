@@ -25,12 +25,13 @@ import {
   evictSessionThumb, DESKTOP_GRID_GAP,
 } from "./desktop-thumbs.js";
 import {
-  refOf, hydrateShape, shapeBottom, newThumbShape, buildShapes,
+  refOf, keepRefFields, hydrateShape, shapeBottom, newThumbShape, buildShapes,
   fitCameraFor, buildSearchIndex,
 } from "./desktop-content.js";
 import { normalizeDesktopStacks } from "./desktop-stacks.js";
 import { DESKTOP_OPTION_DEFAULTS, normalizeDesktopOptions } from "./desktop-options.js";
 import { loadDesktopEnvelope, saveDesktopEnvelope } from "./desktop-store.js";
+import { createDesktopOutline } from "./desktop-outline.js";
 import { canvasToScreen, screenToCanvas } from "../notebook/utils.ts";
 
 let _host = null;
@@ -46,15 +47,19 @@ let _optionsTimer = null;
 let _hoverCleanup = null;
 let _stackingCleanup = null;
 let _canvasListenersCleanup = null;
+let _outlineClickCleanup = null;
 let _background = null; // per-desktop bg override cached from the popup event
 let _options = { ...DESKTOP_OPTION_DEFAULTS };
 let _refreshing = false;
 let _hydrated = false; // true once the open-time thumbnail pass landed
 let _focusKey = null; // fileRef key to select + centre after hydration
-// fileRef key → deep search text (doc body, notebook text, PDF metadata
-// + annotations). Read by the shape shelf via window.__hushDesktopSearchText
-// so its search box reaches file *contents*, not just filenames.
+// fileRef key → deep search text, read by the shape shelf
+// (window.__hushDesktopSearchText) so search reaches file contents.
 const _searchText = new Map();
+// Doc-outline controller — owns the per-doc outline row hit-geometry,
+// the canvas click handler that opens a doc at a clicked heading, and
+// the per-doc / bulk outline toggles (desktop-outline.js).
+let _outline = null;
 
 export function isDesktopOpen() {
   return !!_containerId;
@@ -71,6 +76,22 @@ function collectOpts() {
 function initDesktop(state) {
   if (_host) return;
   _state = state;
+  // Doc-outline controller (deps are lazy getters over module state, so
+  // one instance survives every open/close).
+  _outline = createDesktopOutline({
+    getCanvas: () => _canvas,
+    getHost: () => _canvasHost,
+    getState: () => _state,
+    getContainerId: () => _containerId,
+    getThemeCtx: () => _themeCtx,
+    getToken: () => _openToken,
+    collectOpts,
+    ensureThumb: (st, entry, themeCtx) => ensureDesktopThumb(st, entry, themeCtx),
+    collectFiles: (st, containerId, opts) => collectDesktopFiles(st, containerId, opts),
+    applyThumb: (key, thumb) => applyThumbToShape(key, thumb),
+    screenToCanvas,
+    scheduleSave,
+  });
   // Deep-search hook for the shape shelf: while a Desktop is mounted,
   // shelf rows for file thumbnails search the file's content too.
   window.__hushDesktopSearchText = (key) => _searchText.get(key) || "";
@@ -134,16 +155,14 @@ function initDesktop(state) {
     closeDesktop();
   }, true);
 
-  // A style / theme switch while the Desktop is open repaints the
-  // canvas chrome; thumbnails re-render on the next open (or an
-  // explicit Refresh) since their cache signature includes the theme.
+  // A style / theme switch repaints the canvas chrome; thumbnails
+  // re-render on the next open since their cache signature holds the theme.
   state.on("settings-changed", async () => {
     if (!_canvas || !_containerId) return;
     const { computeNotebookSettings } = await import("../notebook/notebook-style-settings.js");
     const nbSettings = computeNotebookSettings(state, null);
     // The Desktop canvas (background) follows the app theme; thumbnails
-    // stay light. Repaint the canvas chrome, then rebuild the light
-    // thumbnail context only if its (light) theme actually changed.
+    // stay light. Rebuild the light thumbnail context only if it changed.
     _canvas.applySettings({
       ...nbSettings,
       ...(_background
@@ -183,9 +202,8 @@ export async function openDesktop(state, containerId, opts = {}) {
   }
   if (state.selectedDocIds?.length) state.clearSelectedDocs();
   import("../pdf/pdf-shelf.js").then((m) => m.closePdfShelf()).catch(() => {});
-  // The Desktop is the open thing now — tear down whatever file was
-  // open so there's genuinely nothing interactive behind it (no doc
-  // margins to drag, no outline, no floating panes leaking through).
+  // The Desktop is the open thing now — tear down whatever file was open
+  // so nothing interactive sits behind it (no doc margins, no panes).
   await state.clearActiveFile();
 
   _containerId = containerId;
@@ -328,7 +346,7 @@ async function mountCanvas() {
   const { buildDesktopOptionsSection } = await import("./desktop-options.js");
   if (token !== _openToken || !_canvas) return;
   _canvas.state.extraBgSettingsSection = () =>
-    buildDesktopOptionsSection(_canvas.state.theme, () => _options, setDesktopOption);
+    buildDesktopOptionsSection(_canvas.state.theme, () => _options, setDesktopOption, (on) => _outline.setAll(on));
   if (envelope?.background) {
     _background = envelope.background;
     _canvas.applySettings({
@@ -338,15 +356,22 @@ async function mountCanvas() {
     });
   }
 
-  // Generate / refresh thumbnails for everything on this Desktop. Files
-  // whose cache signature still matches come back instantly; stale and
-  // new files render now — this is the "thumbnails update when the
-  // Desktop opens" pass.
+  // Docs whose outline column was open last time — generate up front.
+  const outlineKeys = new Set(
+    (envelope?.shapes || []).filter((s) => s?.fileRef?.outline).map((s) => s.fileRef.key));
+
+  // Generate / refresh thumbnails for everything on this Desktop —
+  // unchanged files come back instantly, stale and new files render now
+  // (the "thumbnails update when the Desktop opens" pass).
   const collected = collectDesktopFiles(state, _containerId, collectOpts());
   const entries = collected?.entries || [];
   const thumbs = new Map();
+  _outline.clear();
   for (const entry of entries) {
-    thumbs.set(entry.key, await ensureDesktopThumb(state, entry, _themeCtx));
+    entry.outline = outlineKeys.has(entry.key);
+    const thumb = await ensureDesktopThumb(state, entry, _themeCtx);
+    thumbs.set(entry.key, thumb);
+    _outline.setRows(entry.key, thumb.outlineRows);
     if (token !== _openToken) return;
   }
 
@@ -354,8 +379,7 @@ async function mountCanvas() {
     buildShapes(envelope, entries, thumbs),
     envelope?.layers?.length ? envelope.layers : undefined,
   );
-  // Flowchart edges are intentionally not restored — the feature is
-  // deactivated on Desktops (see flowchartEnabled above).
+  // Flowchart edges are intentionally not restored (deactivated here).
 
   requestAnimationFrame(() => {
     if (token !== _openToken || !_canvas) return;
@@ -384,12 +408,14 @@ function teardownCanvas() {
   if (_hoverCleanup) { _hoverCleanup(); _hoverCleanup = null; }
   if (_stackingCleanup) { _stackingCleanup(); _stackingCleanup = null; }
   if (_canvasListenersCleanup) { _canvasListenersCleanup(); _canvasListenersCleanup = null; }
+  if (_outlineClickCleanup) { _outlineClickCleanup(); _outlineClickCleanup = null; }
   if (_canvas) { _canvas.destroy(); _canvas = null; }
   _themeCtx = null;
   _refreshing = false;
   _hydrated = false;
   _focusKey = null;
   _searchText.clear();
+  _outline?.clear();
 }
 
 function attachCanvasListeners() {
@@ -412,8 +438,12 @@ function attachCanvasListeners() {
       onOpen: openFileRef,
       onSecondary: openFileRefSecondary,
       onOpenWithGutter: openFileRefWithGutter,
+      onToggleOutline: (ref) => _outline.toggleDoc(ref),
       onStacksChanged: () => scheduleSave(),
-    }, { showLabels: () => _options.showLabels });
+    }, {
+      showLabels: () => _options.showLabels,
+      hasOutlineRows: (key) => _outline.has(key),
+    });
   });
   import("./desktop-stacks.js").then((m) => {
     if (!_canvas || !_canvas.state.canvasEl) return;
@@ -421,6 +451,7 @@ function attachCanvasListeners() {
       onStacksChanged: () => scheduleSave(),
     });
   });
+  _outlineClickCleanup = _outline.attachClicks();
 }
 
 /** Select + centre a file's thumbnail (View in Desktop). */
@@ -524,11 +555,7 @@ async function reconcileLive() {
       if (!entry || present.has(s.fileRef.key)) { changed = true; continue; }
       present.add(s.fileRef.key);
       if (entry.name !== s.fileRef.name || !!entry.hasGutter !== !!s.fileRef.hasGutter) {
-        const keep = {
-          ...(s.fileRef.stackId ? { stackId: s.fileRef.stackId } : {}),
-          ...(s.fileRef.frameless ? { frameless: true } : {}),
-        };
-        next.push({ ...s, name: entry.name, fileRef: { ...refOf(entry), ...keep } });
+        next.push({ ...s, name: entry.name, fileRef: { ...refOf(entry), ...keepRefFields(s.fileRef) } });
         changed = true;
       } else {
         next.push(s);
@@ -572,12 +599,18 @@ async function reconcileLive() {
 function applyThumbToShape(key, thumb) {
   if (!_canvas || !thumb) return;
   const st = _canvas.state;
+  const cache = _canvas.getImageCache?.();
   let changed = false;
   st.shapes = st.shapes.map((s) => {
     if (s.type !== "image" || s.fileRef?.key !== key) return s;
     changed = true;
     const out = { ...s, dataUrl: thumb.dataUrl || thumb.url || "" };
     delete out.dataUrlDark;
+    // Same shape id, new bytes — reload the decoded image in place (the
+    // cache only auto-reloads on an appearance swap, so a content change
+    // would otherwise keep showing the stale thumbnail).
+    const cached = cache?.get(s.id);
+    if (cached) cached.src = out.dataUrl;
     const fileRef = { ...s.fileRef };
     if (thumb.frameless) fileRef.frameless = true;
     else delete fileRef.frameless;
@@ -588,6 +621,7 @@ function applyThumbToShape(key, thumb) {
     }
     return out;
   });
+  _outline?.setRows(key, thumb.outlineRows);
   if (changed) st.notify("shapes");
 }
 

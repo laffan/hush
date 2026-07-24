@@ -157,6 +157,10 @@ export interface DesktopFileRef {
    *  bounding box isn't a clean rectangle) — the canvas chrome skips
    *  its hairline border for these. */
   frameless?: boolean;
+  /** Docs only (Desktop): the clickable outline column is shown to the
+   *  right of the page. Persisted so it survives reopen; the row
+   *  hit-geometry lives in the thumbnail record, not here. */
+  outline?: boolean;
 }
 
 export interface ImageShape extends ShapeBase {

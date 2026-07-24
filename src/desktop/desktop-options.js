@@ -37,9 +37,10 @@ function el(tag, style, text) {
 }
 
 /** Build the flyout section. `getOptions()` returns the live option
- *  object; `setOption(key, value)` applies + persists it. `theme` is
- *  the canvas theme (for popup-consistent styling). */
-export function buildDesktopOptionsSection(theme, getOptions, setOption) {
+ *  object; `setOption(key, value)` applies + persists it; `setAll
+ *  Outlines(bool)` opens/closes the doc-outline column on every doc.
+ *  `theme` is the canvas theme (for popup-consistent styling). */
+export function buildDesktopOptionsSection(theme, getOptions, setOption, setAllOutlines) {
   const o = getOptions();
   const wrap = el("div", { marginTop: "12px", paddingTop: "10px", borderTop: `1px solid ${theme.uiBorder}` });
   const labelStyle = {
@@ -108,6 +109,29 @@ export function buildDesktopOptionsSection(theme, getOptions, setOption) {
 
   toggleRow("Thumbnail labels", o.showLabels, (v) => setOption("showLabels", v));
   toggleRow("Include Gutters", o.includeGutters, (v) => setOption("includeGutters", v));
+
+  // Doc outlines — bulk open / close the clickable outline column on
+  // every doc thumbnail (per-doc toggling lives on each thumbnail's
+  // hover Outline button).
+  if (typeof setAllOutlines === "function") {
+    wrap.appendChild(el("div", { ...labelStyle, marginTop: "8px" }, "Doc outlines"));
+    const btnRow = el("div", { display: "flex", gap: "6px", marginBottom: "2px" });
+    const mkBtn = (label, on) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      Object.assign(b.style, {
+        flex: "1", padding: "3px 8px", borderRadius: "4px", cursor: "pointer",
+        fontFamily: "inherit", fontSize: "11px",
+        border: `1px solid ${theme.uiBorder}`, background: "transparent",
+        color: theme.foreground,
+      });
+      b.addEventListener("click", () => setAllOutlines(on));
+      return b;
+    };
+    btnRow.appendChild(mkBtn("Open all", true));
+    btnRow.appendChild(mkBtn("Close all", false));
+    wrap.appendChild(btnRow);
+  }
 
   return wrap;
 }

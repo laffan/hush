@@ -21,6 +21,7 @@
  */
 
 import { renderForExport } from "../notebook/renderer-export.ts";
+import { FONT_FAMILY } from "../notebook/types.ts";
 import { decodeNotebookContent } from "../notebook/notebook-content.ts";
 import {
   computeNotebookBounds,
@@ -28,6 +29,7 @@ import {
 } from "../sidebar/notebook-snapshot-preview.js";
 import { collectDesktopFiles, DESKTOP_KIND_ORDER } from "./desktop-files.js";
 import { loadThumbRecord, saveThumbRecord, loadDesktopEnvelope } from "./desktop-store.js";
+import { layoutDocOutline, drawDocOutline } from "./desktop-outline.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -44,7 +46,8 @@ const DOC_FONT_SIZE = 8;
 const BASE_LONG_EDGE = 400;
 // Bump when thumbnail geometry / styling changes so cached renders
 // regenerate on the next Desktop open.
-const THUMB_STYLE_VERSION = 7;
+const THUMB_STYLE_VERSION = 8;
+// Doc outline column geometry + drawing live in ./desktop-outline.js.
 // Width of each constituent slice in a stack file's thumbnail.
 const STACK_SLICE_WIDTH = 80;
 // Doc length representation: one sheet per PAGE_WORDS words, drawn as a
@@ -115,8 +118,11 @@ function fileModified(state, fileId) {
  *  cover cache instead of the thumbs store). */
 export function entrySig(state, entry, themeSig) {
   const v = `v${THUMB_STYLE_VERSION}`;
-  if (entry.kind === "doc" || entry.kind === "notebook") {
-    return `${v}|${entry.kind}|${fileModified(state, entry.fileId)}|${themeSig}`;
+  if (entry.kind === "doc") {
+    return `${v}|doc|${fileModified(state, entry.fileId)}|o${entry.outline ? 1 : 0}|${themeSig}`;
+  }
+  if (entry.kind === "notebook") {
+    return `${v}|notebook|${fileModified(state, entry.fileId)}|${themeSig}`;
   }
   // Stack fans recompose when the stack file itself changes (items
   // added / removed / reordered); a constituent file's *content* edit
@@ -271,9 +277,21 @@ async function renderDocThumb(state, entry, themeCtx) {
   const pages = Math.max(1, Math.ceil(words / PAGE_WORDS));
   const sheets = Math.min(MAX_SHEETS, pages - 1);
 
-  const cssW = w + sheets * off;
-  const cssH = h + sheets * off;
-  const { canvas, ctx } = makeCanvas(cssW, cssH);
+  const blockW = w + sheets * off;
+  const blockH = h + sheets * off;
+
+  // Optional clickable outline column. Headings are parsed from the
+  // *original* content so their startOffsets index the real document
+  // (the click handler scrolls the opened doc to that offset).
+  let outline = null;
+  if (entry.outline) {
+    const { parseHeadings } = await import("../longview/longview-parser.js");
+    outline = layoutDocOutline(parseHeadings(content), scale, blockW);
+  }
+
+  const imgW = outline ? blockW + outline.colW : blockW;
+  const imgH = outline ? Math.max(blockH, outline.contentH) : blockH;
+  const { canvas, ctx } = makeCanvas(imgW, imgH);
   const ground = pageGround(themeCtx);
 
   // The paper pile, deepest sheet first — a white sheet with a soft
@@ -322,7 +340,18 @@ async function renderDocThumb(state, entry, themeCtx) {
   ctx.lineWidth = 1;
   ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
 
-  return { dataUrl: encode(canvas), w: cssW, h: cssH, frameless: true };
+  if (outline) {
+    drawDocOutline(ctx, outline, {
+      ink: docPageTheme(themeCtx).foreground,
+      border: SHEET_BORDER,
+      fontFamily: FONT_FAMILY,
+    });
+  }
+
+  return {
+    dataUrl: encode(canvas), w: imgW, h: imgH, frameless: true,
+    outlineRows: outline ? outline.rows : null,
+  };
 }
 
 async function renderNotebookThumb(state, entry, themeCtx) {

@@ -16,16 +16,27 @@ export function refOf(entry) {
   };
 }
 
+/** fileRef fields that are shape-local state (not derived from the tree
+ *  entry) and must survive a re-caption / rebuild: stack membership,
+ *  the baked-border flag, and the doc-outline toggle. */
+export function keepRefFields(fileRef) {
+  const keep = {};
+  if (fileRef?.stackId) keep.stackId = fileRef.stackId;
+  if (fileRef?.frameless) keep.frameless = true;
+  if (fileRef?.outline) keep.outline = true;
+  return keep;
+}
+
 /** Re-arm a persisted fileRef shape with its (possibly regenerated)
  *  thumbnail at the thumbnail's natural size — thumbnails aren't
  *  resizable, so display dims always mirror the render. Stack
  *  membership survives (refOf carries no stackId — keep the saved one). */
 export function hydrateShape(s, entry, thumb) {
-  const keepStack = s.fileRef?.stackId ? { stackId: s.fileRef.stackId } : {};
-  const out = { ...s, name: entry.name, fileRef: { ...refOf(entry), ...keepStack } };
+  const out = { ...s, name: entry.name, fileRef: { ...refOf(entry), ...keepRefFields(s.fileRef) } };
   if (thumb) {
     out.dataUrl = thumb.dataUrl || thumb.url || "";
     if (thumb.frameless) out.fileRef.frameless = true;
+    else delete out.fileRef.frameless;
     if (thumb.w > 0 && thumb.h > 0) {
       out.width = thumb.w;
       out.height = thumb.h;

@@ -27,6 +27,8 @@ const PANE_ICON = `<svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height=
 const GRID_ICON = `<svg viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="2" width="5" height="5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="2" y="9" width="5" height="5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="5" height="5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>`;
 // The sidebar's gutter glyph — vertical rules flanking a dot column.
 const GUTTER_ICON = `<svg viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="4" y1="3" x2="4" y2="13"/><line x1="12" y1="3" x2="12" y2="13"/></g><g fill="currentColor"><circle cx="8" cy="4" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="8" cy="12" r="1"/></g></svg>`;
+// Outline glyph — indented list lines (dot + bar per row).
+const OUTLINE_ICON = `<svg viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="3" y1="4" x2="13" y2="4"/><line x1="5" y1="8" x2="13" y2="8"/><line x1="5" y1="12" x2="11" y2="12"/></g></svg>`;
 
 /**
  * Attach the hover controls to a Desktop canvas host.
@@ -51,11 +53,17 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
   gutterBtn.innerHTML = GUTTER_ICON;
   applyTooltip(gutterBtn, "Open with Gutter Visible");
 
+  const outlineBtn = document.createElement("button");
+  outlineBtn.type = "button";
+  outlineBtn.className = "desktop-hover-btn";
+  outlineBtn.innerHTML = OUTLINE_ICON;
+
   const secondaryBtn = document.createElement("button");
   secondaryBtn.type = "button";
   secondaryBtn.className = "desktop-hover-btn";
 
   overlay.appendChild(openBtn);
+  overlay.appendChild(outlineBtn);
   overlay.appendChild(gutterBtn);
   overlay.appendChild(secondaryBtn);
   canvasHost.appendChild(overlay);
@@ -121,6 +129,14 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
     secondaryBtn.innerHTML = isProject ? GRID_ICON : PANE_ICON;
     applyTooltip(secondaryBtn, isProject ? "Open Project Desktop" : "Open as pane");
     gutterBtn.style.display = shape.fileRef.kind === "doc" && shape.fileRef.hasGutter ? "" : "none";
+    // Outline toggle — docs only.
+    const isDoc = shape.fileRef.kind === "doc";
+    outlineBtn.style.display = isDoc ? "" : "none";
+    if (isDoc) {
+      const on = !!shape.fileRef.outline || (opts.hasOutlineRows && opts.hasOutlineRows(shape.fileRef.key));
+      applyTooltip(outlineBtn, on ? "Hide outline" : "Show outline");
+      outlineBtn.classList.toggle("active", on);
+    }
     const bounds = getShapeBounds(shape, state.fontFamily);
     const corner = canvasToScreen({ x: bounds.maxX, y: bounds.minY }, state.camera);
     overlay.style.left = `${Math.round(corner.x)}px`;
@@ -184,6 +200,11 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
   gutterBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     if (hoveredRef) handlers.onOpenWithGutter?.(hoveredRef, e);
+  });
+  outlineBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (hoveredRef) handlers.onToggleOutline?.(hoveredRef, e);
+    hide(); // the thumbnail geometry changes; re-hover to re-anchor
   });
   secondaryBtn.addEventListener("click", (e) => {
     e.stopPropagation();

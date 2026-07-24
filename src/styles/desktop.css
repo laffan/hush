@@ -152,6 +152,14 @@ body.desktop-active #pane-container {
   border-color: var(--fg);
 }
 
+/* Outline button when the doc's outline column is showing. */
+.desktop-hover-btn.active {
+  opacity: 1;
+  border-color: var(--fg);
+  background: var(--fg);
+  color: var(--theme-bg, var(--bg));
+}
+
 .desktop-hover-btn svg {
   width: 15px;
   height: 15px;
