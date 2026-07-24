@@ -225,6 +225,9 @@ async function mountCanvas() {
   };
 
   _canvas = new NotesCanvas(_canvasHost, shortcuts);
+  // No flowchart on Desktops (for now): file thumbnails aren't chart
+  // nodes, so drop-to-connect / ⌘→ edge creation stays off.
+  _canvas.state.flowchartEnabled = false;
   const nbSettings = computeNotebookSettings(state, null);
   // Desktops default to the blank background; a per-desktop override
   // from the bg-settings popup is applied after the envelope loads.
@@ -262,7 +265,8 @@ async function mountCanvas() {
 
   const shapes = buildShapes(envelope, entries, thumbs);
   _canvas.loadShapes(shapes, envelope?.layers?.length ? envelope.layers : undefined);
-  if (envelope?.flowEdges) _canvas.state.flowchart.deserialize(envelope.flowEdges);
+  // Flowchart edges are intentionally not restored — the feature is
+  // deactivated on Desktops (see flowchartEnabled above).
 
   requestAnimationFrame(() => {
     if (token !== _openToken || !_canvas) return;

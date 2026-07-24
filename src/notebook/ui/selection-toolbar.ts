@@ -389,7 +389,11 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
     // only), images (e.g. a rasterized stroke group) to Apple's
     // Vision raster path. Hidden when neither engine can serve the
     // selection (a strokes-only selection on desktop, in particular).
-    if (access && isHandwritingRecognitionAvailable() && canRecognizeSelection(state)) {
+    // Desktop file thumbnails skip the image-processing affordances
+    // (crop, recognition, rasterize) — they're live previews of files,
+    // not content images.
+    const hasFileRefSelected = selected.some((s) => s.type === "image" && (s as ImageShape).fileRef);
+    if (access && isHandwritingRecognitionAvailable() && canRecognizeSelection(state) && !hasFileRefSelected) {
       const btn = makeIconBtn("recognize-text", "Recognize handwriting", () => {
         void runRecognize(btn);
       });
@@ -397,7 +401,7 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
       container.appendChild(btn);
     }
 
-    if (hasImage && selected.length === 1) {
+    if (hasImage && selected.length === 1 && !hasFileRefSelected) {
       const isCropping = state.croppingImageId === selected[0].id;
       container.appendChild(makeIconBtn("crop", isCropping ? "Finish crop" : "Crop image", () => {
         if (isCropping) state.stopCropping();
@@ -481,8 +485,7 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
     // their contents, mixed shapes) into a single image. Pointless for
     // a lone image shape, so it's hidden there. Sits at the end of the
     // feature icons, right before Delete, for every object type.
-    if (access && !(selected.length === 1 && selected[0].type === "image")
-      && !selected.some((s) => s.type === "image" && (s as ImageShape).fileRef)) {
+    if (access && !(selected.length === 1 && selected[0].type === "image") && !hasFileRefSelected) {
       container.appendChild(makeIconBtn("rasterize", "Rasterize as image", () => {
         rasterizeSelectionToImage({
           state, imageCache: access.getImageCache(), drawingLayer: access.getDrawingLayer(),

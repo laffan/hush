@@ -172,8 +172,13 @@ export class DrawingState extends EventTarget {
     // group, pointing at one stray stroke instead of the cluster.
     getBounds: (s) => this.unionGroupBounds(s),
     getLayoutBounds: (s) => this.unionGroupBounds(s),
-    isFlowable: (s) => s.type !== "drag-area",
+    isFlowable: (s) => this.flowchartEnabled && s.type !== "drag-area",
   });
+  /** Per-canvas flowchart switch. The Desktop view turns it off: no
+   *  drop-to-connect targets, no edge creation, no ⌘→ child editors —
+   *  file thumbnails aren't chart nodes. Existing edges (there are
+   *  none on a Desktop) would still render; only creation is gated. */
+  flowchartEnabled = true;
   /** While dragging a single text shape, the id of the shape under the
    *  cursor that would be the drop-connection target (or null). */
   flowDropTargetId: string | null = null;
@@ -1003,6 +1008,7 @@ export class DrawingState extends EventTarget {
   /** Open an editor for a brand-new node positioned as a flowchart child of
    *  `parentId`. The edge is added by commitText once the user types. */
   startEditingFlowchartChild(parentId: string) {
+    if (!this.flowchartEnabled) return;
     const parent = this.shapes.find((s) => s.id === parentId);
     if (!parent || parent.type !== "text") return;
     const pBounds = getShapeBounds(parent, this.fontFamily);

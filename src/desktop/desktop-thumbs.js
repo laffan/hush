@@ -31,9 +31,16 @@ import { loadThumbRecord, saveThumbRecord, loadDesktopEnvelope } from "./desktop
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
-const DOC_W = 200;
+// Doc thumbnails read as a printed US-Letter page: 8.5 × 11 aspect at
+// 400 px tall, generous inner padding, and a pure white / black page
+// ground (by appearance) rather than the canvas colour.
 const DOC_H = 400;
+const DOC_W = Math.round(DOC_H * (8.5 / 11)); // 309
+const DOC_PAD = 20;
 const DOC_FONT_SIZE = 8;
+// Bump when thumbnail geometry / styling changes so cached renders
+// regenerate on the next Desktop open.
+const THUMB_STYLE_VERSION = 2;
 const LONG_EDGE = 400;
 const NB_MARGIN = 10;
 const CARD_W = 220;
@@ -74,15 +81,16 @@ function fileModified(state, fileId) {
 /** Staleness signature for an entry. PDFs return null (they ride the
  *  cover cache instead of the thumbs store). */
 export function entrySig(state, entry, themeSig) {
+  const v = `v${THUMB_STYLE_VERSION}`;
   if (entry.kind === "doc" || entry.kind === "notebook") {
-    return `${entry.kind}|${fileModified(state, entry.fileId)}|${themeSig}`;
+    return `${v}|${entry.kind}|${fileModified(state, entry.fileId)}|${themeSig}`;
   }
-  if (entry.kind === "stack") return `stack|${themeSig}`;
+  if (entry.kind === "stack") return `${v}|stack|${themeSig}`;
   if (entry.kind === "project") {
     const collected = collectDesktopFiles(state, entry.nodeId);
     const parts = (collected?.entries || []).map((e) =>
       e.kind === "project" ? `p:${e.nodeId}` : `${e.kind}:${e.key}:${fileModified(state, e.fileId)}`);
-    return `project|${parts.join(",")}|${themeSig}`;
+    return `${v}|project|${parts.join(",")}|${themeSig}`;
   }
   return null;
 }
@@ -175,20 +183,55 @@ function docThumbText(content) {
   return text.slice(0, 4000);
 }
 
+/** Rough sRGB luminance of a #rgb / #rrggbb color; null when unparsable. */
+function hexLuminance(color) {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec((color || "").trim());
+  if (!m) return null;
+  let h = m[1];
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  const n = parseInt(h, 16);
+  return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
+}
+
+/** The doc page is always white (light) / black (dark), whatever the
+ *  canvas theme — so make sure the ink still contrasts when the user
+ *  paired a dark theme with light appearance (or vice versa). */
+function docPageTheme(themeCtx) {
+  const dark = themeCtx.appearance === "dark";
+  const t = themeCtx.theme;
+  const fixInk = (color, fallback) => {
+    const lum = hexLuminance(color);
+    if (lum == null) return color;
+    if (dark && lum < 0.35) return fallback;
+    if (!dark && lum > 0.65) return fallback;
+    return color;
+  };
+  return {
+    ...t,
+    foreground: fixInk(t.foreground, dark ? "#e8e8e8" : "#1a1a1a"),
+    headingColor: fixInk(t.headingColor, dark ? "#e8e8e8" : "#1a1a1a"),
+  };
+}
+
 async function renderDocThumb(state, entry, themeCtx) {
   const content = await loadFileContent(state, entry.fileId);
   const { canvas, ctx } = makeCanvas(DOC_W, DOC_H);
   const shape = {
     id: "doc-thumb", type: "text", color: "auto",
-    position: { x: 8, y: 6 },
+    position: { x: DOC_PAD, y: DOC_PAD },
     text: docThumbText(content) || " ",
     fontSize: DOC_FONT_SIZE,
-    width: DOC_W - 16, manualWidth: true,
+    width: DOC_W - DOC_PAD * 2, manualWidth: true,
   };
   renderForExport(ctx, DOC_W, DOC_H, {
     ...baseRenderOpts(themeCtx),
     shapes: [shape],
     camera: { x: 0, y: 0, zoom: 1 },
+    // A doc reads as a printed page, not a patch of canvas — solid
+    // white ground in light appearance, black in dark, ink guarded
+    // against a cross-appearance theme pairing.
+    theme: docPageTheme(themeCtx),
+    canvasBackgroundOverride: themeCtx.appearance === "dark" ? "#000000" : "#ffffff",
   });
   return { dataUrl: encode(canvas), w: DOC_W, h: DOC_H };
 }
