@@ -35,6 +35,15 @@
   z-index: 25;
 }
 
+/* A desktop-pinned note is selectable like any canvas object; this is
+   the equivalent of the canvas's own selection ring. Outline rather than
+   border so it doesn't shift the note's box (which is anchored in world
+   coordinates), and offset out so it clears the drop shadow. */
+.sticky-note.selected {
+  outline: 2px solid #4a9eff;
+  outline-offset: 2px;
+}
+
 .sticky-note {
   position: absolute;
   display: flex;

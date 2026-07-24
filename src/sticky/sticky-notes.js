@@ -41,7 +41,7 @@ import {
 } from "./sticky-shared.js";
 import {
   repositionDesktopNotes as repositionDesktop,
-  desktopStickyRows, revealDesktopSticky, repaintDesktop,
+  desktopStickyRows, revealDesktopSticky, repaintDesktop, bindDesktopSelection,
 } from "./sticky-desktop.js";
 
 const notes = new Map(); // id → note record
@@ -67,7 +67,10 @@ export function initStickyNotes(state) {
     "active-desk-changed", "desktop-opened", "desktop-closed",
   ]) state.on(ev, refresh);
   // Desktop-pinned notes track the canvas camera.
-  state.on("desktop-opened", repositionDesktopNotes);
+  state.on("desktop-opened", () => {
+    repositionDesktopNotes();
+    bindDesktopSelection(notes);
+  });
   document.addEventListener("desktop-camera-changed", repositionDesktopNotes);
   // Hooks the notebook shape shelf reads to list desktop-pinned notes
   // (same shape as the Desktop's other window.__hush* bridges).

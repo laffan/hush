@@ -1,10 +1,11 @@
 /**
  * Desktop hover controls — everything that surfaces over a file
- * thumbnail on hover:
+ * thumbnail when it's hovered *or selected*:
  *
- *  - the action icons (open / open-as-pane; docs with a paired gutter
- *    add "Open with Gutter Visible"; nested projects swap the pane icon
- *    for "Open Project Desktop"),
+ *  - the action icons (open-as-pane; docs with a paired gutter add
+ *    "Open with Gutter Visible" and an outline toggle; nested projects
+ *    swap the pane icon for "Open Project Desktop"). Plain *open* has no
+ *    button — double-click / double-tap the thumbnail,
  *  - the filename label (labels are hover-only on Desktops — a single
  *    thumbnail shows its name centred beneath it),
  *  - a pile's title list (left-aligned beneath the stack): clicking a
@@ -12,9 +13,10 @@
  *
  * Pure DOM overlay above the canvas; the notebook engine stays unaware
  * of it. Positions track the hovered shape in screen space; camera or
- * foreign shape changes hide the overlay and the next pointermove
- * re-anchors it (the click-to-top reorder's own write is exempted via
- * a suppression counter).
+ * foreign shape changes re-anchor the overlay — onto the selected
+ * thumbnail if there is one, else hiding it until the next pointermove
+ * (the click-to-top reorder's own write is exempted via a suppression
+ * counter).
  */
 
 import { canvasToScreen, screenToCanvas, getShapeBounds } from "../notebook/utils.ts";
@@ -23,7 +25,6 @@ import { stackBounds, stackMembers, moveToTopOfStack } from "./desktop-stacks.js
 import { raisedLast } from "./desktop-content.js";
 import { applyTooltip } from "../tooltips.js";
 
-const OPEN_ICON = `<svg viewBox="0 0 16 16"><path d="M6 3h7v7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 3L7.5 8.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M11 9.5V13H3V5h3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const PANE_ICON = `<svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="5.5" x2="14" y2="5.5" stroke="currentColor" stroke-width="1.5"/></svg>`;
 const GRID_ICON = `<svg viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="2" width="5" height="5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="2" y="9" width="5" height="5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="5" height="5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>`;
 // The sidebar's gutter glyph — vertical rules flanking a dot column.
@@ -42,12 +43,6 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
   const overlay = document.createElement("div");
   overlay.className = "desktop-hover hidden";
 
-  const openBtn = document.createElement("button");
-  openBtn.type = "button";
-  openBtn.className = "desktop-hover-btn";
-  openBtn.innerHTML = OPEN_ICON;
-  applyTooltip(openBtn, "Open");
-
   const gutterBtn = document.createElement("button");
   gutterBtn.type = "button";
   gutterBtn.className = "desktop-hover-btn";
@@ -63,7 +58,6 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
   secondaryBtn.type = "button";
   secondaryBtn.className = "desktop-hover-btn";
 
-  overlay.appendChild(openBtn);
   overlay.appendChild(outlineBtn);
   overlay.appendChild(gutterBtn);
   overlay.appendChild(secondaryBtn);
@@ -95,7 +89,20 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
   // the overlay before the title list rebuilds.
   let ownWrites = 0;
 
+  /** The lone selected thumbnail, if that's what the selection is. A
+   *  selected thumbnail keeps its controls up without the pointer on it. */
+  const selectedThumb = () => {
+    if (state.selectedIds.size !== 1) return null;
+    const [id] = state.selectedIds;
+    const s = state.shapes.find((sh) => sh.id === id);
+    return s && s.type === "image" && s.fileRef && !s.pocketed ? s : null;
+  };
+
   const hide = () => {
+    // Fall back to the selection rather than going dark: the controls
+    // belong to a selected thumbnail whether or not it's hovered.
+    const sel = selectedThumb();
+    if (sel) { showFor(sel); return; }
     if (hoveredRef === null) return;
     hoveredRef = null;
     hoveredShapeId = null;
@@ -222,13 +229,47 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
   const onStateChange = (e) => {
     if (ownWrites > 0) return;
     const keys = e.detail?.keys || [];
-    if (keys.includes("camera") || keys.includes("shapes") || keys.includes("tool")) hide();
+    // selectedIds included so the controls follow a selection made from
+    // anywhere — a canvas click, the shelf, "View in Desktop". `hide()`
+    // re-anchors on the selected thumbnail rather than clearing.
+    if (keys.includes("camera") || keys.includes("shapes")
+        || keys.includes("tool") || keys.includes("selectedIds")) hide();
   };
 
-  openBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (hoveredRef) handlers.onOpen(hoveredRef, e);
-  });
+  // Double-click / double-tap a thumbnail to open it — the affordance
+  // that replaced the Open button. `dblclick` covers mouse and trackpad;
+  // touch gets its own tap-pair detector since iOS reserves double-tap
+  // for zoom and doesn't reliably deliver dblclick on canvas.
+  const thumbAt = (clientX, clientY) => {
+    if (state.tool !== "select") return null;
+    const rect = canvasHost.getBoundingClientRect();
+    const world = screenToCanvas({ x: clientX - rect.left, y: clientY - rect.top }, state.camera);
+    const hit = findShapeAtPoint(world, raisedLast(state.shapes, state.selectedIds), state.fontFamily);
+    return hit && hit.type === "image" && hit.fileRef && !hit.pocketed ? hit : null;
+  };
+  let lastOpenAt = 0;
+  const openAt = (clientX, clientY) => {
+    // One open per gesture: a touch double-tap can also surface a
+    // synthesized dblclick, and opening twice would fight itself.
+    if (Date.now() - lastOpenAt < 600) return;
+    const shape = thumbAt(clientX, clientY);
+    if (!shape) return;
+    lastOpenAt = Date.now();
+    handlers.onOpen(shape.fileRef);
+  };
+  const onDblClick = (e) => openAt(e.clientX, e.clientY);
+  let lastTap = 0, lastTapX = 0, lastTapY = 0;
+  const onTapUp = (e) => {
+    if (e.pointerType !== "touch") return;
+    const now = Date.now();
+    if (now - lastTap < 400 && Math.abs(e.clientX - lastTapX) < 24 && Math.abs(e.clientY - lastTapY) < 24) {
+      lastTap = 0;
+      openAt(e.clientX, e.clientY);
+      return;
+    }
+    lastTap = now; lastTapX = e.clientX; lastTapY = e.clientY;
+  };
+
   gutterBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     if (hoveredRef) handlers.onOpenWithGutter?.(hoveredRef, e);
@@ -249,11 +290,15 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
 
   canvasHost.addEventListener("pointermove", onPointerMove);
   canvasHost.addEventListener("pointerleave", onPointerLeave);
+  canvasHost.addEventListener("dblclick", onDblClick);
+  canvasHost.addEventListener("pointerup", onTapUp);
   state.addEventListener("change", onStateChange);
 
   return () => {
     canvasHost.removeEventListener("pointermove", onPointerMove);
     canvasHost.removeEventListener("pointerleave", onPointerLeave);
+    canvasHost.removeEventListener("dblclick", onDblClick);
+    canvasHost.removeEventListener("pointerup", onTapUp);
     state.removeEventListener("change", onStateChange);
     overlay.remove();
     labelEl.remove();

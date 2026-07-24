@@ -23,16 +23,106 @@ import { desktopOpenId } from "./sticky-shared.js";
  *  notes *beneath* the sidebars (see sticky-notes.css). Recreated on
  *  demand: closeDesktop wipes the view's markup, detaching it. Returns
  *  null when no Desktop is mounted. */
-function stickyLayer() {
+function stickyLayer(notes) {
   const view = document.getElementById("desktop-view");
   if (!view) return null;
   let layer = view.querySelector(".sticky-desktop-layer");
   if (!layer) {
     layer = document.createElement("div");
     layer.className = "sticky-desktop-layer";
+    // Delegated, so it covers notes adopted into the layer later too.
+    // Capture phase: the note's own drag / textarea handlers stop
+    // propagation, and selecting has to happen either way.
+    layer.addEventListener("pointerdown", (e) => {
+      const el = e.target.closest?.(".sticky-note");
+      if (!el) return;
+      for (const [id, n] of notes) {
+        if (n.el === el) { selectOnly(notes, id); break; }
+      }
+    }, true);
     view.appendChild(layer);
   }
   return layer;
+}
+
+// ── Selection ─────────────────────────────────────────────────────────
+// Desktop stickies behave like canvas objects: clicking one selects it,
+// a marquee that touches one picks it up, and a canvas click clears.
+// Selection is visual only — a sticky is deleted by its own × (which is
+// permanent), never by the canvas's delete key.
+
+const selected = new Set();
+let boundState = null;   // canvas whose gestures we're listening to
+let ownWrite = false;    // our own selection write, so the clear-on-canvas
+                         // listener doesn't immediately undo it
+
+function paintSelection(notes) {
+  for (const [id, n] of notes) {
+    if (n.kind === "desktop") n.el.classList.toggle("selected", selected.has(id));
+  }
+}
+
+function selectOnly(notes, id) {
+  selected.clear();
+  selected.add(id);
+  paintSelection(notes);
+  // One selection model at a time: picking a sticky drops the shapes.
+  if (boundState?.selectedIds.size) {
+    ownWrite = true;
+    boundState.selectedIds = new Set();
+    boundState.notify("selectedIds");
+    queueMicrotask(() => { ownWrite = false; });
+  }
+}
+
+function clearSelection(notes) {
+  if (!selected.size) return;
+  selected.clear();
+  paintSelection(notes);
+}
+
+/** Pick up every desktop note the released marquee touched. Compared in
+ *  screen space against each note's live rect, which already folds in the
+ *  camera's pan and the note's zoom scaling — no world math to keep in
+ *  sync, and no dependence on how the canvas batches its notifies. */
+function marqueePick(notes, a, b) {
+  const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x);
+  const y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
+  const openId = desktopOpenId();
+  for (const [id, n] of notes) {
+    if (n.kind !== "desktop" || n.target !== openId) continue;
+    if (n.el.style.display === "none") continue;
+    const r = n.el.getBoundingClientRect();
+    if (r.left <= x1 && r.right >= x0 && r.top <= y1 && r.bottom >= y0) selected.add(id);
+  }
+  paintSelection(notes);
+}
+
+/** Wire the open Desktop's canvas to sticky selection. The marquee is
+ *  tracked as a pointer gesture rather than inferred from `selectionBox`
+ *  notifies: those batch into one change event alongside `selectedIds`,
+ *  so by the time it fires the box is already gone. */
+function bindCanvas(notes, st) {
+  if (!st || st === boundState) return;
+  boundState = st;
+  const el = st.canvasEl;
+  if (!el) return;
+  let dragStart = null;
+  el.addEventListener("pointerdown", (e) => {
+    if (ownWrite) return;
+    // A press on bare canvas drops the sticky selection, exactly as it
+    // drops a shape selection — then may become a marquee.
+    clearSelection(notes);
+    dragStart = st.tool === "select" && e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
+  });
+  el.addEventListener("pointerup", (e) => {
+    const start = dragStart;
+    dragStart = null;
+    if (!start) return;
+    // A click, not a marquee.
+    if (Math.abs(e.clientX - start.x) < 5 && Math.abs(e.clientY - start.y) < 5) return;
+    marqueePick(notes, start, { x: e.clientX, y: e.clientY });
+  });
 }
 
 /** Re-anchor + re-scale every note pinned to the open Desktop. Called on
@@ -41,7 +131,7 @@ export function repositionDesktopNotes(notes) {
   const toScreen = typeof window !== "undefined" ? window.__hushDesktopWorldToScreen : null;
   const openId = desktopOpenId();
   if (!toScreen || !openId) return;
-  const layer = stickyLayer();
+  const layer = stickyLayer(notes);
   for (const [, n] of notes) {
     if (n.kind !== "desktop" || n.target !== openId) continue;
     // Adopt into the Desktop's own layer. Notes are created in (and a
@@ -75,6 +165,14 @@ export async function repaintDesktop() {
   if (!desktopOpenId()) return;
   const { getActiveNotebookState } = await import("../notebook/notes-canvas.ts");
   getActiveNotebookState()?.notify("interaction");
+}
+
+/** Hook the open Desktop's canvas up to sticky selection. Called on
+ *  `desktop-opened`; the canvas is rebuilt per open, so this re-binds. */
+export async function bindDesktopSelection(notes) {
+  if (!desktopOpenId()) return;
+  const { getActiveNotebookState } = await import("../notebook/notes-canvas.ts");
+  bindCanvas(notes, getActiveNotebookState());
 }
 
 /** Notes pinned to the open Desktop, in creation order — read by the
