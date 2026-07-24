@@ -17,7 +17,7 @@
 import { screenToCanvas } from "../notebook/utils.ts";
 import { findShapeAtPoint } from "../notebook/state-helpers.ts";
 
-export const STACK_OFFSET = 30;
+export const STACK_OFFSET = 40;
 
 /** Cascade a stack's members from `base` — 30 px right + down per slot,
  *  in the given order (later = higher z, drawn on top). */
@@ -112,6 +112,21 @@ function mergeIntoStack(shapes, draggedIds, target) {
 
   // Members become contiguous at the top of the z-order so the cascade
   // reads front-to-back correctly.
+  return [...shapes.filter((s) => !memberIds.has(s.id)), ...placed];
+}
+
+/** Move a pile member to the top (end of the cascade) — clicking its
+ *  title in the hover list. Returns the new shapes array. */
+export function moveToTopOfStack(shapes, shapeId) {
+  const shape = shapes.find((s) => s.id === shapeId);
+  const stackId = shape?.fileRef?.stackId;
+  if (!stackId) return shapes;
+  const members = stackMembers(shapes, stackId);
+  if (members.length < 2 || members[members.length - 1]?.id === shapeId) return shapes;
+  const base = { ...members[0].position };
+  const reordered = [...members.filter((s) => s.id !== shapeId), shape];
+  const placed = cascadePositions(reordered, base);
+  const memberIds = new Set(placed.map((s) => s.id));
   return [...shapes.filter((s) => !memberIds.has(s.id)), ...placed];
 }
 

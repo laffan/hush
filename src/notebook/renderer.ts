@@ -18,8 +18,6 @@ export interface RenderState {
   editingShapeId: string | null;
   imageCache: Map<string, HTMLImageElement>;
   theme: CanvasTheme;
-  /** Desktop-only: hide the filename captions under file thumbnails. */
-  hideFileLabels?: boolean;
   croppingImageId: string | null;
   backgroundPattern: "grid" | "dot-grid" | "lined" | "isometric" | "blank";
   gridSpacing: number;
@@ -175,7 +173,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       if (pocketedIds.has(shape.id)) continue;
       if (shape.type === "draw") continue; // drawing layer owns strokes
       if (shape.type === "text") drawTextShape(ctx, shape, theme, state.fontFamily, false, state.flagColors);
-      else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId, theme, state.hideFileLabels);
+      else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId, theme);
     }
   }
 
@@ -611,7 +609,7 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
   ctx.restore();
 }
 
-export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape, imageCache: Map<string, HTMLImageElement>, isCropping?: boolean, theme?: CanvasTheme, hideFileLabel?: boolean) {
+export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape, imageCache: Map<string, HTMLImageElement>, isCropping?: boolean, theme?: CanvasTheme) {
   const img = imageCache.get(shape.id);
   if (img && img.complete) {
     const c = shape.crop || { x: 0, y: 0, w: 1, h: 1 };
@@ -628,7 +626,7 @@ export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape,
     const sx = c.x * img.naturalWidth, sy = c.y * img.naturalHeight;
     const sw = c.w * img.naturalWidth, sh = c.h * img.naturalHeight;
     ctx.drawImage(img, sx, sy, sw, sh, shape.position.x, shape.position.y, shape.width, shape.height);
-    if (shape.fileRef) drawFileRefChrome(ctx, shape, theme, hideFileLabel);
+    if (shape.fileRef) drawFileRefChrome(ctx, shape, theme);
   } else if (shape.fileRef) {
     // Thumbnail not hydrated yet — a quiet placeholder card so the
     // Desktop reads as "loading", not broken.
@@ -638,7 +636,7 @@ export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape,
     ctx.fillRect(shape.position.x, shape.position.y, shape.width, shape.height);
     ctx.globalAlpha = 1;
     ctx.restore();
-    drawFileRefChrome(ctx, shape, theme, hideFileLabel);
+    drawFileRefChrome(ctx, shape, theme);
   } else {
     ctx.save();
     ctx.fillStyle = "#e5e7eb";
@@ -655,77 +653,16 @@ export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape,
   }
 }
 
-/** Greedily wrap `name` into at most `maxLines` lines that each fit
- *  `maxW` at the current ctx font, ellipsis-truncating the last line
- *  (and hard-splitting single words that are wider than the line). */
-function wrapLabelLines(ctx: CanvasRenderingContext2D, name: string, maxW: number, maxLines: number): string[] {
-  const words = name.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let line = "";
-  const truncate = (text: string) => {
-    let t = text;
-    while (t.length > 1 && ctx.measureText(t + "…").width > maxW) t = t.slice(0, -1);
-    return t + "…";
-  };
-  for (let i = 0; i < words.length; i++) {
-    const word = words[i];
-    const candidate = line ? line + " " + word : word;
-    if (ctx.measureText(candidate).width <= maxW) { line = candidate; continue; }
-    if (!line) {
-      // Single word wider than the line — hard-split it.
-      if (lines.length === maxLines - 1) { lines.push(truncate(word)); return lines; }
-      let head = word;
-      while (head.length > 1 && ctx.measureText(head).width > maxW) head = head.slice(0, -1);
-      lines.push(head);
-      words.splice(i + 1, 0, word.slice(head.length));
-      continue;
-    }
-    if (lines.length === maxLines - 1) {
-      // No room for another line — truncate what remains onto this one.
-      lines.push(truncate(words.slice(i).length ? line + " " + words.slice(i).join(" ") : line));
-      return lines;
-    }
-    lines.push(line);
-    line = word;
-  }
-  if (line) {
-    if (lines.length >= maxLines) lines[maxLines - 1] = truncate(lines[maxLines - 1]);
-    else lines.push(line);
-  }
-  return lines;
-}
-
 /** Desktop file-thumbnail chrome: a hairline border so the preview
- *  reads as a card against the canvas, plus the filename attached
- *  underneath (PDF-shelf style) — wrapped to at most two centred lines
- *  and ellipsis-truncated, never horizontally squeezed. Both live in
- *  world space so they ride drags and scale with zoom; the label keeps
- *  a fixed world size so a scaled thumbnail doesn't balloon the caption. */
-function drawFileRefChrome(ctx: CanvasRenderingContext2D, shape: ImageShape, theme?: CanvasTheme, hideLabel?: boolean) {
+ *  reads as a card against the canvas. Filenames are no longer painted
+ *  on the canvas at all — desktop-hover shows them as a DOM label under
+ *  the hovered thumbnail (and lists a pile's names below the stack). */
+function drawFileRefChrome(ctx: CanvasRenderingContext2D, shape: ImageShape, theme?: CanvasTheme) {
   const { x, y } = shape.position;
   ctx.save();
   ctx.strokeStyle = theme?.uiBorder || "rgba(128,128,128,0.35)";
   ctx.lineWidth = 1;
   ctx.strokeRect(x + 0.5, y + 0.5, shape.width - 1, shape.height - 1);
-  const name = shape.fileRef?.name || shape.name || "";
-  // Stacked thumbnails hide their captions (they'd overlap the pile) —
-  // desktop-hover surfaces the pile's names below it on hover instead.
-  // `hideLabel` is the per-Desktop "Thumbnail labels" option.
-  const stacked = !!(shape.fileRef?.stackId && shape.groupId);
-  if (name && !hideLabel && !stacked) {
-    ctx.fillStyle = theme?.foreground || "#666";
-    ctx.globalAlpha = 0.75;
-    ctx.font = `13px ${FONT_FAMILY}`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    const maxW = Math.max(150, shape.width);
-    const lines = wrapLabelLines(ctx, name, maxW, 2);
-    let ly = y + shape.height + 7;
-    for (const line of lines) {
-      ctx.fillText(line, x + shape.width / 2, ly);
-      ly += 16;
-    }
-  }
   ctx.restore();
 }
 

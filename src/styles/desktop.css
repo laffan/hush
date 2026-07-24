@@ -153,19 +153,40 @@ body.desktop-active #stack-container {
   height: 15px;
 }
 
-/* ── Stack hover labels (names of a thumbnail pile) ────────────── */
+/* ── Hover labels ──────────────────────────────────────────────── */
 
-.desktop-stack-labels {
+/* Single-thumbnail caption — labels are hover-only on Desktops. */
+.desktop-hover-label {
   position: absolute;
   z-index: 19;
   transform: translateX(-50%);
   pointer-events: none;
   text-align: center;
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.4;
   color: var(--fg);
   opacity: 0.85;
-  max-width: 320px;
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-hover-label.hidden {
+  display: none;
+}
+
+/* Pile title list — left-aligned beneath the stack; interactive:
+   hovering a row peeks that member out of the pile's left side,
+   clicking moves it to the top. */
+.desktop-stack-labels {
+  position: absolute;
+  z-index: 19;
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg);
+  max-width: 340px;
 }
 
 .desktop-stack-labels.hidden {
@@ -176,8 +197,17 @@ body.desktop-active #stack-container {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+  opacity: 0.75;
+  padding: 1px 6px 1px 0;
+}
+
+.desktop-stack-label:hover {
+  opacity: 1;
+  text-decoration: underline;
 }
 
 .desktop-stack-label.hovered {
   font-weight: 600;
+  opacity: 0.95;
 }

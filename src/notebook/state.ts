@@ -183,10 +183,10 @@ export class DrawingState extends EventTarget {
    *  duplicated file thumbnails would dedupe away on the next open and
    *  read as phantom copies in the meantime. */
   altDuplicateEnabled = true;
-  /** Hide the filename captions under Desktop file thumbnails (the
-   *  per-Desktop "Thumbnail labels" option). Plain notebooks never set
-   *  it. Read by the renderer via RenderState. */
-  hideFileLabels = false;
+  /** Per-canvas Desktop marker. Gates notebook affordances that don't
+   *  fit a Desktop of file thumbnails (e.g. the selection toolbar's
+   *  Rasterize, which would bake live previews into dead pixels). */
+  desktopMode = false;
   /** Optional extra section appended to the background-settings popup —
    *  the Desktop view injects its per-Desktop options (doc text size,
    *  thumbnail long edge, labels, gutters) here. Rebuilt per popup

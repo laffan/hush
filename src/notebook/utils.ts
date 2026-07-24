@@ -1,5 +1,5 @@
 import { LINE_HEIGHT_RATIO, FONT_FAMILY, COLOR_PALETTE } from "./types";
-import type { Bounds, Camera, DragAreaShape, Point, Shape } from "./types";
+import type { Bounds, Camera, DragAreaShape, ImageShape, Point, Shape } from "./types";
 import { parseText } from "./markdown";
 
 let nextId = 0;
@@ -452,16 +452,21 @@ export function arrangeShapesAsGrid(
     }
   }
   const shapeById = new Map(shapes.map((s) => [s.id, s]));
+  // Desktop file thumbnails carry a hover label strip just below the
+  // image — reserve it in the cell measurement so grid rows don't butt
+  // the next thumbnail up against a label.
+  const FILE_LABEL_ALLOWANCE = 28;
   function unionBounds(ids: string[]): Bounds {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const id of ids) {
       const s = shapeById.get(id);
       if (!s) continue;
       const b = getShapeBounds(s, fontFamily);
+      const labelPad = s.type === "image" && (s as ImageShape).fileRef ? FILE_LABEL_ALLOWANCE : 0;
       if (b.minX < minX) minX = b.minX;
       if (b.minY < minY) minY = b.minY;
       if (b.maxX > maxX) maxX = b.maxX;
-      if (b.maxY > maxY) maxY = b.maxY;
+      if (b.maxY + labelPad > maxY) maxY = b.maxY + labelPad;
     }
     return { minX, minY, maxX, maxY };
   }

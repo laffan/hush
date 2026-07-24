@@ -485,7 +485,10 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
     // their contents, mixed shapes) into a single image. Pointless for
     // a lone image shape, so it's hidden there. Sits at the end of the
     // feature icons, right before Delete, for every object type.
-    if (access && !(selected.length === 1 && selected[0].type === "image") && !hasFileRefSelected) {
+    // Rasterize is withheld on Desktops entirely — thumbnails are live
+    // previews, and even drag-areas there mostly wrap thumbnails.
+    if (access && !(selected.length === 1 && selected[0].type === "image")
+      && !hasFileRefSelected && !state.desktopMode) {
       container.appendChild(makeIconBtn("rasterize", "Rasterize as image", () => {
         rasterizeSelectionToImage({
           state, imageCache: access.getImageCache(), drawingLayer: access.getDrawingLayer(),

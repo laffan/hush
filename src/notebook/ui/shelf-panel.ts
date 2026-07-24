@@ -190,6 +190,7 @@ export function createShelfPanel(
 
     const rootOthers = others.filter((s) => !s.parentId).sort((a, b) => { const ab = getShapeBounds(a); const bb = getShapeBounds(b); return ab.minY - bb.minY || ab.minX - bb.minX; });
     const rootScope = new Set(rootOthers.map((s) => s.id));
+    const emittedStacks = new Set<string>();
     for (const s of rootOthers) {
       if (s.type === "text") {
         if (!s.text.trim()) continue;
@@ -199,6 +200,29 @@ export function createShelfPanel(
         walkFlowChildren(s.id, rootScope, undefined, 1);
       } else if (s.type === "image") {
         const fr = s.fileRef;
+        // Desktop thumbnail piles render like drag-areas: a collapsible
+        // parent row with the members indented beneath it, in pile order
+        // (= shapes array order).
+        const sid = fr?.stackId;
+        if (sid) {
+          if (emittedStacks.has(sid)) continue;
+          emittedStacks.add(sid);
+          const members = shapes.filter(
+            (m): m is Shape & { type: "image" } => m.type === "image" && m.fileRef?.stackId === sid,
+          );
+          const groupId = "stack:" + sid;
+          result.push({
+            id: groupId, type: "thumb-stack", label: `${members.length} stacked`, excerpt: "",
+            color: null, shapeId: members[0]?.id || s.id, parentId: undefined, depth: 0, pocketed: false,
+          });
+          if (!collapsed.has(groupId)) {
+            for (const m of members) {
+              const mfr = m.fileRef;
+              result.push({ id: m.id, type: "image", label: m.name || "Image", excerpt: mfr ? getDesktopSearchText(mfr.key) : "", color: null, shapeId: m.id, parentId: groupId, depth: 1, pocketed: !!m.pocketed, fileKind: mfr?.kind });
+            }
+          }
+          continue;
+        }
         result.push({ id: s.id, type: "image", label: s.name || "Image", excerpt: fr ? getDesktopSearchText(fr.key) : "", color: null, shapeId: s.id, parentId: undefined, depth: 0, pocketed: !!s.pocketed, fileKind: fr?.kind });
       }
     }
@@ -404,11 +428,11 @@ export function createShelfPanel(
     const selectedBg = theme.variant === "dark" ? "rgba(120, 180, 255, 0.14)" : "rgba(66, 133, 244, 0.12)";
     const rowBg = isSelected ? selectedBg : "transparent";
     const row = h("div", { style: { display: "flex", alignItems: "center", gap: "4px", padding: "4px 0", cursor: "pointer", fontSize: "13px", borderBottom: `1px solid ${subtleBorder}`, paddingLeft: (node.depth * 16) + "px", color: fg, background: rowBg } });
-    if (node.type === "drag-area") {
+    if (node.type === "drag-area" || node.type === "thumb-stack") {
       row.appendChild(h("button", { text: collapsed.has(node.id) ? "\u25b8" : "\u25be", style: { border: "none", background: "none", cursor: "pointer", fontSize: "10px", color: muted, padding: "0", width: "16px" }, onClick: () => { if (collapsed.has(node.id)) collapsed.delete(node.id); else collapsed.add(node.id); rebuildBody(); } }));
     }
-    if (node.type === "drag-area") {
-      const daIcon = icon("drag-area", 12);
+    if (node.type === "drag-area" || node.type === "thumb-stack") {
+      const daIcon = icon(node.type === "drag-area" ? "drag-area" : "layers-stack", 12);
       daIcon.style.flexShrink = "0";
       daIcon.style.color = muted;
       daIcon.style.marginRight = "2px";

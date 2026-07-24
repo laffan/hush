@@ -44,7 +44,9 @@ const DOC_FONT_SIZE = 8;
 const BASE_LONG_EDGE = 400;
 // Bump when thumbnail geometry / styling changes so cached renders
 // regenerate on the next Desktop open.
-const THUMB_STYLE_VERSION = 3;
+const THUMB_STYLE_VERSION = 4;
+// Horizontal fan offset between a stack file's constituent thumbnails.
+const STACK_FAN_OFFSET = 50;
 
 /** Per-Desktop option accessors — themeCtx carries them (and folds them
  *  into its cache signature); plain defaults elsewhere. */
@@ -104,7 +106,10 @@ export function entrySig(state, entry, themeSig) {
   if (entry.kind === "doc" || entry.kind === "notebook") {
     return `${v}|${entry.kind}|${fileModified(state, entry.fileId)}|${themeSig}`;
   }
-  if (entry.kind === "stack") return `${v}|stack|${themeSig}`;
+  // Stack fans recompose when the stack file itself changes (items
+  // added / removed / reordered); a constituent file's *content* edit
+  // shows on the next explicit Refresh.
+  if (entry.kind === "stack") return `${v}|stack|${fileModified(state, entry.fileId)}|${themeSig}`;
   if (entry.kind === "project") {
     const collected = collectDesktopFiles(state, entry.nodeId);
     const parts = (collected?.entries || []).map((e) =>
@@ -298,6 +303,60 @@ async function renderNotebookThumb(state, entry, themeCtx) {
   return { dataUrl: encode(canvas), w: cssW, h: cssH };
 }
 
+/** A stack file renders as a fan of its constituent files' thumbnails:
+ *  all normalized to one height, overlapped left-to-right at 50 px
+ *  offsets in stack order — the first item sits fully visible on top
+ *  at the left, each later item peeks out 50 px further right. */
+async function renderStackFanThumb(state, entry, themeCtx, depth) {
+  const content = await loadFileContent(state, entry.fileId);
+  let items = [];
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed?.format === "hushstack" && Array.isArray(parsed.items)) items = parsed.items;
+  } catch { /* fall through to the glyph card */ }
+  const kindMap = { document: "doc", notebook: "notebook", pdf: "pdf", project: "project" };
+  items = items.filter((it) => it && it.fileId && kindMap[it.fileType]).slice(0, 8);
+  const scale = optScale(themeCtx);
+  if (!items.length || depth >= 2) {
+    return drawCard(themeCtx, entry.name, "stack", Math.round(CARD_W * scale), Math.round(CARD_H * scale));
+  }
+
+  const fanH = optLongEdge(themeCtx);
+  const off = Math.round(STACK_FAN_OFFSET * scale);
+  const images = [];
+  for (const it of items) {
+    const kind = kindMap[it.fileType];
+    const pseudo = {
+      key: it.fileId, kind,
+      fileId: kind === "project" ? null : it.fileId,
+      nodeId: it.fileId,
+      name: it.name || "",
+    };
+    const t = await ensureDesktopThumb(state, pseudo, themeCtx, { depth: depth + 1 });
+    const img = await loadImage(t.dataUrl || t.url);
+    if (img && img.naturalWidth && img.naturalHeight) images.push(img);
+  }
+  if (!images.length) {
+    return drawCard(themeCtx, entry.name, "stack", Math.round(CARD_W * scale), Math.round(CARD_H * scale));
+  }
+
+  const widths = images.map((img) => Math.max(1, Math.round((img.naturalWidth / img.naturalHeight) * fanH)));
+  const cssW = widths[0] + off * (images.length - 1);
+  const { canvas, ctx } = makeCanvas(cssW, fanH);
+  const t = themeCtx.theme;
+  // Back-to-front so the FIRST stack item lands fully visible on top.
+  for (let i = images.length - 1; i >= 0; i--) {
+    const x = off * i;
+    ctx.fillStyle = themeCtx.canvasBackgroundOverride || t.canvasBackground;
+    ctx.fillRect(x, 0, widths[i], fanH);
+    ctx.drawImage(images[i], x, 0, widths[i], fanH);
+    ctx.strokeStyle = t.uiBorder || "rgba(128,128,128,0.3)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, 0.5, widths[i] - 1, fanH - 1);
+  }
+  return { dataUrl: encode(canvas), w: cssW, h: fanH };
+}
+
 async function resolvePdfThumb(entry, themeCtx) {
   const { loadPdfCoverUrl, ensurePdfCover } = await import("../pdf/pdf-covers.js");
   const url = (await loadPdfCoverUrl(entry.fileId)) || (await ensurePdfCover(entry.fileId));
@@ -396,14 +455,6 @@ export async function ensureDesktopThumb(state, entry, themeCtx, opts = {}) {
     return (await resolvePdfThumb(entry, themeCtx))
       || { ...drawCard(themeCtx, "Downloading…", "pdf"), pending: true };
   }
-  if (entry.kind === "stack") {
-    const key = `stack-card|${themeCtx.sig}`;
-    if (!_session.has(key)) {
-      const s = optScale(themeCtx);
-      _session.set(key, drawCard(themeCtx, null, "stack", Math.round(CARD_W * s), Math.round(CARD_H * s)));
-    }
-    return _session.get(key);
-  }
 
   const sig = entrySig(state, entry, themeCtx.sig);
   const cacheKey = entry.key;
@@ -422,6 +473,7 @@ export async function ensureDesktopThumb(state, entry, themeCtx, opts = {}) {
     if (entry.kind === "doc") thumb = await renderDocThumb(state, entry, themeCtx);
     else if (entry.kind === "notebook") thumb = await renderNotebookThumb(state, entry, themeCtx);
     else if (entry.kind === "project") thumb = await renderProjectThumb(state, entry, themeCtx, depth);
+    else if (entry.kind === "stack") thumb = await renderStackFanThumb(state, entry, themeCtx, depth);
     else thumb = drawCard(themeCtx, entry.name, null);
   } catch (e) {
     console.warn("Desktop thumbnail render failed:", entry.kind, e);

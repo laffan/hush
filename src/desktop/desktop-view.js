@@ -299,6 +299,7 @@ async function mountCanvas() {
   // duplicated thumbnails would dedupe away on the next open.
   _canvas.state.flowchartEnabled = false;
   _canvas.state.altDuplicateEnabled = false;
+  _canvas.state.desktopMode = true;
   // The toolbar starts parked at the bottom and minimized — a Desktop
   // leads with the thumbnails; the tools are one handle-click away.
   _canvas.state.setDrawingToolbarPosition("bottom");
@@ -311,7 +312,6 @@ async function mountCanvas() {
   const envelope = await loadDesktopEnvelope(_containerId);
   if (token !== _openToken) return;
   _options = normalizeDesktopOptions(envelope?.options);
-  _canvas.state.hideFileLabels = !_options.showLabels;
   _themeCtx = makeThemeCtx(nbSettings);
   // Per-Desktop options ride the background-settings flyout.
   const { buildDesktopOptionsSection } = await import("./desktop-options.js");
@@ -401,7 +401,8 @@ function attachCanvasListeners() {
       onOpen: openFileRef,
       onSecondary: openFileRefSecondary,
       onOpenWithGutter: openFileRefWithGutter,
-    });
+      onStacksChanged: () => scheduleSave(),
+    }, { showLabels: () => _options.showLabels });
   });
   import("./desktop-stacks.js").then((m) => {
     if (!_canvas || !_canvas.state.canvasEl) return;
@@ -428,8 +429,8 @@ function focusThumb(key) {
 function setDesktopOption(key, value) {
   _options = normalizeDesktopOptions({ ..._options, [key]: value });
   if (key === "showLabels") {
-    _canvas.state.hideFileLabels = !_options.showLabels;
-    _canvas.state.notify("shapes");
+    // Labels are hover-only DOM now — the option just gates them; the
+    // hover module reads it live, so nothing to repaint here.
   } else if (key === "includeGutters") {
     reconcileLive();
   } else {
