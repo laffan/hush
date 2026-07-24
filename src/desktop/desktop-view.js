@@ -1,19 +1,19 @@
 /**
- * Desktop view — a visual overview of everything inside a desk or a
- * project, presented as a full notebook canvas of live file thumbnails
- * (see README "Desktops"). Follows the PDF Shelf's takeover pattern:
- * one host mounted into #app, toggled via the `desktop-active` body
- * class so the surfaces underneath keep their layout.
+ * Desktop view — a visual overview of everything inside a project,
+ * presented as a full notebook canvas of live file thumbnails (see
+ * README "Desktops"). Follows the PDF Shelf's takeover pattern: one
+ * host mounted into #app, toggled via the `desktop-active` body class
+ * so the surfaces underneath keep their layout.
  *
  * Every file renders as an ImageShape carrying a `fileRef` marker —
- * drag / group / scale / undo all come free from the notebook engine,
- * while `fileRef` withholds delete + rename (the Desktop mirrors the
- * filesystem; files change only through the files sidebar). Thumbnails
- * generate on open for files whose cache went stale (desktop-thumbs.js)
- * and the arrangement persists per container as a stripped notebook
- * envelope (desktop-store.js). Deleted files vanish from the canvas on
- * the next files-changed; brand-new files grid in beneath the existing
- * content.
+ * drag / group / undo come free from the notebook engine, while
+ * `fileRef` withholds delete / rename / resize (the Desktop mirrors
+ * the filesystem). Thumbnails generate on open for files whose cache
+ * went stale (desktop-thumbs.js); the arrangement, camera, background
+ * and per-Desktop options persist per container (desktop-store.js).
+ * Thumbnail stacking lives in desktop-stacks.js, the per-Desktop
+ * options UI in desktop-options.js, and shape assembly + the shelf
+ * deep-search index in desktop-content.js.
  */
 
 import { escHtml } from "../sidebar/files-panel-shared.js";
@@ -22,9 +22,16 @@ import {
 } from "./desktop-files.js";
 import {
   ensureDesktopThumb, computeDesktopGrid, themeSigOf,
-  evictSessionThumb, DESKTOP_GRID_GAP, loadFileContent,
+  evictSessionThumb, DESKTOP_GRID_GAP,
 } from "./desktop-thumbs.js";
+import {
+  refOf, hydrateShape, shapeBottom, newThumbShape, buildShapes,
+  fitCameraFor, buildSearchIndex,
+} from "./desktop-content.js";
+import { normalizeDesktopStacks } from "./desktop-stacks.js";
+import { DESKTOP_OPTION_DEFAULTS, normalizeDesktopOptions } from "./desktop-options.js";
 import { loadDesktopEnvelope, saveDesktopEnvelope } from "./desktop-store.js";
+import { canvasToScreen, screenToCanvas } from "../notebook/utils.ts";
 
 let _host = null;
 let _canvasHost = null;
@@ -35,11 +42,15 @@ let _themeCtx = null;
 let _openToken = 0;
 let _saveTimer = null;
 let _reconcileTimer = null;
+let _optionsTimer = null;
 let _hoverCleanup = null;
+let _stackingCleanup = null;
 let _canvasListenersCleanup = null;
 let _background = null; // per-desktop bg override cached from the popup event
+let _options = { ...DESKTOP_OPTION_DEFAULTS };
 let _refreshing = false;
 let _hydrated = false; // true once the open-time thumbnail pass landed
+let _focusKey = null; // fileRef key to select + centre after hydration
 // fileRef key → deep search text (doc body, notebook text, PDF metadata
 // + annotations). Read by the shape shelf via window.__hushDesktopSearchText
 // so its search box reaches file *contents*, not just filenames.
@@ -53,12 +64,29 @@ export function currentDesktopContainerId() {
   return _containerId;
 }
 
+function collectOpts() {
+  return { includeGutters: _options.includeGutters };
+}
+
 function initDesktop(state) {
   if (_host) return;
   _state = state;
   // Deep-search hook for the shape shelf: while a Desktop is mounted,
   // shelf rows for file thumbnails search the file's content too.
   window.__hushDesktopSearchText = (key) => _searchText.get(key) || "";
+  // Sticky-note hooks: desktop-pinned stickies map their canvas world
+  // coordinates through the live camera (sticky-notes.js).
+  window.__hushDesktopWorldToScreen = (pt) => {
+    if (!_canvas || !_canvasHost) return null;
+    const rect = _canvasHost.getBoundingClientRect();
+    const s = canvasToScreen(pt, _canvas.state.camera);
+    return { x: rect.left + s.x, y: rect.top + s.y };
+  };
+  window.__hushDesktopScreenToWorld = (pt) => {
+    if (!_canvas || !_canvasHost) return null;
+    const rect = _canvasHost.getBoundingClientRect();
+    return screenToCanvas({ x: pt.x - rect.left, y: pt.y - rect.top }, _canvas.state.camera);
+  };
   _host = document.createElement("div");
   _host.id = "desktop-view";
   _host.className = "desktop-view hidden";
@@ -113,8 +141,7 @@ function initDesktop(state) {
     if (!_canvas || !_containerId) return;
     const { computeNotebookSettings } = await import("../notebook/notebook-style-settings.js");
     const nbSettings = computeNotebookSettings(state, null);
-    const sig = themeSigOf(nbSettings);
-    if (_themeCtx && _themeCtx.sig === sig) return;
+    if (_themeCtx && _themeCtx.sig === buildSig(nbSettings)) return;
     if (!_canvas) return;
     _canvas.applySettings({
       ...nbSettings,
@@ -122,13 +149,7 @@ function initDesktop(state) {
         ? { backgroundPattern: _background.pattern, gridSpacing: _background.spacing, gridOpacity: _background.opacity }
         : { backgroundPattern: "blank", gridOpacity: 0 }),
     });
-    _themeCtx = {
-      theme: _canvas.state.theme,
-      fontFamily: _canvas.state.fontFamily,
-      appearance: nbSettings.appearanceMode,
-      canvasBackgroundOverride: nbSettings.canvasBackgroundOverride || "",
-      sig,
-    };
+    _themeCtx = makeThemeCtx(nbSettings);
   });
 
   document.addEventListener("notebook-bg-changed", (e) => {
@@ -139,23 +160,32 @@ function initDesktop(state) {
   });
 }
 
-/** Open the Desktop for a desk id or project node id. */
-export async function openDesktop(state, containerId) {
+/** Open the Desktop for a project node id. `opts.focusKey` selects and
+ *  centres that file's thumbnail once the canvas lands (used by the
+ *  "View in Desktop" palette entry). */
+export async function openDesktop(state, containerId, opts = {}) {
   if (!_host) initDesktop(state);
   _state = state;
   if (!findDesktopContainer(state, containerId)) return;
-  if (_containerId === containerId) return;
+  _focusKey = opts.focusKey || null;
+  if (_containerId === containerId) {
+    if (_focusKey && _hydrated) focusThumb(_focusKey);
+    return;
+  }
   if (_containerId) {
-    // Switching container (e.g. drilling into a project's Desktop from
-    // the desk one): persist the outgoing layout first.
+    // Switching container (e.g. drilling into a nested project's
+    // Desktop): persist the outgoing layout first.
     persistNow();
     teardownCanvas();
+    _state.emit("desktop-closed", _containerId);
   }
   if (state.selectedDocIds?.length) state.clearSelectedDocs();
   import("../pdf/pdf-shelf.js").then((m) => m.closePdfShelf()).catch(() => {});
 
   _containerId = containerId;
   _background = null;
+  _options = { ...DESKTOP_OPTION_DEFAULTS };
+  window.__hushDesktopOpenId = containerId;
   document.body.classList.add("desktop-active");
   _host.classList.remove("hidden");
   renderChrome();
@@ -164,16 +194,19 @@ export async function openDesktop(state, containerId) {
 
 export function closeDesktop() {
   if (!_containerId) return;
+  const closed = _containerId;
   persistNow();
   teardownCanvas();
   _containerId = null;
   _openToken++;
+  window.__hushDesktopOpenId = null;
   document.body.classList.remove("desktop-active");
   if (_host) {
     _host.classList.add("hidden");
     _host.innerHTML = "";
   }
   _canvasHost = null;
+  _state?.emit("desktop-closed", closed);
 }
 
 // ── Chrome ──────────────────────────────────────────────────────────
@@ -184,6 +217,7 @@ function renderChrome() {
       <span class="desktop-scope">${escHtml(desktopScopeName(_state, _containerId))}</span>
       <span class="desktop-header-note">Desktop</span>
       <span class="desktop-header-actions">
+        <button type="button" class="desktop-btn" data-desktop-reset>Reset View</button>
         <button type="button" class="desktop-btn" data-desktop-refresh>Refresh Thumbnails</button>
         <button type="button" class="desktop-btn" data-desktop-close>Close</button>
       </span>
@@ -192,6 +226,7 @@ function renderChrome() {
   `;
   _host.querySelector("[data-desktop-close]").addEventListener("click", () => closeDesktop());
   _host.querySelector("[data-desktop-refresh]").addEventListener("click", () => refreshDesktopThumbnails());
+  _host.querySelector("[data-desktop-reset]").addEventListener("click", () => resetDesktopView());
   _canvasHost = _host.querySelector(".desktop-canvas-host");
 }
 
@@ -207,7 +242,32 @@ function setLoading(on, label = "Building Desktop…") {
   el.textContent = label;
 }
 
+/** Zoom out so every item on the Desktop is visible (header button). */
+export function resetDesktopView() {
+  if (!_canvas || !_canvasHost) return;
+  const st = _canvas.state;
+  st.camera = fitCameraFor(st.shapes, _canvasHost.clientWidth || 800, _canvasHost.clientHeight || 600);
+  st.notify("camera");
+  st.rebasePinAnchor?.();
+}
+
 // ── Canvas lifecycle ────────────────────────────────────────────────
+
+function buildSig(nbSettings) {
+  return `${themeSigOf(nbSettings)}|f${_options.docFontSize}|L${_options.thumbLongEdge}`;
+}
+
+function makeThemeCtx(nbSettings) {
+  return {
+    theme: _canvas.state.theme,
+    fontFamily: _canvas.state.fontFamily,
+    appearance: nbSettings.appearanceMode,
+    canvasBackgroundOverride: nbSettings.canvasBackgroundOverride || "",
+    docFontSize: _options.docFontSize,
+    longEdge: _options.thumbLongEdge,
+    sig: buildSig(nbSettings),
+  };
+}
 
 async function mountCanvas() {
   const token = ++_openToken;
@@ -235,9 +295,10 @@ async function mountCanvas() {
   // Route clipboard / undo to this canvas immediately — a hidden main
   // notebook underneath may still hold the active-canvas slot.
   claimActiveNotebook(_canvas);
-  // No flowchart on Desktops (for now): file thumbnails aren't chart
-  // nodes, so drop-to-connect / ⌘→ edge creation stays off.
+  // No flowchart on Desktops (for now), and no option-drag clones —
+  // duplicated thumbnails would dedupe away on the next open.
   _canvas.state.flowchartEnabled = false;
+  _canvas.state.altDuplicateEnabled = false;
   // The toolbar starts parked at the bottom and minimized — a Desktop
   // leads with the thumbnails; the tools are one handle-click away.
   _canvas.state.setDrawingToolbarPosition("bottom");
@@ -246,17 +307,17 @@ async function mountCanvas() {
   // Desktops default to the blank background; a per-desktop override
   // from the bg-settings popup is applied after the envelope loads.
   _canvas.applySettings({ ...nbSettings, backgroundPattern: "blank", gridOpacity: 0 });
-  _themeCtx = {
-    theme: _canvas.state.theme,
-    fontFamily: _canvas.state.fontFamily,
-    appearance: nbSettings.appearanceMode,
-    canvasBackgroundOverride: nbSettings.canvasBackgroundOverride || "",
-    sig: themeSigOf(nbSettings),
-  };
 
-  const collected = collectDesktopFiles(state, _containerId);
   const envelope = await loadDesktopEnvelope(_containerId);
   if (token !== _openToken) return;
+  _options = normalizeDesktopOptions(envelope?.options);
+  _canvas.state.hideFileLabels = !_options.showLabels;
+  _themeCtx = makeThemeCtx(nbSettings);
+  // Per-Desktop options ride the background-settings flyout.
+  const { buildDesktopOptionsSection } = await import("./desktop-options.js");
+  if (token !== _openToken || !_canvas) return;
+  _canvas.state.extraBgSettingsSection = () =>
+    buildDesktopOptionsSection(_canvas.state.theme, () => _options, setDesktopOption);
   if (envelope?.background) {
     _background = envelope.background;
     _canvas.applySettings({
@@ -270,6 +331,7 @@ async function mountCanvas() {
   // whose cache signature still matches come back instantly; stale and
   // new files render now — this is the "thumbnails update when the
   // Desktop opens" pass.
+  const collected = collectDesktopFiles(state, _containerId, collectOpts());
   const entries = collected?.entries || [];
   const thumbs = new Map();
   for (const entry of entries) {
@@ -277,8 +339,10 @@ async function mountCanvas() {
     if (token !== _openToken) return;
   }
 
-  const shapes = buildShapes(envelope, entries, thumbs);
-  _canvas.loadShapes(shapes, envelope?.layers?.length ? envelope.layers : undefined);
+  _canvas.loadShapes(
+    buildShapes(envelope, entries, thumbs),
+    envelope?.layers?.length ? envelope.layers : undefined,
+  );
   // Flowchart edges are intentionally not restored — the feature is
   // deactivated on Desktops (see flowchartEnabled above).
 
@@ -287,188 +351,106 @@ async function mountCanvas() {
     if (envelope?.camera && typeof envelope.camera.zoom === "number") {
       _canvas.state.camera = { ...envelope.camera };
     } else {
-      _canvas.state.camera = fitCamera();
+      _canvas.state.camera = fitCameraFor(
+        _canvas.state.shapes, _canvasHost.clientWidth || 800, _canvasHost.clientHeight || 600);
     }
     _canvas.state.notify("camera");
     _canvas.state.rebasePinAnchor?.();
+    if (_focusKey) focusThumb(_focusKey);
   });
 
   attachCanvasListeners();
   setLoading(false);
   _hydrated = true;
-  buildSearchIndex(state, entries, token);
+  _state.emit("desktop-opened", _containerId);
+  buildSearchIndex(state, entries, _searchText, () => token === _openToken, collectOpts());
 }
 
 function teardownCanvas() {
   if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
   if (_reconcileTimer) { clearTimeout(_reconcileTimer); _reconcileTimer = null; }
+  if (_optionsTimer) { clearTimeout(_optionsTimer); _optionsTimer = null; }
   if (_hoverCleanup) { _hoverCleanup(); _hoverCleanup = null; }
+  if (_stackingCleanup) { _stackingCleanup(); _stackingCleanup = null; }
   if (_canvasListenersCleanup) { _canvasListenersCleanup(); _canvasListenersCleanup = null; }
   if (_canvas) { _canvas.destroy(); _canvas = null; }
   _themeCtx = null;
   _refreshing = false;
   _hydrated = false;
+  _focusKey = null;
   _searchText.clear();
 }
 
 function attachCanvasListeners() {
   const onChange = () => scheduleSave();
+  const onCamera = () => {
+    scheduleSave();
+    // Desktop-pinned stickies re-anchor against the camera.
+    document.dispatchEvent(new CustomEvent("desktop-camera-changed"));
+  };
   _canvasHost.addEventListener("notebook-change", onChange);
-  _canvasHost.addEventListener("notebook-camera-change", onChange);
+  _canvasHost.addEventListener("notebook-camera-change", onCamera);
   const host = _canvasHost;
   _canvasListenersCleanup = () => {
     host.removeEventListener("notebook-change", onChange);
-    host.removeEventListener("notebook-camera-change", onChange);
+    host.removeEventListener("notebook-camera-change", onCamera);
   };
   import("./desktop-hover.js").then((m) => {
     if (!_canvas || !_canvasHost) return;
     _hoverCleanup = m.attachDesktopHover(_canvasHost, _canvas, {
       onOpen: openFileRef,
       onSecondary: openFileRefSecondary,
+      onOpenWithGutter: openFileRefWithGutter,
+    });
+  });
+  import("./desktop-stacks.js").then((m) => {
+    if (!_canvas || !_canvas.state.canvasEl) return;
+    _stackingCleanup = m.attachDesktopStacking(_canvas.state.canvasEl, _canvas, {
+      onStacksChanged: () => scheduleSave(),
     });
   });
 }
 
-// ── Shelf deep-search index ─────────────────────────────────────────
+/** Select + centre a file's thumbnail (View in Desktop). */
+function focusThumb(key) {
+  _focusKey = null;
+  const st = _canvas?.state;
+  if (!st) return;
+  const shape = st.shapes.find((sh) => sh.fileRef?.key === key);
+  if (!shape) return;
+  st.selectedIds = new Set([shape.id]);
+  st.notify("selectedIds");
+  st.focusShape(shape.id);
+}
 
-/** Build the per-file search text the shape shelf reads through
- *  `window.__hushDesktopSearchText`: doc bodies, notebook text-shape
- *  contents, PDF metadata + bookmark names + cached Zotero annotation
- *  text. Fire-and-forget — the shelf reads the map live at query time,
- *  so entries land as they resolve. */
-async function buildSearchIndex(state, entries, token) {
-  for (const entry of entries) {
-    if (token !== _openToken) return;
-    let text = entry.name || "";
-    try {
-      if (entry.kind === "doc") {
-        text += "\n" + (await loadFileContent(state, entry.fileId));
-      } else if (entry.kind === "notebook") {
-        const { extractSnapshotText } = await import("../sidebar/notebook-snapshot-preview.js");
-        text += "\n" + extractSnapshotText(await loadFileContent(state, entry.fileId));
-      } else if (entry.kind === "pdf") {
-        const { getPdfMeta, getPdfBookmarks } = await import("../sync/pdf-sync.js");
-        const meta = getPdfMeta(entry.fileId);
-        const parts = [meta?.title, meta?.authors, meta?.year];
-        for (const bm of getPdfBookmarks(entry.fileId)) parts.push(bm.name);
-        if (meta?.zoteroAttKey) {
-          const { getCachedAnnotations } = await import("../zotero-annotations.js");
-          const annots = await getCachedAnnotations(meta.zoteroAttKey).catch(() => []);
-          for (const a of annots) parts.push([a.text, a.comment].filter(Boolean).join(" "));
-        }
-        text += "\n" + parts.filter(Boolean).join("\n");
-      } else if (entry.kind === "project") {
-        const collected = collectDesktopFiles(state, entry.nodeId);
-        text += "\n" + (collected?.entries || []).map((e) => e.name).join("\n");
+// ── Per-Desktop options ─────────────────────────────────────────────
+
+function setDesktopOption(key, value) {
+  _options = normalizeDesktopOptions({ ..._options, [key]: value });
+  if (key === "showLabels") {
+    _canvas.state.hideFileLabels = !_options.showLabels;
+    _canvas.state.notify("shapes");
+  } else if (key === "includeGutters") {
+    reconcileLive();
+  } else {
+    // Size-affecting options — regenerate thumbnails (debounced; the
+    // sliders fire per step).
+    if (_optionsTimer) clearTimeout(_optionsTimer);
+    _optionsTimer = setTimeout(async () => {
+      _optionsTimer = null;
+      if (!_canvas || !_containerId) return;
+      const { computeNotebookSettings } = await import("../notebook/notebook-style-settings.js");
+      _themeCtx = makeThemeCtx(computeNotebookSettings(_state, null));
+      const collected = collectDesktopFiles(_state, _containerId, collectOpts());
+      const token = _openToken;
+      for (const entry of collected?.entries || []) {
+        const thumb = await ensureDesktopThumb(_state, entry, _themeCtx);
+        if (token !== _openToken || !_canvas) return;
+        applyThumbToShape(entry.key, thumb);
       }
-    } catch { /* best effort — the name alone still matches */ }
-    if (token !== _openToken) return;
-    _searchText.set(entry.key, text);
+    }, 350);
   }
-}
-
-// ── Shape reconstruction ────────────────────────────────────────────
-
-/** Merge the saved envelope with the live file list: saved thumbnails
- *  keep their position / size / grouping, dead ones drop out, new files
- *  grid in below the existing content, user-added shapes (text, drag
- *  areas, strokes) pass through untouched. */
-function buildShapes(envelope, entries, thumbs) {
-  const byKey = new Map(entries.map((e) => [e.key, e]));
-  const seen = new Set();
-  const shapes = [];
-  let maxY = 0;
-  let hasSaved = false;
-
-  for (const s of envelope?.shapes || []) {
-    if (!s || typeof s !== "object") continue;
-    if (s.type === "image" && s.fileRef) {
-      const entry = byKey.get(s.fileRef.key);
-      if (!entry || seen.has(entry.key)) continue; // deleted file / duplicate
-      seen.add(entry.key);
-      shapes.push(hydrateShape(s, entry, thumbs.get(entry.key)));
-    } else {
-      shapes.push(s);
-    }
-    hasSaved = true;
-    const b = shapeBottom(s);
-    if (b > maxY) maxY = b;
-  }
-
-  const missing = entries.filter((e) => !seen.has(e.key));
-  if (missing.length) {
-    const startY = hasSaved ? maxY + DESKTOP_GRID_GAP : 0;
-    const rects = computeDesktopGrid(missing, thumbs, startY);
-    for (const entry of missing) {
-      const rect = rects.get(entry.key);
-      const t = thumbs.get(entry.key) || { w: 220, h: 280 };
-      shapes.push({
-        id: crypto.randomUUID(),
-        type: "image",
-        position: { x: rect?.x ?? 0, y: rect?.y ?? startY },
-        width: rect?.w ?? t.w,
-        height: rect?.h ?? t.h,
-        dataUrl: t.dataUrl || t.url || "",
-        name: entry.name,
-        color: "#000000",
-        fileRef: refOf(entry),
-      });
-    }
-  }
-  return shapes;
-}
-
-function refOf(entry) {
-  return { key: entry.key, kind: entry.kind, fileId: entry.fileId, nodeId: entry.nodeId, name: entry.name };
-}
-
-/** Re-arm a persisted fileRef shape with its (possibly regenerated)
- *  thumbnail. Keeps the user's width; height follows the thumbnail's
- *  current aspect so a grown notebook doesn't render squashed. */
-function hydrateShape(s, entry, thumb) {
-  const out = { ...s, name: entry.name, fileRef: refOf(entry) };
-  if (thumb) {
-    out.dataUrl = thumb.dataUrl || thumb.url || "";
-    if (thumb.w > 0 && thumb.h > 0 && out.width > 0) {
-      const newH = out.width * (thumb.h / thumb.w);
-      if (Math.abs(newH - out.height) > 1) out.height = newH;
-    }
-  }
-  return out;
-}
-
-function shapeBottom(s) {
-  if (s.type === "draw" && Array.isArray(s.points)) {
-    let m = 0;
-    for (const p of s.points) if (p.y > m) m = p.y;
-    return m;
-  }
-  const h = s.height || 0;
-  return (s.position?.y || 0) + h + (s.fileRef ? 24 : 0);
-}
-
-function fitCamera() {
-  const st = _canvas.state;
-  const w = _canvasHost.clientWidth || 800;
-  const h = _canvasHost.clientHeight || 600;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const s of st.shapes) {
-    if (s.pocketed) continue;
-    const x = s.position?.x ?? 0, y = s.position?.y ?? 0;
-    minX = Math.min(minX, x); minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x + (s.width || 0));
-    maxY = Math.max(maxY, y + (s.height || 0) + 24);
-  }
-  if (!Number.isFinite(minX)) return { x: 60, y: 60, zoom: 1 };
-  const pad = 60;
-  const zoom = Math.max(0.25, Math.min(1,
-    (w - pad * 2) / Math.max(1, maxX - minX),
-    (h - pad * 2) / Math.max(1, maxY - minY)));
-  return {
-    x: (w - (maxX - minX) * zoom) / 2 - minX * zoom,
-    y: Math.max(20, (h - (maxY - minY) * zoom) / 2) - minY * zoom,
-    zoom,
-  };
+  scheduleSave();
 }
 
 // ── Persistence ─────────────────────────────────────────────────────
@@ -499,6 +481,7 @@ function persistNow() {
     layers: st.layers,
     flowEdges: st.flowchart.serialize(),
     camera: { ...st.camera },
+    options: { ..._options },
     ...(_background ? { background: _background } : {}),
     savedAt: Date.now(),
   };
@@ -515,7 +498,7 @@ async function reconcileLive() {
   // files-changed racing it would double-build the shape list.
   if (!_canvas || !_containerId || !_hydrated) return;
   const token = _openToken;
-  const collected = collectDesktopFiles(_state, _containerId);
+  const collected = collectDesktopFiles(_state, _containerId, collectOpts());
   if (!collected) { closeDesktop(); return; }
   const st = _canvas.state;
   const byKey = new Map(collected.entries.map((e) => [e.key, e]));
@@ -529,8 +512,9 @@ async function reconcileLive() {
       const entry = byKey.get(s.fileRef.key);
       if (!entry || present.has(s.fileRef.key)) { changed = true; continue; }
       present.add(s.fileRef.key);
-      if (entry.name !== s.fileRef.name) {
-        next.push({ ...s, name: entry.name, fileRef: refOf(entry) });
+      if (entry.name !== s.fileRef.name || !!entry.hasGutter !== !!s.fileRef.hasGutter) {
+        const keepStack = s.fileRef.stackId ? { stackId: s.fileRef.stackId } : {};
+        next.push({ ...s, name: entry.name, fileRef: { ...refOf(entry), ...keepStack } });
         changed = true;
       } else {
         next.push(s);
@@ -550,20 +534,13 @@ async function reconcileLive() {
     }
     const rects = computeDesktopGrid(missing, thumbs, next.length ? maxY + DESKTOP_GRID_GAP : 0);
     for (const entry of missing) {
-      const rect = rects.get(entry.key);
-      const t = thumbs.get(entry.key);
-      next.push({
-        id: crypto.randomUUID(), type: "image",
-        position: { x: rect?.x ?? 0, y: rect?.y ?? maxY + DESKTOP_GRID_GAP },
-        width: rect?.w ?? t.w, height: rect?.h ?? t.h,
-        dataUrl: t.dataUrl || t.url || "", name: entry.name,
-        color: "#000000", fileRef: refOf(entry),
-      });
+      next.push(newThumbShape(entry, rects.get(entry.key), thumbs.get(entry.key)));
     }
     changed = true;
   }
 
   if (!changed) return;
+  next = normalizeDesktopStacks(next);
   const surviving = new Set(next.map((s) => s.id));
   st.shapes = next;
   st.selectedIds = new Set([...st.selectedIds].filter((id) => surviving.has(id)));
@@ -573,10 +550,11 @@ async function reconcileLive() {
   scheduleSave();
   // Entry set changed — refresh the shelf's deep-search index too.
   for (const key of [..._searchText.keys()]) if (!byKey.has(key)) _searchText.delete(key);
-  buildSearchIndex(_state, collected.entries, token);
+  buildSearchIndex(_state, collected.entries, _searchText, () => token === _openToken, collectOpts());
 }
 
-/** Swap one entry's thumbnail in place (PDF cover arriving, refresh). */
+/** Swap one entry's thumbnail in place (PDF cover arriving, refresh,
+ *  option changes). Display dims mirror the thumbnail's natural size. */
 function applyThumbToShape(key, thumb) {
   if (!_canvas || !thumb) return;
   const st = _canvas.state;
@@ -586,9 +564,9 @@ function applyThumbToShape(key, thumb) {
     changed = true;
     const out = { ...s, dataUrl: thumb.dataUrl || thumb.url || "" };
     delete out.dataUrlDark;
-    if (thumb.w > 0 && thumb.h > 0 && out.width > 0) {
-      const newH = out.width * (thumb.h / thumb.w);
-      if (Math.abs(newH - out.height) > 1) out.height = newH;
+    if (thumb.w > 0 && thumb.h > 0) {
+      out.width = thumb.w;
+      out.height = thumb.h;
     }
     return out;
   });
@@ -597,7 +575,7 @@ function applyThumbToShape(key, thumb) {
 
 async function refreshEntryByFileId(fileId) {
   if (!_canvas || !_themeCtx || !_hydrated) return;
-  const collected = collectDesktopFiles(_state, _containerId);
+  const collected = collectDesktopFiles(_state, _containerId, collectOpts());
   const entry = collected?.entries.find((e) => e.fileId === fileId);
   if (!entry) return;
   applyThumbToShape(entry.key, await ensureDesktopThumb(_state, entry, _themeCtx));
@@ -612,7 +590,7 @@ export async function refreshDesktopThumbnails() {
   _refreshing = true;
   if (btn) { btn.textContent = "Refreshing…"; btn.disabled = true; }
   try {
-    const collected = collectDesktopFiles(_state, _containerId);
+    const collected = collectDesktopFiles(_state, _containerId, collectOpts());
     for (const entry of collected?.entries || []) {
       evictSessionThumb(entry.key);
       const thumb = await ensureDesktopThumb(_state, entry, _themeCtx, { force: true });
@@ -639,6 +617,21 @@ function openFileRef(ref) {
     import("../sync/pdf-sync.js").then(({ isPdfDownloaded }) => {
       if (isPdfDownloaded(ref.fileId)) state.openPdf(ref.fileId);
     });
+  }
+}
+
+/** "Open with Gutter Visible" — open the doc, then re-dock its paired
+ *  gutter notebook (the pairing survives closes, so Open Gutter just
+ *  re-docks it). */
+async function openFileRefWithGutter(ref) {
+  if (!ref || ref.kind !== "doc") return;
+  const state = _state;
+  await state.openFile(ref.fileId);
+  try {
+    const { openGutter } = await import("../project/gutter-commands.js");
+    await openGutter(state);
+  } catch (e) {
+    console.warn("Open with gutter failed:", e);
   }
 }
 

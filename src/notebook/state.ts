@@ -179,6 +179,19 @@ export class DrawingState extends EventTarget {
    *  file thumbnails aren't chart nodes. Existing edges (there are
    *  none on a Desktop) would still render; only creation is gated. */
   flowchartEnabled = true;
+  /** Per-canvas option/alt-drag-to-clone switch. Desktops turn it off —
+   *  duplicated file thumbnails would dedupe away on the next open and
+   *  read as phantom copies in the meantime. */
+  altDuplicateEnabled = true;
+  /** Hide the filename captions under Desktop file thumbnails (the
+   *  per-Desktop "Thumbnail labels" option). Plain notebooks never set
+   *  it. Read by the renderer via RenderState. */
+  hideFileLabels = false;
+  /** Optional extra section appended to the background-settings popup —
+   *  the Desktop view injects its per-Desktop options (doc text size,
+   *  thumbnail long edge, labels, gutters) here. Rebuilt per popup
+   *  render, so the builder should return a fresh element. */
+  extraBgSettingsSection: (() => HTMLElement) | null = null;
   /** While dragging a single text shape, the id of the shape under the
    *  cursor that would be the drop-connection target (or null). */
   flowDropTargetId: string | null = null;
@@ -1326,9 +1339,19 @@ export class DrawingState extends EventTarget {
       }
 
       if (hitShape) {
-        const groupMembers = hitShape.groupId
+        // ⌘-dragging a member of a Desktop thumbnail stack pulls just
+        // that one thumbnail out — skip the usual whole-group promotion
+        // so the drag moves the single shape (desktop-stacks.js releases
+        // it from the stack on pointer-up).
+        const soloStackPull = cmdHeld
+          && hitShape.type === "image" && !!(hitShape as ImageShape).fileRef?.stackId;
+        const groupMembers = !soloStackPull && hitShape.groupId
           ? this.shapes.filter((s) => s.groupId === hitShape.groupId).map((s) => s.id)
           : [hitShape.id];
+        if (soloStackPull && (this.selectedIds.size !== 1 || !this.selectedIds.has(hitShape.id))) {
+          this.selectedIds = new Set([hitShape.id]);
+          this.notify("selectedIds");
+        }
 
         if (e.shiftKey) {
           const next = new Set(this.selectedIds);
@@ -1352,7 +1375,7 @@ export class DrawingState extends EventTarget {
           // shape points by the regular renderer) with no actual
           // strokes underneath. Clone first, swap the selection,
           // then let the drag begin with the new shape ids.
-          if (e.altKey) {
+          if (e.altKey && this.altDuplicateEnabled) {
             const currentSelected = this.selectedIds.has(hitShape.id) ? this.selectedIds : new Set(groupMembers);
             const clones: Shape[] = [];
             const groupIdMap = new Map<string, string>();

@@ -42,20 +42,41 @@ export function desktopScopeName(state, containerId) {
 }
 
 /** Collect the Desktop entries for a container node. Each entry:
- *  `{ key, kind, fileId, nodeId, name }` — `key` is the thumbnail cache
- *  key (fileId for files, node id for projects) and doubles as the
- *  identity the Desktop reconciles shapes against. */
-export function collectDesktopFiles(state, containerId) {
+ *  `{ key, kind, fileId, nodeId, name, hasGutter? }` — `key` is the
+ *  thumbnail cache key (fileId for files, node id for projects) and
+ *  doubles as the identity the Desktop reconciles shapes against.
+ *  Gutter notebooks (`node.gutter`) are attachments of their doc, not
+ *  standalone files — excluded unless `opts.includeGutters`; the docs
+ *  they pair with are flagged `hasGutter` either way (drives the
+ *  "Open with Gutter Visible" hover control). */
+export function collectDesktopFiles(state, containerId, opts = {}) {
   const container = findDesktopContainer(state, containerId);
   if (!container) return null;
   const entries = [];
   const seen = new Set();
 
+  // Pre-scan for gutter pairings so doc entries can be flagged even
+  // when the gutter notebooks themselves are excluded from the walk.
+  const gutteredDocFileIds = new Set();
+  const scanGutters = (nodes) => {
+    for (const node of nodes || []) {
+      if (node.type === "notebook" && node.gutter && node.gutterForDoc) {
+        gutteredDocFileIds.add(node.gutterForDoc);
+      }
+      if (node.children?.length) scanGutters(node.children);
+    }
+  };
+  scanGutters(container.children);
+
   const push = (kind, node) => {
     const key = kind === "project" ? node.id : node.fileId;
     if (!key || seen.has(key)) return;
     seen.add(key);
-    entries.push({ key, kind, fileId: node.fileId || null, nodeId: node.id, name: node.name || "Untitled" });
+    entries.push({
+      key, kind, fileId: node.fileId || null, nodeId: node.id,
+      name: node.name || "Untitled",
+      ...(kind === "doc" && gutteredDocFileIds.has(node.fileId) ? { hasGutter: true } : {}),
+    });
   };
 
   const walk = (nodes) => {
@@ -68,6 +89,7 @@ export function collectDesktopFiles(state, containerId) {
           if (node.fileId) push("doc", node);
           break;
         case "notebook":
+          if (node.gutter && !opts.includeGutters) break;
           if (node.fileId) push("notebook", node);
           break;
         case "stack":

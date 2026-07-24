@@ -145,6 +145,14 @@ export interface DesktopFileRef {
   fileId?: string | null;
   nodeId?: string;
   name: string;
+  /** Docs only: the file has a paired gutter notebook — surfaces the
+   *  "Open with Gutter Visible" hover control on its thumbnail. */
+  hasGutter?: boolean;
+  /** Thumbnail-stack membership (Desktop only). Members share this id
+   *  AND a groupId (so the engine drags the pile together); labels hide
+   *  while stacked and reappear below the pile on hover. Mirrors the
+   *  shape's groupId — desktop-stacks.js keeps the two in sync. */
+  stackId?: string;
 }
 
 export interface ImageShape extends ShapeBase {

@@ -13,6 +13,7 @@ import {
   isDesktopTauri,
   isIOSTauri,
   buildAppearanceCommands,
+  currentFileDesktopTarget,
 } from "./command-palette-helpers.js";
 import {
   paneAnchorClickPoint, promptNewNotebookName, promptNewStackName,
@@ -234,6 +235,15 @@ function buildCommands(state) {
       hiddenIf: (s) => !s.currentProjectId,
       action: async (s) => {
         (await import("./desktop/desktop-view.js")).openDesktop(s, s.currentProjectId);
+      } },
+    // Shown while a file that lives inside a project is open: jumps to
+    // that project's Desktop with the file's thumbnail selected + centred.
+    { id: "view-in-desktop", label: "View in Desktop", icon: icons.project, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !currentFileDesktopTarget(s),
+      action: async (s) => {
+        const target = currentFileDesktopTarget(s);
+        if (!target) return;
+        (await import("./desktop/desktop-view.js")).openDesktop(s, target.projectId, { focusKey: target.focusKey });
       } },
     { id: "refresh-desktop-thumbnails", label: "Refresh Desktop Thumbnails", icon: icons.files, shortcutKey: null, ctx: "shared",
       // Shown only while a Desktop is open (checked via the body class so

@@ -152,3 +152,32 @@ body.desktop-active #stack-container {
   width: 15px;
   height: 15px;
 }
+
+/* ── Stack hover labels (names of a thumbnail pile) ────────────── */
+
+.desktop-stack-labels {
+  position: absolute;
+  z-index: 19;
+  transform: translateX(-50%);
+  pointer-events: none;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg);
+  opacity: 0.85;
+  max-width: 320px;
+}
+
+.desktop-stack-labels.hidden {
+  display: none;
+}
+
+.desktop-stack-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-stack-label.hovered {
+  font-weight: 600;
+}

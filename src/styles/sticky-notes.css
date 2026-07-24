@@ -38,7 +38,8 @@
 
 /* Scope colors — file + project stickies are "document" pink. */
 .sticky-file,
-.sticky-project { background: #ffe4ec; }
+.sticky-project,
+.sticky-desktop { background: #ffe4ec; }
 .sticky-desk    { background: #fff6c4; }
 .sticky-global  { background: #dcebfa; }
 

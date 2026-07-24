@@ -18,6 +18,8 @@ export interface RenderState {
   editingShapeId: string | null;
   imageCache: Map<string, HTMLImageElement>;
   theme: CanvasTheme;
+  /** Desktop-only: hide the filename captions under file thumbnails. */
+  hideFileLabels?: boolean;
   croppingImageId: string | null;
   backgroundPattern: "grid" | "dot-grid" | "lined" | "isometric" | "blank";
   gridSpacing: number;
@@ -173,7 +175,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       if (pocketedIds.has(shape.id)) continue;
       if (shape.type === "draw") continue; // drawing layer owns strokes
       if (shape.type === "text") drawTextShape(ctx, shape, theme, state.fontFamily, false, state.flagColors);
-      else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId, theme);
+      else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId, theme, state.hideFileLabels);
     }
   }
 
@@ -609,7 +611,7 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
   ctx.restore();
 }
 
-export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape, imageCache: Map<string, HTMLImageElement>, isCropping?: boolean, theme?: CanvasTheme) {
+export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape, imageCache: Map<string, HTMLImageElement>, isCropping?: boolean, theme?: CanvasTheme, hideFileLabel?: boolean) {
   const img = imageCache.get(shape.id);
   if (img && img.complete) {
     const c = shape.crop || { x: 0, y: 0, w: 1, h: 1 };
@@ -626,7 +628,7 @@ export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape,
     const sx = c.x * img.naturalWidth, sy = c.y * img.naturalHeight;
     const sw = c.w * img.naturalWidth, sh = c.h * img.naturalHeight;
     ctx.drawImage(img, sx, sy, sw, sh, shape.position.x, shape.position.y, shape.width, shape.height);
-    if (shape.fileRef) drawFileRefChrome(ctx, shape, theme);
+    if (shape.fileRef) drawFileRefChrome(ctx, shape, theme, hideFileLabel);
   } else if (shape.fileRef) {
     // Thumbnail not hydrated yet — a quiet placeholder card so the
     // Desktop reads as "loading", not broken.
@@ -636,7 +638,7 @@ export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape,
     ctx.fillRect(shape.position.x, shape.position.y, shape.width, shape.height);
     ctx.globalAlpha = 1;
     ctx.restore();
-    drawFileRefChrome(ctx, shape, theme);
+    drawFileRefChrome(ctx, shape, theme, hideFileLabel);
   } else {
     ctx.save();
     ctx.fillStyle = "#e5e7eb";
@@ -699,14 +701,18 @@ function wrapLabelLines(ctx: CanvasRenderingContext2D, name: string, maxW: numbe
  *  and ellipsis-truncated, never horizontally squeezed. Both live in
  *  world space so they ride drags and scale with zoom; the label keeps
  *  a fixed world size so a scaled thumbnail doesn't balloon the caption. */
-function drawFileRefChrome(ctx: CanvasRenderingContext2D, shape: ImageShape, theme?: CanvasTheme) {
+function drawFileRefChrome(ctx: CanvasRenderingContext2D, shape: ImageShape, theme?: CanvasTheme, hideLabel?: boolean) {
   const { x, y } = shape.position;
   ctx.save();
   ctx.strokeStyle = theme?.uiBorder || "rgba(128,128,128,0.35)";
   ctx.lineWidth = 1;
   ctx.strokeRect(x + 0.5, y + 0.5, shape.width - 1, shape.height - 1);
   const name = shape.fileRef?.name || shape.name || "";
-  if (name) {
+  // Stacked thumbnails hide their captions (they'd overlap the pile) —
+  // desktop-hover surfaces the pile's names below it on hover instead.
+  // `hideLabel` is the per-Desktop "Thumbnail labels" option.
+  const stacked = !!(shape.fileRef?.stackId && shape.groupId);
+  if (name && !hideLabel && !stacked) {
     ctx.fillStyle = theme?.foreground || "#666";
     ctx.globalAlpha = 0.75;
     ctx.font = `13px ${FONT_FAMILY}`;

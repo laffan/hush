@@ -2,7 +2,7 @@
  * Small helpers used by the command palette. Extracted from
  * command-palette.js so that file stays under the 700-line cap.
  */
-import { findNodeByFileId, findParentOfNode } from "./state/tree-helpers.js";
+import { findNodeByFileId, findParentOfNode, nearestAncestorProjectId } from "./state/tree-helpers.js";
 import { applyAppearance } from "./settings/settings-ui.js";
 import appearanceDarkRaw from "./sidebar/sidebar_icons/appearance-dark.svg?raw";
 import appearanceLightRaw from "./sidebar/sidebar_icons/appearance-light.svg?raw";
@@ -139,4 +139,17 @@ export function canUseAsNote(state, wantNote) {
   if (n.useAsNote) return false;
   const p = findParentOfNode(state.fileTree, n.id);
   return !!p && p.type === "project" && p.id !== "__inbox__" && !p.id?.startsWith("__inbox__:");
+}
+
+/** "View in Desktop" target: the nearest ancestor project of the open
+ *  file, plus the fileRef key to focus (the fileId). Null when nothing
+ *  file-shaped inside a project is open. */
+export function currentFileDesktopTarget(s) {
+  const fileId = s.currentNotebookFileId || s.currentPdfFileId
+    || s.currentStackFileId || s.currentFileId;
+  if (!fileId) return null;
+  const node = findNodeByFileId(s.fileTree || [], fileId);
+  if (!node) return null;
+  const projectId = nearestAncestorProjectId(s.fileTree || [], node.id);
+  return projectId ? { projectId, focusKey: fileId } : null;
 }

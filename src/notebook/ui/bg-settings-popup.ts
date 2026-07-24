@@ -219,6 +219,12 @@ export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
       opacityRow.appendChild(opacityLabel);
       popup.appendChild(opacityRow);
     }
+    // Host-injected extras — the Desktop view appends its per-Desktop
+    // options (doc text size, thumbnail long edge, labels, gutters).
+    if (state.extraBgSettingsSection) {
+      try { popup.appendChild(state.extraBgSettingsSection()); }
+      catch (err) { console.warn("extra bg-settings section failed:", err); }
+    }
     reposition();
   }
 

@@ -179,6 +179,13 @@ async function init() {
   });
 
   state.on("toggle-outline-panel", async () => {
+    // Desktop takeover: the shortcut targets the Desktop canvas's shape
+    // shelf, not whatever hidden surface sits underneath.
+    if (document.body.classList.contains("desktop-active")) {
+      const grip = document.querySelector(".desktop-canvas-host .notebook-shelf > button");
+      if (grip) grip.click();
+      return;
+    }
     // Stack mode: toggle the active item's sidebar
     if (state.currentStackFileId) {
       import("./stack/stack-bridge.js").then(async ({ getStackInstance }) => {

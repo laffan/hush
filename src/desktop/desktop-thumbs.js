@@ -31,17 +31,34 @@ import { loadThumbRecord, saveThumbRecord, loadDesktopEnvelope } from "./desktop
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
-// Doc thumbnails read as a printed page: 320 × 420, generous inner
-// margins, and a pure white / black page ground (by appearance) rather
-// than the canvas colour.
+// Doc thumbnails read as a printed page: 320 × 420 by default, generous
+// inner margins, and a pure white / black page ground (by appearance)
+// rather than the canvas colour. The per-Desktop options (bg-settings
+// flyout) scale these: `themeCtx.longEdge` scales every thumbnail
+// relative to the 400 px default, `themeCtx.docFontSize` sets the doc
+// page's type size.
 const DOC_W = 320;
 const DOC_H = 420;
 const DOC_PAD = 40;
 const DOC_FONT_SIZE = 8;
+const BASE_LONG_EDGE = 400;
 // Bump when thumbnail geometry / styling changes so cached renders
 // regenerate on the next Desktop open.
 const THUMB_STYLE_VERSION = 3;
-const LONG_EDGE = 400;
+
+/** Per-Desktop option accessors — themeCtx carries them (and folds them
+ *  into its cache signature); plain defaults elsewhere. */
+function optLongEdge(themeCtx) {
+  const n = themeCtx?.longEdge;
+  return typeof n === "number" && n >= 100 ? n : BASE_LONG_EDGE;
+}
+function optScale(themeCtx) {
+  return optLongEdge(themeCtx) / BASE_LONG_EDGE;
+}
+function optDocFontSize(themeCtx) {
+  const n = themeCtx?.docFontSize;
+  return typeof n === "number" && n >= 3 && n <= 24 ? n : DOC_FONT_SIZE;
+}
 const NB_MARGIN = 10;
 const CARD_W = 220;
 const CARD_H = 280;
@@ -217,15 +234,19 @@ function docPageTheme(themeCtx) {
 
 async function renderDocThumb(state, entry, themeCtx) {
   const content = await loadFileContent(state, entry.fileId);
-  const { canvas, ctx } = makeCanvas(DOC_W, DOC_H);
+  const scale = optScale(themeCtx);
+  const w = Math.round(DOC_W * scale);
+  const h = Math.round(DOC_H * scale);
+  const pad = Math.round(DOC_PAD * scale);
+  const { canvas, ctx } = makeCanvas(w, h);
   const shape = {
     id: "doc-thumb", type: "text", color: "auto",
-    position: { x: DOC_PAD, y: DOC_PAD },
+    position: { x: pad, y: pad },
     text: docThumbText(content) || " ",
-    fontSize: DOC_FONT_SIZE,
-    width: DOC_W - DOC_PAD * 2, manualWidth: true,
+    fontSize: optDocFontSize(themeCtx),
+    width: w - pad * 2, manualWidth: true,
   };
-  renderForExport(ctx, DOC_W, DOC_H, {
+  renderForExport(ctx, w, h, {
     ...baseRenderOpts(themeCtx),
     shapes: [shape],
     camera: { x: 0, y: 0, zoom: 1 },
@@ -235,7 +256,7 @@ async function renderDocThumb(state, entry, themeCtx) {
     theme: docPageTheme(themeCtx),
     canvasBackgroundOverride: themeCtx.appearance === "dark" ? "#000000" : "#ffffff",
   });
-  return { dataUrl: encode(canvas), w: DOC_W, h: DOC_H };
+  return { dataUrl: encode(canvas), w, h };
 }
 
 async function renderNotebookThumb(state, entry, themeCtx) {
@@ -247,7 +268,7 @@ async function renderNotebookThumb(state, entry, themeCtx) {
 
   const worldW = bounds.maxX - bounds.minX + NB_MARGIN * 2;
   const worldH = bounds.maxY - bounds.minY + NB_MARGIN * 2;
-  const zoom = LONG_EDGE / Math.max(worldW, worldH);
+  const zoom = optLongEdge(themeCtx) / Math.max(worldW, worldH);
   const cssW = Math.max(1, Math.round(worldW * zoom));
   const cssH = Math.max(1, Math.round(worldH * zoom));
   const camera = {
@@ -277,13 +298,13 @@ async function renderNotebookThumb(state, entry, themeCtx) {
   return { dataUrl: encode(canvas), w: cssW, h: cssH };
 }
 
-async function resolvePdfThumb(entry) {
+async function resolvePdfThumb(entry, themeCtx) {
   const { loadPdfCoverUrl, ensurePdfCover } = await import("../pdf/pdf-covers.js");
   const url = (await loadPdfCoverUrl(entry.fileId)) || (await ensurePdfCover(entry.fileId));
   if (!url) return null;
   const img = await loadImage(url);
   if (!img) return null;
-  const h = LONG_EDGE;
+  const h = optLongEdge(themeCtx);
   const w = Math.max(1, Math.round((img.naturalWidth / Math.max(1, img.naturalHeight)) * h));
   return { url, w, h };
 }
@@ -329,7 +350,7 @@ async function renderProjectThumb(state, entry, themeCtx, depth) {
 
   const worldW = maxX - minX + NB_MARGIN * 2;
   const worldH = maxY - minY + NB_MARGIN * 2;
-  const zoom = LONG_EDGE / Math.max(worldW, worldH);
+  const zoom = optLongEdge(themeCtx) / Math.max(worldW, worldH);
   const cssW = Math.max(1, Math.round(worldW * zoom));
   const cssH = Math.max(1, Math.round(worldH * zoom));
 
@@ -372,12 +393,15 @@ export async function ensureDesktopThumb(state, entry, themeCtx, opts = {}) {
   const depth = opts.depth || 0;
 
   if (entry.kind === "pdf") {
-    return (await resolvePdfThumb(entry))
+    return (await resolvePdfThumb(entry, themeCtx))
       || { ...drawCard(themeCtx, "Downloading…", "pdf"), pending: true };
   }
   if (entry.kind === "stack") {
     const key = `stack-card|${themeCtx.sig}`;
-    if (!_session.has(key)) _session.set(key, drawCard(themeCtx, null, "stack"));
+    if (!_session.has(key)) {
+      const s = optScale(themeCtx);
+      _session.set(key, drawCard(themeCtx, null, "stack", Math.round(CARD_W * s), Math.round(CARD_H * s)));
+    }
     return _session.get(key);
   }
 
