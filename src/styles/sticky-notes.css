@@ -18,6 +18,23 @@
   z-index: var(--z-sticky);
 }
 
+/* Desktop-pinned notes get their own layer, mounted *inside*
+   `.desktop-view` so it shares that takeover's stacking context. That's
+   what puts them under both sidebars while every other sticky stays in
+   #sticky-container above all chrome: the files panel (z 100) outranks
+   the whole Desktop (z 50), and the shape shelf (z 150) outranks this
+   layer within it. `position: fixed` keeps the notes in viewport
+   coordinates — the same space the camera bridge hands back — since
+   `.desktop-view` is untransformed. Above the thumbnail hover chrome
+   (z 20) so a note reads as sitting on the canvas, below the loading
+   veil (z 30). */
+.sticky-desktop-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 25;
+}
+
 .sticky-note {
   position: absolute;
   display: flex;

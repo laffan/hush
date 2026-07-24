@@ -18,14 +18,36 @@
 
 import { desktopOpenId } from "./sticky-shared.js";
 
+/** The layer desktop-pinned notes live in — mounted inside `.desktop-view`
+ *  rather than the body-level #sticky-container, which is what puts these
+ *  notes *beneath* the sidebars (see sticky-notes.css). Recreated on
+ *  demand: closeDesktop wipes the view's markup, detaching it. Returns
+ *  null when no Desktop is mounted. */
+function stickyLayer() {
+  const view = document.getElementById("desktop-view");
+  if (!view) return null;
+  let layer = view.querySelector(".sticky-desktop-layer");
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.className = "sticky-desktop-layer";
+    view.appendChild(layer);
+  }
+  return layer;
+}
+
 /** Re-anchor + re-scale every note pinned to the open Desktop. Called on
  *  open and on every `desktop-camera-changed`. */
 export function repositionDesktopNotes(notes) {
   const toScreen = typeof window !== "undefined" ? window.__hushDesktopWorldToScreen : null;
   const openId = desktopOpenId();
   if (!toScreen || !openId) return;
+  const layer = stickyLayer();
   for (const [, n] of notes) {
     if (n.kind !== "desktop" || n.target !== openId) continue;
+    // Adopt into the Desktop's own layer. Notes are created in (and a
+    // rebuilt Desktop detaches them back to) the body-level container,
+    // so this is where a pinned note joins the under-the-sidebars layer.
+    if (layer && n.el.parentElement !== layer) layer.appendChild(n.el);
     if (typeof n.wx !== "number" || typeof n.wy !== "number") continue;
     const pt = toScreen({ x: n.wx, y: n.wy });
     if (!pt) continue;
