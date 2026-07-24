@@ -248,15 +248,21 @@ function currentFileNode(s) {
   return fileId ? findNodeByFileId(s.fileTree || [], fileId) : null;
 }
 
-/** The project the user is "in" right now: the open project itself, or
- *  the nearest ancestor project of the open file. Null when neither. */
+/** The project the user is "in" right now: the open project itself, the
+ *  project whose Desktop is open, or the nearest ancestor project of the
+ *  open file. Null when none of those. */
 function activeProjectNodeId(s) {
   if (s.currentProjectId) return s.currentProjectId;
+  if (desktopOpenId()) return desktopOpenId();
   const node = currentFileNode(s);
   return node ? nearestAncestorProjectId(s.fileTree || [], node.id) : null;
 }
 
-export function canAddFileSticky(s) { return !!currentFileContext(s); }
+/** A Desktop *replaces* the open file (openDesktop calls clearActiveFile),
+ *  so there's no currentFileContext to find — but adding a File Sticky is
+ *  still valid there (addSticky re-kinds it to "desktop" and pins it), so
+ *  the entry has to stay offered or that path is unreachable. */
+export function canAddFileSticky(s) { return !!currentFileContext(s) || !!desktopOpenId(); }
 export function canAddProjectSticky(s) { return !!activeProjectNodeId(s); }
 
 export function addSticky(state, kind) {
@@ -623,6 +629,8 @@ function noteVisible(note) {
       return (s.getActiveDesk?.()?.id || null) === note.target;
     case "project": {
       if (s.currentProjectId === note.target) return true;
+      // A project's Desktop is a view of that project.
+      if (desktopOpenId() === note.target) return true;
       const node = currentFileNode(s);
       if (!node) return false;
       const ancestors = findAncestorIds(s.fileTree || [], node.id) || [];
