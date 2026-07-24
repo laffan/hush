@@ -17,7 +17,7 @@
 import { screenToCanvas } from "../notebook/utils.ts";
 import { findShapeAtPoint } from "../notebook/state-helpers.ts";
 
-export const STACK_OFFSET = 40;
+export const STACK_OFFSET = 50;
 
 /** Cascade a stack's members from `base` — 30 px right + down per slot,
  *  in the given order (later = higher z, drawn on top). */

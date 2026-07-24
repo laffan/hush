@@ -44,14 +44,19 @@ const DOC_FONT_SIZE = 8;
 const BASE_LONG_EDGE = 400;
 // Bump when thumbnail geometry / styling changes so cached renders
 // regenerate on the next Desktop open.
-const THUMB_STYLE_VERSION = 6;
+const THUMB_STYLE_VERSION = 7;
 // Width of each constituent slice in a stack file's thumbnail.
 const STACK_SLICE_WIDTH = 80;
 // Doc length representation: one sheet per PAGE_WORDS words, drawn as a
 // faintly-bordered page-ground box offset down-right behind the page.
+// The offset has to survive the Desktop's fit-all zoom (~0.5×) to read,
+// so a 6 px step shows as ~3 px on screen — a legible stack.
 const PAGE_WORDS = 500;
-const SHEET_OFFSET = 2;
+const SHEET_OFFSET = 6;
 const MAX_SHEETS = 20;
+// Sheet edge — a soft grey so the stepped pages read against the white
+// page without shouting. Thumbnails are always light, so this is fixed.
+const SHEET_BORDER = "rgba(60,60,60,0.28)";
 // Notebook thumbnails sit inside a page-ground matte.
 const NB_MATTE = 20;
 
@@ -270,19 +275,22 @@ async function renderDocThumb(state, entry, themeCtx) {
   const cssH = h + sheets * off;
   const { canvas, ctx } = makeCanvas(cssW, cssH);
   const ground = pageGround(themeCtx);
-  const border = themeCtx.theme.uiBorder || "rgba(128,128,128,0.3)";
 
-  // The paper pile, deepest sheet first.
+  // The paper pile, deepest sheet first — a white sheet with a soft
+  // edge and a hair of shadow so each step reads as a physical page.
   for (let i = sheets; i >= 1; i--) {
     const x = i * off, y = i * off;
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.12)";
+    ctx.shadowBlur = 2;
+    ctx.shadowOffsetX = 1;
+    ctx.shadowOffsetY = 1;
     ctx.fillStyle = ground;
     ctx.fillRect(x, y, w, h);
-    ctx.save();
-    ctx.globalAlpha = 0.6;
-    ctx.strokeStyle = border;
+    ctx.restore();
+    ctx.strokeStyle = SHEET_BORDER;
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    ctx.restore();
   }
 
   // The page itself. Clip so a long doc's text can't bleed onto the
@@ -310,7 +318,7 @@ async function renderDocThumb(state, entry, themeCtx) {
     includeBackground: false,
   });
   ctx.restore();
-  ctx.strokeStyle = border;
+  ctx.strokeStyle = SHEET_BORDER;
   ctx.lineWidth = 1;
   ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
 
