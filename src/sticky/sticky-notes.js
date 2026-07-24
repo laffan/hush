@@ -36,61 +36,17 @@ import {
 } from "../state/tree-helpers.js";
 import {
   DEFAULT_SIZE, HEADER_HEIGHT, FONT_STEP, DEFAULT_FONT, ICON_CLOSE,
-  CTX_ICON, CTX_MENU, ctxIconFor, excerptFor, desktopOpenId,
+  CTX_ICON, CTX_MENU, ctxIconFor, excerptFor, desktopOpenId, desktopZoom,
   clampAxis, clampSize, clampFont,
 } from "./sticky-shared.js";
-
-function repositionDesktopNotes() {
-  const toScreen = typeof window !== "undefined" ? window.__hushDesktopWorldToScreen : null;
-  const openId = desktopOpenId();
-  if (!toScreen || !openId) return;
-  for (const [, n] of notes) {
-    if (n.kind !== "desktop" || n.target !== openId) continue;
-    if (typeof n.wx !== "number" || typeof n.wy !== "number") continue;
-    const pt = toScreen({ x: n.wx, y: n.wy });
-    if (!pt) continue;
-    n.x = Math.round(pt.x);
-    n.y = Math.round(pt.y);
-    n.el.style.left = n.x + "px";
-    n.el.style.top = n.y + "px";
-  }
-}
-
-/** Desktop-pinned notes for the open Desktop, newest last — read by the
- *  notebook shape shelf (the Desktop's right sidebar) so pinned stickies
- *  list alongside the file thumbnails. */
-function desktopStickyRows() {
-  const openId = desktopOpenId();
-  if (!openId) return [];
-  const rows = [];
-  for (const [id, n] of notes) {
-    if (n.kind !== "desktop" || n.target !== openId) continue;
-    const text = n.textarea ? n.textarea.value : (n.text || "");
-    rows.push({ id, text });
-  }
-  return rows;
-}
-
-/** Shelf row click: raise the note and pan the Desktop canvas so it's
- *  centred — a pinned sticky can sit anywhere in the world, including
- *  well off the current viewport. */
-async function revealDesktopSticky(id) {
-  const note = notes.get(id);
-  if (!note) return;
-  note.el.style.zIndex = ++zCounter;
-  if (typeof note.wx !== "number" || typeof note.wy !== "number") return;
-  const { getActiveNotebookState } = await import("../notebook/notes-canvas.ts");
-  const st = getActiveNotebookState();
-  const host = document.querySelector(".desktop-canvas-host");
-  if (!st || !host) return;
-  const rect = host.getBoundingClientRect();
-  const zoom = st.camera.zoom || 1;
-  st.camera = { ...st.camera, x: rect.width / 2 - note.wx * zoom, y: rect.height / 2 - note.wy * zoom };
-  st.notify("camera");
-  note.textarea?.focus();
-}
+import {
+  repositionDesktopNotes as repositionDesktop,
+  desktopStickyRows, revealDesktopSticky,
+} from "./sticky-desktop.js";
 
 const notes = new Map(); // id → note record
+/** Re-anchor + re-scale desktop-pinned notes against the live camera. */
+const repositionDesktopNotes = () => repositionDesktop(notes);
 let appState = null;
 let containerEl = null;
 let zCounter = 1;
@@ -111,12 +67,13 @@ export function initStickyNotes(state) {
     "active-desk-changed", "desktop-opened", "desktop-closed",
   ]) state.on(ev, refresh);
   // Desktop-pinned notes track the canvas camera.
-  state.on("desktop-opened", () => repositionDesktopNotes());
+  state.on("desktop-opened", repositionDesktopNotes);
   document.addEventListener("desktop-camera-changed", repositionDesktopNotes);
   // Hooks the notebook shape shelf reads to list desktop-pinned notes
   // (same shape as the Desktop's other window.__hush* bridges).
-  window.__hushDesktopStickies = desktopStickyRows;
-  window.__hushRevealDesktopSticky = revealDesktopSticky;
+  window.__hushDesktopStickies = () => desktopStickyRows(notes);
+  window.__hushRevealDesktopSticky = (id) =>
+    revealDesktopSticky(notes, id, (n) => { n.el.style.zIndex = ++zCounter; });
   // Renames / deletions: refresh labels and prune notes whose target
   // no longer exists in the tree.
   state.on("files-changed", () => { pruneOrphans(); refreshLabels(); refreshVisibility(); });
@@ -588,21 +545,31 @@ function setupResize(note) {
       const startX = e.clientX, startY = e.clientY;
       const startW = note.width, startH = note.height;
       const startLeft = note.x, startTop = note.y;
+      // A desktop-pinned note is drawn scaled, so a pointer travel of N
+      // screen px is only N/zoom of its own (unscaled) size — and when a
+      // w/n handle shrinks it, its top-left slides by the *scaled* delta.
+      const z = note.kind === "desktop" ? desktopZoom() : 1;
       handle.setPointerCapture(e.pointerId);
       const onMove = (me) => {
-        const dx = me.clientX - startX;
-        const dy = me.clientY - startY;
+        const dx = (me.clientX - startX) / z;
+        const dy = (me.clientY - startY) / z;
         let w = startW, h = startH, nx = startLeft, ny = startTop;
         if (dir.includes("e")) w = clampSize(startW + dx);
-        if (dir.includes("w")) { w = clampSize(startW - dx); nx = startLeft + (startW - w); }
+        if (dir.includes("w")) { w = clampSize(startW - dx); nx = startLeft + (startW - w) * z; }
         if (dir.includes("s")) h = clampSize(startH + dy);
-        if (dir.includes("n")) { h = clampSize(startH - dy); ny = startTop + (startH - h); }
+        if (dir.includes("n")) { h = clampSize(startH - dy); ny = startTop + (startH - h) * z; }
         note.width = w; note.height = h; note.x = nx; note.y = ny;
         Object.assign(note.el.style, { width: w + "px", height: h + "px", left: nx + "px", top: ny + "px" });
       };
       const onUp = () => {
         handle.removeEventListener("pointermove", onMove);
         handle.removeEventListener("pointerup", onUp);
+        // A w/n handle moves the origin, so re-derive the world anchor —
+        // otherwise the next camera change snaps the note back.
+        if (note.kind === "desktop") {
+          const w = window.__hushDesktopScreenToWorld?.({ x: note.x, y: note.y });
+          if (w) { note.wx = w.x; note.wy = w.y; }
+        }
         schedulePersist();
       };
       handle.addEventListener("pointermove", onMove);

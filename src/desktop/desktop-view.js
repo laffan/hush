@@ -100,13 +100,13 @@ function initDesktop(state) {
   // Deep-search hook for the shape shelf: while a Desktop is mounted,
   // shelf rows for file thumbnails search the file's content too.
   window.__hushDesktopSearchText = (key) => _searchText.get(key) || "";
-  // Sticky-note hooks: desktop-pinned stickies map their canvas world
-  // coordinates through the live camera (sticky-notes.js).
+  // Sticky-note hooks: desktop-pinned stickies map their world position
+  // through the live camera and scale by the zoom returned alongside.
   window.__hushDesktopWorldToScreen = (pt) => {
     if (!_canvas || !_canvasHost) return null;
     const rect = _canvasHost.getBoundingClientRect();
     const s = canvasToScreen(pt, _canvas.state.camera);
-    return { x: rect.left + s.x, y: rect.top + s.y };
+    return { x: rect.left + s.x, y: rect.top + s.y, zoom: _canvas.state.camera.zoom };
   };
   window.__hushDesktopScreenToWorld = (pt) => {
     if (!_canvas || !_canvasHost) return null;

@@ -55,6 +55,14 @@ export function desktopOpenId() {
   return (typeof window !== "undefined" && window.__hushDesktopOpenId) || null;
 }
 
+/** Live zoom of the open Desktop's canvas (1 when none is open). Rides
+ *  the world→screen hook so there's only one bridge to keep in sync. */
+export function desktopZoom() {
+  const toScreen = typeof window !== "undefined" ? window.__hushDesktopWorldToScreen : null;
+  const p = toScreen ? toScreen({ x: 0, y: 0 }) : null;
+  return p && typeof p.zoom === "number" && p.zoom > 0 ? p.zoom : 1;
+}
+
 export function clampAxis(requested, size, viewport) {
   const max = Math.max(0, viewport - size);
   return Math.min(max, Math.max(0, requested));
