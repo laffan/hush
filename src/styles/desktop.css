@@ -37,7 +37,11 @@ body.desktop-active #editor-container,
 body.desktop-active #editor-empty-state,
 body.desktop-active #notebook-container,
 body.desktop-active #pdf-container,
-body.desktop-active #stack-container {
+body.desktop-active #stack-container,
+/* Floating / pinned panes belong to whatever file was open; the Desktop
+   replaces that file, so no pane should show through it. (Sticky notes
+   live in #sticky-container and stay — desktop-pinned stickies show.) */
+body.desktop-active #pane-container {
   visibility: hidden;
 }
 

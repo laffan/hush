@@ -44,7 +44,7 @@ const DOC_FONT_SIZE = 8;
 const BASE_LONG_EDGE = 400;
 // Bump when thumbnail geometry / styling changes so cached renders
 // regenerate on the next Desktop open.
-const THUMB_STYLE_VERSION = 5;
+const THUMB_STYLE_VERSION = 6;
 // Width of each constituent slice in a stack file's thumbnail.
 const STACK_SLICE_WIDTH = 80;
 // Doc length representation: one sheet per PAGE_WORDS words, drawn as a

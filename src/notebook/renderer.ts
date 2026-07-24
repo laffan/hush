@@ -126,6 +126,20 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   const pocketLayout = computePocketLayout(effectiveShapes, w, state.fontFamily, state.pocketRightInset);
   const pocketedIds = pocketLayout.pocketedIds;
 
+  // Desktop thumbnail piles: every stacked member except the bottom
+  // (the first one in the pile's paint order) casts a subtle drop
+  // shadow onto the thumbnails beneath it.
+  const stackShadowIds = new Set<string>();
+  {
+    const seenStacks = new Set<string>();
+    for (const s of shapes) {
+      const sid = s.type === "image" ? (s as ImageShape).fileRef?.stackId : undefined;
+      if (!sid) continue;
+      if (seenStacks.has(sid)) stackShadowIds.add(s.id);
+      else seenStacks.add(sid);
+    }
+  }
+
   ctx.save();
   ctx.translate(camera.x, camera.y);
   if (camera.rotation) ctx.rotate(camera.rotation);
@@ -173,7 +187,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       if (pocketedIds.has(shape.id)) continue;
       if (shape.type === "draw") continue; // drawing layer owns strokes
       if (shape.type === "text") drawTextShape(ctx, shape, theme, state.fontFamily, false, state.flagColors);
-      else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId, theme);
+      else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId, theme, stackShadowIds.has(shape.id));
     }
   }
 
@@ -609,7 +623,7 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
   ctx.restore();
 }
 
-export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape, imageCache: Map<string, HTMLImageElement>, isCropping?: boolean, theme?: CanvasTheme) {
+export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape, imageCache: Map<string, HTMLImageElement>, isCropping?: boolean, theme?: CanvasTheme, shadow?: boolean) {
   const img = imageCache.get(shape.id);
   if (img && img.complete) {
     const c = shape.crop || { x: 0, y: 0, w: 1, h: 1 };
@@ -625,7 +639,19 @@ export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape,
     }
     const sx = c.x * img.naturalWidth, sy = c.y * img.naturalHeight;
     const sw = c.w * img.naturalWidth, sh = c.h * img.naturalHeight;
-    ctx.drawImage(img, sx, sy, sw, sh, shape.position.x, shape.position.y, shape.width, shape.height);
+    if (shadow) {
+      // A very subtle drop shadow so a stacked thumbnail lifts off the
+      // one below. Offsets are in world units — they scale with zoom.
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,0.18)";
+      ctx.shadowBlur = 5;
+      ctx.shadowOffsetX = 2;
+      ctx.shadowOffsetY = 3;
+      ctx.drawImage(img, sx, sy, sw, sh, shape.position.x, shape.position.y, shape.width, shape.height);
+      ctx.restore();
+    } else {
+      ctx.drawImage(img, sx, sy, sw, sh, shape.position.x, shape.position.y, shape.width, shape.height);
+    }
     if (shape.fileRef) drawFileRefChrome(ctx, shape, theme);
   } else if (shape.fileRef) {
     // Thumbnail not hydrated yet — a quiet placeholder card so the

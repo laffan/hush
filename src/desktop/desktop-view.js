@@ -21,7 +21,7 @@ import {
   collectDesktopFiles, findDesktopContainer, desktopScopeName,
 } from "./desktop-files.js";
 import {
-  ensureDesktopThumb, computeDesktopGrid, themeSigOf,
+  ensureDesktopThumb, computeDesktopGrid,
   evictSessionThumb, DESKTOP_GRID_GAP,
 } from "./desktop-thumbs.js";
 import {
@@ -141,15 +141,17 @@ function initDesktop(state) {
     if (!_canvas || !_containerId) return;
     const { computeNotebookSettings } = await import("../notebook/notebook-style-settings.js");
     const nbSettings = computeNotebookSettings(state, null);
-    if (_themeCtx && _themeCtx.sig === buildSig(nbSettings)) return;
-    if (!_canvas) return;
+    // The Desktop canvas (background) follows the app theme; thumbnails
+    // stay light. Repaint the canvas chrome, then rebuild the light
+    // thumbnail context only if its (light) theme actually changed.
     _canvas.applySettings({
       ...nbSettings,
       ...(_background
         ? { backgroundPattern: _background.pattern, gridSpacing: _background.spacing, gridOpacity: _background.opacity }
         : { backgroundPattern: "blank", gridOpacity: 0 }),
     });
-    _themeCtx = makeThemeCtx(nbSettings);
+    const next = makeThemeCtx();
+    if (!_themeCtx || _themeCtx.sig !== next.sig) _themeCtx = next;
   });
 
   document.addEventListener("notebook-bg-changed", (e) => {
@@ -181,6 +183,10 @@ export async function openDesktop(state, containerId, opts = {}) {
   }
   if (state.selectedDocIds?.length) state.clearSelectedDocs();
   import("../pdf/pdf-shelf.js").then((m) => m.closePdfShelf()).catch(() => {});
+  // The Desktop is the open thing now — tear down whatever file was
+  // open so there's genuinely nothing interactive behind it (no doc
+  // margins to drag, no outline, no floating panes leaking through).
+  await state.clearActiveFile();
 
   _containerId = containerId;
   _background = null;
@@ -219,12 +225,10 @@ function renderChrome() {
       <span class="desktop-header-actions">
         <button type="button" class="desktop-btn" data-desktop-reset>Reset View</button>
         <button type="button" class="desktop-btn" data-desktop-refresh>Refresh Thumbnails</button>
-        <button type="button" class="desktop-btn" data-desktop-close>Close</button>
       </span>
     </header>
     <div class="desktop-canvas-host"></div>
   `;
-  _host.querySelector("[data-desktop-close]").addEventListener("click", () => closeDesktop());
   _host.querySelector("[data-desktop-refresh]").addEventListener("click", () => refreshDesktopThumbnails());
   _host.querySelector("[data-desktop-reset]").addEventListener("click", () => resetDesktopView());
   _canvasHost = _host.querySelector(".desktop-canvas-host");
@@ -253,19 +257,26 @@ export function resetDesktopView() {
 
 // ── Canvas lifecycle ────────────────────────────────────────────────
 
-function buildSig(nbSettings) {
-  return `${themeSigOf(nbSettings)}|f${_options.docFontSize}|L${_options.thumbLongEdge}`;
-}
-
-function makeThemeCtx(nbSettings) {
+/** Thumbnails always render in light mode — white page grounds, dark
+ *  ink — regardless of the app's appearance, so a doc reads as printed
+ *  paper on the (still theme-coloured) Desktop canvas. Uses the active
+ *  style's light-variant theme (falling back to a stock light theme in
+ *  dark mode) and drops any dark-style background override. */
+function makeThemeCtx() {
+  const theme = _canvas.state.themeForVariant("light");
+  const fontFamily = _canvas.state.fontFamily;
+  const sig = [
+    "light", theme.canvasBackground, theme.foreground, theme.headingColor, fontFamily,
+    `f${_options.docFontSize}`, `L${_options.thumbLongEdge}`,
+  ].join("|");
   return {
-    theme: _canvas.state.theme,
-    fontFamily: _canvas.state.fontFamily,
-    appearance: nbSettings.appearanceMode,
-    canvasBackgroundOverride: nbSettings.canvasBackgroundOverride || "",
+    theme,
+    fontFamily,
+    appearance: "light",
+    canvasBackgroundOverride: "",
     docFontSize: _options.docFontSize,
     longEdge: _options.thumbLongEdge,
-    sig: buildSig(nbSettings),
+    sig,
   };
 }
 
@@ -312,7 +323,7 @@ async function mountCanvas() {
   const envelope = await loadDesktopEnvelope(_containerId);
   if (token !== _openToken) return;
   _options = normalizeDesktopOptions(envelope?.options);
-  _themeCtx = makeThemeCtx(nbSettings);
+  _themeCtx = makeThemeCtx();
   // Per-Desktop options ride the background-settings flyout.
   const { buildDesktopOptionsSection } = await import("./desktop-options.js");
   if (token !== _openToken || !_canvas) return;
@@ -440,8 +451,7 @@ function setDesktopOption(key, value) {
     _optionsTimer = setTimeout(async () => {
       _optionsTimer = null;
       if (!_canvas || !_containerId) return;
-      const { computeNotebookSettings } = await import("../notebook/notebook-style-settings.js");
-      _themeCtx = makeThemeCtx(computeNotebookSettings(_state, null));
+      _themeCtx = makeThemeCtx();
       const collected = collectDesktopFiles(_state, _containerId, collectOpts());
       const token = _openToken;
       for (const entry of collected?.entries || []) {
