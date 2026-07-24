@@ -74,6 +74,13 @@ export interface RenderState {
   /** id of a flowchart edge whose curve the cursor is hovering — the
    *  renderer paints a delete-X badge at the edge midpoint. */
   flowHoveredEdgeId?: string | null;
+  /** Opacity the flowchart arrows paint at (0–1, default 1). Desktops
+   *  render their derived document-order arrows at 40 %. */
+  flowArrowAlpha?: number;
+  /** True when the edges are derived rather than user-drawn (Desktops).
+   *  Suppresses the per-edge delete dot / X — those edges mirror the
+   *  project's document order and aren't the user's to remove. */
+  flowEdgesLocked?: boolean;
   /** Flag-name → hex colour map mirrored from Hush's `flagColors`
    *  setting. Used by the highlight painter so `==MISSING==` etc. take
    *  on the user's configured colour instead of the default yellow. */
@@ -167,7 +174,14 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   // Flowchart arrows render under text shapes; skip pocketed shapes.
   if (state.flowchart) {
     state.flowchart.setArrowColor(theme.foreground);
+    // The layer's own save/restore preserves globalAlpha, so setting it
+    // here dims the whole chart — that's how the Desktop's derived
+    // document-order arrows paint at 40 % without the portable layer
+    // needing to know about them.
+    ctx.save();
+    ctx.globalAlpha = state.flowArrowAlpha ?? 1;
     state.flowchart.draw(ctx, shapes.filter((s) => !pocketedIds.has(s.id)));
+    ctx.restore();
   }
 
   // File thumbnails that temporarily float above their neighbours: the
@@ -334,7 +348,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   // via hover (handlePointerMove sets flowHoveredEdgeId). Click handling
   // lives in DrawingState.handlePointerDown (canvas-space hit-test
   // against getEdgeMidpoint with a 12 px-screen-radius / zoom threshold).
-  if (state.flowchart) {
+  if (state.flowchart && !state.flowEdgesLocked) {
     const hoveredId = state.flowHoveredEdgeId ?? null;
     const touch = !!state.touchMode;
     for (const e of state.flowchart.edges) {

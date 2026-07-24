@@ -19,14 +19,15 @@ export function refOf(entry) {
 
 /** Thumbnail-derived fileRef fields (re-applied on every hydrate from
  *  the fresh record): the baked-border flag and, for stack files, the
- *  per-slice name strip the hover caption reads. */
+ *  per-slice name strip the hover caption reads. `outlineX` is a legacy
+ *  field from when the outline column hung off the page's right edge —
+ *  always cleared now that the column attaches to the left. */
 export function applyThumbRefFields(fileRef, thumb) {
   if (thumb.frameless) fileRef.frameless = true;
   else delete fileRef.frameless;
   if (thumb.slices?.length) fileRef.slices = thumb.slices;
   else delete fileRef.slices;
-  if (thumb.outlineX > 0) fileRef.outlineX = thumb.outlineX;
-  else delete fileRef.outlineX;
+  delete fileRef.outlineX;
 }
 
 /** fileRef fields that are shape-local state (not derived from the tree

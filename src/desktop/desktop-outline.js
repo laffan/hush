@@ -1,6 +1,7 @@
 /**
  * Desktop doc-outline feature — the clickable outline column shown to
- * the right of a doc thumbnail (see README "Desktops"). Two halves:
+ * the left of a doc thumbnail's page (see README "Desktops"). Two
+ * halves:
  *
  *   Render helpers (`layoutDocOutline` / `drawDocOutline`) — used by
  *   desktop-thumbs when baking a doc thumbnail with its outline on.
@@ -18,33 +19,41 @@ import { raisedLast } from "./desktop-content.js";
 export const OUTLINE_W = 190;
 export const OUTLINE_GAP = 18;
 export const OUTLINE_PAD_Y = 14;
+export const OUTLINE_PAD_X = 8;
 export const OUTLINE_ROW_H = 19;
 export const OUTLINE_FONT = 11;
 export const OUTLINE_INDENT = 11;
 
-/** Lay out the outline column to the right of the page block (`blockX`
- *  = the page block's right edge). Row hit-boxes span the whole column
- *  so a click anywhere on a heading's row navigates. Coordinates are in
- *  the thumbnail's own (scaled) CSS space = the shape's local space, so
- *  the stored rows map straight through `world − shape.position`. */
-export function layoutDocOutline(headings, scale, blockX) {
+/** Lay out the outline column, which attaches to the **left** of the
+ *  page block: the column occupies `[colX, colX + colW]` and the page
+ *  sits immediately to its right, so the gap between the two is the
+ *  column's trailing edge. Row hit-boxes span the whole column so a
+ *  click anywhere on a heading's row navigates. Coordinates are in the
+ *  thumbnail's own (scaled) CSS space = the shape's local space, so the
+ *  stored rows map straight through `world − shape.position`. */
+export function layoutDocOutline(headings, scale, colX = 0) {
   const gap = Math.round(OUTLINE_GAP * scale);
   const padY = Math.round(OUTLINE_PAD_Y * scale);
   const rowH = Math.round(OUTLINE_ROW_H * scale);
   const indentStep = Math.round(OUTLINE_INDENT * scale);
   const usableW = Math.round(OUTLINE_W * scale);
-  const colW = gap + usableW;
-  const textX0 = blockX + gap;
+  // Layout across the column: [padX][headings][gap][page]. The gap is
+  // the divider's lane; padX just keeps the text off the outer edge.
+  const padX = Math.round(OUTLINE_PAD_X * scale);
+  const colW = padX + usableW + gap;
+  const textX0 = colX + padX;
   const rows = headings.map((hd, i) => {
     const indent = (Math.max(1, hd.level) - 1) * indentStep;
     return {
       text: hd.text, level: hd.level, startOffset: hd.startOffset,
-      x: blockX, w: colW, y: padY + i * rowH, h: rowH,
+      x: colX, w: colW, y: padY + i * rowH, h: rowH,
       textX: textX0 + indent, indent,
     };
   });
   const contentH = padY * 2 + Math.max(1, headings.length) * rowH;
-  return { rows, colW, contentH, textX0, usableW, rowH, padY, gap, scale, blockX };
+  // Divider sits in the gap between the headings and the page.
+  const dividerX = colX + colW - Math.round(gap / 2);
+  return { rows, colW, contentH, textX0, usableW, rowH, padY, gap, scale, colX, dividerX };
 }
 
 function truncateToWidth(ctx, text, maxW) {
@@ -64,16 +73,16 @@ export function drawDocOutline(ctx, outline, { ink, border, fontFamily, bg, heig
   if (bg) {
     ctx.save();
     ctx.fillStyle = bg;
-    ctx.fillRect(outline.blockX, 0, outline.colW, panelH);
+    ctx.fillRect(outline.colX, 0, outline.colW, panelH);
     ctx.strokeStyle = border;
     ctx.lineWidth = 1;
-    ctx.strokeRect(outline.blockX + 0.5, 0.5, outline.colW - 1, panelH - 1);
+    ctx.strokeRect(outline.colX + 0.5, 0.5, outline.colW - 1, panelH - 1);
     ctx.restore();
   }
   ctx.save();
   ctx.strokeStyle = border;
   ctx.lineWidth = 1;
-  const dx = outline.blockX + Math.round(outline.gap / 2) + 0.5;
+  const dx = outline.dividerX + 0.5;
   ctx.beginPath();
   ctx.moveTo(dx, outline.padY);
   ctx.lineTo(dx, outline.contentH - outline.padY);
@@ -205,28 +214,47 @@ export function createDesktopOutline(deps) {
       el.style.cursor = hit ? "pointer" : "";
     };
     const onLeave = () => setHover(null);
+    // iOS cancels the pointer stream when a second finger lands and the
+    // canvas takes over the gesture. Drop the pending press with it, so
+    // a later pointerup can't pair with it and read as a row click
+    // in the middle of a two-finger pan.
+    const onCancel = () => { down = null; setHover(null); };
     el.addEventListener("pointerdown", onDown);
     el.addEventListener("pointerup", onUp);
     el.addEventListener("pointermove", onMove);
     el.addEventListener("pointerleave", onLeave);
+    el.addEventListener("pointercancel", onCancel);
     return () => {
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerleave", onLeave);
+      el.removeEventListener("pointercancel", onCancel);
       setHover(null);
     };
   }
 
   /** Regenerate one doc's thumbnail with `outline` on/off, applying the
-   *  new dataUrl / dims / rows in place. */
+   *  new dataUrl / dims / rows in place. The column attaches to the left
+   *  of the page, so the shape slides left by exactly the width it
+   *  gained (and back right on close) — the page itself stays put
+   *  instead of jumping sideways under the pointer. */
   async function regenDoc(entry, on) {
     const st = deps.getCanvas().state;
+    const prevW = st.shapes.find((s) => s.type === "image" && s.fileRef?.key === entry.key)?.width || 0;
     st.shapes = st.shapes.map((s) =>
       (s.type === "image" && s.fileRef?.key === entry.key)
         ? { ...s, fileRef: { ...s.fileRef, outline: on || undefined } } : s);
     entry.outline = on;
     deps.applyThumb(entry.key, await deps.ensureThumb(deps.getState(), entry, deps.getThemeCtx()));
+    const after = deps.getCanvas()?.state;
+    if (!after || !prevW) return;
+    const shape = after.shapes.find((s) => s.type === "image" && s.fileRef?.key === entry.key);
+    const dx = (shape?.width || 0) - prevW;
+    if (!shape || !dx) return;
+    after.shapes = after.shapes.map((s) =>
+      s.id === shape.id ? { ...s, position: { ...s.position, x: s.position.x - dx } } : s);
+    after.notify("shapes");
   }
 
   /** Toggle a single doc's outline (hover Outline button). */

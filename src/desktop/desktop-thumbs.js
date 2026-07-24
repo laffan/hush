@@ -46,7 +46,7 @@ const DOC_FONT_SIZE = 8;
 const BASE_LONG_EDGE = 400;
 // Bump when thumbnail geometry / styling changes so cached renders
 // regenerate on the next Desktop open.
-const THUMB_STYLE_VERSION = 8;
+const THUMB_STYLE_VERSION = 9;
 // Doc outline column geometry + drawing live in ./desktop-outline.js.
 // Width of each constituent slice in a stack file's thumbnail.
 const STACK_SLICE_WIDTH = 80;
@@ -280,16 +280,20 @@ async function renderDocThumb(state, entry, themeCtx) {
   const blockW = w + sheets * off;
   const blockH = h + sheets * off;
 
-  // Optional clickable outline column. Headings are parsed from the
-  // *original* content so their startOffsets index the real document
-  // (the click handler scrolls the opened doc to that offset).
+  // Optional clickable outline column, attached to the **left** of the
+  // page. Headings are parsed from the *original* content so their
+  // startOffsets index the real document (the click handler scrolls the
+  // opened doc to that offset).
   let outline = null;
   if (entry.outline) {
     const { parseHeadings } = await import("../longview/longview-parser.js");
-    outline = layoutDocOutline(parseHeadings(content), scale, blockW);
+    outline = layoutDocOutline(parseHeadings(content), scale, 0);
   }
 
-  const imgW = outline ? blockW + outline.colW : blockW;
+  // The column takes the left band, so everything the page draws shifts
+  // right by its width.
+  const ox = outline ? outline.colW : 0;
+  const imgW = blockW + ox;
   const imgH = outline ? Math.max(blockH, outline.contentH) : blockH;
   const { canvas, ctx } = makeCanvas(imgW, imgH);
   const ground = pageGround(themeCtx);
@@ -297,7 +301,7 @@ async function renderDocThumb(state, entry, themeCtx) {
   // The paper pile, deepest sheet first — a white sheet with a soft
   // edge and a hair of shadow so each step reads as a physical page.
   for (let i = sheets; i >= 1; i--) {
-    const x = i * off, y = i * off;
+    const x = ox + i * off, y = i * off;
     ctx.save();
     ctx.shadowColor = "rgba(0,0,0,0.12)";
     ctx.shadowBlur = 2;
@@ -314,20 +318,20 @@ async function renderDocThumb(state, entry, themeCtx) {
   // The page itself. Clip so a long doc's text can't bleed onto the
   // pile offsets below it.
   ctx.fillStyle = ground;
-  ctx.fillRect(0, 0, w, h);
+  ctx.fillRect(ox, 0, w, h);
   ctx.save();
   ctx.beginPath();
-  ctx.rect(0, 0, w, h);
+  ctx.rect(ox, 0, w, h);
   ctx.clip();
   const shape = {
     id: "doc-thumb", type: "text", color: "auto",
-    position: { x: pad, y: pad },
+    position: { x: ox + pad, y: pad },
     // ~40 wrapped lines fill the page; 4 KB of text is plenty.
     text: text.slice(0, 4000) || " ",
     fontSize: optDocFontSize(themeCtx),
     width: w - pad * 2, manualWidth: true,
   };
-  renderForExport(ctx, w, h, {
+  renderForExport(ctx, imgW, imgH, {
     ...baseRenderOpts(themeCtx),
     shapes: [shape],
     camera: { x: 0, y: 0, zoom: 1 },
@@ -338,7 +342,7 @@ async function renderDocThumb(state, entry, themeCtx) {
   ctx.restore();
   ctx.strokeStyle = SHEET_BORDER;
   ctx.lineWidth = 1;
-  ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+  ctx.strokeRect(ox + 0.5, 0.5, w - 1, h - 1);
 
   if (outline) {
     drawDocOutline(ctx, outline, {
@@ -353,10 +357,6 @@ async function renderDocThumb(state, entry, themeCtx) {
   return {
     dataUrl: encode(canvas), w: imgW, h: imgH, frameless: true,
     outlineRows: outline ? outline.rows : null,
-    // Right edge of the page block: where the outline column starts, so
-    // the hover buttons can anchor over the page instead of covering the
-    // column's first rows.
-    outlineX: outline ? blockW : 0,
   };
 }
 

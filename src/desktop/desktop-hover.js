@@ -154,13 +154,10 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
       outlineBtn.classList.toggle("active", on);
     }
     const bounds = getShapeBounds(shape, state.fontFamily);
-    // Anchor top-right — but a doc showing its outline anchors to the
-    // page's right edge instead, so the buttons don't sit on top of the
-    // column's first heading rows and swallow their clicks.
-    const anchorX = shape.fileRef.outlineX
-      ? shape.position.x + shape.fileRef.outlineX
-      : bounds.maxX;
-    const corner = canvasToScreen({ x: anchorX, y: bounds.minY }, state.camera);
+    // Anchor top-right. A doc's outline column attaches to the *left* of
+    // the page, so the shape's right edge is always the page's own edge
+    // — the buttons never land on the column's heading rows.
+    const corner = canvasToScreen({ x: bounds.maxX, y: bounds.minY }, state.camera);
     overlay.style.left = `${Math.round(corner.x)}px`;
     overlay.style.top = `${Math.round(corner.y)}px`;
     overlay.classList.remove("hidden");
@@ -258,9 +255,33 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
     handlers.onOpen(shape.fileRef);
   };
   const onDblClick = (e) => openAt(e.clientX, e.clientY);
+  // Touch double-tap detector. Two-finger pan / pinch is the hazard
+  // here: it ends with *two* pointerups a few milliseconds apart, and a
+  // zoom-out finishes with the fingers close together — which read as a
+  // double-tap and opened a file mid-gesture, closing the Desktop.
+  // `liveTouches` tracks concurrent contacts; any gesture that ever had
+  // two of them is disqualified until the screen is clear again.
+  const liveTouches = new Set();
+  let multiTouchGesture = false;
   let lastTap = 0, lastTapX = 0, lastTapY = 0;
+  const onTapDown = (e) => {
+    if (e.pointerType !== "touch") return;
+    // A fresh contact on an empty screen starts a new gesture. Clearing
+    // the flag here rather than on release means a stray pointerup that
+    // arrives *after* iOS cancelled the pinch still counts as multi.
+    if (!liveTouches.size) multiTouchGesture = false;
+    liveTouches.add(e.pointerId);
+    if (liveTouches.size > 1) { multiTouchGesture = true; lastTap = 0; }
+  };
+  const onTapEnd = (e) => {
+    if (e.pointerType !== "touch") return;
+    liveTouches.delete(e.pointerId);
+  };
   const onTapUp = (e) => {
     if (e.pointerType !== "touch") return;
+    const multi = multiTouchGesture || liveTouches.size > 1;
+    onTapEnd(e);
+    if (multi) return;
     const now = Date.now();
     if (now - lastTap < 400 && Math.abs(e.clientX - lastTapX) < 24 && Math.abs(e.clientY - lastTapY) < 24) {
       lastTap = 0;
@@ -291,14 +312,21 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
   canvasHost.addEventListener("pointermove", onPointerMove);
   canvasHost.addEventListener("pointerleave", onPointerLeave);
   canvasHost.addEventListener("dblclick", onDblClick);
+  canvasHost.addEventListener("pointerdown", onTapDown);
   canvasHost.addEventListener("pointerup", onTapUp);
+  // iOS cancels the pointer stream when the canvas preventDefault()s a
+  // two-finger touchstart — without this the cancelled contacts would
+  // stay in `liveTouches` and lock the detector out for good.
+  canvasHost.addEventListener("pointercancel", onTapEnd);
   state.addEventListener("change", onStateChange);
 
   return () => {
     canvasHost.removeEventListener("pointermove", onPointerMove);
     canvasHost.removeEventListener("pointerleave", onPointerLeave);
     canvasHost.removeEventListener("dblclick", onDblClick);
+    canvasHost.removeEventListener("pointerdown", onTapDown);
     canvasHost.removeEventListener("pointerup", onTapUp);
+    canvasHost.removeEventListener("pointercancel", onTapEnd);
     state.removeEventListener("change", onStateChange);
     overlay.remove();
     labelEl.remove();

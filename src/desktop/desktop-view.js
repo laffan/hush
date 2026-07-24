@@ -16,10 +16,7 @@
  * search index in desktop-content.js.
  */
 
-import { escHtml } from "../sidebar/files-panel-shared.js";
-import {
-  collectDesktopFiles, findDesktopContainer, desktopScopeName,
-} from "./desktop-files.js";
+import { collectDesktopFiles, findDesktopContainer } from "./desktop-files.js";
 import {
   ensureDesktopThumb, computeDesktopGrid,
   evictSessionThumb, DESKTOP_GRID_GAP,
@@ -32,6 +29,8 @@ import { normalizeDesktopStacks } from "./desktop-stacks.js";
 import { DESKTOP_OPTION_DEFAULTS, normalizeDesktopOptions } from "./desktop-options.js";
 import { loadDesktopEnvelope, saveDesktopEnvelope } from "./desktop-store.js";
 import { createDesktopOutline } from "./desktop-outline.js";
+import { initDesktopConnections, applyDocConnections } from "./desktop-connections.js";
+import { openFileRef, openFileRefWithGutter, openFileRefSecondary } from "./desktop-open.js";
 import { canvasToScreen, screenToCanvas } from "../notebook/utils.ts";
 
 let _host = null;
@@ -74,6 +73,14 @@ const DESKTOP_BG_DEFAULT = { backgroundPattern: "grid", gridSpacing: 25, gridOpa
 
 function collectOpts() {
   return { includeGutters: _options.includeGutters };
+}
+
+/** True when some file surface is genuinely active. The open events
+ *  fire after the pointers are set, so this reads as "the open landed"
+ *  — an open that bailed leaves every pointer null. */
+function somethingIsOpen(state) {
+  return !!(state.currentFileId || state.currentProjectId || state.currentNotebookFileId
+    || state.currentPdfFileId || state.currentStackFileId || state.currentLocalSync);
 }
 
 /** Docked panes (a doc's gutter especially) reserve edge width through
@@ -120,7 +127,11 @@ function initDesktop(state) {
 
   // Any single-file open replaces the Desktop, exactly like the PDF
   // shelf (the hover Open buttons land here via these events too).
-  const close = () => closeDesktop();
+  // Guarded on something *actually* being open: an open that bailed
+  // (missing file, failed load) still emits its event, and closing on
+  // that would strand the user on the "No file selected" pane with the
+  // Desktop gone. Better to stay put than to close into nothing.
+  const close = () => { if (somethingIsOpen(state)) closeDesktop(); };
   state.on("file-opened", close);
   state.on("notebook-open", close);
   state.on("pdf-open", close);
@@ -129,10 +140,12 @@ function initDesktop(state) {
     if ((state.selectedDocIds || []).length >= 2) closeDesktop();
   });
   // Filesystem is the source of truth: deleted files disappear from the
-  // canvas, new files grid in, renames re-caption. Container gone → close.
+  // canvas, new files grid in, renames re-caption. A container that's
+  // genuinely gone closes the Desktop — but that check lives inside the
+  // debounced reconcile, so a transient miss while the tree reloads
+  // can't yank the view out from under a pan.
   state.on("files-changed", () => {
     if (!_containerId) return;
-    if (!findDesktopContainer(state, _containerId)) { closeDesktop(); return; }
     if (_reconcileTimer) clearTimeout(_reconcileTimer);
     _reconcileTimer = setTimeout(() => { _reconcileTimer = null; reconcileLive(); }, 300);
   });
@@ -240,20 +253,11 @@ export function closeDesktop() {
 
 // ── Chrome ──────────────────────────────────────────────────────────
 
+/** The Desktop has no header of its own — the canvas fills the takeover
+ *  and its two view actions (Reset View / Refresh Thumbnails) live in
+ *  the background-settings flyout's Desktop section, bottom right. */
 function renderChrome() {
-  _host.innerHTML = `
-    <header class="desktop-header">
-      <span class="desktop-scope">${escHtml(desktopScopeName(_state, _containerId))}</span>
-      <span class="desktop-header-note">Desktop</span>
-      <span class="desktop-header-actions">
-        <button type="button" class="desktop-btn" data-desktop-reset>Reset View</button>
-        <button type="button" class="desktop-btn" data-desktop-refresh>Refresh Thumbnails</button>
-      </span>
-    </header>
-    <div class="desktop-canvas-host"></div>
-  `;
-  _host.querySelector("[data-desktop-refresh]").addEventListener("click", () => refreshDesktopThumbnails());
-  _host.querySelector("[data-desktop-reset]").addEventListener("click", () => resetDesktopView());
+  _host.innerHTML = `<div class="desktop-canvas-host"></div>`;
   _canvasHost = _host.querySelector(".desktop-canvas-host");
 }
 
@@ -328,10 +332,13 @@ async function mountCanvas() {
   // Route clipboard / undo to this canvas immediately — a hidden main
   // notebook underneath may still hold the active-canvas slot.
   claimActiveNotebook(_canvas);
-  // No flowchart, and no option-drag clones (dupes dedupe on reopen).
+  // No user-drawn flowchart, and no option-drag clones (dupes dedupe on
+  // reopen). The flowchart *layer* stays live: the Desktop paints its
+  // own derived document-order arrows through it (desktop-connections).
   _canvas.state.flowchartEnabled = false;
   _canvas.state.altDuplicateEnabled = false;
   _canvas.state.desktopMode = true;
+  initDesktopConnections(_canvas);
   // Toolbar parks bottom + minimized — thumbnails lead, tools are a click away.
   _canvas.state.setDrawingToolbarPosition("bottom");
   _canvas.state.setDrawingToolbarMinimized(true);
@@ -347,7 +354,10 @@ async function mountCanvas() {
   const { buildDesktopOptionsSection } = await import("./desktop-options.js");
   if (token !== _openToken || !_canvas) return;
   _canvas.state.extraBgSettingsSection = () =>
-    buildDesktopOptionsSection(_canvas.state.theme, () => _options, setDesktopOption, (on) => _outline.setAll(on));
+    buildDesktopOptionsSection(
+      _canvas.state.theme, () => _options, setDesktopOption, (on) => _outline.setAll(on),
+      { resetView: resetDesktopView, refreshThumbnails: refreshDesktopThumbnails },
+    );
   if (envelope?.background) {
     _background = envelope.background;
     _canvas.applySettings({
@@ -379,7 +389,10 @@ async function mountCanvas() {
     buildShapes(envelope, entries, thumbs),
     envelope?.layers?.length ? envelope.layers : undefined,
   );
-  // Flowchart edges are intentionally not restored (deactivated here).
+  // Saved flowchart edges are intentionally not restored: the only edges
+  // a Desktop carries are the derived document-order connections, which
+  // are re-chained from the live file order every time.
+  applyDocConnections(_canvas, entries, _options.showConnections);
 
   requestAnimationFrame(() => {
     if (token !== _openToken || !_canvas) return;
@@ -435,9 +448,10 @@ function attachCanvasListeners() {
   import("./desktop-hover.js").then((m) => {
     if (!_canvas || !_canvasHost) return;
     _hoverCleanup = m.attachDesktopHover(_canvasHost, _canvas, {
-      onOpen: openFileRef,
-      onSecondary: openFileRefSecondary,
-      onOpenWithGutter: openFileRefWithGutter,
+      onOpen: (ref) => openFileRef(_state, ref),
+      onSecondary: (ref, ev) =>
+        openFileRefSecondary(_state, ref, ev, _containerId, (id) => openDesktop(_state, id)),
+      onOpenWithGutter: (ref) => openFileRefWithGutter(_state, ref),
       onToggleOutline: (ref) => _outline.toggleDoc(ref),
       onStacksChanged: () => scheduleSave(),
     }, {
@@ -473,6 +487,9 @@ function setDesktopOption(key, value) {
   if (key === "showLabels") {
     // Labels are hover-only DOM now — the option just gates them; the
     // hover module reads it live, so nothing to repaint here.
+  } else if (key === "showConnections") {
+    const collected = collectDesktopFiles(_state, _containerId, collectOpts());
+    applyDocConnections(_canvas, collected?.entries || [], _options.showConnections);
   } else if (key === "includeGutters") {
     reconcileLive();
   } else {
@@ -521,7 +538,9 @@ function persistNow() {
     version: 1,
     shapes,
     layers: st.layers,
-    flowEdges: st.flowchart.serialize(),
+    // The Desktop's only edges are the derived document-order arrows —
+    // never persisted, always re-chained from the live file order.
+    flowEdges: [],
     camera: { ...st.camera },
     options: { ..._options },
     ...(_background ? { background: _background } : {}),
@@ -541,7 +560,14 @@ async function reconcileLive() {
   if (!_canvas || !_containerId || !_hydrated) return;
   const token = _openToken;
   const collected = collectDesktopFiles(_state, _containerId, collectOpts());
-  if (!collected) { closeDesktop(); return; }
+  // A container that can't be resolved right now is only fatal if the
+  // tree is actually loaded — a mid-reload `files-changed` (multi-window
+  // broadcast, background PDF sync) would otherwise drop the user onto
+  // the "No file selected" pane with no warning.
+  if (!collected) {
+    if ((_state.fileTree || []).length) closeDesktop();
+    return;
+  }
   const st = _canvas.state;
   const byKey = new Map(collected.entries.map((e) => [e.key, e]));
 
@@ -581,6 +607,11 @@ async function reconcileLive() {
     changed = true;
   }
 
+  // Order can change without the shape set changing at all (a sidebar
+  // drag reorders the project's docs), so re-chain the connections
+  // before the early-out.
+  applyDocConnections(_canvas, collected.entries, _options.showConnections);
+
   if (!changed) return;
   next = normalizeDesktopStacks(next);
   const surviving = new Set(next.map((s) => s.id));
@@ -589,6 +620,9 @@ async function reconcileLive() {
   st.recordHistory();
   st.notify("shapes");
   st.notify("selectedIds");
+  // Shape ids changed (new files gridded in, dead ones dropped) — the
+  // edges reference ids, so re-derive against the new array.
+  applyDocConnections(_canvas, collected.entries, _options.showConnections);
   scheduleSave();
   // Entry set changed — refresh the shelf's deep-search index too.
   for (const key of [..._searchText.keys()]) if (!byKey.has(key)) _searchText.delete(key);
@@ -634,13 +668,12 @@ async function refreshEntryByFileId(fileId) {
 }
 
 /** Force-regenerate every thumbnail on the open Desktop — the command
- *  palette's "Refresh Desktop Thumbnails" and the header button. */
+ *  palette's "Refresh Desktop Thumbnails" and the Desktop settings
+ *  button. */
 export async function refreshDesktopThumbnails() {
   if (!_canvas || !_containerId || _refreshing || !_hydrated) return;
   const token = _openToken;
-  const btn = _host?.querySelector("[data-desktop-refresh]");
   _refreshing = true;
-  if (btn) { btn.textContent = "Refreshing…"; btn.disabled = true; }
   try {
     const collected = collectDesktopFiles(_state, _containerId, collectOpts());
     for (const entry of collected?.entries || []) {
@@ -649,52 +682,9 @@ export async function refreshDesktopThumbnails() {
       if (token !== _openToken) return;
       applyThumbToShape(entry.key, thumb);
     }
+    applyDocConnections(_canvas, collected?.entries || [], _options.showConnections);
     scheduleSave();
   } finally {
     _refreshing = false;
-    if (btn && token === _openToken) { btn.textContent = "Refresh Thumbnails"; btn.disabled = false; }
   }
-}
-
-// ── Hover actions ───────────────────────────────────────────────────
-
-function openFileRef(ref) {
-  const state = _state;
-  if (!ref) return;
-  if (ref.kind === "project") { state.openProject(ref.nodeId); return; }
-  if (ref.kind === "doc") { state.openFile(ref.fileId); return; }
-  if (ref.kind === "notebook") { state.openNotebook(ref.fileId); return; }
-  if (ref.kind === "stack") { state.openStack(ref.fileId); return; }
-  if (ref.kind === "pdf") {
-    import("../sync/pdf-sync.js").then(({ isPdfDownloaded }) => {
-      if (isPdfDownloaded(ref.fileId)) state.openPdf(ref.fileId);
-    });
-  }
-}
-
-/** "Open with Gutter Visible" — open the doc, then re-dock its paired
- *  gutter notebook (the pairing survives closes, so Open Gutter just
- *  re-docks it). */
-async function openFileRefWithGutter(ref) {
-  if (!ref || ref.kind !== "doc") return;
-  const state = _state;
-  await state.openFile(ref.fileId);
-  try {
-    const { openGutter } = await import("../project/gutter-commands.js");
-    await openGutter(state);
-  } catch (e) {
-    console.warn("Open with gutter failed:", e);
-  }
-}
-
-async function openFileRefSecondary(ref, ev) {
-  if (!ref) return;
-  if (ref.kind === "project") {
-    // Drill into the project's own Desktop.
-    await openDesktop(_state, ref.nodeId);
-    return;
-  }
-  const typeMap = { doc: "document", notebook: "notebook", pdf: "pdf", stack: "stack" };
-  const { createPane } = await import("../pane/pane-manager.js");
-  createPane(ref.fileId, ref.name, typeMap[ref.kind] || "document", ev?.clientX ?? 200, ev?.clientY ?? 120);
 }

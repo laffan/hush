@@ -49,6 +49,9 @@ export function serializePanes() {
       collapsed: !!p.collapsed,
       attached: !!p.attached,
       pinned: !!p.pinned,
+      // Opened from a Desktop thumbnail — needs the `.desktop-pane`
+      // visibility opt-in again on restore.
+      desktopPane: !!p.desktopPane,
       gutter: !!p.gutter,
       gutterSide: p.gutterSide || null,
       gutterPrev: p._gutterPrev || null,
@@ -191,6 +194,7 @@ export async function restorePanes(deps, listOverride) {
       notebookCamera: s.notebookCamera
         ? { x: s.notebookCamera.x, y: s.notebookCamera.y, zoom: s.notebookCamera.zoom }
         : null,
+      desktopPane: !!s.desktopPane,
       gutter: !!s.gutter,
       gutterSide: s.gutterSide || null,
       docked: !!s.docked,
@@ -211,6 +215,7 @@ export async function restorePanes(deps, listOverride) {
     if (s.scrollRelY != null) pane._scrollRelY = s.scrollRelY;
 
     buildPaneDOM(pane);
+    if (pane.desktopPane) pane.el.classList.add("desktop-pane");
     applyPaneFontSize(pane);
     if (pane.inline) {
       // Park off-screen inside #pane-container so CodeMirror has a real

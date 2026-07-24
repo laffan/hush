@@ -51,54 +51,13 @@ body.desktop-active .right-panel-trigger {
   visibility: hidden;
 }
 
-/* ── Header ────────────────────────────────────────────────────── */
-
-.desktop-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 16px 8px;
-  flex: 0 0 auto;
-}
-
-.desktop-scope {
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.desktop-header-note {
-  font-size: 12px;
-  opacity: 0.5;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding-top: 2px;
-}
-
-.desktop-header-actions {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
-}
-
-.desktop-btn {
-  background: transparent;
-  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
-  color: inherit;
-  border-radius: 5px;
-  padding: 3px 10px;
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-  opacity: 0.85;
-}
-
-.desktop-btn:hover {
-  opacity: 1;
-}
-
-.desktop-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
+/* …except a pane the Desktop itself opened ("Open as pane" on a
+   thumbnail). `visibility` is inherited, so a descendant can opt back
+   in even though #pane-container is hidden. #pane-container's z-index
+   (--z-pane, 90) already sits above .desktop-view (50), so the pane
+   floats over the canvas the way it floats over an editor. */
+body.desktop-active #pane-container .floating-pane.desktop-pane {
+  visibility: visible;
 }
 
 /* ── Canvas host ───────────────────────────────────────────────── */

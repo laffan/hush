@@ -34,13 +34,6 @@ export function findDesktopContainer(state, containerId) {
   return node && node.type === "project" ? node : null;
 }
 
-/** Human label for the Desktop header. */
-export function desktopScopeName(state, containerId) {
-  const node = findDesktopContainer(state, containerId);
-  if (!node) return "Desktop";
-  return node.name || (node.type === "desk" ? "Desk" : "Project");
-}
-
 /** Collect the Desktop entries for a container node. Each entry:
  *  `{ key, kind, fileId, nodeId, name, hasGutter? }` — `key` is the
  *  thumbnail cache key (fileId for files, node id for projects) and

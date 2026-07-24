@@ -90,13 +90,23 @@ export function initPaneManager(state) {
   state.on("pdf-unmount", onContextChange);
   state.on("stack-open", onContextChange);
   state.on("stack-unmount", onContextChange);
+  // A Desktop takeover is its own pane context (see getCurrentContext):
+  // panes opened from a thumbnail belong to the Desktop, hide when you
+  // leave it, and come back when you return.
+  state.on("desktop-opened", onContextChange);
+  state.on("desktop-closed", onContextChange);
 
   // Restore any panes that were open when the app last closed
   restorePanes().catch((e) => console.error("Pane restore failed:", e));
 }
 
-/** Returns an opaque string identifying the current doc/notebook/project/pdf. */
+/** Returns an opaque string identifying the current doc/notebook/project/pdf.
+ *  A Desktop wins outright: it *replaces* the open file (openDesktop
+ *  calls clearActiveFile), so while one is up its own `dt:` context owns
+ *  pane visibility. */
 function getCurrentContext() {
+  const desktopId = typeof window !== "undefined" ? window.__hushDesktopOpenId : null;
+  if (desktopId) return "dt:" + desktopId;
   if (appState.currentStackFileId) return "st:" + appState.currentStackFileId;
   if (appState.currentPdfFileId) return "pdf:" + appState.currentPdfFileId;
   if (appState.currentNotebookFileId) return "nb:" + appState.currentNotebookFileId;
@@ -298,9 +308,14 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
     ownerContext: opts.ownerContext ?? getCurrentContext(),
     localSync: opts.localSync || null,
     zotero: opts.zotero || null,
+    // Opened from a Desktop thumbnail: `body.desktop-active` hides
+    // #pane-container wholesale, so this pane opts back into visibility
+    // via `.desktop-pane` (desktop.css).
+    desktopPane: !!opts.desktopPane,
   };
 
   buildPaneDOM(pane);
+  if (pane.desktopPane) pane.el.classList.add("desktop-pane");
   // Inline panes park off-screen so CM can measure during loadPaneContent;
   // the inline plugin reparents into its widget host next.
   if (pane.inline) Object.assign(pane.el.style, { position: "absolute", left: "-99999px", top: "0px", width: pane.width + "px", height: pane.height + "px" });

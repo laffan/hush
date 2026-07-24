@@ -187,6 +187,15 @@ export class DrawingState extends EventTarget {
    *  fit a Desktop of file thumbnails (e.g. the selection toolbar's
    *  Rasterize, which would bake live previews into dead pixels). */
   desktopMode = false;
+  /** Opacity the flowchart arrows paint at. The Desktop's derived
+   *  document-order connections sit at 0.4 so they read as annotation
+   *  over the thumbnails rather than as content. */
+  flowArrowAlpha = 1;
+  /** Per-canvas switch marking the flowchart edges as derived, not
+   *  user-drawn: the hover / tap delete affordances are suppressed and
+   *  pointer input never removes an edge. Set by the Desktop, whose
+   *  edges mirror the project's document order. */
+  flowEdgesLocked = false;
   /** Optional extra section appended to the background-settings popup —
    *  the Desktop view injects its per-Desktop options (doc text size,
    *  thumbnail long edge, labels, gutters) here. Rebuilt per popup
@@ -578,18 +587,20 @@ export class DrawingState extends EventTarget {
   /** Assemble the full undoable state — shapes plus the flowchart edges
    *  and layers that must restore alongside them (an edge delete or a
    *  layer change recorded a checkpoint that previously couldn't bring
-   *  them back). */
+   *  them back). Locked edges are derived, not authored, so they stay
+   *  out of the history entirely — undo would otherwise resurrect a
+   *  stale chain the host is about to re-derive anyway. */
   private _checkpoint(): NotebookCheckpoint {
     return {
       shapes: this.shapes,
-      flowEdges: this.flowchart.serialize(),
+      flowEdges: this.flowEdgesLocked ? [] : this.flowchart.serialize(),
       layers: this.layers,
     };
   }
 
   private _applyCheckpoint(cp: NotebookCheckpoint) {
     this.shapes = cp.shapes;
-    if (cp.flowEdges) this.flowchart.deserialize(cp.flowEdges);
+    if (cp.flowEdges && !this.flowEdgesLocked) this.flowchart.deserialize(cp.flowEdges);
     if (cp.layers && cp.layers.length) {
       this.layers = cp.layers;
       if (!cp.layers.some((l) => l.id === this.activeLayerId)) {
@@ -1189,7 +1200,7 @@ export class DrawingState extends EventTarget {
     // radius / current zoom matches the on-screen targets the renderer
     // paints. The tap-on-dot path lets touch users summon the X without
     // hover; the second tap on the X removes the edge.
-    {
+    if (!this.flowEdgesLocked) {
       const r = 12 / this.camera.zoom;
       let hitId: string | null = null;
       for (const e of this.flowchart.edges) {
@@ -1701,7 +1712,9 @@ export class DrawingState extends EventTarget {
       // renderer can render the delete-X badge, and pointer-down knows
       // which edge to remove if the user clicks the badge.
       const threshold = 10 / this.camera.zoom;
-      const edge = this.flowchart.findEdgeNear(canvasPt, this.shapes, threshold);
+      const edge = this.flowEdgesLocked
+        ? null
+        : this.flowchart.findEdgeNear(canvasPt, this.shapes, threshold);
       const newId = edge ? edge.id : null;
       if (newId !== this.flowHoveredEdgeId) {
         this.flowHoveredEdgeId = newId;
