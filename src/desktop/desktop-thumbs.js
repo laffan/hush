@@ -44,9 +44,16 @@ const DOC_FONT_SIZE = 8;
 const BASE_LONG_EDGE = 400;
 // Bump when thumbnail geometry / styling changes so cached renders
 // regenerate on the next Desktop open.
-const THUMB_STYLE_VERSION = 4;
-// Horizontal fan offset between a stack file's constituent thumbnails.
-const STACK_FAN_OFFSET = 50;
+const THUMB_STYLE_VERSION = 5;
+// Width of each constituent slice in a stack file's thumbnail.
+const STACK_SLICE_WIDTH = 80;
+// Doc length representation: one sheet per PAGE_WORDS words, drawn as a
+// faintly-bordered page-ground box offset down-right behind the page.
+const PAGE_WORDS = 500;
+const SHEET_OFFSET = 2;
+const MAX_SHEETS = 20;
+// Notebook thumbnails sit inside a page-ground matte.
+const NB_MATTE = 20;
 
 /** Per-Desktop option accessors — themeCtx carries them (and folds them
  *  into its cache signature); plain defaults elsewhere. */
@@ -195,16 +202,19 @@ function drawCard(themeCtx, label, glyph, cssW = CARD_W, cssH = CARD_H) {
 }
 
 /** Strip YAML frontmatter + %%comments%% so a doc thumbnail starts at
- *  its actual prose. */
+ *  its actual prose (and the page count skips editorial scaffolding). */
 function docThumbText(content) {
   let text = content || "";
   if (text.startsWith("---\n")) {
     const end = text.indexOf("\n---", 4);
     if (end !== -1) text = text.slice(end + 4).replace(/^\n+/, "");
   }
-  text = text.replace(/%%[\s\S]*?%%/g, "");
-  // ~40 wrapped lines fill 400px at 8px type; 4000 chars is plenty.
-  return text.slice(0, 4000);
+  return text.replace(/%%[\s\S]*?%%/g, "");
+}
+
+/** Page ground colour for the doc page / notebook matte, by appearance. */
+function pageGround(themeCtx) {
+  return themeCtx.appearance === "dark" ? "#000000" : "#ffffff";
 }
 
 /** Rough sRGB luminance of a #rgb / #rrggbb color; null when unparsable. */
@@ -237,17 +247,57 @@ function docPageTheme(themeCtx) {
   };
 }
 
+/** A doc renders as a printed page sitting on a stack of paper: the
+ *  rendered-markdown page on top, plus one faintly-bordered page-ground
+ *  sheet per PAGE_WORDS words behind it, each offset 2 px down-right —
+ *  so a long doc visibly reads as a thick pile. Borders are baked in
+ *  (the sheets make the bounding box non-rectangular), so the record is
+ *  `frameless` and the canvas chrome skips its own border. */
 async function renderDocThumb(state, entry, themeCtx) {
   const content = await loadFileContent(state, entry.fileId);
+  const text = docThumbText(content);
   const scale = optScale(themeCtx);
   const w = Math.round(DOC_W * scale);
   const h = Math.round(DOC_H * scale);
   const pad = Math.round(DOC_PAD * scale);
-  const { canvas, ctx } = makeCanvas(w, h);
+  const off = Math.max(1, Math.round(SHEET_OFFSET * scale));
+
+  const words = text.split(/\s+/).filter(Boolean).length;
+  const pages = Math.max(1, Math.ceil(words / PAGE_WORDS));
+  const sheets = Math.min(MAX_SHEETS, pages - 1);
+
+  const cssW = w + sheets * off;
+  const cssH = h + sheets * off;
+  const { canvas, ctx } = makeCanvas(cssW, cssH);
+  const ground = pageGround(themeCtx);
+  const border = themeCtx.theme.uiBorder || "rgba(128,128,128,0.3)";
+
+  // The paper pile, deepest sheet first.
+  for (let i = sheets; i >= 1; i--) {
+    const x = i * off, y = i * off;
+    ctx.fillStyle = ground;
+    ctx.fillRect(x, y, w, h);
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = border;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    ctx.restore();
+  }
+
+  // The page itself. Clip so a long doc's text can't bleed onto the
+  // pile offsets below it.
+  ctx.fillStyle = ground;
+  ctx.fillRect(0, 0, w, h);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, w, h);
+  ctx.clip();
   const shape = {
     id: "doc-thumb", type: "text", color: "auto",
     position: { x: pad, y: pad },
-    text: docThumbText(content) || " ",
+    // ~40 wrapped lines fill the page; 4 KB of text is plenty.
+    text: text.slice(0, 4000) || " ",
     fontSize: optDocFontSize(themeCtx),
     width: w - pad * 2, manualWidth: true,
   };
@@ -255,13 +305,16 @@ async function renderDocThumb(state, entry, themeCtx) {
     ...baseRenderOpts(themeCtx),
     shapes: [shape],
     camera: { x: 0, y: 0, zoom: 1 },
-    // A doc reads as a printed page, not a patch of canvas — solid
-    // white ground in light appearance, black in dark, ink guarded
-    // against a cross-appearance theme pairing.
+    // Ink guarded against a cross-appearance theme pairing.
     theme: docPageTheme(themeCtx),
-    canvasBackgroundOverride: themeCtx.appearance === "dark" ? "#000000" : "#ffffff",
+    includeBackground: false,
   });
-  return { dataUrl: encode(canvas), w, h };
+  ctx.restore();
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+
+  return { dataUrl: encode(canvas), w: cssW, h: cssH, frameless: true };
 }
 
 async function renderNotebookThumb(state, entry, themeCtx) {
@@ -274,11 +327,16 @@ async function renderNotebookThumb(state, entry, themeCtx) {
   const worldW = bounds.maxX - bounds.minX + NB_MARGIN * 2;
   const worldH = bounds.maxY - bounds.minY + NB_MARGIN * 2;
   const zoom = optLongEdge(themeCtx) / Math.max(worldW, worldH);
-  const cssW = Math.max(1, Math.round(worldW * zoom));
-  const cssH = Math.max(1, Math.round(worldH * zoom));
+  // Content box (long edge = the option value) sits inside a 20 px
+  // page-ground matte.
+  const matte = Math.round(NB_MATTE * optScale(themeCtx));
+  const innerW = Math.max(1, Math.round(worldW * zoom));
+  const innerH = Math.max(1, Math.round(worldH * zoom));
+  const cssW = innerW + matte * 2;
+  const cssH = innerH + matte * 2;
   const camera = {
-    x: -(bounds.minX - NB_MARGIN) * zoom,
-    y: -(bounds.minY - NB_MARGIN) * zoom,
+    x: -(bounds.minX - NB_MARGIN) * zoom + matte,
+    y: -(bounds.minY - NB_MARGIN) * zoom + matte,
     zoom,
   };
 
@@ -294,19 +352,30 @@ async function renderNotebookThumb(state, entry, themeCtx) {
     }));
 
   const { canvas, ctx } = makeCanvas(cssW, cssH);
+  // Page-ground matte around the canvas-coloured content box.
+  ctx.fillStyle = pageGround(themeCtx);
+  ctx.fillRect(0, 0, cssW, cssH);
+  ctx.fillStyle = themeCtx.canvasBackgroundOverride || themeCtx.theme.canvasBackground;
+  ctx.fillRect(matte, matte, innerW, innerH);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(matte, matte, innerW, innerH);
+  ctx.clip();
   renderForExport(ctx, cssW, cssH, {
     ...baseRenderOpts(themeCtx),
     shapes, camera, imageCache,
     layers: decoded?.layers,
+    includeBackground: false,
   });
   drawApproximateStrokes(ctx, shapes, camera, themeCtx.theme);
+  ctx.restore();
   return { dataUrl: encode(canvas), w: cssW, h: cssH };
 }
 
-/** A stack file renders as a fan of its constituent files' thumbnails:
- *  all normalized to one height, overlapped left-to-right at 50 px
- *  offsets in stack order — the first item sits fully visible on top
- *  at the left, each later item peeks out 50 px further right. */
+/** A stack file renders as a row of 80 px slices — one per constituent
+ *  file, in stack order, each showing the left edge of that file's
+ *  thumbnail normalized to the long-edge height. Reads like a book
+ *  spine row of the stack's contents. */
 async function renderStackFanThumb(state, entry, themeCtx, depth) {
   const content = await loadFileContent(state, entry.fileId);
   let items = [];
@@ -321,8 +390,8 @@ async function renderStackFanThumb(state, entry, themeCtx, depth) {
     return drawCard(themeCtx, entry.name, "stack", Math.round(CARD_W * scale), Math.round(CARD_H * scale));
   }
 
-  const fanH = optLongEdge(themeCtx);
-  const off = Math.round(STACK_FAN_OFFSET * scale);
+  const sliceH = optLongEdge(themeCtx);
+  const sliceW = Math.round(STACK_SLICE_WIDTH * scale);
   const images = [];
   for (const it of items) {
     const kind = kindMap[it.fileType];
@@ -340,21 +409,27 @@ async function renderStackFanThumb(state, entry, themeCtx, depth) {
     return drawCard(themeCtx, entry.name, "stack", Math.round(CARD_W * scale), Math.round(CARD_H * scale));
   }
 
-  const widths = images.map((img) => Math.max(1, Math.round((img.naturalWidth / img.naturalHeight) * fanH)));
-  const cssW = widths[0] + off * (images.length - 1);
-  const { canvas, ctx } = makeCanvas(cssW, fanH);
+  const cssW = sliceW * images.length;
+  const { canvas, ctx } = makeCanvas(cssW, sliceH);
   const t = themeCtx.theme;
-  // Back-to-front so the FIRST stack item lands fully visible on top.
-  for (let i = images.length - 1; i >= 0; i--) {
-    const x = off * i;
+  for (let i = 0; i < images.length; i++) {
+    const x = i * sliceW;
+    const img = images[i];
+    const drawW = Math.max(sliceW, Math.round((img.naturalWidth / img.naturalHeight) * sliceH));
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, 0, sliceW, sliceH);
+    ctx.clip();
     ctx.fillStyle = themeCtx.canvasBackgroundOverride || t.canvasBackground;
-    ctx.fillRect(x, 0, widths[i], fanH);
-    ctx.drawImage(images[i], x, 0, widths[i], fanH);
+    ctx.fillRect(x, 0, sliceW, sliceH);
+    // Left edge of the file's thumbnail, scaled to the slice height.
+    ctx.drawImage(img, x, 0, drawW, sliceH);
+    ctx.restore();
     ctx.strokeStyle = t.uiBorder || "rgba(128,128,128,0.3)";
     ctx.lineWidth = 1;
-    ctx.strokeRect(x + 0.5, 0.5, widths[i] - 1, fanH - 1);
+    ctx.strokeRect(x + 0.5, 0.5, sliceW - 1, sliceH - 1);
   }
-  return { dataUrl: encode(canvas), w: cssW, h: fanH };
+  return { dataUrl: encode(canvas), w: cssW, h: sliceH };
 }
 
 async function resolvePdfThumb(entry, themeCtx) {

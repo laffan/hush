@@ -153,6 +153,10 @@ export interface DesktopFileRef {
    *  while stacked and reappear below the pile on hover. Mirrors the
    *  shape's groupId — desktop-stacks.js keeps the two in sync. */
   stackId?: string;
+  /** The thumbnail bakes its own borders (e.g. the doc page-pile, whose
+   *  bounding box isn't a clean rectangle) — the canvas chrome skips
+   *  its hairline border for these. */
+  frameless?: boolean;
 }
 
 export interface ImageShape extends ShapeBase {

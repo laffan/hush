@@ -25,6 +25,7 @@ export function hydrateShape(s, entry, thumb) {
   const out = { ...s, name: entry.name, fileRef: { ...refOf(entry), ...keepStack } };
   if (thumb) {
     out.dataUrl = thumb.dataUrl || thumb.url || "";
+    if (thumb.frameless) out.fileRef.frameless = true;
     if (thumb.w > 0 && thumb.h > 0) {
       out.width = thumb.w;
       out.height = thumb.h;
@@ -54,7 +55,7 @@ export function newThumbShape(entry, rect, thumb) {
     dataUrl: t.dataUrl || t.url || "",
     name: entry.name,
     color: "#000000",
-    fileRef: refOf(entry),
+    fileRef: { ...refOf(entry), ...(t.frameless ? { frameless: true } : {}) },
   };
 }
 

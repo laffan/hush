@@ -514,8 +514,11 @@ async function reconcileLive() {
       if (!entry || present.has(s.fileRef.key)) { changed = true; continue; }
       present.add(s.fileRef.key);
       if (entry.name !== s.fileRef.name || !!entry.hasGutter !== !!s.fileRef.hasGutter) {
-        const keepStack = s.fileRef.stackId ? { stackId: s.fileRef.stackId } : {};
-        next.push({ ...s, name: entry.name, fileRef: { ...refOf(entry), ...keepStack } });
+        const keep = {
+          ...(s.fileRef.stackId ? { stackId: s.fileRef.stackId } : {}),
+          ...(s.fileRef.frameless ? { frameless: true } : {}),
+        };
+        next.push({ ...s, name: entry.name, fileRef: { ...refOf(entry), ...keep } });
         changed = true;
       } else {
         next.push(s);
@@ -565,6 +568,10 @@ function applyThumbToShape(key, thumb) {
     changed = true;
     const out = { ...s, dataUrl: thumb.dataUrl || thumb.url || "" };
     delete out.dataUrlDark;
+    const fileRef = { ...s.fileRef };
+    if (thumb.frameless) fileRef.frameless = true;
+    else delete fileRef.frameless;
+    out.fileRef = fileRef;
     if (thumb.w > 0 && thumb.h > 0) {
       out.width = thumb.w;
       out.height = thumb.h;

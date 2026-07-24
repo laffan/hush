@@ -656,8 +656,10 @@ export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape,
 /** Desktop file-thumbnail chrome: a hairline border so the preview
  *  reads as a card against the canvas. Filenames are no longer painted
  *  on the canvas at all — desktop-hover shows them as a DOM label under
- *  the hovered thumbnail (and lists a pile's names below the stack). */
+ *  the hovered thumbnail (and lists a pile's names below the stack).
+ *  Frameless thumbnails (the doc page-pile) bake their own borders. */
 function drawFileRefChrome(ctx: CanvasRenderingContext2D, shape: ImageShape, theme?: CanvasTheme) {
+  if (shape.fileRef?.frameless) return;
   const { x, y } = shape.position;
   ctx.save();
   ctx.strokeStyle = theme?.uiBorder || "rgba(128,128,128,0.35)";
