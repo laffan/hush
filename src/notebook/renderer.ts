@@ -43,6 +43,10 @@ export interface RenderState {
   /** Desktop only: the doc-outline heading row under the pointer, in
    *  the thumbnail's shape-local coords. Drawn as a hover underline. */
   desktopOutlineHover?: { shapeId: string; x: number; y: number; w: number; h: number } | null;
+  /** Desktop only: a file's own file-level stickies, drawn as mini notes
+   *  along the bottom of its thumbnail. Read per frame (not baked into
+   *  the thumbnail image) so edits show without a regenerate. */
+  fileStickies?: (kind: string, fileId: string) => { text: string }[];
   /** Active Hush style's background-image config, or null. Drawn over the
    *  solid fill and beneath the grid pattern. */
   backgroundImage?: BackgroundImageConfig | null;
@@ -190,7 +194,13 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       // Every file thumbnail casts the same subtle drop shadow, so a
       // Desktop reads as cards laid on a surface (stacked piles get it
       // for free — each member is a thumbnail).
-      else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId, theme, !!(shape as ImageShape).fileRef);
+      else if (shape.type === "image") {
+        drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId, theme, !!(shape as ImageShape).fileRef);
+        const fr = (shape as ImageShape).fileRef;
+        if (fr && state.fileStickies) {
+          drawThumbStickies(ctx, shape as ImageShape, state.fileStickies(fr.kind, fr.fileId || ""), state.fontFamily);
+        }
+      }
     };
     // Two stable passes so raised shapes land on top of their layer
     // while keeping their order relative to each other.
@@ -722,6 +732,89 @@ function drawFileRefChrome(ctx: CanvasRenderingContext2D, shape: ImageShape, the
     ctx.strokeRect(x + 0.5, y + 0.5, shape.width - 1, shape.height - 1);
   }
   ctx.restore();
+}
+
+// Thumbnail sticky badges — a file's own file-level stickies, shown as
+// mini notes along the bottom of its Desktop thumbnail. Drawn live each
+// frame from the note list rather than baked into the cached thumbnail,
+// so editing a note updates its badge without a thumbnail regenerate.
+const BADGE_SIZE = 130;          // note edge, in thumbnail (world) px
+const BADGE_GAP = 8;             // between notes in the row
+const BADGE_BOTTOM = 10;         // note's bottom edge above the thumbnail's
+const BADGE_LEFT = -12;          // first note hangs off the left edge
+const BADGE_PAD = 10;
+const BADGE_FILL = "#ffe4ec";    // .sticky-file's pink
+
+/** Wrap `text` to `maxW`, capped at `maxLines` (last line ellipsised). */
+function wrapBadgeText(ctx: CanvasRenderingContext2D, text: string, maxW: number, maxLines: number): string[] {
+  const words = (text || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  if (!words.length) return [];
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? line + " " + word : word;
+    if (ctx.measureText(next).width <= maxW || !line) { line = next; continue; }
+    lines.push(line);
+    line = word;
+    if (lines.length === maxLines) break;
+  }
+  if (lines.length < maxLines && line) lines.push(line);
+  if (lines.length === maxLines && words.length) {
+    let last = lines[maxLines - 1];
+    const joined = lines.join(" ");
+    if (joined.length < text.replace(/\s+/g, " ").trim().length) {
+      while (last.length > 1 && ctx.measureText(last + "…").width > maxW) last = last.slice(0, -1);
+      lines[maxLines - 1] = last + "…";
+    }
+  }
+  return lines;
+}
+
+/** Lay a thumbnail's file stickies out along its bottom edge. */
+function drawThumbStickies(
+  ctx: CanvasRenderingContext2D, shape: ImageShape,
+  stickies: { text: string }[], fontFamily: string,
+) {
+  if (!stickies.length) return;
+  const y = shape.position.y + shape.height - BADGE_BOTTOM - BADGE_SIZE;
+  const x0 = shape.position.x + BADGE_LEFT;
+  // Room the rest of the row has to land in. More notes than fit side by
+  // side compress into an overlapping fan rather than running off the edge.
+  const span = shape.width - BADGE_LEFT - BADGE_SIZE;
+  const step = stickies.length > 1
+    ? Math.min(BADGE_SIZE + BADGE_GAP, Math.max(BADGE_SIZE * 0.28, span / (stickies.length - 1)))
+    : 0;
+  const fontPx = Math.round(BADGE_SIZE * 0.078);
+  const lineH = Math.round(fontPx * 1.35);
+  const maxLines = Math.max(1, Math.floor((BADGE_SIZE - BADGE_PAD * 2) / lineH));
+  for (let i = 0; i < stickies.length; i++) {
+    const x = x0 + i * step;
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.20)";
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 1;
+    ctx.shadowOffsetY = 2;
+    ctx.fillStyle = BADGE_FILL;
+    ctx.fillRect(x, y, BADGE_SIZE, BADGE_SIZE);
+    ctx.restore();
+    ctx.save();
+    ctx.strokeStyle = "rgba(0,0,0,0.12)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, BADGE_SIZE - 1, BADGE_SIZE - 1);
+    // Stickies are always black-on-pink, independent of the canvas theme.
+    ctx.beginPath();
+    ctx.rect(x, y, BADGE_SIZE, BADGE_SIZE);
+    ctx.clip();
+    ctx.font = `${fontPx}px ${fontFamily}, sans-serif`;
+    ctx.fillStyle = "#1a1a1a";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    const lines = wrapBadgeText(ctx, stickies[i].text, BADGE_SIZE - BADGE_PAD * 2, maxLines);
+    for (let l = 0; l < lines.length; l++) {
+      ctx.fillText(lines[l], x + BADGE_PAD, y + BADGE_PAD + l * lineH);
+    }
+    ctx.restore();
+  }
 }
 
 /** Underline the outline heading row the pointer is over (Desktop doc

@@ -66,6 +66,17 @@ export function repositionDesktopNotes(notes) {
   }
 }
 
+/** Nudge the open Desktop to repaint. Thumbnail sticky badges are drawn
+ *  live from the note list rather than baked into the cached image, so a
+ *  note added / edited / closed has to invalidate the canvas even though
+ *  no shape changed — "interaction" is the repaint-only notify key, so
+ *  this never marks the Desktop dirty for a save. */
+export async function repaintDesktop() {
+  if (!desktopOpenId()) return;
+  const { getActiveNotebookState } = await import("../notebook/notes-canvas.ts");
+  getActiveNotebookState()?.notify("interaction");
+}
+
 /** Notes pinned to the open Desktop, in creation order — read by the
  *  shape shelf so they list alongside the file thumbnails. */
 export function desktopStickyRows(notes) {

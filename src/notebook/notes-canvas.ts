@@ -43,6 +43,16 @@ function getTouchModeFromHush(): boolean {
   return !!appState?.settings?.touchMode;
 }
 
+/** A file's own file-level stickies (sticky-notes.js publishes the hook),
+ *  drawn as mini notes on that file's Desktop thumbnail. Read per frame
+ *  so a note edit shows without regenerating the cached thumbnail. */
+function getFileStickiesFromHush(kind: string, fileId: string): { text: string }[] {
+  const fn = (window as unknown as {
+    __hushFileStickies?: (kind: string, fileId: string) => { text: string }[];
+  }).__hushFileStickies;
+  try { return fn ? fn(kind, fileId) || [] : []; } catch { return []; }
+}
+
 /** The notebook instance that most recently received a pointer interaction.
  *  The document-level "copy" listener below routes Cmd+C to this one. */
 let lastActiveNotebook: NotesCanvas | null = null;
@@ -907,6 +917,7 @@ export class NotesCanvas {
         flagColors: getFlagColorsFromHush(),
         touchMode: getTouchModeFromHush(),
         desktopOutlineHover: this.state.desktopOutlineHover,
+        fileStickies: getFileStickiesFromHush,
     });
   }
 

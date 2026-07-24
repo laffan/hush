@@ -41,7 +41,7 @@ import {
 } from "./sticky-shared.js";
 import {
   repositionDesktopNotes as repositionDesktop,
-  desktopStickyRows, revealDesktopSticky,
+  desktopStickyRows, revealDesktopSticky, repaintDesktop,
 } from "./sticky-desktop.js";
 
 const notes = new Map(); // id → note record
@@ -71,6 +71,7 @@ export function initStickyNotes(state) {
   document.addEventListener("desktop-camera-changed", repositionDesktopNotes);
   // Hooks the notebook shape shelf reads to list desktop-pinned notes
   // (same shape as the Desktop's other window.__hush* bridges).
+  window.__hushFileStickies = fileStickiesFor;
   window.__hushDesktopStickies = () => desktopStickyRows(notes);
   window.__hushRevealDesktopSticky = (id) =>
     revealDesktopSticky(notes, id, (n) => { n.el.style.zIndex = ++zCounter; });
@@ -222,6 +223,24 @@ function activeProjectNodeId(s) {
 export function canAddFileSticky(s) { return !!currentFileContext(s) || !!desktopOpenId(); }
 export function canAddProjectSticky(s) { return !!activeProjectNodeId(s); }
 
+// fileRef kind → the context prefix currentFileContext() builds.
+const CTX_PREFIX = { doc: "doc:", notebook: "nb:", pdf: "pdf:", stack: "st:" };
+
+/** File-level stickies attached to one file, for the Desktop's thumbnail
+ *  badges. Read live per frame by the canvas renderer, so the notes ride
+ *  on top of the cached thumbnail image instead of being baked into it. */
+function fileStickiesFor(kind, fileId) {
+  const prefix = CTX_PREFIX[kind];
+  if (!prefix || !fileId) return [];
+  const target = prefix + fileId;
+  const out = [];
+  for (const [, n] of notes) {
+    if (n.kind !== "file" || n.target !== target) continue;
+    out.push({ text: n.textarea ? n.textarea.value : (n.text || "") });
+  }
+  return out;
+}
+
 export function addSticky(state, kind) {
   appState = appState || state;
   ensureContainer();
@@ -271,6 +290,7 @@ export function addSticky(state, kind) {
   activateNote(note);
   note.textarea.focus();
   if (note.kind === "desktop") repositionDesktopNotes();
+  else repaintDesktop(); // a new file sticky shows on its thumbnail
   schedulePersist();
 }
 
@@ -328,6 +348,7 @@ function buildNoteDOM(note) {
   textarea.addEventListener("input", () => {
     note.text = textarea.value;
     if (note._excerptEl) note._excerptEl.textContent = excerptFor(note.text);
+    if (note.kind === "file") repaintDesktop(); // its thumbnail badge shows this text
     schedulePersist();
   });
   el.appendChild(textarea);
@@ -501,6 +522,7 @@ function closeNote(id) {
   if (!note) return;
   note.el.remove();
   notes.delete(id);
+  repaintDesktop(); // drop its thumbnail badge, if it had one
   schedulePersist();
 }
 
