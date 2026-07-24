@@ -345,12 +345,18 @@ async function renderDocThumb(state, entry, themeCtx) {
       ink: docPageTheme(themeCtx).foreground,
       border: SHEET_BORDER,
       fontFamily: FONT_FAMILY,
+      bg: ground,
+      height: imgH,
     });
   }
 
   return {
     dataUrl: encode(canvas), w: imgW, h: imgH, frameless: true,
     outlineRows: outline ? outline.rows : null,
+    // Right edge of the page block: where the outline column starts, so
+    // the hover buttons can anchor over the page instead of covering the
+    // column's first rows.
+    outlineX: outline ? blockW : 0,
   };
 }
 
@@ -440,7 +446,9 @@ async function renderStackFanThumb(state, entry, themeCtx, depth) {
     };
     const t = await ensureDesktopThumb(state, pseudo, themeCtx, { depth: depth + 1 });
     const img = await loadImage(t.dataUrl || t.url);
-    if (img && img.naturalWidth && img.naturalHeight) images.push(img);
+    // Name rides along with the image so a slice that failed to decode
+    // can't shift the captions out of step with what's drawn.
+    if (img && img.naturalWidth && img.naturalHeight) images.push({ img, name: pseudo.name });
   }
   if (!images.length) {
     return drawCard(themeCtx, entry.name, "stack", Math.round(CARD_W * scale), Math.round(CARD_H * scale));
@@ -449,9 +457,10 @@ async function renderStackFanThumb(state, entry, themeCtx, depth) {
   const cssW = sliceW * images.length;
   const { canvas, ctx } = makeCanvas(cssW, sliceH);
   const t = themeCtx.theme;
+  const slices = [];
   for (let i = 0; i < images.length; i++) {
     const x = i * sliceW;
-    const img = images[i];
+    const { img, name } = images[i];
     const drawW = Math.max(sliceW, Math.round((img.naturalWidth / img.naturalHeight) * sliceH));
     ctx.save();
     ctx.beginPath();
@@ -465,8 +474,9 @@ async function renderStackFanThumb(state, entry, themeCtx, depth) {
     ctx.strokeStyle = t.uiBorder || "rgba(128,128,128,0.3)";
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, 0.5, sliceW - 1, sliceH - 1);
+    slices.push({ x, w: sliceW, name });
   }
-  return { dataUrl: encode(canvas), w: cssW, h: sliceH };
+  return { dataUrl: encode(canvas), w: cssW, h: sliceH, slices };
 }
 
 async function resolvePdfThumb(entry, themeCtx) {

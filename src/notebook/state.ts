@@ -63,7 +63,7 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   // — a hover highlight, a gesture promotion to two-finger pan — must
   // repaint through these keys instead so pan-only sessions never
   // trigger content saves.
-  | "flowHoveredEdgeId" | "interaction";
+  | "flowHoveredEdgeId" | "desktopOutlineHover" | "interaction";
 
 export type ReorderMode = "swap" | "ripple";
 
@@ -197,6 +197,10 @@ export class DrawingState extends EventTarget {
   flowDropTargetId: string | null = null;
   /** id of an edge whose curve the cursor is hovering over (or null). */
   flowHoveredEdgeId: string | null = null;
+  /** Desktop only: the doc-outline heading row under the cursor, in the
+   *  thumbnail's shape-local coords. Repaint-only — drives the hover
+   *  underline in renderer.ts (desktop-outline.js owns the hit test). */
+  desktopOutlineHover: { shapeId: string; x: number; y: number; w: number; h: number } | null = null;
   /** Set by startEditingFlowchartChild before a new shape exists; consumed
    *  by commitText to wire the edge once the shape is created. */
   private _pendingFlowParent: string | null = null;

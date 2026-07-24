@@ -906,6 +906,7 @@ export class NotesCanvas {
         reorderPreview: this.state.reorderPreview,
         flagColors: getFlagColorsFromHush(),
         touchMode: getTouchModeFromHush(),
+        desktopOutlineHover: this.state.desktopOutlineHover,
     });
   }
 

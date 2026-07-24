@@ -12,6 +12,8 @@
  *   doc's thumbnail with the outline on or off.
  */
 
+import { raisedLast } from "./desktop-content.js";
+
 // Outline column geometry. Unscaled; scaled by the thumbnail's optScale.
 export const OUTLINE_W = 190;
 export const OUTLINE_GAP = 18;
@@ -52,10 +54,22 @@ function truncateToWidth(ctx, text, maxW) {
   return t + "…";
 }
 
-/** Paint the outline column: a light divider in the gap, then one
- *  indented heading per row (H1 bolder, deeper headings dimmer). */
-export function drawDocOutline(ctx, outline, { ink, border, fontFamily }) {
+/** Paint the outline column: its own page-ground panel (the column
+ *  reaches past the page and floats over neighbouring thumbnails, so it
+ *  needs to be opaque), a light divider in the gap, then one indented
+ *  heading per row (H1 bolder, deeper headings dimmer). */
+export function drawDocOutline(ctx, outline, { ink, border, fontFamily, bg, height }) {
   const fontPx = Math.round(OUTLINE_FONT * outline.scale);
+  const panelH = height || outline.contentH;
+  if (bg) {
+    ctx.save();
+    ctx.fillStyle = bg;
+    ctx.fillRect(outline.blockX, 0, outline.colW, panelH);
+    ctx.strokeStyle = border;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(outline.blockX + 0.5, 0.5, outline.colW - 1, panelH - 1);
+    ctx.restore();
+  }
   ctx.save();
   ctx.strokeStyle = border;
   ctx.lineWidth = 1;
@@ -120,7 +134,9 @@ export function createDesktopOutline(deps) {
   const setRows = (key, v) => { if (v) rows.set(key, v); else rows.delete(key); };
   const clear = () => rows.clear();
 
-  /** Resolve a client point to an outline heading row, or null. */
+  /** Resolve a client point to an outline heading row, or null. The hit
+   *  carries the shape + row geometry so the caller can both navigate
+   *  (startOffset) and paint the hover underline (shape-local rect). */
   function hitAt(clientX, clientY) {
     const canvas = deps.getCanvas();
     const host = deps.getHost();
@@ -128,8 +144,11 @@ export function createDesktopOutline(deps) {
     if (!st || !host) return null;
     const rect = host.getBoundingClientRect();
     const world = deps.screenToCanvas({ x: clientX - rect.left, y: clientY - rect.top }, st.camera);
-    for (let i = st.shapes.length - 1; i >= 0; i--) {
-      const s = st.shapes[i];
+    // Topmost first, in the renderer's raised-last paint order so an
+    // outline column that overlaps a neighbour wins the contested point.
+    const ordered = raisedLast(st.shapes, st.selectedIds);
+    for (let i = ordered.length - 1; i >= 0; i--) {
+      const s = ordered[i];
       if (s.type !== "image" || !s.fileRef?.fileId) continue;
       const rowList = rows.get(s.fileRef.key);
       if (!rowList) continue;
@@ -137,7 +156,10 @@ export function createDesktopOutline(deps) {
       if (lx < 0 || ly < 0 || lx > s.width || ly > s.height) continue;
       for (const r of rowList) {
         if (lx >= r.x && lx <= r.x + r.w && ly >= r.y && ly <= r.y + r.h) {
-          return { fileId: s.fileRef.fileId, startOffset: r.startOffset };
+          return {
+            fileId: s.fileRef.fileId, startOffset: r.startOffset,
+            hover: { shapeId: s.id, x: r.x, y: r.y, w: r.w, h: r.h },
+          };
         }
       }
       return null; // inside this thumbnail but not on a row
@@ -145,8 +167,19 @@ export function createDesktopOutline(deps) {
     return null;
   }
 
+  /** Publish the hovered row so the renderer can underline it. */
+  function setHover(next) {
+    const st = deps.getCanvas()?.state;
+    if (!st) return;
+    const prev = st.desktopOutlineHover;
+    if (prev?.shapeId === next?.shapeId && prev?.y === next?.y) return;
+    st.desktopOutlineHover = next;
+    st.notify("desktopOutlineHover");
+  }
+
   /** Wire pointer handlers that open a doc at a clicked heading, telling
-   *  a click from a drag by pointer travel. Returns a cleanup fn. */
+   *  a click from a drag by pointer travel, plus the hover underline
+   *  that marks the row a click would follow. Returns a cleanup fn. */
   function attachClicks() {
     const el = deps.getCanvas()?.state?.canvasEl;
     if (!el) return () => {};
@@ -161,11 +194,27 @@ export function createDesktopOutline(deps) {
       const hit = hitAt(e.clientX, e.clientY);
       if (hit) { e.stopPropagation(); openDocAtOffset(deps.getState(), hit.fileId, hit.startOffset); }
     };
+    const onMove = (e) => {
+      const st = deps.getCanvas()?.state;
+      if (!st) return;
+      // No hover feedback mid-gesture or under another tool — the row
+      // isn't clickable then, so it shouldn't look like it is.
+      if (down || st.tool !== "select" || st.isPanning || st.editingText) { setHover(null); return; }
+      const hit = hitAt(e.clientX, e.clientY);
+      setHover(hit ? hit.hover : null);
+      el.style.cursor = hit ? "pointer" : "";
+    };
+    const onLeave = () => setHover(null);
     el.addEventListener("pointerdown", onDown);
     el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerleave", onLeave);
     return () => {
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerleave", onLeave);
+      setHover(null);
     };
   }
 

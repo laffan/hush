@@ -41,7 +41,13 @@ body.desktop-active #stack-container,
 /* Floating / pinned panes belong to whatever file was open; the Desktop
    replaces that file, so no pane should show through it. (Sticky notes
    live in #sticky-container and stay — desktop-pinned stickies show.) */
-body.desktop-active #pane-container {
+body.desktop-active #pane-container,
+/* The Outline View belongs to the doc that was open. Its panel and the
+   hover-revealed edge trigger both hang off #app (position: fixed,
+   z-index above the Desktop), so without this the trigger floats over
+   the Desktop after opening a guttered doc and coming back. */
+body.desktop-active #right-panel-overlay,
+body.desktop-active .right-panel-trigger {
   visibility: hidden;
 }
 
@@ -179,12 +185,28 @@ body.desktop-active #pane-container {
   color: var(--fg);
   opacity: 0.85;
   max-width: 340px;
+}
+
+.desktop-hover-label.hidden {
+  display: none;
+}
+
+/* Both caption lines clip independently so a long constituent name
+   can't stretch the block past the thumbnail. */
+.desktop-hover-label-name,
+.desktop-hover-label-slice {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.desktop-hover-label.hidden {
+/* Second line: which slice of a stack thumbnail the pointer is over. */
+.desktop-hover-label-slice {
+  opacity: 0.7;
+  font-size: 11px;
+}
+
+.desktop-hover-label-slice:empty {
   display: none;
 }
 

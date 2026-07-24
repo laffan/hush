@@ -75,6 +75,9 @@ export function collectDesktopFiles(state, containerId, opts = {}) {
     entries.push({
       key, kind, fileId: node.fileId || null, nodeId: node.id,
       name: node.name || "Untitled",
+      // The sidebar row's highlight colour (a ROW_COLORS key), carried
+      // through so the Desktop can tint the file's thumbnail to match.
+      ...(node.bgColor ? { tint: node.bgColor } : {}),
       ...(kind === "doc" && gutteredDocFileIds.has(node.fileId) ? { hasGutter: true } : {}),
     });
   };

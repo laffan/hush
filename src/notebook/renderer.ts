@@ -40,6 +40,9 @@ export interface RenderState {
   /** Style override for the canvas background. Empty / unset falls
    *  back to `theme.canvasBackground`. */
   canvasBackgroundOverride?: string;
+  /** Desktop only: the doc-outline heading row under the pointer, in
+   *  the thumbnail's shape-local coords. Drawn as a hover underline. */
+  desktopOutlineHover?: { shapeId: string; x: number; y: number; w: number; h: number } | null;
   /** Active Hush style's background-image config, or null. Drawn over the
    *  solid fill and beneath the grid pattern. */
   backgroundImage?: BackgroundImageConfig | null;
@@ -177,19 +180,36 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     state.flowchart.draw(ctx, shapes.filter((s) => !pocketedIds.has(s.id)));
   }
 
+  // File thumbnails that temporarily float above their neighbours: the
+  // selected ones (so a picked-up thumbnail is never buried mid-drag)
+  // and any doc showing its outline column (the column reaches past the
+  // page and has to stay legible over whatever it overlaps). Paint-order
+  // only — the shape array keeps its real z so undo stays clean.
+  const raisedIds = new Set<string>();
+  for (const s of shapes) {
+    if (s.type !== "image" || !(s as ImageShape).fileRef) continue;
+    if (selectedIds.has(s.id) || (s as ImageShape).fileRef!.outline) raisedIds.add(s.id);
+  }
+
   for (const layer of layerOrder) {
     if (layer.hidden) continue;
     const layerShapes = shapesByLayer.get(layer.id);
     if (!layerShapes || !layerShapes.length) continue;
-    for (const shape of layerShapes) {
-      if (shape.type === "drag-area") continue;
-      if (shape.id === editingShapeId) continue;
-      if (pocketedIds.has(shape.id)) continue;
-      if (shape.type === "draw") continue; // drawing layer owns strokes
+    const paintShape = (shape: Shape) => {
+      if (shape.type === "drag-area") return;
+      if (shape.id === editingShapeId) return;
+      if (pocketedIds.has(shape.id)) return;
+      if (shape.type === "draw") return; // drawing layer owns strokes
       if (shape.type === "text") drawTextShape(ctx, shape, theme, state.fontFamily, false, state.flagColors);
       else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId, theme, stackShadowIds.has(shape.id));
-    }
+    };
+    // Two stable passes so raised shapes land on top of their layer
+    // while keeping their order relative to each other.
+    for (const shape of layerShapes) if (!raisedIds.has(shape.id)) paintShape(shape);
+    for (const shape of layerShapes) if (raisedIds.has(shape.id)) paintShape(shape);
   }
+
+  if (state.desktopOutlineHover) drawOutlineHover(ctx, shapes, theme, state.desktopOutlineHover);
 
   // Drop-target outline: dashed rectangle around the shape that would be
   // connected if the user released the drag right now.
@@ -679,18 +699,59 @@ export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape,
   }
 }
 
+/** Sidebar row highlight colours, mirrored from files-panel-row-menu's
+ *  ROW_COLORS so a tinted file reads the same on its Desktop. Kept as a
+ *  literal here to keep the renderer free of sidebar imports. */
+const FILEREF_TINTS: Record<string, string> = {
+  red: "239,83,80", orange: "255,152,0", yellow: "255,235,59",
+  green: "76,175,80", teal: "0,188,212", blue: "66,165,245",
+  indigo: "92,107,192", purple: "171,71,188", pink: "236,64,122",
+};
+
 /** Desktop file-thumbnail chrome: a hairline border so the preview
  *  reads as a card against the canvas. Filenames are no longer painted
  *  on the canvas at all — desktop-hover shows them as a DOM label under
  *  the hovered thumbnail (and lists a pile's names below the stack).
- *  Frameless thumbnails (the doc page-pile) bake their own borders. */
+ *  Frameless thumbnails (the doc page-pile) bake their own borders, so
+ *  they skip the hairline — but a tinted file still gets its wash and
+ *  coloured frame, which is the whole point of the tint. */
 function drawFileRefChrome(ctx: CanvasRenderingContext2D, shape: ImageShape, theme?: CanvasTheme) {
-  if (shape.fileRef?.frameless) return;
+  const rgb = shape.fileRef?.tint ? FILEREF_TINTS[shape.fileRef.tint] : null;
+  if (shape.fileRef?.frameless && !rgb) return;
   const { x, y } = shape.position;
   ctx.save();
-  ctx.strokeStyle = theme?.uiBorder || "rgba(128,128,128,0.35)";
+  if (rgb) {
+    ctx.fillStyle = `rgba(${rgb},0.16)`;
+    ctx.fillRect(x, y, shape.width, shape.height);
+    ctx.strokeStyle = `rgba(${rgb},0.85)`;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x + 1, y + 1, shape.width - 2, shape.height - 2);
+  } else {
+    ctx.strokeStyle = theme?.uiBorder || "rgba(128,128,128,0.35)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, shape.width - 1, shape.height - 1);
+  }
+  ctx.restore();
+}
+
+/** Underline the outline heading row the pointer is over (Desktop doc
+ *  thumbnails). Geometry arrives shape-local, so it survives the shape
+ *  moving without the hover state going stale. */
+function drawOutlineHover(
+  ctx: CanvasRenderingContext2D, shapes: Shape[], theme: CanvasTheme,
+  hover: { shapeId: string; x: number; y: number; w: number; h: number },
+) {
+  const shape = shapes.find((s) => s.id === hover.shapeId);
+  if (!shape) return;
+  const x = shape.position.x + hover.x, y = shape.position.y + hover.y + hover.h - 2;
+  ctx.save();
+  ctx.strokeStyle = theme.foreground;
+  ctx.globalAlpha = 0.55;
   ctx.lineWidth = 1;
-  ctx.strokeRect(x + 0.5, y + 0.5, shape.width - 1, shape.height - 1);
+  ctx.beginPath();
+  ctx.moveTo(x, y + 0.5);
+  ctx.lineTo(x + hover.w, y + 0.5);
+  ctx.stroke();
   ctx.restore();
 }
 

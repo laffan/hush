@@ -20,6 +20,7 @@
 import { canvasToScreen, screenToCanvas, getShapeBounds } from "../notebook/utils.ts";
 import { findShapeAtPoint } from "../notebook/state-helpers.ts";
 import { stackBounds, stackMembers, moveToTopOfStack } from "./desktop-stacks.js";
+import { raisedLast } from "./desktop-content.js";
 import { applyTooltip } from "../tooltips.js";
 
 const OPEN_ICON = `<svg viewBox="0 0 16 16"><path d="M6 3h7v7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 3L7.5 8.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M11 9.5V13H3V5h3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -69,8 +70,16 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
   canvasHost.appendChild(overlay);
 
   // Single-thumbnail hover caption (labels are hover-only on Desktops).
+  // Two lines: the filename, plus — over a stack thumbnail — the name of
+  // the constituent slice under the pointer.
   const labelEl = document.createElement("div");
   labelEl.className = "desktop-hover-label hidden";
+  const labelName = document.createElement("div");
+  labelName.className = "desktop-hover-label-name";
+  const labelSlice = document.createElement("div");
+  labelSlice.className = "desktop-hover-label-slice";
+  labelEl.appendChild(labelName);
+  labelEl.appendChild(labelSlice);
   canvasHost.appendChild(labelEl);
 
   // Pile title list — interactive: click a row to move that member to
@@ -138,7 +147,13 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
       outlineBtn.classList.toggle("active", on);
     }
     const bounds = getShapeBounds(shape, state.fontFamily);
-    const corner = canvasToScreen({ x: bounds.maxX, y: bounds.minY }, state.camera);
+    // Anchor top-right — but a doc showing its outline anchors to the
+    // page's right edge instead, so the buttons don't sit on top of the
+    // column's first heading rows and swallow their clicks.
+    const anchorX = shape.fileRef.outlineX
+      ? shape.position.x + shape.fileRef.outlineX
+      : bounds.maxX;
+    const corner = canvasToScreen({ x: anchorX, y: bounds.minY }, state.camera);
     overlay.style.left = `${Math.round(corner.x)}px`;
     overlay.style.top = `${Math.round(corner.y)}px`;
     overlay.classList.remove("hidden");
@@ -150,7 +165,8 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
     } else {
       stackLabels.classList.add("hidden");
       if (opts.showLabels ? opts.showLabels() !== false : true) {
-        labelEl.textContent = shape.fileRef.name || shape.name || "";
+        labelName.textContent = shape.fileRef.name || shape.name || "";
+        labelSlice.textContent = "";
         const mid = canvasToScreen({ x: (bounds.minX + bounds.maxX) / 2, y: bounds.maxY }, state.camera);
         labelEl.style.left = `${Math.round(mid.x)}px`;
         labelEl.style.top = `${Math.round(mid.y + 8)}px`;
@@ -171,12 +187,28 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
     if (state.selectionBox) { hide(); return; }
     const rect = canvasHost.getBoundingClientRect();
     const world = screenToCanvas({ x: e.clientX - rect.left, y: e.clientY - rect.top }, state.camera);
-    const hit = findShapeAtPoint(world, state.shapes, state.fontFamily);
+    // Raised-last order so a doc's outline column (which paints over its
+    // neighbours) claims the points it covers, rather than the thumbnail
+    // underneath answering with the wrong filename and buttons.
+    const hit = findShapeAtPoint(world, raisedLast(state.shapes, state.selectedIds), state.fontFamily);
     if (hit && hit.type === "image" && hit.fileRef && !hit.pocketed) {
       if (hit.id !== hoveredShapeId) showFor(hit);
+      showSliceName(hit, world);
       return;
     }
     hide();
+  };
+
+  /** A stack thumbnail is a row of per-file slices; name the one the
+   *  pointer is over on the caption's second line. Slice bands are
+   *  shape-local (thumbnails aren't resizable, so no scaling needed). */
+  const showSliceName = (shape, world) => {
+    const slices = shape.fileRef?.slices;
+    if (!slices?.length || shape.fileRef.stackId) return; // piles use the title list
+    const lx = world.x - shape.position.x;
+    const slice = slices.find((s) => lx >= s.x && lx < s.x + s.w);
+    const next = slice?.name || "";
+    if (labelSlice.textContent !== next) labelSlice.textContent = next;
   };
 
   const onPointerLeave = (e) => {

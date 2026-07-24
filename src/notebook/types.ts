@@ -161,6 +161,17 @@ export interface DesktopFileRef {
    *  right of the page. Persisted so it survives reopen; the row
    *  hit-geometry lives in the thumbnail record, not here. */
   outline?: boolean;
+  /** The file's sidebar highlight colour (a ROW_COLORS key). Painted as
+   *  a tinted wash + border over the thumbnail so a colour-coded file
+   *  reads the same on its Desktop as in the file tree. */
+  tint?: string;
+  /** Stack files only: each constituent's slice band in the thumbnail's
+   *  own CSS px, so hovering a slice can caption that file's name. */
+  slices?: { x: number; w: number; name: string }[];
+  /** Docs with `outline` on: the page block's right edge (shape-local
+   *  px) = where the outline column starts. The hover buttons anchor
+   *  here so they don't cover the column's first rows. */
+  outlineX?: number;
 }
 
 export interface ImageShape extends ShapeBase {

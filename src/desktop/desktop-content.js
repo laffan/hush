@@ -13,7 +13,20 @@ export function refOf(entry) {
   return {
     key: entry.key, kind: entry.kind, fileId: entry.fileId, nodeId: entry.nodeId,
     name: entry.name, ...(entry.hasGutter ? { hasGutter: true } : {}),
+    ...(entry.tint ? { tint: entry.tint } : {}),
   };
+}
+
+/** Thumbnail-derived fileRef fields (re-applied on every hydrate from
+ *  the fresh record): the baked-border flag and, for stack files, the
+ *  per-slice name strip the hover caption reads. */
+export function applyThumbRefFields(fileRef, thumb) {
+  if (thumb.frameless) fileRef.frameless = true;
+  else delete fileRef.frameless;
+  if (thumb.slices?.length) fileRef.slices = thumb.slices;
+  else delete fileRef.slices;
+  if (thumb.outlineX > 0) fileRef.outlineX = thumb.outlineX;
+  else delete fileRef.outlineX;
 }
 
 /** fileRef fields that are shape-local state (not derived from the tree
@@ -35,14 +48,24 @@ export function hydrateShape(s, entry, thumb) {
   const out = { ...s, name: entry.name, fileRef: { ...refOf(entry), ...keepRefFields(s.fileRef) } };
   if (thumb) {
     out.dataUrl = thumb.dataUrl || thumb.url || "";
-    if (thumb.frameless) out.fileRef.frameless = true;
-    else delete out.fileRef.frameless;
+    applyThumbRefFields(out.fileRef, thumb);
     if (thumb.w > 0 && thumb.h > 0) {
       out.width = thumb.w;
       out.height = thumb.h;
     }
   }
   return out;
+}
+
+/** Hit order for Desktop thumbnails, mirroring the renderer's two-pass
+ *  paint: thumbnails that temporarily float above their neighbours — a
+ *  doc showing its outline column, or a selected one — sort last, so a
+ *  point they overlap resolves to them. Stable, so everything else
+ *  keeps its z. `findShapeAtPoint` walks back-to-front, so "last" wins. */
+export function raisedLast(shapes, selectedIds) {
+  const rank = (s) =>
+    (s.type === "image" && s.fileRef && (s.fileRef.outline || selectedIds?.has(s.id))) ? 1 : 0;
+  return [...shapes].sort((a, b) => rank(a) - rank(b));
 }
 
 export function shapeBottom(s) {
@@ -57,6 +80,8 @@ export function shapeBottom(s) {
 
 export function newThumbShape(entry, rect, thumb) {
   const t = thumb || { w: 220, h: 280 };
+  const fileRef = refOf(entry);
+  applyThumbRefFields(fileRef, t);
   return {
     id: crypto.randomUUID(),
     type: "image",
@@ -66,7 +91,7 @@ export function newThumbShape(entry, rect, thumb) {
     dataUrl: t.dataUrl || t.url || "",
     name: entry.name,
     color: "#000000",
-    fileRef: { ...refOf(entry), ...(t.frameless ? { frameless: true } : {}) },
+    fileRef,
   };
 }
 
