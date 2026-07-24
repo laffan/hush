@@ -129,20 +129,6 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   const pocketLayout = computePocketLayout(effectiveShapes, w, state.fontFamily, state.pocketRightInset);
   const pocketedIds = pocketLayout.pocketedIds;
 
-  // Desktop thumbnail piles: every stacked member except the bottom
-  // (the first one in the pile's paint order) casts a subtle drop
-  // shadow onto the thumbnails beneath it.
-  const stackShadowIds = new Set<string>();
-  {
-    const seenStacks = new Set<string>();
-    for (const s of shapes) {
-      const sid = s.type === "image" ? (s as ImageShape).fileRef?.stackId : undefined;
-      if (!sid) continue;
-      if (seenStacks.has(sid)) stackShadowIds.add(s.id);
-      else seenStacks.add(sid);
-    }
-  }
-
   ctx.save();
   ctx.translate(camera.x, camera.y);
   if (camera.rotation) ctx.rotate(camera.rotation);
@@ -201,7 +187,10 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       if (pocketedIds.has(shape.id)) return;
       if (shape.type === "draw") return; // drawing layer owns strokes
       if (shape.type === "text") drawTextShape(ctx, shape, theme, state.fontFamily, false, state.flagColors);
-      else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId, theme, stackShadowIds.has(shape.id));
+      // Every file thumbnail casts the same subtle drop shadow, so a
+      // Desktop reads as cards laid on a surface (stacked piles get it
+      // for free — each member is a thumbnail).
+      else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId, theme, !!(shape as ImageShape).fileRef);
     };
     // Two stable passes so raised shapes land on top of their layer
     // while keeping their order relative to each other.
@@ -660,8 +649,9 @@ export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape,
     const sx = c.x * img.naturalWidth, sy = c.y * img.naturalHeight;
     const sw = c.w * img.naturalWidth, sh = c.h * img.naturalHeight;
     if (shadow) {
-      // A very subtle drop shadow so a stacked thumbnail lifts off the
-      // one below. Offsets are in world units — they scale with zoom.
+      // A very subtle drop shadow so a thumbnail lifts off the canvas
+      // (and off the one below it in a pile). Offsets are in world
+      // units — they scale with zoom.
       ctx.save();
       ctx.shadowColor = "rgba(0,0,0,0.18)";
       ctx.shadowBlur = 5;

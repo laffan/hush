@@ -69,6 +69,9 @@ export function currentDesktopContainerId() {
   return _containerId;
 }
 
+/** Desktops open on a 20% grid; the bg flyout overrides it per project. */
+const DESKTOP_BG_DEFAULT = { backgroundPattern: "grid", gridSpacing: 25, gridOpacity: 0.2 };
+
 function collectOpts() {
   return { includeGutters: _options.includeGutters };
 }
@@ -167,7 +170,7 @@ function initDesktop(state) {
       ...nbSettings,
       ...(_background
         ? { backgroundPattern: _background.pattern, gridSpacing: _background.spacing, gridOpacity: _background.opacity }
-        : { backgroundPattern: "blank", gridOpacity: 0 }),
+        : { ...DESKTOP_BG_DEFAULT }),
     });
     const next = makeThemeCtx();
     if (!_themeCtx || _themeCtx.sig !== next.sig) _themeCtx = next;
@@ -325,19 +328,16 @@ async function mountCanvas() {
   // Route clipboard / undo to this canvas immediately — a hidden main
   // notebook underneath may still hold the active-canvas slot.
   claimActiveNotebook(_canvas);
-  // No flowchart on Desktops (for now), and no option-drag clones —
-  // duplicated thumbnails would dedupe away on the next open.
+  // No flowchart, and no option-drag clones (dupes dedupe on reopen).
   _canvas.state.flowchartEnabled = false;
   _canvas.state.altDuplicateEnabled = false;
   _canvas.state.desktopMode = true;
-  // The toolbar starts parked at the bottom and minimized — a Desktop
-  // leads with the thumbnails; the tools are one handle-click away.
+  // Toolbar parks bottom + minimized — thumbnails lead, tools are a click away.
   _canvas.state.setDrawingToolbarPosition("bottom");
   _canvas.state.setDrawingToolbarMinimized(true);
   const nbSettings = computeNotebookSettings(state, null);
-  // Desktops default to the blank background; a per-desktop override
-  // from the bg-settings popup is applied after the envelope loads.
-  _canvas.applySettings({ ...nbSettings, backgroundPattern: "blank", gridOpacity: 0 });
+  // A saved per-desktop override lands after the envelope loads.
+  _canvas.applySettings({ ...nbSettings, ...DESKTOP_BG_DEFAULT });
 
   const envelope = await loadDesktopEnvelope(_containerId);
   if (token !== _openToken) return;

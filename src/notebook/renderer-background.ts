@@ -69,10 +69,21 @@ export type BackgroundPatternKind =
   | "isometric"
   | "blank";
 
+/** Below this on-screen spacing the pattern stops reading as a grid and
+ *  turns into a smear, so it steps up to a coarser multiple instead. */
+const MIN_PATTERN_PX = 6;
+
 export function drawBackground(ctx: CanvasRenderingContext2D, camera: Camera, w: number, h: number, color: string, pattern: BackgroundPatternKind, spacing: number, opacity: number) {
   if (pattern === "blank") return;
-  const scaledSize = spacing * camera.zoom;
-  if (scaledSize < 6) return;
+  let scaledSize = spacing * camera.zoom;
+  if (!(scaledSize > 0)) return; // zoom 0 / NaN — nothing sane to draw
+  // Zoomed out far enough, a 25 px grid used to vanish entirely (the old
+  // guard just bailed under 6 px on screen) — which is exactly the state
+  // a Desktop opens in, and the state a smaller iPad viewport reaches
+  // sooner. Step up in powers of two instead: every line drawn is still
+  // a line of the original grid, so the pattern stays phase-locked to
+  // the world origin and simply thins out as you pull back.
+  while (scaledSize < MIN_PATTERN_PX) scaledSize *= 2;
   ctx.save();
   ctx.globalAlpha = opacity;
   // "Pattern space" is screen space counter-rotated by the camera's

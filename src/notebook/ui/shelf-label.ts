@@ -57,6 +57,24 @@ export function getDesktopSearchText(key: string | undefined): string {
   try { return provider ? provider(key) || "" : ""; } catch { return ""; }
 }
 
+/** Desktop-pinned sticky notes for the open Desktop, or []. The shelf is
+ *  a Desktop's right sidebar, so pinned stickies list there alongside the
+ *  file thumbnails (sticky-notes.js publishes the hook). */
+export function getDesktopStickies(): { id: string; text: string }[] {
+  const provider = (window as unknown as {
+    __hushDesktopStickies?: () => { id: string; text: string }[];
+  }).__hushDesktopStickies;
+  try { return provider ? provider() || [] : []; } catch { return []; }
+}
+
+/** Raise + centre a desktop-pinned sticky (shelf row click). */
+export function revealDesktopSticky(id: string): void {
+  const fn = (window as unknown as {
+    __hushRevealDesktopSticky?: (id: string) => void;
+  }).__hushRevealDesktopSticky;
+  try { fn?.(id); } catch { /* the sticky went away — nothing to reveal */ }
+}
+
 /** Return every unique flag hex colour found in a label. */
 export function allFlagHexes(label: string, flagColors: Record<string, string>): string[] {
   const re = /==([^=]+?)==/g;

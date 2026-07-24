@@ -56,6 +56,40 @@ function repositionDesktopNotes() {
   }
 }
 
+/** Desktop-pinned notes for the open Desktop, newest last — read by the
+ *  notebook shape shelf (the Desktop's right sidebar) so pinned stickies
+ *  list alongside the file thumbnails. */
+function desktopStickyRows() {
+  const openId = desktopOpenId();
+  if (!openId) return [];
+  const rows = [];
+  for (const [id, n] of notes) {
+    if (n.kind !== "desktop" || n.target !== openId) continue;
+    const text = n.textarea ? n.textarea.value : (n.text || "");
+    rows.push({ id, text });
+  }
+  return rows;
+}
+
+/** Shelf row click: raise the note and pan the Desktop canvas so it's
+ *  centred — a pinned sticky can sit anywhere in the world, including
+ *  well off the current viewport. */
+async function revealDesktopSticky(id) {
+  const note = notes.get(id);
+  if (!note) return;
+  note.el.style.zIndex = ++zCounter;
+  if (typeof note.wx !== "number" || typeof note.wy !== "number") return;
+  const { getActiveNotebookState } = await import("../notebook/notes-canvas.ts");
+  const st = getActiveNotebookState();
+  const host = document.querySelector(".desktop-canvas-host");
+  if (!st || !host) return;
+  const rect = host.getBoundingClientRect();
+  const zoom = st.camera.zoom || 1;
+  st.camera = { ...st.camera, x: rect.width / 2 - note.wx * zoom, y: rect.height / 2 - note.wy * zoom };
+  st.notify("camera");
+  note.textarea?.focus();
+}
+
 const notes = new Map(); // id → note record
 let appState = null;
 let containerEl = null;
@@ -79,6 +113,10 @@ export function initStickyNotes(state) {
   // Desktop-pinned notes track the canvas camera.
   state.on("desktop-opened", () => repositionDesktopNotes());
   document.addEventListener("desktop-camera-changed", repositionDesktopNotes);
+  // Hooks the notebook shape shelf reads to list desktop-pinned notes
+  // (same shape as the Desktop's other window.__hush* bridges).
+  window.__hushDesktopStickies = desktopStickyRows;
+  window.__hushRevealDesktopSticky = revealDesktopSticky;
   // Renames / deletions: refresh labels and prune notes whose target
   // no longer exists in the tree.
   state.on("files-changed", () => { pruneOrphans(); refreshLabels(); refreshVisibility(); });

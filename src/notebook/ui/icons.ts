@@ -53,6 +53,8 @@ const PATHS: Record<string, string> = {
   "file-pdf": `<g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="3" y="1" width="10" height="14" rx="1"/><line x1="5" y1="8" x2="11" y2="8"/></g>`,
   "file-stack": `<g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="4" y1="2" x2="4" y2="14"/><line x1="8" y1="2" x2="8" y2="14"/><line x1="12" y1="2" x2="12" y2="14"/></g>`,
   "file-project": `<polygon points="8,1 15,15 1,15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>`,
+  // Sticky note — a square with the corner turned up.
+  "sticky": `<g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2 2h12v8l-4 4H2z"/><path d="M14 10h-4v4"/></g>`,
   // Pen (drawing-mode entry) — strokes retargeted to currentColor per the
   // Illustrator-export fix.
   "pen": `<path d="M14.3632 5.65156L15.8431 4.17157C16.6242 3.39052 17.8905 3.39052 18.6716 4.17157L20.0858 5.58579C20.8668 6.36683 20.8668 7.63316 20.0858 8.41421L18.6058 9.8942M14.3632 5.65156L4.74749 15.2672C4.41542 15.5993 4.21079 16.0376 4.16947 16.5054L3.92738 19.2459C3.87261 19.8659 4.39148 20.3848 5.0115 20.33L7.75191 20.0879C8.21972 20.0466 8.65806 19.8419 8.99013 19.5099L18.6058 9.8942M14.3632 5.65156L18.6058 9.8942" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
@@ -117,6 +119,7 @@ const VIEWBOXES: Record<string, string> = {
   "file-pdf": "0 0 16 16",
   "file-stack": "0 0 16 16",
   "file-project": "0 0 16 16",
+  "sticky": "0 0 16 16",
 };
 
 /** Create an SVG icon element. Color is inherited from CSS `color` via currentColor. */

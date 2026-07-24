@@ -6,6 +6,7 @@ import { icon } from "./icons";
 import {
   buildLabel, renderLabelInline, allFlagHexes, getHushFlagColors,
   getDesktopSearchText, appendWithSearchHighlight, findContentMatches, buildSnippet,
+  getDesktopStickies, revealDesktopSticky,
 } from "./shelf-label";
 import { perf } from "../perf-hud"; // PERF-HUD (temporary)
 
@@ -33,6 +34,9 @@ interface ShelfNode {
    *  the first flagged text child. Used by `makeNodeRow` to paint the
    *  leading dot. */
   flagHexes?: string[];
+  /** Rows that aren't canvas shapes (desktop-pinned stickies) do their
+   *  own thing on click instead of `focusShape`. */
+  onActivate?: () => void;
 }
 
 interface ShelfPaneInfo {
@@ -226,6 +230,21 @@ export function createShelfPanel(
         result.push({ id: s.id, type: "image", label: s.name || "Image", excerpt: fr ? getDesktopSearchText(fr.key) : "", color: null, shapeId: s.id, parentId: undefined, depth: 0, pocketed: !!s.pocketed, fileKind: fr?.kind });
       }
     }
+
+    // Desktop-pinned stickies. They're DOM notes rather than canvas
+    // shapes, but they live on this Desktop's background, so the shelf —
+    // the Desktop's right sidebar — lists them alongside the files.
+    // Their body rides in `excerpt` so shelf search reaches note text.
+    for (const st of getDesktopStickies()) {
+      const first = (st.text || "").trim().split("\n")[0];
+      result.push({
+        id: "sticky:" + st.id, type: "sticky",
+        label: first || "Empty note", excerpt: st.text || "",
+        color: null, shapeId: "sticky:" + st.id, parentId: undefined,
+        depth: 0, pocketed: false,
+        onActivate: () => revealDesktopSticky(st.id),
+      });
+    }
     return result;
   }
 
@@ -416,6 +435,13 @@ export function createShelfPanel(
     return row;
   }
 
+  /** Row click: pan to the shape, or run the row's own action for rows
+   *  that aren't shapes (desktop-pinned stickies). */
+  function activate(node: ShelfNode) {
+    if (node.onActivate) { node.onActivate(); return; }
+    state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0);
+  }
+
   function makeNodeRow(node: ShelfNode, isPinned: boolean): HTMLElement {
     const theme = t();
     const fg = theme.foreground;
@@ -437,6 +463,13 @@ export function createShelfPanel(
       daIcon.style.color = muted;
       daIcon.style.marginRight = "2px";
       row.appendChild(daIcon);
+    }
+    if (node.type === "sticky") {
+      const noteIcon = icon("sticky", 12);
+      noteIcon.style.flexShrink = "0";
+      noteIcon.style.color = muted;
+      noteIcon.style.marginRight = "2px";
+      row.appendChild(noteIcon);
     }
     if (node.fileKind) {
       // Desktop file thumbnails carry their filetype glyph (mirrors the
@@ -480,7 +513,7 @@ export function createShelfPanel(
         fontWeight: node.heading ? "600" : "400",
         fontStyle: node.blockquote ? "italic" : "normal",
       },
-      onClick: () => state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0),
+      onClick: () => activate(node),
     });
     const searchHlBg = theme.variant === "dark" ? "rgba(255, 224, 102, 0.25)" : "rgba(255, 213, 0, 0.35)";
     const q = search.trim();
@@ -511,7 +544,7 @@ export function createShelfPanel(
       const tgt = ev.target as HTMLElement | null;
       if (tgt && tgt.closest("[data-shelf-row-label]")) return; // already handled
       if (tgt && tgt.closest("button")) return; // pin / collapse handled separately
-      state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0);
+      activate(node);
     });
     const pinBtn = h("button", { title: isPinned ? "Unpin" : "Pin", style: { border: "none", background: "none", cursor: "pointer", padding: "0", opacity: isPinned ? "0.8" : "0.4", color: isPinned ? theme.accent : muted, display: "flex", alignItems: "center", width: "16px", height: "16px" }, onClick: () => { if (isPinned) pinned.delete(node.id); else pinned.add(node.id); rebuildBody(); } });
     pinBtn.appendChild(icon("pin", 12));
