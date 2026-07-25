@@ -191,6 +191,16 @@ export class DrawingState extends EventTarget {
    *  document-order connections sit at 0.4 so they read as annotation
    *  over the thumbnails rather than as content. */
   flowArrowAlpha = 1;
+  /** Stroke width + arrowhead size for the arrows, in canvas units.
+   *  Null keeps the layer's own defaults; the Desktop runs far heavier
+   *  so the chain reads at a fit-everything zoom. */
+  flowArrowWidth: number | null = null;
+  flowArrowHeadSize: number | null = null;
+  /** Whether dragging a node pulls its flowchart descendants along.
+   *  True everywhere a user *drew* the chart (the subtree is a spatial
+   *  unit they arranged); false on Desktops, where the chain is derived
+   *  from file order and each thumbnail is its own object. */
+  flowDragDescendants = true;
   /** Per-canvas switch marking the flowchart edges as derived, not
    *  user-drawn: the hover / tap delete affordances are suppressed and
    *  pointer input never removes an edge. Set by the Desktop, whose
@@ -1588,10 +1598,13 @@ export class DrawingState extends EventTarget {
           if (this.selectedIds.has(s.id) && s.type === "drag-area") selectedDragAreaIds.add(s.id);
         }
         // Flowchart descendants of any selected node move with the
-        // selection so the downstream spatial layout stays intact.
+        // selection so the downstream spatial layout stays intact —
+        // unless the host opted out (derived chains, see the switch).
         const flowDescendants = new Set<string>();
-        for (const id of this.selectedIds) {
-          for (const d of this.flowchart.descendantsOf(id)) flowDescendants.add(d);
+        if (this.flowDragDescendants) {
+          for (const id of this.selectedIds) {
+            for (const d of this.flowchart.descendantsOf(id)) flowDescendants.add(d);
+          }
         }
         // If a flowchart descendant is part of a group, the rest of that group
         // tags along — otherwise dragging the parent would tear the group
@@ -2579,8 +2592,10 @@ export class DrawingState extends EventTarget {
     for (const s of this.shapes) {
       if (s.parentId && selectedDragAreaIds.has(s.parentId)) ids.add(s.id);
     }
-    for (const id of this.selectedIds) {
-      for (const d of this.flowchart.descendantsOf(id)) ids.add(d);
+    if (this.flowDragDescendants) {
+      for (const id of this.selectedIds) {
+        for (const d of this.flowchart.descendantsOf(id)) ids.add(d);
+      }
     }
     const followingGroups = new Set<string>();
     for (const id of ids) {

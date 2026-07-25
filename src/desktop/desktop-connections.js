@@ -20,6 +20,14 @@
 /** Derived arrows paint at 40 % so they annotate the layout rather than
  *  competing with the thumbnails. */
 export const DOC_CONNECTION_ALPHA = 0.4;
+/** Heavy strokes — thumbnails are 300–800 px wide and a Desktop usually
+ *  sits at a fit-everything zoom well under 1, so the notebook default
+ *  (1.5) would render as a hairline. The arrowhead scales with it, but
+ *  not by the same 20× multiple: `arrowHeadSize` is also how far the
+ *  line backs off the target, and a proportional 220 px head would eat
+ *  the whole 150 px gap the default grid leaves between thumbnails. */
+export const DOC_CONNECTION_WIDTH = 30;
+export const DOC_CONNECTION_HEAD = 60;
 
 const edgeId = (fromKey, toKey) => `docorder:${fromKey}>${toKey}`;
 
@@ -55,13 +63,19 @@ function sameEdges(a, b) {
   return true;
 }
 
-/** Mark a Desktop canvas's flowchart as derived-and-locked: 40 % arrows,
- *  no per-edge delete affordance. Called once at mount. */
+/** Mark a Desktop canvas's flowchart as derived-and-locked: heavy 40 %
+ *  arrows, no per-edge delete affordance, and no subtree drag — a
+ *  thumbnail is its own object, so dragging one must not haul the rest
+ *  of the chain along behind it (piles still drag as one; that's
+ *  `groupId`, a different mechanism). Called once at mount. */
 export function initDesktopConnections(canvas) {
   const st = canvas?.state;
   if (!st) return;
   st.flowArrowAlpha = DOC_CONNECTION_ALPHA;
+  st.flowArrowWidth = DOC_CONNECTION_WIDTH;
+  st.flowArrowHeadSize = DOC_CONNECTION_HEAD;
   st.flowEdgesLocked = true;
+  st.flowDragDescendants = false;
 }
 
 /**

@@ -77,6 +77,11 @@ export interface RenderState {
   /** Opacity the flowchart arrows paint at (0–1, default 1). Desktops
    *  render their derived document-order arrows at 40 %. */
   flowArrowAlpha?: number;
+  /** Stroke width + arrowhead size for the flowchart arrows, in canvas
+   *  units. Omitted leaves the layer's own defaults (1.5 / 11); the
+   *  Desktop's document-order chain runs far heavier. */
+  flowArrowWidth?: number;
+  flowArrowHeadSize?: number;
   /** True when the edges are derived rather than user-drawn (Desktops).
    *  Suppresses the per-edge delete dot / X — those edges mirror the
    *  project's document order and aren't the user's to remove. */
@@ -174,6 +179,9 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   // Flowchart arrows render under text shapes; skip pocketed shapes.
   if (state.flowchart) {
     state.flowchart.setArrowColor(theme.foreground);
+    if (state.flowArrowWidth || state.flowArrowHeadSize) {
+      state.flowchart.setArrowMetrics(state.flowArrowWidth ?? 1.5, state.flowArrowHeadSize ?? 11);
+    }
     // The layer's own save/restore preserves globalAlpha, so setting it
     // here dims the whole chart — that's how the Desktop's derived
     // document-order arrows paint at 40 % without the portable layer

@@ -9,33 +9,19 @@
 //     isFlowable: (s) => s.type === "text",
 //   });
 //
-//   // On drop:
-//   const target = flow.findDropTarget(droppedCenter, shapes, droppedId);
-//   if (target) {
-//     const newTL = flow.tryConnect(droppedId, target.id, shapes);
-//     if (newTL) {
-//       // Translate from "new bounds top-left" to "new shape position".
-//       const old = getShapeBounds(droppedShape);
-//       applyPositionDelta(droppedId, newTL.minX - old.minX, newTL.minY - old.minY);
-//     }
+//   flow.draw(ctx, shapes);      // on render, after the camera transform
+//   flow.removeNode(deletedId);  // on node deletion
+//   const data = flow.serialize(); flow.deserialize(data);  // persistence
+//
+// `tryConnect` (on drop) and `tidy` (re-layout a subtree) both return
+// new *bounding-box top-lefts* rather than shape positions, so the host
+// translates them into its own coordinate space:
+//
+//   const newTL = flow.tryConnect(droppedId, target.id, shapes);
+//   if (newTL) {
+//     const old = getShapeBounds(droppedShape);
+//     applyPositionDelta(droppedId, newTL.minX - old.minX, newTL.minY - old.minY);
 //   }
-//
-//   // On render (after camera transform is applied):
-//   flow.draw(ctx, shapes);
-//
-//   // On node deletion:
-//   flow.removeNode(deletedId);
-//
-//   // Tidy a subtree (anchors root, repositions descendants):
-//   const layout = flow.tidy(rootId, shapes);
-//   for (const [id, tl] of layout) {
-//     const old = getShapeBounds(shapes.find((s) => s.id === id)!);
-//     applyPositionDelta(id, tl.minX - old.minX, tl.minY - old.minY);
-//   }
-//
-//   // Persistence:
-//   const data = flow.serialize();
-//   flow.deserialize(loadedData);
 
 export interface FlowEdge {
   id: string;
@@ -646,6 +632,15 @@ export class FlowchartLayer<S extends FlowNode> {
   /** Override the arrow color at runtime (e.g. for a theme change). */
   setArrowColor(color: string): void {
     this.cfg.arrowColor = color;
+  }
+
+  /** Override the arrow metrics at runtime — stroke width and arrowhead
+   *  size, both in canvas units. Hosts that render at a different visual
+   *  weight than the default (Hush's Desktop document-order chain) set
+   *  these per frame alongside the colour. */
+  setArrowMetrics(width: number, headSize: number): void {
+    this.cfg.arrowWidth = width;
+    this.cfg.arrowHeadSize = headSize;
   }
 }
 

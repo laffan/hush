@@ -18,7 +18,6 @@
   font-family: var(--font-family);
   display: flex;
   flex-direction: column;
-  padding-top: 30px; /* clear the drag region on macOS */
 }
 
 .desktop-view.hidden {
@@ -58,6 +57,16 @@ body.desktop-active .right-panel-trigger {
    floats over the canvas the way it floats over an editor. */
 body.desktop-active #pane-container .floating-pane.desktop-pane {
   visibility: visible;
+}
+
+/* The canvas runs edge to edge, exactly like a notebook — so the 30 px
+   macOS title-bar strip goes away with it (notebook / PDF / stack modes
+   drop it the same way). `display: none` rather than the visibility
+   list above: #drag-region is z-index 80, above .desktop-view, and a
+   merely-invisible one would still swallow pointer events across the
+   whole top edge of the canvas. */
+body.desktop-active #drag-region {
+  display: none;
 }
 
 /* ── Canvas host ───────────────────────────────────────────────── */
