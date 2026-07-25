@@ -850,18 +850,26 @@ export class NotesCanvas {
       this.state.creatingDragArea != null ||
       this.state.reorderDragAreaId != null;
 
-    if (this._needsRender || interacting) {
-      this._needsRender = false;
-      this._renderFrame();
-    }
-
-    // Reschedule only if there's a reason to: an active interaction, or a
-    // change that landed while we were rendering this frame. Otherwise go
-    // idle — `_scheduleRender` restarts us on the next state change.
-    if (interacting || this._needsRender) {
-      this._rafId = requestAnimationFrame(this._renderLoop);
-    } else {
-      this._rafId = 0;
+    // The bookkeeping below has to run even if the frame throws. The loop
+    // is dirty-driven: `_rafId` doubles as "a frame is already queued", so
+    // a throw that skipped past it would leave a stale non-zero handle
+    // with nothing scheduled — `_scheduleRender` would then decline to
+    // start a new loop and the canvas would stay frozen on its last
+    // (possibly half-painted) frame for the rest of the session.
+    try {
+      if (this._needsRender || interacting) {
+        this._needsRender = false;
+        this._renderFrame();
+      }
+    } finally {
+      // Reschedule only if there's a reason to: an active interaction, or a
+      // change that landed while we were rendering this frame. Otherwise go
+      // idle — `_scheduleRender` restarts us on the next state change.
+      if (interacting || this._needsRender) {
+        this._rafId = requestAnimationFrame(this._renderLoop);
+      } else {
+        this._rafId = 0;
+      }
     }
   };
 

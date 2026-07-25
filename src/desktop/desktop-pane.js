@@ -128,27 +128,66 @@ export async function mountDesktopPane(pane, state) {
   const thumbs = new Map();
   entries.forEach((e, i) => { if (cached[i]) thumbs.set(e.key, cached[i]); });
 
-  canvas.loadShapes(
-    buildShapes(envelope, entries, thumbs),
-    envelope?.layers?.length ? envelope.layers : undefined,
-  );
+  const built = buildShapes(envelope, entries, thumbs);
+  canvas.loadShapes(built, envelope?.layers?.length ? envelope.layers : undefined);
   applyDocConnections(canvas, entries, options.showConnections);
+  dtLog(`loaded ${built.length} shapes,`,
+    `${built.filter((s) => s.type === "image" && s.dataUrl).length} with bytes,`,
+    `layers=${canvas.state.layers.map((l) => `${l.id}${l.hidden ? ":hidden" : ""}`).join(",")}`);
   requestAnimationFrame(() => {
     if (!alive()) return;
     canvas.state.camera = fitCameraFor(
       canvas.state.shapes, host.clientWidth || 400, host.clientHeight || 300);
     canvas.state.notify("camera");
     canvas.state.rebasePinAnchor?.();
+    dtLog(`camera ${JSON.stringify(canvas.state.camera)} host ${host.clientWidth}x${host.clientHeight}`);
   });
 
   attachOpenGesture(host, canvas, state, containerId);
   attachPersist(host, canvas, containerId, alive);
+  installPaneDebug(pane, canvas, host);
 
   // Pass two: generate whatever pass one missed, one at a time so a big
   // project doesn't monopolise the main thread, applying each in place.
   dtLog("mountDesktopPane done (canvas up)");
   const missing = entries.filter((e, i) => !cached[i]);
-  if (missing.length) hydrateRest(pane, canvas, state, missing, themeCtx, alive);
+  // Fire-and-forget, but never silently: an unhandled rejection here
+  // would leave every un-cached thumbnail stuck on its placeholder card
+  // with nothing in the console to say why.
+  if (missing.length) {
+    hydrateRest(pane, canvas, state, missing, themeCtx, alive)
+      .catch((err) => console.error("[desktop] pane hydration failed", err));
+  }
+}
+
+/** Console hook for diagnosing a Desktop pane that renders arrows but no
+ *  thumbnails: `__hushDesktopPaneDebug()` reports the canvas geometry,
+ *  the camera, and — per fileRef shape — its rect, whether the render
+ *  has a decoded image for it, and how big that image is. Cheap: one
+ *  closure per mounted pane, nothing runs until it's called. */
+function installPaneDebug(pane, canvas, host) {
+  window.__hushDesktopPaneDebug = () => {
+    const st = canvas.state;
+    const cache = canvas.getImageCache?.() || new Map();
+    const el = host.querySelector("canvas");
+    return {
+      host: { w: host.clientWidth, h: host.clientHeight },
+      canvasEl: el ? { cssW: el.clientWidth, cssH: el.clientHeight, w: el.width, h: el.height } : null,
+      camera: { ...st.camera },
+      layers: (st.layers || []).map((l) => ({ id: l.id, hidden: !!l.hidden })),
+      edges: st.flowchart.edges.length,
+      shapes: st.shapes.map((s) => {
+        const img = cache.get(s.id);
+        return {
+          type: s.type, name: s.fileRef?.name || s.name || "",
+          layerId: s.layerId, pocketed: !!s.pocketed,
+          rect: `${Math.round(s.position?.x)},${Math.round(s.position?.y)} ${Math.round(s.width)}x${Math.round(s.height)}`,
+          dataUrl: s.dataUrl ? `${s.dataUrl.slice(0, 24)}… (${s.dataUrl.length})` : "(empty)",
+          img: img ? `complete=${img.complete} natural=${img.naturalWidth}x${img.naturalHeight}` : "(no cache entry)",
+        };
+      }),
+    };
+  };
 }
 
 /** Cache-only thumbnail lookup — the session cache inside
@@ -173,9 +212,18 @@ async function hydrateRest(pane, canvas, state, missing, themeCtx, alive) {
   try {
     for (const entry of missing) {
       dtLog("generating thumbnail", entry.kind, entry.name);
-      const thumb = await ensureDesktopThumb(state, entry, themeCtx);
+      // One entry that can't render shouldn't strand the ones behind it
+      // in the queue.
+      let thumb;
+      try {
+        thumb = await ensureDesktopThumb(state, entry, themeCtx);
+      } catch (err) {
+        console.error("[desktop] thumbnail failed", entry.kind, entry.name, err);
+        continue;
+      }
       if (!alive()) return;
-      applyThumbToShape(canvas, entry.key, thumb);
+      const hit = applyThumbToShape(canvas, entry.key, thumb);
+      dtLog(`applied ${entry.name}: matched=${hit} bytes=${(thumb?.dataUrl || "").length}`);
     }
     dtLog("background hydration done");
   } finally {

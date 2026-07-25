@@ -111,6 +111,11 @@ export interface RenderState {
   touchMode?: boolean;
 }
 
+/** Shape ids whose paint has already thrown and been reported. The
+ *  render loop re-runs at frame rate, so without this one bad shape
+ *  would bury the console under identical stack traces. */
+const reportedPaintFailures = new Set<string>();
+
 export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -213,6 +218,27 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     const layerShapes = shapesByLayer.get(layer.id);
     if (!layerShapes || !layerShapes.length) continue;
     const paintShape = (shape: Shape) => {
+      // A shape that throws mid-paint used to take the whole rest of the
+      // frame with it — every later shape, its sticky badges, and the
+      // selection chrome — leaving a canvas that looks half-rendered for
+      // reasons nothing on screen explains. Contain it to the one shape
+      // and say so once, so the failure is visible without being a
+      // 60 fps console flood.
+      const tf = ctx.getTransform();
+      try {
+        paintShapeInner(shape);
+      } catch (err) {
+        // A throw between a drawer's save() and its restore() leaves the
+        // camera transform whatever that drawer last set it to, which
+        // would scatter every following shape. Put it back.
+        ctx.setTransform(tf);
+        if (!reportedPaintFailures.has(shape.id)) {
+          reportedPaintFailures.add(shape.id);
+          console.error("[render] shape paint failed", shape.type, shape.id, err);
+        }
+      }
+    };
+    const paintShapeInner = (shape: Shape) => {
       if (shape.type === "drag-area") return;
       if (shape.id === editingShapeId) return;
       if (pocketedIds.has(shape.id)) return;
