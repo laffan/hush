@@ -13,9 +13,8 @@
 //   flow.removeNode(deletedId);  // on node deletion
 //   const data = flow.serialize(); flow.deserialize(data);  // persistence
 //
-// `tryConnect` (on drop) and `tidy` (re-layout a subtree) both return
-// new *bounding-box top-lefts* rather than shape positions, so the host
-// translates them into its own coordinate space:
+// `tryConnect` (on drop) and `tidy` (re-layout a subtree) return new
+// *bounding-box top-lefts*, not shape positions — the host translates:
 //
 //   const newTL = flow.tryConnect(droppedId, target.id, shapes);
 //   if (newTL) {
@@ -89,6 +88,7 @@ interface ResolvedConfig<S extends FlowNode> {
   tidyGapX: number;
   tidyGapY: number;
   arrowColor: string;
+  arrowLineCap: CanvasLineCap;
   arrowWidth: number;
   arrowHeadSize: number;
   connectMode: FlowConnectMode;
@@ -108,6 +108,7 @@ export class FlowchartLayer<S extends FlowNode> {
       tidyGapX: config.tidyGapX ?? 90,
       tidyGapY: config.tidyGapY ?? 25,
       arrowColor: config.arrowColor ?? "#666",
+      arrowLineCap: "round",
       arrowWidth: config.arrowWidth ?? 1.5,
       arrowHeadSize: config.arrowHeadSize ?? 11,
       connectMode: config.connectMode ?? "closest",
@@ -601,7 +602,7 @@ export class FlowchartLayer<S extends FlowNode> {
     ctx.strokeStyle = this.cfg.arrowColor;
     ctx.fillStyle = this.cfg.arrowColor;
     ctx.lineWidth = this.cfg.arrowWidth;
-    ctx.lineCap = "round";
+    ctx.lineCap = this.cfg.arrowLineCap;
     ctx.lineJoin = "round";
 
     const ah = this.cfg.arrowHeadSize;
@@ -634,13 +635,17 @@ export class FlowchartLayer<S extends FlowNode> {
     this.cfg.arrowColor = color;
   }
 
-  /** Override the arrow metrics at runtime — stroke width and arrowhead
-   *  size, both in canvas units. Hosts that render at a different visual
-   *  weight than the default (Hush's Desktop document-order chain) set
-   *  these per frame alongside the colour. */
-  setArrowMetrics(width: number, headSize: number): void {
+  /** Override the arrow metrics at runtime — stroke width, arrowhead
+   *  size (both canvas units) and line cap. Hosts that render at a
+   *  different visual weight than the default (Hush's Desktop
+   *  document-order chain) set these per frame alongside the colour.
+   *  A butt cap matters once the stroke is thick and translucent: a
+   *  round cap laps over the arrowhead it terminates against, and the
+   *  double-painted sliver reads as a dark notch. */
+  setArrowMetrics(width: number, headSize: number, lineCap: CanvasLineCap = "round"): void {
     this.cfg.arrowWidth = width;
     this.cfg.arrowHeadSize = headSize;
+    this.cfg.arrowLineCap = lineCap;
   }
 }
 

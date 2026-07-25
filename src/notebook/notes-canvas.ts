@@ -914,6 +914,7 @@ export class NotesCanvas {
         flowArrowAlpha: this.state.flowArrowAlpha,
         flowArrowWidth: this.state.flowArrowWidth ?? undefined,
         flowArrowHeadSize: this.state.flowArrowHeadSize ?? undefined,
+        flowArrowLineCap: this.state.flowArrowLineCap ?? undefined,
         flowEdgesLocked: this.state.flowEdgesLocked,
         strokeEngineDragging: this.state.strokeEngineDragging,
         reorderDragAreaId: this.state.reorderDragAreaId,

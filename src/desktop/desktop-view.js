@@ -75,6 +75,13 @@ function collectOpts() {
   return { includeGutters: _options.includeGutters };
 }
 
+/** Open a thumbnail in place. A nested project's Desktop replaces this
+ *  one rather than opening the project's joined buffer — a project *is*
+ *  a Desktop, so that's what opening it means. */
+function openThumbnail(ref) {
+  openFileRef(_state, ref, (nodeId) => openDesktop(_state, nodeId));
+}
+
 /** True when some file surface is genuinely active. The open events
  *  fire after the pointers are set, so this reads as "the open landed"
  *  — an open that bailed leaves every pointer null. */
@@ -100,6 +107,7 @@ function initDesktop(state) {
     getState: () => _state, getContainerId: () => _containerId,
     getThemeCtx: () => _themeCtx, getToken: () => _openToken,
     collectOpts, screenToCanvas, scheduleSave,
+    openRef: (ref) => openThumbnail(ref),
     ensureThumb: (st, entry, themeCtx) => ensureDesktopThumb(st, entry, themeCtx),
     collectFiles: (st, containerId, opts) => collectDesktopFiles(st, containerId, opts),
     applyThumb: (key, thumb) => applyThumbToShape(key, thumb),
@@ -448,11 +456,10 @@ function attachCanvasListeners() {
   import("./desktop-hover.js").then((m) => {
     if (!_canvas || !_canvasHost) return;
     _hoverCleanup = m.attachDesktopHover(_canvasHost, _canvas, {
-      onOpen: (ref) => openFileRef(_state, ref),
-      onSecondary: (ref, ev) =>
-        openFileRefSecondary(_state, ref, ev, _containerId, (id) => openDesktop(_state, id)),
+      onOpen: (ref) => openThumbnail(ref),
+      onSecondary: (ref, ev) => openFileRefSecondary(_state, ref, ev, _containerId),
       onOpenWithGutter: (ref) => openFileRefWithGutter(_state, ref),
-      onToggleOutline: (ref) => _outline.toggleDoc(ref),
+      onToggleOutline: (ref) => _outline.toggle(ref),
       onStacksChanged: () => scheduleSave(),
     }, {
       showLabels: () => _options.showLabels,

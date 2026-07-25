@@ -1,7 +1,8 @@
 /**
- * Desktop doc-outline feature — the clickable outline column shown to
- * the left of a doc thumbnail's page (see README "Desktops"). Two
- * halves:
+ * Desktop outline feature — the clickable outline column shown to the
+ * left of a doc thumbnail's page, and (with file rows instead of
+ * headings) to the left of a nested project's composite. See README
+ * "Desktops". Two halves:
  *
  *   Render helpers (`layoutDocOutline` / `drawDocOutline`) — used by
  *   desktop-thumbs when baking a doc thumbnail with its outline on.
@@ -14,6 +15,10 @@
  */
 
 import { raisedLast } from "./desktop-content.js";
+
+/** Thumbnail kinds that can carry an outline column: a doc's headings,
+ *  a nested project's file list. */
+const OUTLINE_KINDS = new Set(["doc", "project"]);
 
 // Outline column geometry. Unscaled; scaled by the thumbnail's optScale.
 export const OUTLINE_W = 190;
@@ -28,9 +33,11 @@ export const OUTLINE_INDENT = 11;
  *  page block: the column occupies `[colX, colX + colW]` and the page
  *  sits immediately to its right, so the gap between the two is the
  *  column's trailing edge. Row hit-boxes span the whole column so a
- *  click anywhere on a heading's row navigates. Coordinates are in the
- *  thumbnail's own (scaled) CSS space = the shape's local space, so the
- *  stored rows map straight through `world − shape.position`. */
+ *  click anywhere on a row navigates. Coordinates are in the thumbnail's
+ *  own (scaled) CSS space = the shape's local space, so the stored rows
+ *  map straight through `world − shape.position`. `headings` is
+ *  `{ text, level, startOffset? , target? }` — docs supply an offset
+ *  into their own body, projects a file to open. */
 export function layoutDocOutline(headings, scale, colX = 0) {
   const gap = Math.round(OUTLINE_GAP * scale);
   const padY = Math.round(OUTLINE_PAD_Y * scale);
@@ -46,6 +53,9 @@ export function layoutDocOutline(headings, scale, colX = 0) {
     const indent = (Math.max(1, hd.level) - 1) * indentStep;
     return {
       text: hd.text, level: hd.level, startOffset: hd.startOffset,
+      // A project's rows point at whole files rather than an offset in
+      // the doc the column belongs to; the click handler routes on it.
+      ...(hd.target ? { target: hd.target } : {}),
       x: colX, w: colW, y: padY + i * rowH, h: rowH,
       textX: textX0 + indent, indent,
     };
@@ -134,7 +144,7 @@ export async function openDocAtOffset(state, fileId, offset) {
  *   getCanvas, getHost, getState, getContainerId, getThemeCtx, getToken,
  *   collectOpts, ensureThumb(state, entry, themeCtx),
  *   collectFiles(state, containerId, opts), applyThumb(key, thumb),
- *   screenToCanvas(pt, camera), scheduleSave().
+ *   screenToCanvas(pt, camera), scheduleSave(), openRef(fileRef).
  */
 export function createDesktopOutline(deps) {
   const rows = new Map();
@@ -158,7 +168,9 @@ export function createDesktopOutline(deps) {
     const ordered = raisedLast(st.shapes, st.selectedIds);
     for (let i = ordered.length - 1; i >= 0; i--) {
       const s = ordered[i];
-      if (s.type !== "image" || !s.fileRef?.fileId) continue;
+      // `key`, not `fileId` — a nested project's thumbnail carries an
+      // outline too and has no fileId of its own.
+      if (s.type !== "image" || !s.fileRef?.key) continue;
       const rowList = rows.get(s.fileRef.key);
       if (!rowList) continue;
       const lx = world.x - s.position.x, ly = world.y - s.position.y;
@@ -167,6 +179,7 @@ export function createDesktopOutline(deps) {
         if (lx >= r.x && lx <= r.x + r.w && ly >= r.y && ly <= r.y + r.h) {
           return {
             fileId: s.fileRef.fileId, startOffset: r.startOffset,
+            target: r.target || null,
             hover: { shapeId: s.id, x: r.x, y: r.y, w: r.w, h: r.h },
           };
         }
@@ -201,7 +214,12 @@ export function createDesktopOutline(deps) {
       const st = deps.getCanvas()?.state;
       if (!st || st.tool !== "select") return;
       const hit = hitAt(e.clientX, e.clientY);
-      if (hit) { e.stopPropagation(); openDocAtOffset(deps.getState(), hit.fileId, hit.startOffset); }
+      if (!hit) return;
+      e.stopPropagation();
+      // A project row opens the whole file it names; a doc row scrolls
+      // the doc the column belongs to to that heading.
+      if (hit.target) deps.openRef(hit.target);
+      else if (hit.fileId) openDocAtOffset(deps.getState(), hit.fileId, hit.startOffset);
     };
     const onMove = (e) => {
       const st = deps.getCanvas()?.state;
@@ -257,9 +275,10 @@ export function createDesktopOutline(deps) {
     after.notify("shapes");
   }
 
-  /** Toggle a single doc's outline (hover Outline button). */
-  async function toggleDoc(ref) {
-    if (!deps.getCanvas() || !ref || ref.kind !== "doc") return;
+  /** Toggle a single thumbnail's outline (hover Outline button). Docs
+   *  and nested projects both have one. */
+  async function toggle(ref) {
+    if (!deps.getCanvas() || !ref || !OUTLINE_KINDS.has(ref.kind)) return;
     const collected = deps.collectFiles(deps.getState(), deps.getContainerId(), deps.collectOpts());
     const entry = collected?.entries.find((e) => e.key === ref.key);
     if (!entry) return;
@@ -268,17 +287,18 @@ export function createDesktopOutline(deps) {
     deps.scheduleSave();
   }
 
-  /** Open or close the outline on every doc (Desktop settings). */
+  /** Open or close the outline on every doc + nested project (Desktop
+   *  settings). */
   async function setAll(on) {
     if (!deps.getCanvas() || !deps.getContainerId()) return;
     const token = deps.getToken();
     const collected = deps.collectFiles(deps.getState(), deps.getContainerId(), deps.collectOpts());
-    for (const entry of (collected?.entries || []).filter((e) => e.kind === "doc")) {
+    for (const entry of (collected?.entries || []).filter((e) => OUTLINE_KINDS.has(e.kind))) {
       await regenDoc(entry, on);
       if (token !== deps.getToken()) return;
     }
     deps.scheduleSave();
   }
 
-  return { has, setRows, clear, attachClicks, toggleDoc, setAll };
+  return { has, setRows, clear, attachClicks, toggle, setAll };
 }

@@ -196,6 +196,7 @@ export class DrawingState extends EventTarget {
    *  so the chain reads at a fit-everything zoom. */
   flowArrowWidth: number | null = null;
   flowArrowHeadSize: number | null = null;
+  flowArrowLineCap: CanvasLineCap | null = null;
   /** Whether dragging a node pulls its flowchart descendants along.
    *  True everywhere a user *drew* the chart (the subtree is a spatial
    *  unit they arranged); false on Desktops, where the chain is derived

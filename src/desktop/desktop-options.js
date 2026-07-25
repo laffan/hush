@@ -136,11 +136,11 @@ export function buildDesktopOptionsSection(theme, getOptions, setOption, setAllO
     return b;
   };
 
-  // Doc outlines — bulk open / close the clickable outline column on
-  // every doc thumbnail (per-doc toggling lives on each thumbnail's
-  // hover Outline button).
+  // Outlines — bulk open / close the clickable outline column on every
+  // doc and nested-project thumbnail (per-thumbnail toggling lives on
+  // each one's hover Outline button).
   if (typeof setAllOutlines === "function") {
-    wrap.appendChild(el("div", { ...labelStyle, marginTop: "8px" }, "Doc outlines"));
+    wrap.appendChild(el("div", { ...labelStyle, marginTop: "8px" }, "Outlines"));
     const btnRow = el("div", { display: "flex", gap: "6px", marginBottom: "2px" });
     btnRow.appendChild(plainButton("Open all", () => setAllOutlines(true)));
     btnRow.appendChild(plainButton("Close all", () => setAllOutlines(false)));

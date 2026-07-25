@@ -77,6 +77,11 @@ export function buildPaneDOM(pane, deps) {
   titleLink.addEventListener("click", (e) => {
     if (pane.fileType === "zotero-highlights") return;
     e.stopPropagation();
+    if (pane.fileType === "desktop") {
+      // fileId is a project node id — the title opens that Desktop.
+      import("../desktop/desktop-view.js").then((m) => m.openDesktop(appState, pane.fileId));
+      return;
+    }
     if (pane.fileType === "notebook") appState.openNotebook(pane.fileId);
     else if (pane.fileType === "pdf") appState.openPdf(pane.fileId);
     else if (pane.fileType === "stack") appState.openStack(pane.fileId);
@@ -85,7 +90,8 @@ export function buildPaneDOM(pane, deps) {
   title.appendChild(titleLink);
   // Word-count chip (doc panes only) — populated by pane-content.js's
   // updatePaneWordCount on every doc change.
-  if (pane.fileType !== "notebook" && pane.fileType !== "pdf" && pane.fileType !== "stack") {
+  if (pane.fileType !== "notebook" && pane.fileType !== "pdf"
+      && pane.fileType !== "stack" && pane.fileType !== "desktop") {
     const wc = document.createElement("span");
     wc.className = "fp-wordcount";
     wc.style.display = "none";
@@ -99,7 +105,8 @@ export function buildPaneDOM(pane, deps) {
 
   // Font-size button (doc panes only — notebooks have no text size,
   // zotero-highlights pane is fileless).
-  if (pane.fileType !== "notebook" && pane.fileType !== "pdf" && pane.fileType !== "stack" && pane.fileType !== "zotero-highlights") {
+  if (pane.fileType !== "notebook" && pane.fileType !== "pdf" && pane.fileType !== "stack"
+      && pane.fileType !== "zotero-highlights" && pane.fileType !== "desktop") {
     const sizeBtn = makeBtn("size", ICON_SIZE, "Pane font size");
     sizeBtn.addEventListener("click", (e) => { e.stopPropagation(); togglePaneSizePopover(pane, sizeBtn, schedulePersist); });
     buttons.appendChild(sizeBtn);

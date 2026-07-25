@@ -17,9 +17,9 @@
  * on the next open.
  */
 
-/** Derived arrows paint at 40 % so they annotate the layout rather than
+/** Derived arrows paint at 30 % so they annotate the layout rather than
  *  competing with the thumbnails. */
-export const DOC_CONNECTION_ALPHA = 0.4;
+export const DOC_CONNECTION_ALPHA = 0.3;
 /** Heavy strokes — thumbnails are 300–800 px wide and a Desktop usually
  *  sits at a fit-everything zoom well under 1, so the notebook default
  *  (1.5) would render as a hairline. The arrowhead scales with it, but
@@ -28,14 +28,25 @@ export const DOC_CONNECTION_ALPHA = 0.4;
  *  the whole 150 px gap the default grid leaves between thumbnails. */
 export const DOC_CONNECTION_WIDTH = 30;
 export const DOC_CONNECTION_HEAD = 60;
+/** Butt caps, not the layer's default round. At 30 px a round cap
+ *  overhangs the arrowhead's base by 15 px, and because the head is
+ *  filled after the line is stroked that overlap paints twice — at 30 %
+ *  opacity the doubled sliver reads as a dark notch across the tip. */
+export const DOC_CONNECTION_CAP = "butt";
 
 const edgeId = (fromKey, toKey) => `docorder:${fromKey}>${toKey}`;
 
+/** Kinds that participate in a project's reading order. Nested projects
+ *  are part of the flow — a project inside a project is a chapter, not
+ *  an attachment — so they chain alongside the docs. Notebooks, PDFs and
+ *  stacks are reference material and sit outside the chain. */
+const FLOW_KINDS = new Set(["doc", "project"]);
+
 /**
- * Chain the doc thumbnails together in project order. `entries` comes
+ * Chain the flow thumbnails together in project order. `entries` comes
  * from `collectDesktopFiles` (tree order); `shapes` supplies the canvas
- * ids. Non-doc entries and docs with no thumbnail on the canvas (e.g.
- * pocketed) drop out of the chain rather than breaking it.
+ * ids. Off-flow entries, and flow entries with no thumbnail on the
+ * canvas (e.g. pocketed), drop out of the chain rather than breaking it.
  */
 export function docOrderEdges(entries, shapes) {
   const idByKey = new Map();
@@ -44,7 +55,7 @@ export function docOrderEdges(entries, shapes) {
   }
   const chain = [];
   for (const entry of entries || []) {
-    if (entry.kind !== "doc") continue;
+    if (!FLOW_KINDS.has(entry.kind)) continue;
     const id = idByKey.get(entry.key);
     if (id) chain.push({ key: entry.key, id });
   }
@@ -74,6 +85,7 @@ export function initDesktopConnections(canvas) {
   st.flowArrowAlpha = DOC_CONNECTION_ALPHA;
   st.flowArrowWidth = DOC_CONNECTION_WIDTH;
   st.flowArrowHeadSize = DOC_CONNECTION_HEAD;
+  st.flowArrowLineCap = DOC_CONNECTION_CAP;
   st.flowEdgesLocked = true;
   st.flowDragDescendants = false;
 }

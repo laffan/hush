@@ -46,7 +46,7 @@ const DOC_FONT_SIZE = 8;
 const BASE_LONG_EDGE = 400;
 // Bump when thumbnail geometry / styling changes so cached renders
 // regenerate on the next Desktop open.
-const THUMB_STYLE_VERSION = 9;
+const THUMB_STYLE_VERSION = 10;
 // Doc outline column geometry + drawing live in ./desktop-outline.js.
 // Width of each constituent slice in a stack file's thumbnail.
 const STACK_SLICE_WIDTH = 80;
@@ -130,9 +130,12 @@ export function entrySig(state, entry, themeSig) {
   if (entry.kind === "stack") return `${v}|stack|${fileModified(state, entry.fileId)}|${themeSig}`;
   if (entry.kind === "project") {
     const collected = collectDesktopFiles(state, entry.nodeId);
-    const parts = (collected?.entries || []).map((e) =>
-      e.kind === "project" ? `p:${e.nodeId}` : `${e.kind}:${e.key}:${fileModified(state, e.fileId)}`);
-    return `${v}|project|${parts.join(",")}|${themeSig}`;
+    // Names ride the signature too: the composite paints them under each
+    // child thumbnail, and the outline column is nothing but names.
+    const parts = (collected?.entries || []).map((e) => e.kind === "project"
+      ? `p:${e.nodeId}:${e.name}`
+      : `${e.kind}:${e.key}:${fileModified(state, e.fileId)}:${e.name}`);
+    return `${v}|project|${parts.join(",")}|o${entry.outline ? 1 : 0}|${themeSig}`;
   }
   return null;
 }
@@ -490,9 +493,26 @@ async function resolvePdfThumb(entry, themeCtx) {
   return { url, w, h };
 }
 
+/** Outline rows for a project thumbnail: one per child, in project
+ *  order. Nested projects and docs are the reading order (level 1);
+ *  notebooks / PDFs / stacks are supporting material (level 2, dimmer).
+ *  Each row carries the fileRef-shaped `target` the click handler opens,
+ *  so a project's outline reads like a single document's table of
+ *  contents but jumps to whole files. */
+function projectOutlineRows(children) {
+  return children.map((c) => ({
+    text: c.name || "Untitled",
+    level: c.kind === "doc" || c.kind === "project" ? 1 : 2,
+    target: { key: c.key, kind: c.kind, fileId: c.fileId, nodeId: c.nodeId, name: c.name },
+  }));
+}
+
 /** Compose a project's Desktop into one thumbnail: each child file's
  *  thumbnail drawn at its saved Desktop position (or the default grid
- *  when the project's Desktop has never been opened). */
+ *  when the project's Desktop has never been opened). Sized like a
+ *  notebook thumbnail — the composite is fit to the long-edge option
+ *  and set inside the same page-ground matte, since both are "a whole
+ *  canvas shrunk down" rather than a printed page. */
 async function renderProjectThumb(state, entry, themeCtx, depth) {
   const collected = collectDesktopFiles(state, entry.nodeId);
   const children = collected?.entries || [];
@@ -532,14 +552,30 @@ async function renderProjectThumb(state, entry, themeCtx, depth) {
   const worldW = maxX - minX + NB_MARGIN * 2;
   const worldH = maxY - minY + NB_MARGIN * 2;
   const zoom = optLongEdge(themeCtx) / Math.max(worldW, worldH);
-  const cssW = Math.max(1, Math.round(worldW * zoom));
-  const cssH = Math.max(1, Math.round(worldH * zoom));
+  // Same matte as a notebook thumbnail, scaled by the long-edge option.
+  const matte = Math.round(NB_MATTE * optScale(themeCtx));
+  const innerW = Math.max(1, Math.round(worldW * zoom));
+  const innerH = Math.max(1, Math.round(worldH * zoom));
 
-  const { canvas, ctx } = makeCanvas(cssW, cssH);
+  let outline = null;
+  if (entry.outline) outline = layoutDocOutline(projectOutlineRows(children), optScale(themeCtx), 0);
+  const ox = outline ? outline.colW : 0;
+  const blockW = innerW + matte * 2;
+  const blockH = innerH + matte * 2;
+  const imgW = blockW + ox;
+  const imgH = outline ? Math.max(blockH, outline.contentH) : blockH;
+
+  const { canvas, ctx } = makeCanvas(imgW, imgH);
   const t = themeCtx.theme;
+  ctx.fillStyle = pageGround(themeCtx);
+  ctx.fillRect(ox, 0, blockW, blockH);
   ctx.fillStyle = themeCtx.canvasBackgroundOverride || t.canvasBackground;
-  ctx.fillRect(0, 0, cssW, cssH);
+  ctx.fillRect(ox + matte, matte, innerW, innerH);
   ctx.save();
+  ctx.beginPath();
+  ctx.rect(ox + matte, matte, innerW, innerH);
+  ctx.clip();
+  ctx.translate(ox + matte, matte);
   ctx.scale(zoom, zoom);
   ctx.translate(-(minX - NB_MARGIN), -(minY - NB_MARGIN));
   for (const child of children) {
@@ -561,8 +597,21 @@ async function renderProjectThumb(state, entry, themeCtx, depth) {
   }
   ctx.restore();
   ctx.strokeStyle = t.uiBorder || "rgba(128,128,128,0.3)";
-  ctx.strokeRect(0.5, 0.5, cssW - 1, cssH - 1);
-  return { dataUrl: encode(canvas), w: cssW, h: cssH };
+  ctx.strokeRect(ox + 0.5, 0.5, blockW - 1, blockH - 1);
+
+  if (outline) {
+    drawDocOutline(ctx, outline, {
+      ink: docPageTheme(themeCtx).foreground,
+      border: SHEET_BORDER,
+      fontFamily: FONT_FAMILY,
+      bg: pageGround(themeCtx),
+      height: imgH,
+    });
+  }
+  return {
+    dataUrl: encode(canvas), w: imgW, h: imgH,
+    outlineRows: outline ? outline.rows : null,
+  };
 }
 
 /**

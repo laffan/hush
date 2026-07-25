@@ -2,10 +2,10 @@
  * Desktop hover controls — everything that surfaces over a file
  * thumbnail when it's hovered *or selected*:
  *
- *  - the action icons (open-as-pane; docs with a paired gutter add
- *    "Open with Gutter Visible" and an outline toggle; nested projects
- *    swap the pane icon for "Open Project Desktop"). Plain *open* has no
- *    button — double-click / double-tap the thumbnail,
+ *  - the action icons (open-as-pane — for a nested project that's its
+ *    Desktop in a pane; docs with a paired gutter add "Open with Gutter
+ *    Visible"; docs and nested projects add an outline toggle). Plain
+ *    *open* has no button — double-click / double-tap the thumbnail,
  *  - the filename label (labels are hover-only on Desktops — a single
  *    thumbnail shows its name centred beneath it),
  *  - a pile's title list (left-aligned beneath the stack): clicking a
@@ -26,7 +26,6 @@ import { raisedLast } from "./desktop-content.js";
 import { applyTooltip } from "../tooltips.js";
 
 const PANE_ICON = `<svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="5.5" x2="14" y2="5.5" stroke="currentColor" stroke-width="1.5"/></svg>`;
-const GRID_ICON = `<svg viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="2" width="5" height="5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="2" y="9" width="5" height="5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="5" height="5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>`;
 // The sidebar's gutter glyph — vertical rules flanking a dot column.
 const GUTTER_ICON = `<svg viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="4" y1="3" x2="4" y2="13"/><line x1="12" y1="3" x2="12" y2="13"/></g><g fill="currentColor"><circle cx="8" cy="4" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="8" cy="12" r="1"/></g></svg>`;
 // Outline glyph — indented list lines (dot + bar per row).
@@ -142,11 +141,11 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
     hoveredRef = shape.fileRef;
     hoveredShapeId = shape.id;
     const isProject = shape.fileRef.kind === "project";
-    secondaryBtn.innerHTML = isProject ? GRID_ICON : PANE_ICON;
-    applyTooltip(secondaryBtn, isProject ? "Open Project Desktop" : "Open as pane");
+    secondaryBtn.innerHTML = PANE_ICON;
+    applyTooltip(secondaryBtn, isProject ? "Open Desktop as pane" : "Open as pane");
     gutterBtn.style.display = shape.fileRef.kind === "doc" && shape.fileRef.hasGutter ? "" : "none";
-    // Outline toggle — docs only.
-    const isDoc = shape.fileRef.kind === "doc";
+    // Outline toggle — docs (headings) and nested projects (file list).
+    const isDoc = shape.fileRef.kind === "doc" || isProject;
     outlineBtn.style.display = isDoc ? "" : "none";
     if (isDoc) {
       const on = !!shape.fileRef.outline || (opts.hasOutlineRows && opts.hasOutlineRows(shape.fileRef.key));

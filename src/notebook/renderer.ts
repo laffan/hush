@@ -78,10 +78,13 @@ export interface RenderState {
    *  render their derived document-order arrows at 40 %. */
   flowArrowAlpha?: number;
   /** Stroke width + arrowhead size for the flowchart arrows, in canvas
-   *  units. Omitted leaves the layer's own defaults (1.5 / 11); the
-   *  Desktop's document-order chain runs far heavier. */
+   *  units, and the stroke's line cap. Omitted leaves the layer's own
+   *  defaults (1.5 / 11 / round); the Desktop's document-order chain
+   *  runs far heavier, and butt caps keep the thick translucent stroke
+   *  from lapping over the arrowhead it ends against. */
   flowArrowWidth?: number;
   flowArrowHeadSize?: number;
+  flowArrowLineCap?: CanvasLineCap;
   /** True when the edges are derived rather than user-drawn (Desktops).
    *  Suppresses the per-edge delete dot / X — those edges mirror the
    *  project's document order and aren't the user's to remove. */
@@ -180,7 +183,9 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   if (state.flowchart) {
     state.flowchart.setArrowColor(theme.foreground);
     if (state.flowArrowWidth || state.flowArrowHeadSize) {
-      state.flowchart.setArrowMetrics(state.flowArrowWidth ?? 1.5, state.flowArrowHeadSize ?? 11);
+      state.flowchart.setArrowMetrics(
+        state.flowArrowWidth ?? 1.5, state.flowArrowHeadSize ?? 11,
+        state.flowArrowLineCap ?? "round");
     }
     // The layer's own save/restore preserves globalAlpha, so setting it
     // here dims the whole chart — that's how the Desktop's derived

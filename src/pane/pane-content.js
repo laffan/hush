@@ -49,17 +49,18 @@ export function syncAllPaneWordCounts() {
 }
 
 export async function loadPaneContent(pane) {
-  if (pane.fileType === "document") {
-    await loadDocumentPane(pane);
-  } else if (pane.fileType === "notebook") {
-    await loadNotebookPane(pane);
-  } else if (pane.fileType === "pdf") {
-    await loadPdfPane(pane);
-  } else if (pane.fileType === "stack") {
-    await loadStackPane(pane);
-  } else if (pane.fileType === "zotero-highlights") {
-    const { mountZoteroHighlightPane } = await import("../zotero/highlight-pane.js");
-    await mountZoteroHighlightPane(pane, appState);
+  const t = pane.fileType;
+  if (t === "document") return loadDocumentPane(pane);
+  if (t === "notebook") return loadNotebookPane(pane);
+  if (t === "pdf") return loadPdfPane(pane);
+  if (t === "stack") return loadStackPane(pane);
+  // Fileless custom types mount from their own modules. A `desktop`
+  // pane's `fileId` is a project's tree-node id, not a file id.
+  if (t === "zotero-highlights") {
+    return (await import("../zotero/highlight-pane.js")).mountZoteroHighlightPane(pane, appState);
+  }
+  if (t === "desktop") {
+    return (await import("../desktop/desktop-pane.js")).mountDesktopPane(pane, appState);
   }
 }
 
@@ -496,9 +497,8 @@ async function loadStackPane(pane) {
 
 // ── Saving ────────────────────────────────────────────────────────────
 export async function savePaneContent(pane) {
-  if (pane.fileType === "pdf") { pane.dirty = false; return; }
-  if (pane.fileType === "stack") { pane.dirty = false; return; }
-  if (pane.fileType === "zotero-highlights") { pane.dirty = false; return; }
+  // These types own their own persistence (or have no file behind them).
+  if (["pdf", "stack", "zotero-highlights", "desktop"].includes(pane.fileType)) { pane.dirty = false; return; }
   if (!pane.dirty) return;
   pane.dirty = false;
 
