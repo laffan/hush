@@ -30,6 +30,10 @@ import {
 import { collectDesktopFiles, DESKTOP_KIND_ORDER } from "./desktop-files.js";
 import { loadThumbRecord, saveThumbRecord, loadDesktopEnvelope } from "./desktop-store.js";
 import { layoutDocOutline, drawDocOutline } from "./desktop-outline.js";
+import {
+  makeCanvas, encode, loadImage, baseRenderOpts, drawCard,
+  docThumbText, pageGround, docPageTheme, CARD_W, CARD_H,
+} from "./desktop-thumb-draw.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -46,7 +50,7 @@ const DOC_FONT_SIZE = 8;
 const BASE_LONG_EDGE = 400;
 // Bump when thumbnail geometry / styling changes so cached renders
 // regenerate on the next Desktop open.
-const THUMB_STYLE_VERSION = 10;
+const THUMB_STYLE_VERSION = 11;
 // Doc outline column geometry + drawing live in ./desktop-outline.js.
 // Width of each constituent slice in a stack file's thumbnail.
 const STACK_SLICE_WIDTH = 80;
@@ -77,9 +81,6 @@ function optDocFontSize(themeCtx) {
   return typeof n === "number" && n >= 3 && n <= 24 ? n : DOC_FONT_SIZE;
 }
 const NB_MARGIN = 10;
-const CARD_W = 220;
-const CARD_H = 280;
-const SCALE = 2; // raster density
 
 // Session cache — avoids IDB round trips on every files-changed
 // reconcile while a Desktop is open. Cleared per-key on force refresh.
@@ -140,126 +141,6 @@ export function entrySig(state, entry, themeSig) {
   return null;
 }
 
-function makeCanvas(cssW, cssH) {
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(cssW * SCALE));
-  canvas.height = Math.max(1, Math.round(cssH * SCALE));
-  const ctx = canvas.getContext("2d");
-  ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
-  return { canvas, ctx };
-}
-
-function encode(canvas) {
-  return canvas.toDataURL("image/webp", 0.85);
-}
-
-function loadImage(src) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = src;
-  });
-}
-
-/** Base render opts shared by every thumbnail — blank background in the
- *  container's own canvas colour so thumbs read as part of the surface. */
-function baseRenderOpts(themeCtx) {
-  return {
-    imageCache: new Map(),
-    theme: themeCtx.theme,
-    backgroundPattern: "blank",
-    gridSpacing: 25,
-    gridOpacity: 0,
-    fontFamily: themeCtx.fontFamily,
-    includeBackground: true,
-    canvasBackgroundOverride: themeCtx.canvasBackgroundOverride || "",
-    flowchart: undefined,
-    omitTextGlyphs: false,
-  };
-}
-
-/** A neutral card used for stacks, pending PDFs, and empty containers. */
-function drawCard(themeCtx, label, glyph, cssW = CARD_W, cssH = CARD_H) {
-  const { canvas, ctx } = makeCanvas(cssW, cssH);
-  const t = themeCtx.theme;
-  ctx.fillStyle = themeCtx.canvasBackgroundOverride || t.canvasBackground;
-  ctx.fillRect(0, 0, cssW, cssH);
-  ctx.strokeStyle = t.uiBorder || "rgba(128,128,128,0.3)";
-  ctx.strokeRect(0.5, 0.5, cssW - 1, cssH - 1);
-  ctx.save();
-  ctx.globalAlpha = 0.45;
-  ctx.strokeStyle = t.foreground;
-  ctx.lineWidth = 3;
-  ctx.lineCap = "round";
-  const cx = cssW / 2, cy = cssH / 2 - 10;
-  if (glyph === "stack") {
-    for (let i = -1; i <= 1; i++) {
-      ctx.beginPath();
-      ctx.moveTo(cx + i * 16, cy - 28);
-      ctx.lineTo(cx + i * 16, cy + 28);
-      ctx.stroke();
-    }
-  } else if (glyph === "pdf" || glyph === "project") {
-    ctx.strokeRect(cx - 24, cy - 30, 48, 60);
-  }
-  if (label) {
-    ctx.globalAlpha = 0.6;
-    ctx.fillStyle = t.foreground;
-    ctx.font = `12px ${themeCtx.fontFamily}, sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(label, cx, cy + 52);
-  }
-  ctx.restore();
-  return { dataUrl: encode(canvas), w: cssW, h: cssH };
-}
-
-/** Strip YAML frontmatter + %%comments%% so a doc thumbnail starts at
- *  its actual prose (and the page count skips editorial scaffolding). */
-function docThumbText(content) {
-  let text = content || "";
-  if (text.startsWith("---\n")) {
-    const end = text.indexOf("\n---", 4);
-    if (end !== -1) text = text.slice(end + 4).replace(/^\n+/, "");
-  }
-  return text.replace(/%%[\s\S]*?%%/g, "");
-}
-
-/** Page ground colour for the doc page / notebook matte, by appearance. */
-function pageGround(themeCtx) {
-  return themeCtx.appearance === "dark" ? "#000000" : "#ffffff";
-}
-
-/** Rough sRGB luminance of a #rgb / #rrggbb color; null when unparsable. */
-function hexLuminance(color) {
-  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec((color || "").trim());
-  if (!m) return null;
-  let h = m[1];
-  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
-  const n = parseInt(h, 16);
-  return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
-}
-
-/** The doc page is always white (light) / black (dark), whatever the
- *  canvas theme — so make sure the ink still contrasts when the user
- *  paired a dark theme with light appearance (or vice versa). */
-function docPageTheme(themeCtx) {
-  const dark = themeCtx.appearance === "dark";
-  const t = themeCtx.theme;
-  const fixInk = (color, fallback) => {
-    const lum = hexLuminance(color);
-    if (lum == null) return color;
-    if (dark && lum < 0.35) return fallback;
-    if (!dark && lum > 0.65) return fallback;
-    return color;
-  };
-  return {
-    ...t,
-    foreground: fixInk(t.foreground, dark ? "#e8e8e8" : "#1a1a1a"),
-    headingColor: fixInk(t.headingColor, dark ? "#e8e8e8" : "#1a1a1a"),
-  };
-}
 
 /** A doc renders as a printed page sitting on a stack of paper: the
  *  rendered-markdown page on top, plus one faintly-bordered page-ground
@@ -578,10 +459,20 @@ async function renderProjectThumb(state, entry, themeCtx, depth) {
   ctx.translate(ox + matte, matte);
   ctx.scale(zoom, zoom);
   ctx.translate(-(minX - NB_MARGIN), -(minY - NB_MARGIN));
+  // Where each child lands in the finished thumbnail's own CSS px. Rides
+  // on the fileRef so the renderer can paint each child's file stickies
+  // over the composite live — stickies are never baked in.
+  const childRects = [];
   for (const child of children) {
     const r = rects.get(child.key);
     const thumb = thumbs.get(child.key);
     if (!r || !thumb) continue;
+    childRects.push({
+      kind: child.kind, fileId: child.fileId || null,
+      x: ox + matte + (r.x - (minX - NB_MARGIN)) * zoom,
+      y: matte + (r.y - (minY - NB_MARGIN)) * zoom,
+      w: r.w * zoom, h: r.h * zoom,
+    });
     const img = await loadImage(thumb.dataUrl || thumb.url);
     if (img) ctx.drawImage(img, r.x, r.y, r.w, r.h);
     ctx.strokeStyle = t.uiBorder || "rgba(128,128,128,0.3)";
@@ -611,6 +502,7 @@ async function renderProjectThumb(state, entry, themeCtx, depth) {
   return {
     dataUrl: encode(canvas), w: imgW, h: imgH,
     outlineRows: outline ? outline.rows : null,
+    children: childRects, childScale: zoom,
   };
 }
 

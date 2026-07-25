@@ -144,7 +144,8 @@ export async function openDocAtOffset(state, fileId, offset) {
  *   getCanvas, getHost, getState, getContainerId, getThemeCtx, getToken,
  *   collectOpts, ensureThumb(state, entry, themeCtx),
  *   collectFiles(state, containerId, opts), applyThumb(key, thumb),
- *   screenToCanvas(pt, camera), scheduleSave(), openRef(fileRef).
+ *   screenToCanvas(pt, camera), scheduleSave(), openRef(fileRef),
+ *   armReturn().
  */
 export function createDesktopOutline(deps) {
   const rows = new Map();
@@ -216,6 +217,8 @@ export function createDesktopOutline(deps) {
       const hit = hitAt(e.clientX, e.clientY);
       if (!hit) return;
       e.stopPropagation();
+      // Either branch leaves the Desktop, so leave a way back.
+      deps.armReturn?.();
       // A project row opens the whole file it names; a doc row scrolls
       // the doc the column belongs to to that heading.
       if (hit.target) deps.openRef(hit.target);

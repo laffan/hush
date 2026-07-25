@@ -168,10 +168,14 @@ export interface DesktopFileRef {
   /** Stack files only: each constituent's slice band in the thumbnail's
    *  own CSS px, so hovering a slice can caption that file's name. */
   slices?: { x: number; w: number; name: string }[];
-  /** Docs with `outline` on: the page block's right edge (shape-local
-   *  px) = where the outline column starts. The hover buttons anchor
-   *  here so they don't cover the column's first rows. */
-  outlineX?: number;
+  /** Nested projects only: where each child file landed inside the
+   *  composite, in the thumbnail's own CSS px, plus the scale the
+   *  composite shrank them by. The renderer uses these to paint each
+   *  child's own file stickies onto the composite live, the same way it
+   *  paints a top-level thumbnail's — stickies are never baked into a
+   *  thumbnail (they change per keystroke). */
+  projectChildren?: { kind: string; fileId: string | null; x: number; y: number; w: number; h: number }[];
+  projectScale?: number;
 }
 
 export interface ImageShape extends ShapeBase {

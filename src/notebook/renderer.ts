@@ -226,6 +226,18 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
         const fr = (shape as ImageShape).fileRef;
         if (fr && state.fileStickies) {
           drawThumbStickies(ctx, shape as ImageShape, state.fileStickies(fr.kind, fr.fileId || ""), state.fontFamily);
+          // A nested project's thumbnail is a composite of its children,
+          // so their stickies ride along too — laid out on each child's
+          // sub-rect and shrunk by the same factor the composite shrank
+          // the child by.
+          for (const c of fr.projectChildren || []) {
+            const notes = state.fileStickies(c.kind, c.fileId || "");
+            if (!notes.length) continue;
+            drawThumbStickies(ctx, {
+              position: { x: shape.position.x + c.x, y: shape.position.y + c.y },
+              width: c.w, height: c.h,
+            } as ImageShape, notes, state.fontFamily, fr.projectScale || 1);
+          }
         }
       }
     };
@@ -797,48 +809,59 @@ function wrapBadgeText(ctx: CanvasRenderingContext2D, text: string, maxW: number
   return lines;
 }
 
-/** Lay a thumbnail's file stickies out along its bottom edge. */
+/** Lay a thumbnail's file stickies out along its bottom edge. `scale`
+ *  shrinks the whole badge row — 1 for a thumbnail on the canvas, the
+ *  composite's own zoom for a child inside a nested project's
+ *  thumbnail, so the notes shrink with the file they belong to. */
 function drawThumbStickies(
   ctx: CanvasRenderingContext2D, shape: ImageShape,
-  stickies: { text: string }[], fontFamily: string,
+  stickies: { text: string }[], fontFamily: string, scale = 1,
 ) {
   if (!stickies.length) return;
-  const y = shape.position.y + shape.height - BADGE_BOTTOM - BADGE_SIZE;
-  const x0 = shape.position.x + BADGE_LEFT;
+  const size = BADGE_SIZE * scale;
+  const left = BADGE_LEFT * scale;
+  const pad = BADGE_PAD * scale;
+  const y = shape.position.y + shape.height - BADGE_BOTTOM * scale - size;
+  const x0 = shape.position.x + left;
   // Room the rest of the row has to land in. More notes than fit side by
   // side compress into an overlapping fan rather than running off the edge.
-  const span = shape.width - BADGE_LEFT - BADGE_SIZE;
+  const span = shape.width - left - size;
   const step = stickies.length > 1
-    ? Math.min(BADGE_SIZE + BADGE_GAP, Math.max(BADGE_SIZE * 0.28, span / (stickies.length - 1)))
+    ? Math.min(size + BADGE_GAP * scale, Math.max(size * 0.28, span / (stickies.length - 1)))
     : 0;
-  const fontPx = Math.round(BADGE_SIZE * 0.078);
+  const fontPx = Math.round(size * 0.078);
   const lineH = Math.round(fontPx * 1.35);
-  const maxLines = Math.max(1, Math.floor((BADGE_SIZE - BADGE_PAD * 2) / lineH));
+  const maxLines = Math.max(1, Math.floor((size - pad * 2) / lineH));
   for (let i = 0; i < stickies.length; i++) {
     const x = x0 + i * step;
     ctx.save();
     ctx.shadowColor = "rgba(0,0,0,0.20)";
-    ctx.shadowBlur = 4;
-    ctx.shadowOffsetX = 1;
-    ctx.shadowOffsetY = 2;
+    ctx.shadowBlur = 4 * scale;
+    ctx.shadowOffsetX = scale;
+    ctx.shadowOffsetY = 2 * scale;
     ctx.fillStyle = BADGE_FILL;
-    ctx.fillRect(x, y, BADGE_SIZE, BADGE_SIZE);
+    ctx.fillRect(x, y, size, size);
     ctx.restore();
     ctx.save();
     ctx.strokeStyle = "rgba(0,0,0,0.12)";
     ctx.lineWidth = 1;
-    ctx.strokeRect(x + 0.5, y + 0.5, BADGE_SIZE - 1, BADGE_SIZE - 1);
-    // Stickies are always black-on-pink, independent of the canvas theme.
-    ctx.beginPath();
-    ctx.rect(x, y, BADGE_SIZE, BADGE_SIZE);
-    ctx.clip();
-    ctx.font = `${fontPx}px ${fontFamily}, sans-serif`;
-    ctx.fillStyle = "#1a1a1a";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-    const lines = wrapBadgeText(ctx, stickies[i].text, BADGE_SIZE - BADGE_PAD * 2, maxLines);
-    for (let l = 0; l < lines.length; l++) {
-      ctx.fillText(lines[l], x + BADGE_PAD, y + BADGE_PAD + l * lineH);
+    ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+    // Below ~4 px the text is noise, not content — a shrunk-down child
+    // inside a composite keeps the pink square as a "this file has
+    // notes" marker and drops the body.
+    if (fontPx >= 4) {
+      // Stickies are always black-on-pink, independent of the canvas theme.
+      ctx.beginPath();
+      ctx.rect(x, y, size, size);
+      ctx.clip();
+      ctx.font = `${fontPx}px ${fontFamily}, sans-serif`;
+      ctx.fillStyle = "#1a1a1a";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      const lines = wrapBadgeText(ctx, stickies[i].text, size - pad * 2, maxLines);
+      for (let l = 0; l < lines.length; l++) {
+        ctx.fillText(lines[l], x + pad, y + pad + l * lineH);
+      }
     }
     ctx.restore();
   }

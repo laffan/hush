@@ -34,10 +34,11 @@
 
 import { collectDesktopFiles, findDesktopContainer } from "./desktop-files.js";
 import { ensureDesktopThumb, entrySig } from "./desktop-thumbs.js";
-import { buildShapes, fitCameraFor, applyThumbRefFields } from "./desktop-content.js";
+import { buildShapes, fitCameraFor, applyThumbToShape } from "./desktop-content.js";
 import { loadDesktopEnvelope, saveDesktopEnvelope, loadThumbRecord } from "./desktop-store.js";
 import { initDesktopConnections, applyDocConnections } from "./desktop-connections.js";
 import { openFileRef, dtLog } from "./desktop-open.js";
+import { armDesktopReturn } from "./desktop-return.js";
 import { screenToCanvas } from "../notebook/utils.ts";
 import { findShapeAtPoint } from "../notebook/state-helpers.ts";
 
@@ -140,7 +141,7 @@ export async function mountDesktopPane(pane, state) {
     canvas.state.rebasePinAnchor?.();
   });
 
-  attachOpenGesture(host, canvas, state);
+  attachOpenGesture(host, canvas, state, containerId);
   attachPersist(host, canvas, containerId, alive);
 
   // Pass two: generate whatever pass one missed, one at a time so a big
@@ -174,7 +175,7 @@ async function hydrateRest(pane, canvas, state, missing, themeCtx, alive) {
       dtLog("generating thumbnail", entry.kind, entry.name);
       const thumb = await ensureDesktopThumb(state, entry, themeCtx);
       if (!alive()) return;
-      applyPaneThumb(canvas, entry.key, thumb);
+      applyThumbToShape(canvas, entry.key, thumb);
     }
     dtLog("background hydration done");
   } finally {
@@ -182,60 +183,10 @@ async function hydrateRest(pane, canvas, state, missing, themeCtx, alive) {
   }
 }
 
-/** Swap one entry's thumbnail into the canvas in place. Mirrors
- *  desktop-view's `applyThumbToShape`, including the image-cache
- *  refresh — the cache only auto-reloads on an appearance swap, so a
- *  content change would otherwise keep painting the placeholder. */
-function applyPaneThumb(canvas, key, thumb) {
-  if (!thumb) return;
-  const st = canvas.state;
-  const cache = canvas.getImageCache?.();
-  let changed = false;
-  st.shapes = st.shapes.map((s) => {
-    if (s.type !== "image" || s.fileRef?.key !== key) return s;
-    changed = true;
-    const out = { ...s, dataUrl: thumb.dataUrl || thumb.url || "" };
-    delete out.dataUrlDark;
-    const cached = cache?.get(s.id);
-    if (cached) cached.src = out.dataUrl;
-    const fileRef = { ...s.fileRef };
-    applyThumbRefFields(fileRef, thumb);
-    out.fileRef = fileRef;
-    if (thumb.w > 0 && thumb.h > 0) { out.width = thumb.w; out.height = thumb.h; }
-    return out;
-  });
-  if (changed) st.notify("shapes");
-}
-
-/** Persist shape / layer moves back into the shared envelope, keeping
- *  the stored camera (and everything else the takeover owns) intact —
- *  a pane's viewport is not the Desktop's viewport. */
-function attachPersist(host, canvas, containerId, alive) {
-  let timer = null;
-  const flush = async () => {
-    timer = null;
-    if (!alive()) return;
-    const prev = (await loadDesktopEnvelope(containerId)) || { version: 1 };
-    const shapes = canvas.state.shapes.map((s) => {
-      if (s.type !== "image" || !s.fileRef) return s;
-      const copy = { ...s, dataUrl: "" };
-      delete copy.dataUrlDark;
-      return copy;
-    });
-    saveDesktopEnvelope(containerId, {
-      ...prev, shapes, layers: canvas.state.layers, flowEdges: [], savedAt: Date.now(),
-    });
-  };
-  host.addEventListener("notebook-change", () => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(flush, 800);
-  });
-}
-
 /** Double-click (mouse) / double-tap (touch) a thumbnail to open it —
  *  the same gesture the takeover uses, including the multi-touch guard
  *  that keeps a two-finger pan from reading as a tap pair. */
-function attachOpenGesture(host, canvas, state) {
+function attachOpenGesture(host, canvas, state, containerId) {
   const st = canvas.state;
   const thumbAt = (clientX, clientY) => {
     if (st.tool !== "select") return null;
@@ -250,10 +201,13 @@ function attachOpenGesture(host, canvas, state) {
     const shape = thumbAt(clientX, clientY);
     if (!shape) return;
     lastOpenAt = Date.now();
-    // A nested project inside the pane drills the *takeover* into it —
-    // panes within panes are more confusion than they're worth.
-    openFileRef(state, shape.fileRef, (nodeId) => {
-      import("./desktop-view.js").then((m) => m.openDesktop(state, nodeId));
+    // The crumb points at the Desktop being replaced — the open takeover
+    // if there is one, else this pane's own project.
+    import("./desktop-view.js").then((m) => {
+      armDesktopReturn(state, m.currentDesktopContainerId() || containerId);
+      // A nested project inside the pane drills the *takeover* into it —
+      // panes within panes are more confusion than they're worth.
+      openFileRef(state, shape.fileRef, (nodeId) => m.openDesktop(state, nodeId));
     });
   };
   host.addEventListener("dblclick", (e) => openAt(e.clientX, e.clientY));

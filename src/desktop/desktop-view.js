@@ -22,8 +22,8 @@ import {
   evictSessionThumb, DESKTOP_GRID_GAP,
 } from "./desktop-thumbs.js";
 import {
-  refOf, keepRefFields, applyThumbRefFields, hydrateShape, shapeBottom,
-  newThumbShape, buildShapes, fitCameraFor, buildSearchIndex,
+  refOf, keepRefFields, shapeBottom, newThumbShape,
+  buildShapes, fitCameraFor, buildSearchIndex, applyThumbToShape as applyThumb,
 } from "./desktop-content.js";
 import { normalizeDesktopStacks } from "./desktop-stacks.js";
 import { DESKTOP_OPTION_DEFAULTS, normalizeDesktopOptions } from "./desktop-options.js";
@@ -31,6 +31,7 @@ import { loadDesktopEnvelope, saveDesktopEnvelope } from "./desktop-store.js";
 import { createDesktopOutline } from "./desktop-outline.js";
 import { initDesktopConnections, applyDocConnections } from "./desktop-connections.js";
 import { openFileRef, openFileRefWithGutter, openFileRefSecondary } from "./desktop-open.js";
+import { armDesktopReturn } from "./desktop-return.js";
 import { canvasToScreen, screenToCanvas } from "../notebook/utils.ts";
 
 let _host = null;
@@ -77,10 +78,15 @@ function collectOpts() {
 
 /** Open a thumbnail in place. A nested project's Desktop replaces this
  *  one rather than opening the project's joined buffer — a project *is*
- *  a Desktop, so that's what opening it means. */
+ *  a Desktop, so that's what opening it means. Arms the return crumb
+ *  first: whatever lands next got there from this Desktop. */
 function openThumbnail(ref) {
+  armReturn();
   openFileRef(_state, ref, (nodeId) => openDesktop(_state, nodeId));
 }
+
+/** Leave a way back to the Desktop the user is about to navigate off. */
+const armReturn = () => armDesktopReturn(_state, _containerId);
 
 /** True when some file surface is genuinely active. The open events
  *  fire after the pointers are set, so this reads as "the open landed"
@@ -107,7 +113,7 @@ function initDesktop(state) {
     getState: () => _state, getContainerId: () => _containerId,
     getThemeCtx: () => _themeCtx, getToken: () => _openToken,
     collectOpts, screenToCanvas, scheduleSave,
-    openRef: (ref) => openThumbnail(ref),
+    openRef: (ref) => openThumbnail(ref), armReturn,
     ensureThumb: (st, entry, themeCtx) => ensureDesktopThumb(st, entry, themeCtx),
     collectFiles: (st, containerId, opts) => collectDesktopFiles(st, containerId, opts),
     applyThumb: (key, thumb) => applyThumbToShape(key, thumb),
@@ -461,7 +467,7 @@ function attachCanvasListeners() {
     _hoverCleanup = m.attachDesktopHover(_canvasHost, _canvas, {
       onOpen: (ref) => openThumbnail(ref),
       onSecondary: (ref, ev) => openFileRefSecondary(_state, ref, ev, _containerId),
-      onOpenWithGutter: (ref) => openFileRefWithGutter(_state, ref),
+      onOpenWithGutter: (ref) => { armReturn(); openFileRefWithGutter(_state, ref); },
       onToggleOutline: (ref) => _outline.toggle(ref),
       onStacksChanged: () => scheduleSave(),
     }, {
@@ -639,34 +645,12 @@ async function reconcileLive() {
   buildSearchIndex(_state, collected.entries, _searchText, () => token === _openToken, collectOpts());
 }
 
-/** Swap one entry's thumbnail in place (PDF cover arriving, refresh,
- *  option changes). Display dims mirror the thumbnail's natural size. */
+/** Swap a thumbnail in place and re-file its outline row geometry
+ *  (desktop-content owns the shape half; the rows are ours). */
 function applyThumbToShape(key, thumb) {
-  if (!_canvas || !thumb) return;
-  const st = _canvas.state;
-  const cache = _canvas.getImageCache?.();
-  let changed = false;
-  st.shapes = st.shapes.map((s) => {
-    if (s.type !== "image" || s.fileRef?.key !== key) return s;
-    changed = true;
-    const out = { ...s, dataUrl: thumb.dataUrl || thumb.url || "" };
-    delete out.dataUrlDark;
-    // Same shape id, new bytes — reload the decoded image in place (the
-    // cache only auto-reloads on an appearance swap, so a content change
-    // would otherwise keep showing the stale thumbnail).
-    const cached = cache?.get(s.id);
-    if (cached) cached.src = out.dataUrl;
-    const fileRef = { ...s.fileRef };
-    applyThumbRefFields(fileRef, thumb);
-    out.fileRef = fileRef;
-    if (thumb.w > 0 && thumb.h > 0) {
-      out.width = thumb.w;
-      out.height = thumb.h;
-    }
-    return out;
-  });
+  if (!thumb) return;
+  applyThumb(_canvas, key, thumb);
   _outline?.setRows(key, thumb.outlineRows);
-  if (changed) st.notify("shapes");
 }
 
 async function refreshEntryByFileId(fileId) {

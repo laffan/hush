@@ -27,6 +27,13 @@ export function applyThumbRefFields(fileRef, thumb) {
   else delete fileRef.frameless;
   if (thumb.slices?.length) fileRef.slices = thumb.slices;
   else delete fileRef.slices;
+  if (thumb.children?.length) {
+    fileRef.projectChildren = thumb.children;
+    fileRef.projectScale = thumb.childScale || 1;
+  } else {
+    delete fileRef.projectChildren;
+    delete fileRef.projectScale;
+  }
   delete fileRef.outlineX;
 }
 
@@ -56,6 +63,37 @@ export function hydrateShape(s, entry, thumb) {
     }
   }
   return out;
+}
+
+/** Swap one entry's thumbnail into a canvas in place — a PDF cover
+ *  arriving, an explicit Refresh, an option change, or a Desktop pane's
+ *  background hydration pass. Display dims always mirror the render
+ *  (thumbnails aren't resizable). Returns true if a shape matched.
+ *
+ *  The image-cache refresh is the load-bearing part: the shape id is
+ *  unchanged, and NotesCanvas only auto-reloads a cached image on an
+ *  appearance-variant swap, so without this a content change would keep
+ *  painting the stale bytes. */
+export function applyThumbToShape(canvas, key, thumb) {
+  const st = canvas?.state;
+  if (!st || !thumb) return false;
+  const cache = canvas.getImageCache?.();
+  let changed = false;
+  st.shapes = st.shapes.map((s) => {
+    if (s.type !== "image" || s.fileRef?.key !== key) return s;
+    changed = true;
+    const out = { ...s, dataUrl: thumb.dataUrl || thumb.url || "" };
+    delete out.dataUrlDark;
+    const cached = cache?.get(s.id);
+    if (cached) cached.src = out.dataUrl;
+    const fileRef = { ...s.fileRef };
+    applyThumbRefFields(fileRef, thumb);
+    out.fileRef = fileRef;
+    if (thumb.w > 0 && thumb.h > 0) { out.width = thumb.w; out.height = thumb.h; }
+    return out;
+  });
+  if (changed) st.notify("shapes");
+  return changed;
 }
 
 /** Hit order for Desktop thumbnails, mirroring the renderer's two-pass

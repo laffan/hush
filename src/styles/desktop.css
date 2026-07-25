@@ -81,6 +81,68 @@ body.desktop-active #drag-region {
   display: none;
 }
 
+/* ── "Back to <Project> Desktop" return crumb ──────────────────── */
+
+/* Fixed in the upper left of whatever surface you landed on — a doc, a
+   notebook, or a nested project's own Desktop. `top` clears the 30 px
+   macOS title-bar strip, which a Desktop hides but a doc does not. */
+.desktop-return {
+  position: fixed;
+  top: 38px;
+  left: 12px;
+  z-index: 85; /* over the editor + #drag-region (80), under panes (90) */
+  display: flex;
+  align-items: stretch;
+  font-family: var(--font-family);
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--theme-bg, var(--bg));
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
+  border-radius: 6px;
+  overflow: hidden;
+  opacity: 0.9;
+}
+
+.desktop-return:hover {
+  opacity: 1;
+}
+
+.desktop-return.hidden {
+  display: none;
+}
+
+/* Clear the files panel in either of its modes — inset (the surface
+   shrinks) or overlay (the panel floats at z 200, well above this). */
+#panel-overlay:not(.hidden) ~ .desktop-return {
+  left: calc(var(--panel-width, 300px) + 12px);
+}
+#panel-overlay.hidden ~ .desktop-return {
+  left: calc(var(--sidebar-grip-width, 24px) + 12px);
+}
+
+.desktop-return-back,
+.desktop-return-close {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 4px 10px;
+  font-size: inherit;
+}
+
+.desktop-return-back:hover,
+.desktop-return-close:hover {
+  background: var(--panel-border, rgba(128, 128, 128, 0.2));
+}
+
+.desktop-return-close {
+  padding: 4px 8px;
+  border-left: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
+  opacity: 0.7;
+  line-height: 1;
+}
+
 /* ── Canvas host ───────────────────────────────────────────────── */
 
 .desktop-canvas-host {
