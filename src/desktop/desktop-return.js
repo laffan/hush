@@ -24,7 +24,7 @@ import { findDesktopContainer } from "./desktop-files.js";
 
 let _state = null;
 let _pending = null;  // armed for the next open: { containerId, name }
-let _target = null;   // what the visible bar points at
+let _target = null;   // what the visible bar points at, plus `fromKey`
 let _bar = null;
 let _backBtn = null;
 let _wired = false;
@@ -41,13 +41,18 @@ function ensureBar() {
   _backBtn = document.createElement("button");
   _backBtn.type = "button";
   _backBtn.className = "desktop-return-back";
-  _backBtn.addEventListener("click", () => {
+  _backBtn.addEventListener("click", async () => {
     const target = _target;
     hide();
     if (!target) return;
     // Not armed — going *back* to a Desktop shouldn't leave a crumb
     // pointing at the Desktop you just left.
-    import("./desktop-view.js").then((m) => m.openDesktop(_state, target.containerId));
+    const m = await import("./desktop-view.js");
+    await m.openDesktop(_state, target.containerId);
+    // The file you were just in is the one thing on that Desktop
+    // guaranteed to be stale, so regenerate its thumbnail rather than
+    // dropping the user back onto a picture of what it used to say.
+    if (target.fromKey) m.refreshDesktopEntry(target.fromKey);
   });
 
   const dismiss = document.createElement("button");
@@ -74,14 +79,25 @@ function hide() {
   _bar?.classList.add("hidden");
 }
 
+/** The surface the user just landed on, keyed the way a Desktop keys its
+ *  thumbnails: fileId for files, node id for a nested project's Desktop.
+ *  Read at surface-change time, when the `current*` pointers are set. */
+function landedKey(state) {
+  return state.currentNotebookFileId || state.currentPdfFileId
+    || state.currentStackFileId || state.currentFileId
+    || state.currentProjectId || (typeof window !== "undefined" && window.__hushDesktopOpenId)
+    || null;
+}
+
 /** Every surface change either consumes the armed crumb or clears the
  *  one on screen — a navigation that didn't come from a Desktop is
  *  exactly the signal that the crumb no longer applies. */
 function onSurfaceChange() {
   const armed = _pending;
   _pending = null;
-  if (armed) show(armed);
-  else hide();
+  if (!armed) { hide(); return; }
+  armed.fromKey = landedKey(_state);
+  show(armed);
 }
 
 /**

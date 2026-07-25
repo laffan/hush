@@ -47,6 +47,10 @@ export interface RenderState {
    *  along the bottom of its thumbnail. Read per frame (not baked into
    *  the thumbnail image) so edits show without a regenerate. */
   fileStickies?: (kind: string, fileId: string) => { text: string }[];
+  /** Desktop only: the notes pinned to a given project's *own* Desktop
+   *  canvas, in that canvas's world coordinates — painted onto that
+   *  project's composite thumbnail wherever it appears. */
+  desktopStickiesFor?: (projectId: string) => { text: string; wx: number; wy: number; w: number; h: number }[];
   /** Active Hush style's background-image config, or null. Drawn over the
    *  solid fill and beneath the grid pattern. */
   backgroundImage?: BackgroundImageConfig | null;
@@ -237,6 +241,18 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
               position: { x: shape.position.x + c.x, y: shape.position.y + c.y },
               width: c.w, height: c.h,
             } as ImageShape, notes, state.fontFamily, fr.projectScale || 1);
+          }
+          // …and the notes pinned to that project's own Desktop canvas,
+          // which live in its world coordinates: map through the origin
+          // + scale the composite recorded.
+          const org = fr.projectOrigin;
+          if (org && state.desktopStickiesFor) {
+            const k = fr.projectScale || 1;
+            for (const n of state.desktopStickiesFor(fr.nodeId || "")) {
+              drawStickyBox(ctx, shape.position.x + org.x + n.wx * k,
+                shape.position.y + org.y + n.wy * k, n.w * k, n.h * k,
+                n.text, state.fontFamily);
+            }
           }
         }
       }
@@ -820,7 +836,6 @@ function drawThumbStickies(
   if (!stickies.length) return;
   const size = BADGE_SIZE * scale;
   const left = BADGE_LEFT * scale;
-  const pad = BADGE_PAD * scale;
   const y = shape.position.y + shape.height - BADGE_BOTTOM * scale - size;
   const x0 = shape.position.x + left;
   // Room the rest of the row has to land in. More notes than fit side by
@@ -829,42 +844,52 @@ function drawThumbStickies(
   const step = stickies.length > 1
     ? Math.min(size + BADGE_GAP * scale, Math.max(size * 0.28, span / (stickies.length - 1)))
     : 0;
-  const fontPx = Math.round(size * 0.078);
-  const lineH = Math.round(fontPx * 1.35);
-  const maxLines = Math.max(1, Math.floor((size - pad * 2) / lineH));
+
   for (let i = 0; i < stickies.length; i++) {
-    const x = x0 + i * step;
-    ctx.save();
-    ctx.shadowColor = "rgba(0,0,0,0.20)";
-    ctx.shadowBlur = 4 * scale;
-    ctx.shadowOffsetX = scale;
-    ctx.shadowOffsetY = 2 * scale;
-    ctx.fillStyle = BADGE_FILL;
-    ctx.fillRect(x, y, size, size);
-    ctx.restore();
-    ctx.save();
-    ctx.strokeStyle = "rgba(0,0,0,0.12)";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
-    // Below ~4 px the text is noise, not content — a shrunk-down child
-    // inside a composite keeps the pink square as a "this file has
-    // notes" marker and drops the body.
-    if (fontPx >= 4) {
-      // Stickies are always black-on-pink, independent of the canvas theme.
-      ctx.beginPath();
-      ctx.rect(x, y, size, size);
-      ctx.clip();
-      ctx.font = `${fontPx}px ${fontFamily}, sans-serif`;
-      ctx.fillStyle = "#1a1a1a";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "top";
-      const lines = wrapBadgeText(ctx, stickies[i].text, size - pad * 2, maxLines);
-      for (let l = 0; l < lines.length; l++) {
-        ctx.fillText(lines[l], x + pad, y + pad + l * lineH);
-      }
-    }
-    ctx.restore();
+    drawStickyBox(ctx, x0 + i * step, y, size, size, stickies[i].text, fontFamily);
   }
+}
+
+/** One sticky rectangle: pink paper, hairline edge, wrapped black text.
+ *  Shared by the thumbnail badge row and the pinned notes a nested
+ *  project's composite carries. Below a ~4 px font the body is noise
+ *  rather than content, so a heavily-shrunk note keeps the pink square
+ *  as a "there's a note here" marker and drops the text. */
+function drawStickyBox(
+  ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number,
+  text: string, fontFamily: string,
+) {
+  const pad = Math.round(Math.min(w, h) * (BADGE_PAD / BADGE_SIZE));
+  const fontPx = Math.round(Math.min(w, h) * 0.078);
+  const lineH = Math.round(fontPx * 1.35);
+  const maxLines = Math.max(1, Math.floor((h - pad * 2) / Math.max(1, lineH)));
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.20)";
+  ctx.shadowBlur = Math.max(1, w * (4 / BADGE_SIZE));
+  ctx.shadowOffsetX = w / BADGE_SIZE;
+  ctx.shadowOffsetY = 2 * (w / BADGE_SIZE);
+  ctx.fillStyle = BADGE_FILL;
+  ctx.fillRect(x, y, w, h);
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = "rgba(0,0,0,0.12)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  if (fontPx >= 4) {
+    // Stickies are always black-on-pink, independent of the canvas theme.
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    ctx.font = `${fontPx}px ${fontFamily}, sans-serif`;
+    ctx.fillStyle = "#1a1a1a";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    const lines = wrapBadgeText(ctx, text, w - pad * 2, maxLines);
+    for (let l = 0; l < lines.length; l++) {
+      ctx.fillText(lines[l], x + pad, y + pad + l * lineH);
+    }
+  }
+  ctx.restore();
 }
 
 /** Underline the outline heading row the pointer is over (Desktop doc

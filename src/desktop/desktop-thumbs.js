@@ -50,7 +50,7 @@ const DOC_FONT_SIZE = 8;
 const BASE_LONG_EDGE = 400;
 // Bump when thumbnail geometry / styling changes so cached renders
 // regenerate on the next Desktop open.
-const THUMB_STYLE_VERSION = 11;
+const THUMB_STYLE_VERSION = 12;
 // Doc outline column geometry + drawing live in ./desktop-outline.js.
 // Width of each constituent slice in a stack file's thumbnail.
 const STACK_SLICE_WIDTH = 80;
@@ -388,12 +388,14 @@ function projectOutlineRows(children) {
   }));
 }
 
-/** Compose a project's Desktop into one thumbnail: each child file's
- *  thumbnail drawn at its saved Desktop position (or the default grid
- *  when the project's Desktop has never been opened). Sized like a
- *  notebook thumbnail — the composite is fit to the long-edge option
- *  and set inside the same page-ground matte, since both are "a whole
- *  canvas shrunk down" rather than a printed page. */
+/** Compose a project's Desktop into one thumbnail. This is a picture of
+ *  the whole Desktop, not just its files: the child thumbnails sit at
+ *  their saved positions, and everything else the user put on that
+ *  canvas — text shapes, drag areas, freehand strokes — renders around
+ *  them through the same `renderForExport` + `drawApproximateStrokes`
+ *  pair a notebook thumbnail uses. Sized by the notebook rules too (fit
+ *  to the long-edge option inside the page-ground matte), since both are
+ *  a whole canvas shrunk down rather than a printed page. */
 async function renderProjectThumb(state, entry, themeCtx, depth) {
   const collected = collectDesktopFiles(state, entry.nodeId);
   const children = collected?.entries || [];
@@ -421,17 +423,43 @@ async function renderProjectThumb(state, entry, themeCtx, depth) {
     for (const [key, rect] of gridded) rects.set(key, rect);
   }
 
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  // Rebuild the child Desktop's shape list: a synthetic image shape per
+  // file (its thumbnail decoded into the cache under the same id), plus
+  // every non-file shape the envelope carries, untouched.
+  const imageCache = new Map();
+  const fileShapes = [];
   for (const child of children) {
     const r = rects.get(child.key);
-    if (!r) continue;
-    minX = Math.min(minX, r.x); minY = Math.min(minY, r.y);
-    maxX = Math.max(maxX, r.x + r.w); maxY = Math.max(maxY, r.y + r.h + 24);
+    const thumb = thumbs.get(child.key);
+    if (!r || !thumb) continue;
+    const id = `pc:${child.key}`;
+    const img = await loadImage(thumb.dataUrl || thumb.url);
+    if (img) imageCache.set(id, img);
+    fileShapes.push({
+      id, type: "image", position: { x: r.x, y: r.y }, width: r.w, height: r.h,
+      dataUrl: "", name: child.name, color: "#000000",
+      fileRef: {
+        key: child.key, kind: child.kind, fileId: child.fileId || null, name: child.name,
+        ...(thumb.frameless ? { frameless: true } : {}), ...(child.tint ? { tint: child.tint } : {}),
+      },
+    });
   }
-  if (!Number.isFinite(minX)) return drawCard(themeCtx, "Empty project", "project");
+  const extras = (envelope?.shapes || [])
+    .filter((s) => s && typeof s === "object" && !s.pocketed && !(s.type === "image" && s.fileRef));
+  await Promise.all(extras
+    .filter((s) => s.type === "image" && (s.dataUrl || s.dataUrlDark))
+    .map(async (s) => {
+      const img = await loadImage(s.dataUrl || s.dataUrlDark);
+      if (img) imageCache.set(s.id, img);
+    }));
+  const allShapes = [...extras, ...fileShapes];
 
-  const worldW = maxX - minX + NB_MARGIN * 2;
-  const worldH = maxY - minY + NB_MARGIN * 2;
+  const bounds = computeNotebookBounds({ shapes: allShapes }, themeCtx.fontFamily);
+  if (!bounds) return drawCard(themeCtx, "Empty project", "project");
+  const minX = bounds.minX, minY = bounds.minY;
+  const worldW = bounds.maxX - minX + NB_MARGIN * 2;
+  // Room under the bottom row for the child captions.
+  const worldH = bounds.maxY - minY + 24 + NB_MARGIN * 2;
   const zoom = optLongEdge(themeCtx) / Math.max(worldW, worldH);
   // Same matte as a notebook thumbnail, scaled by the long-edge option.
   const matte = Math.round(NB_MATTE * optScale(themeCtx));
@@ -446,6 +474,14 @@ async function renderProjectThumb(state, entry, themeCtx, depth) {
   const imgW = blockW + ox;
   const imgH = outline ? Math.max(blockH, outline.contentH) : blockH;
 
+  // World → thumbnail-CSS-px. Rides on the record so the renderer can
+  // place the child Desktop's own pinned stickies over the composite.
+  const camera = {
+    x: ox + matte - (minX - NB_MARGIN) * zoom,
+    y: matte - (minY - NB_MARGIN) * zoom,
+    zoom,
+  };
+
   const { canvas, ctx } = makeCanvas(imgW, imgH);
   const t = themeCtx.theme;
   ctx.fillStyle = pageGround(themeCtx);
@@ -456,35 +492,23 @@ async function renderProjectThumb(state, entry, themeCtx, depth) {
   ctx.beginPath();
   ctx.rect(ox + matte, matte, innerW, innerH);
   ctx.clip();
-  ctx.translate(ox + matte, matte);
+  renderForExport(ctx, imgW, imgH, {
+    ...baseRenderOpts(themeCtx),
+    shapes: allShapes, camera, imageCache, layers: envelope?.layers,
+    includeBackground: false,
+  });
+  drawApproximateStrokes(ctx, allShapes, camera, themeCtx.theme);
+  // Child captions — canvas-painted here (unlike a live Desktop, where
+  // labels are hover-only DOM) so the composite says what's inside it.
+  ctx.translate(camera.x, camera.y);
   ctx.scale(zoom, zoom);
-  ctx.translate(-(minX - NB_MARGIN), -(minY - NB_MARGIN));
-  // Where each child lands in the finished thumbnail's own CSS px. Rides
-  // on the fileRef so the renderer can paint each child's file stickies
-  // over the composite live — stickies are never baked in.
-  const childRects = [];
-  for (const child of children) {
-    const r = rects.get(child.key);
-    const thumb = thumbs.get(child.key);
-    if (!r || !thumb) continue;
-    childRects.push({
-      kind: child.kind, fileId: child.fileId || null,
-      x: ox + matte + (r.x - (minX - NB_MARGIN)) * zoom,
-      y: matte + (r.y - (minY - NB_MARGIN)) * zoom,
-      w: r.w * zoom, h: r.h * zoom,
-    });
-    const img = await loadImage(thumb.dataUrl || thumb.url);
-    if (img) ctx.drawImage(img, r.x, r.y, r.w, r.h);
-    ctx.strokeStyle = t.uiBorder || "rgba(128,128,128,0.3)";
-    ctx.lineWidth = 1 / zoom;
-    ctx.strokeRect(r.x, r.y, r.w, r.h);
-    ctx.fillStyle = t.foreground;
-    ctx.globalAlpha = 0.7;
-    ctx.font = `13px ${themeCtx.fontFamily}, sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ctx.fillText(child.name, r.x + r.w / 2, r.y + r.h + 6, r.w * 1.4);
-    ctx.globalAlpha = 1;
+  ctx.fillStyle = t.foreground;
+  ctx.globalAlpha = 0.7;
+  ctx.font = `13px ${themeCtx.fontFamily}, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  for (const fs of fileShapes) {
+    ctx.fillText(fs.name, fs.position.x + fs.width / 2, fs.position.y + fs.height + 6, fs.width * 1.4);
   }
   ctx.restore();
   ctx.strokeStyle = t.uiBorder || "rgba(128,128,128,0.3)";
@@ -502,7 +526,15 @@ async function renderProjectThumb(state, entry, themeCtx, depth) {
   return {
     dataUrl: encode(canvas), w: imgW, h: imgH,
     outlineRows: outline ? outline.rows : null,
-    children: childRects, childScale: zoom,
+    // Where each child landed (for its own file stickies), the scale the
+    // composite shrank everything by, and world (0,0) in thumbnail px.
+    children: fileShapes.map((fs) => ({
+      kind: fs.fileRef.kind, fileId: fs.fileRef.fileId,
+      x: camera.x + fs.position.x * zoom, y: camera.y + fs.position.y * zoom,
+      w: fs.width * zoom, h: fs.height * zoom,
+    })),
+    childScale: zoom,
+    origin: { x: camera.x, y: camera.y },
   };
 }
 

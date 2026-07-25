@@ -42,6 +42,7 @@ import {
 import {
   repositionDesktopNotes as repositionDesktop,
   desktopStickyRows, revealDesktopSticky, repaintDesktop, bindDesktopSelection,
+  desktopStickiesFor,
 } from "./sticky-desktop.js";
 
 const notes = new Map(); // id → note record
@@ -75,6 +76,7 @@ export function initStickyNotes(state) {
   // Hooks the notebook shape shelf reads to list desktop-pinned notes
   // (same shape as the Desktop's other window.__hush* bridges).
   window.__hushFileStickies = fileStickiesFor;
+  window.__hushDesktopStickiesFor = (id) => desktopStickiesFor(notes, id);
   window.__hushDesktopStickies = () => desktopStickyRows(notes);
   window.__hushRevealDesktopSticky = (id) =>
     revealDesktopSticky(notes, id, (n) => { n.el.style.zIndex = ++zCounter; });

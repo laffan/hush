@@ -176,6 +176,10 @@ export interface DesktopFileRef {
    *  thumbnail (they change per keystroke). */
   projectChildren?: { kind: string; fileId: string | null; x: number; y: number; w: number; h: number }[];
   projectScale?: number;
+  /** Nested projects only: world (0,0) of the child Desktop in the
+   *  composite's own CSS px, so notes pinned to that Desktop's canvas
+   *  (stored in world coords) can be placed over the composite. */
+  projectOrigin?: { x: number; y: number };
 }
 
 export interface ImageShape extends ShapeBase {

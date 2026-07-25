@@ -53,6 +53,17 @@ function getFileStickiesFromHush(kind: string, fileId: string): { text: string }
   try { return fn ? fn(kind, fileId) || [] : []; } catch { return []; }
 }
 
+/** Notes pinned to a given project's Desktop canvas, in that canvas's
+ *  world coordinates — drawn onto that project's composite thumbnail
+ *  wherever it appears (its parent's Desktop). Live per frame, like the
+ *  file badges above. */
+function getDesktopStickiesFromHush(projectId: string): { text: string; wx: number; wy: number; w: number; h: number }[] {
+  const fn = (window as unknown as {
+    __hushDesktopStickiesFor?: (id: string) => { text: string; wx: number; wy: number; w: number; h: number }[];
+  }).__hushDesktopStickiesFor;
+  try { return fn ? fn(projectId) || [] : []; } catch { return []; }
+}
+
 /** The notebook instance that most recently received a pointer interaction.
  *  The document-level "copy" listener below routes Cmd+C to this one. */
 let lastActiveNotebook: NotesCanvas | null = null;
@@ -923,6 +934,7 @@ export class NotesCanvas {
         touchMode: getTouchModeFromHush(),
         desktopOutlineHover: this.state.desktopOutlineHover,
         fileStickies: getFileStickiesFromHush,
+        desktopStickiesFor: getDesktopStickiesFromHush,
     });
   }
 

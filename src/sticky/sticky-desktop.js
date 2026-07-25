@@ -175,6 +175,26 @@ export async function bindDesktopSelection(notes) {
   bindCanvas(notes, getActiveNotebookState());
 }
 
+/** Notes pinned to a *specific* project's Desktop canvas, in that
+ *  canvas's world coordinates. Read live per frame by the renderer so a
+ *  nested project's composite thumbnail carries its Desktop's own
+ *  stickies — same live-not-baked rule the file badges follow.
+ *  (`desktopStickyRows` is the shelf's list for the *open* Desktop; this
+ *  one answers for any project, open or not.) */
+export function desktopStickiesFor(notes, projectId) {
+  if (!projectId) return [];
+  const out = [];
+  for (const [, n] of notes) {
+    if (n.kind !== "desktop" || n.target !== projectId) continue;
+    if (typeof n.wx !== "number" || typeof n.wy !== "number") continue;
+    out.push({
+      text: n.textarea ? n.textarea.value : (n.text || ""),
+      wx: n.wx, wy: n.wy, w: n.width || 300, h: n.height || 300,
+    });
+  }
+  return out;
+}
+
 /** Notes pinned to the open Desktop, in creation order — read by the
  *  shape shelf so they list alongside the file thumbnails. */
 export function desktopStickyRows(notes) {

@@ -163,10 +163,9 @@ function initDesktop(state) {
     if (_reconcileTimer) clearTimeout(_reconcileTimer);
     _reconcileTimer = setTimeout(() => { _reconcileTimer = null; reconcileLive(); }, 300);
   });
-  // A PDF cover landing from a background download swaps it in place.
-  state.on("pdf-cover-ready", (fileId) => {
-    if (_containerId && fileId) refreshEntryByFileId(fileId);
-  });
+  // A PDF cover landing from a background download swaps it in place
+  // (a file entry's thumbnail key *is* its fileId).
+  state.on("pdf-cover-ready", (fileId) => refreshDesktopEntry(fileId));
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || !_containerId) return;
@@ -234,6 +233,10 @@ export async function openDesktop(state, containerId, opts = {}) {
   import("../pdf/pdf-shelf.js").then((m) => m.closePdfShelf()).catch(() => {});
   // The Desktop is the open thing now — tear down whatever file was open
   // so nothing interactive sits behind it (no doc margins, no panes).
+  // Flush first: `clearActiveFile` drops the dirty flag without writing,
+  // so unsaved keystrokes would never reach disk — and the thumbnail we
+  // are about to render reads from disk.
+  if (state.dirty) await state.saveCurrentFile();
   await state.clearActiveFile();
 
   _containerId = containerId;
@@ -653,12 +656,22 @@ function applyThumbToShape(key, thumb) {
   _outline?.setRows(key, thumb.outlineRows);
 }
 
-async function refreshEntryByFileId(fileId) {
-  if (!_canvas || !_themeCtx || !_hydrated) return;
+/** Regenerate one entry's thumbnail from scratch and swap it in. */
+async function regenThumb(entry, token) {
+  evictSessionThumb(entry.key);
+  const thumb = await ensureDesktopThumb(_state, entry, _themeCtx, { force: true });
+  if (token === _openToken) applyThumbToShape(entry.key, thumb);
+}
+
+/** Refresh a single thumbnail — the return crumb's use: whatever you
+ *  were just working in is the one file guaranteed to be out of date. */
+export async function refreshDesktopEntry(key) {
+  if (!_canvas || !_containerId || !_themeCtx || !key) return;
   const collected = collectDesktopFiles(_state, _containerId, collectOpts());
-  const entry = collected?.entries.find((e) => e.fileId === fileId);
+  const entry = collected?.entries.find((e) => e.key === key);
   if (!entry) return;
-  applyThumbToShape(entry.key, await ensureDesktopThumb(_state, entry, _themeCtx));
+  await regenThumb(entry, _openToken);
+  scheduleSave();
 }
 
 /** Force-regenerate every thumbnail on the open Desktop — the command
@@ -671,10 +684,8 @@ export async function refreshDesktopThumbnails() {
   try {
     const collected = collectDesktopFiles(_state, _containerId, collectOpts());
     for (const entry of collected?.entries || []) {
-      evictSessionThumb(entry.key);
-      const thumb = await ensureDesktopThumb(_state, entry, _themeCtx, { force: true });
       if (token !== _openToken) return;
-      applyThumbToShape(entry.key, thumb);
+      await regenThumb(entry, token);
     }
     applyDocConnections(_canvas, collected?.entries || [], _options.showConnections);
     scheduleSave();
