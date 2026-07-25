@@ -31,6 +31,12 @@ import { collectDesktopFiles, DESKTOP_KIND_ORDER } from "./desktop-files.js";
 import { loadThumbRecord, saveThumbRecord, loadDesktopEnvelope } from "./desktop-store.js";
 import { layoutDocOutline, drawDocOutline } from "./desktop-outline.js";
 import {
+  docOrderEdges, DOC_CONNECTION_ALPHA, DOC_CONNECTION_WIDTH,
+  DOC_CONNECTION_HEAD, DOC_CONNECTION_CAP,
+} from "./desktop-connections.js";
+import { FlowchartLayer } from "../notebook/flowchart.ts";
+import { drawStickyBox } from "../notebook/renderer.ts";
+import {
   makeCanvas, encode, loadImage, baseRenderOpts, drawCard,
   docThumbText, pageGround, docPageTheme, CARD_W, CARD_H,
 } from "./desktop-thumb-draw.js";
@@ -50,7 +56,7 @@ const DOC_FONT_SIZE = 8;
 const BASE_LONG_EDGE = 400;
 // Bump when thumbnail geometry / styling changes so cached renders
 // regenerate on the next Desktop open.
-const THUMB_STYLE_VERSION = 12;
+const THUMB_STYLE_VERSION = 13;
 // Doc outline column geometry + drawing live in ./desktop-outline.js.
 // Width of each constituent slice in a stack file's thumbnail.
 const STACK_SLICE_WIDTH = 80;
@@ -136,7 +142,7 @@ export function entrySig(state, entry, themeSig) {
     const parts = (collected?.entries || []).map((e) => e.kind === "project"
       ? `p:${e.nodeId}:${e.name}`
       : `${e.kind}:${e.key}:${fileModified(state, e.fileId)}:${e.name}`);
-    return `${v}|project|${parts.join(",")}|o${entry.outline ? 1 : 0}|${themeSig}`;
+    return `${v}|project|${parts.join(",")}|o${entry.outline ? 1 : 0}|s${pinnedNotesSig(entry.nodeId)}|${themeSig}`;
   }
   return null;
 }
@@ -374,6 +380,25 @@ async function resolvePdfThumb(entry, themeCtx) {
   return { url, w, h };
 }
 
+/** Notes pinned to a project's Desktop canvas, in that canvas's world
+ *  coordinates. Unlike a file's sticky badges — which the renderer
+ *  paints live over the cached thumbnail — these are *content* of the
+ *  Desktop being composited, so they're baked in like any other shape
+ *  and counted in the bounds. */
+function pinnedNotesFor(projectId) {
+  const fn = typeof window !== "undefined" ? window.__hushDesktopStickiesFor : null;
+  try { return fn ? fn(projectId) || [] : []; } catch { return []; }
+}
+
+/** Compact signature of a project's pinned notes, folded into the
+ *  thumbnail's staleness key so an edited note shows on the next open —
+ *  the same cadence a file's own edits get through `modified`. */
+function pinnedNotesSig(projectId) {
+  return pinnedNotesFor(projectId)
+    .map((n) => `${Math.round(n.wx)},${Math.round(n.wy)},${n.w}x${n.h},${n.text.length}`)
+    .join(";");
+}
+
 /** Outline rows for a project thumbnail: one per child, in project
  *  order. Nested projects and docs are the reading order (level 1);
  *  notebooks / PDFs / stacks are supporting material (level 2, dimmer).
@@ -456,6 +481,12 @@ async function renderProjectThumb(state, entry, themeCtx, depth) {
 
   const bounds = computeNotebookBounds({ shapes: allShapes }, themeCtx.fontFamily);
   if (!bounds) return drawCard(themeCtx, "Empty project", "project");
+  // Pinned notes are content, so they set the frame like anything else.
+  const notes = pinnedNotesFor(entry.nodeId);
+  for (const n of notes) {
+    bounds.minX = Math.min(bounds.minX, n.wx); bounds.minY = Math.min(bounds.minY, n.wy);
+    bounds.maxX = Math.max(bounds.maxX, n.wx + n.w); bounds.maxY = Math.max(bounds.maxY, n.wy + n.h);
+  }
   const minX = bounds.minX, minY = bounds.minY;
   const worldW = bounds.maxX - minX + NB_MARGIN * 2;
   // Room under the bottom row for the child captions.
@@ -492,12 +523,38 @@ async function renderProjectThumb(state, entry, themeCtx, depth) {
   ctx.beginPath();
   ctx.rect(ox + matte, matte, innerW, innerH);
   ctx.clip();
+  // Document-order arrows, under the thumbnails exactly as on a live
+  // Desktop. Drawn here rather than through renderForExport's own
+  // flowchart hook because that hook resets the arrow colour, and these
+  // need the Desktop's translucent heavy stroke.
+  const flow = new FlowchartLayer({
+    getBounds: (sh) => ({
+      minX: sh.position.x, minY: sh.position.y,
+      maxX: sh.position.x + sh.width, maxY: sh.position.y + sh.height,
+    }),
+  });
+  flow.deserialize(docOrderEdges(children, fileShapes));
+  if (flow.edges.length) {
+    flow.setArrowColor(themeCtx.theme.foreground);
+    flow.setArrowMetrics(DOC_CONNECTION_WIDTH, DOC_CONNECTION_HEAD, DOC_CONNECTION_CAP);
+    ctx.save();
+    ctx.translate(camera.x, camera.y);
+    ctx.scale(zoom, zoom);
+    ctx.globalAlpha = DOC_CONNECTION_ALPHA;
+    flow.draw(ctx, fileShapes);
+    ctx.restore();
+  }
   renderForExport(ctx, imgW, imgH, {
     ...baseRenderOpts(themeCtx),
     shapes: allShapes, camera, imageCache, layers: envelope?.layers,
     includeBackground: false,
   });
   drawApproximateStrokes(ctx, allShapes, camera, themeCtx.theme);
+  // Pinned notes, baked in at their world positions.
+  for (const n of notes) {
+    drawStickyBox(ctx, camera.x + n.wx * zoom, camera.y + n.wy * zoom,
+      n.w * zoom, n.h * zoom, n.text, themeCtx.fontFamily);
+  }
   // Child captions — canvas-painted here (unlike a live Desktop, where
   // labels are hover-only DOM) so the composite says what's inside it.
   ctx.translate(camera.x, camera.y);
@@ -526,15 +583,14 @@ async function renderProjectThumb(state, entry, themeCtx, depth) {
   return {
     dataUrl: encode(canvas), w: imgW, h: imgH,
     outlineRows: outline ? outline.rows : null,
-    // Where each child landed (for its own file stickies), the scale the
-    // composite shrank everything by, and world (0,0) in thumbnail px.
+    // Where each child landed (for its own file stickies) and the scale
+    // the composite shrank everything by.
     children: fileShapes.map((fs) => ({
       kind: fs.fileRef.kind, fileId: fs.fileRef.fileId,
       x: camera.x + fs.position.x * zoom, y: camera.y + fs.position.y * zoom,
       w: fs.width * zoom, h: fs.height * zoom,
     })),
     childScale: zoom,
-    origin: { x: camera.x, y: camera.y },
   };
 }
 

@@ -47,10 +47,6 @@ export interface RenderState {
    *  along the bottom of its thumbnail. Read per frame (not baked into
    *  the thumbnail image) so edits show without a regenerate. */
   fileStickies?: (kind: string, fileId: string) => { text: string }[];
-  /** Desktop only: the notes pinned to a given project's *own* Desktop
-   *  canvas, in that canvas's world coordinates — painted onto that
-   *  project's composite thumbnail wherever it appears. */
-  desktopStickiesFor?: (projectId: string) => { text: string; wx: number; wy: number; w: number; h: number }[];
   /** Active Hush style's background-image config, or null. Drawn over the
    *  solid fill and beneath the grid pattern. */
   backgroundImage?: BackgroundImageConfig | null;
@@ -241,18 +237,6 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
               position: { x: shape.position.x + c.x, y: shape.position.y + c.y },
               width: c.w, height: c.h,
             } as ImageShape, notes, state.fontFamily, fr.projectScale || 1);
-          }
-          // …and the notes pinned to that project's own Desktop canvas,
-          // which live in its world coordinates: map through the origin
-          // + scale the composite recorded.
-          const org = fr.projectOrigin;
-          if (org && state.desktopStickiesFor) {
-            const k = fr.projectScale || 1;
-            for (const n of state.desktopStickiesFor(fr.nodeId || "")) {
-              drawStickyBox(ctx, shape.position.x + org.x + n.wx * k,
-                shape.position.y + org.y + n.wy * k, n.w * k, n.h * k,
-                n.text, state.fontFamily);
-            }
           }
         }
       }
@@ -699,7 +683,13 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
 
 export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape, imageCache: Map<string, HTMLImageElement>, isCropping?: boolean, theme?: CanvasTheme, shadow?: boolean) {
   const img = imageCache.get(shape.id);
-  if (img && img.complete) {
+  // `complete` alone isn't "ready": a decode that *failed* is complete
+  // too, with `naturalWidth === 0`, and `drawImage` on a broken image
+  // throws InvalidStateError — which aborts the rest of the paint pass
+  // and takes every later shape (and its sticky badges) down with it.
+  // A Desktop pane hydrates progressively, so empty-src placeholders
+  // are normal there; treat them as not-ready and draw the card.
+  if (img && img.complete && img.naturalWidth > 0) {
     const c = shape.crop || { x: 0, y: 0, w: 1, h: 1 };
     if (isCropping) {
       // Show the full image at 50% opacity behind the crop
@@ -851,11 +841,12 @@ function drawThumbStickies(
 }
 
 /** One sticky rectangle: pink paper, hairline edge, wrapped black text.
- *  Shared by the thumbnail badge row and the pinned notes a nested
- *  project's composite carries. Below a ~4 px font the body is noise
- *  rather than content, so a heavily-shrunk note keeps the pink square
- *  as a "there's a note here" marker and drops the text. */
-function drawStickyBox(
+ *  Shared by the thumbnail badge row here and by desktop-thumbs, which
+ *  bakes a project Desktop's pinned notes into its composite. Below a
+ *  ~4 px font the body is noise rather than content, so a heavily-shrunk
+ *  note keeps the pink square as a "there's a note here" marker and
+ *  drops the text. */
+export function drawStickyBox(
   ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number,
   text: string, fontFamily: string,
 ) {

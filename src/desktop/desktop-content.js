@@ -27,15 +27,12 @@ export function applyThumbRefFields(fileRef, thumb) {
   else delete fileRef.frameless;
   if (thumb.slices?.length) fileRef.slices = thumb.slices;
   else delete fileRef.slices;
-  if (thumb.children?.length || thumb.origin) {
-    fileRef.projectChildren = thumb.children || [];
+  if (thumb.children?.length) {
+    fileRef.projectChildren = thumb.children;
     fileRef.projectScale = thumb.childScale || 1;
-    if (thumb.origin) fileRef.projectOrigin = thumb.origin;
-    else delete fileRef.projectOrigin;
   } else {
     delete fileRef.projectChildren;
     delete fileRef.projectScale;
-    delete fileRef.projectOrigin;
   }
   delete fileRef.outlineX;
 }

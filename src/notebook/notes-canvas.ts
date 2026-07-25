@@ -53,17 +53,6 @@ function getFileStickiesFromHush(kind: string, fileId: string): { text: string }
   try { return fn ? fn(kind, fileId) || [] : []; } catch { return []; }
 }
 
-/** Notes pinned to a given project's Desktop canvas, in that canvas's
- *  world coordinates — drawn onto that project's composite thumbnail
- *  wherever it appears (its parent's Desktop). Live per frame, like the
- *  file badges above. */
-function getDesktopStickiesFromHush(projectId: string): { text: string; wx: number; wy: number; w: number; h: number }[] {
-  const fn = (window as unknown as {
-    __hushDesktopStickiesFor?: (id: string) => { text: string; wx: number; wy: number; w: number; h: number }[];
-  }).__hushDesktopStickiesFor;
-  try { return fn ? fn(projectId) || [] : []; } catch { return []; }
-}
-
 /** The notebook instance that most recently received a pointer interaction.
  *  The document-level "copy" listener below routes Cmd+C to this one. */
 let lastActiveNotebook: NotesCanvas | null = null;
@@ -934,7 +923,6 @@ export class NotesCanvas {
         touchMode: getTouchModeFromHush(),
         desktopOutlineHover: this.state.desktopOutlineHover,
         fileStickies: getFileStickiesFromHush,
-        desktopStickiesFor: getDesktopStickiesFromHush,
     });
   }
 
@@ -947,13 +935,20 @@ export class NotesCanvas {
     for (const shape of this.state.shapes) {
       if (shape.type !== "image") continue;
       const cached = this._imageCache.get(shape.id) as (HTMLImageElement & { _hushVariant?: string }) | undefined;
+      // Nothing to decode yet (a Desktop pane's placeholder, mid
+      // hydration). Setting `src = ""` would resolve against the
+      // document URL and load the page as an image — a broken element
+      // that never recovers. Wait for the bytes; the notify that brings
+      // them re-runs this pass.
+      const src = shape.dataUrlDark && variant === "dark" ? shape.dataUrlDark : shape.dataUrl;
+      if (!cached && !src) continue;
       if (!cached) {
         const img = new Image() as HTMLImageElement & { _hushVariant?: string };
         // Repaint once the bytes decode — the loop is dirty-driven now,
         // so without this an async-loaded image wouldn't appear until the
         // next unrelated state change.
         img.addEventListener("load", this._scheduleRender);
-        img.src = shape.dataUrlDark && variant === "dark" ? shape.dataUrlDark : shape.dataUrl;
+        img.src = src;
         img._hushVariant = variant;
         this._imageCache.set(shape.id, img);
       } else if (shape.dataUrlDark && cached._hushVariant !== variant) {

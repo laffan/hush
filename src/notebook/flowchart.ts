@@ -22,6 +22,12 @@
 //     applyPositionDelta(droppedId, newTL.minX - old.minX, newTL.minY - old.minY);
 //   }
 
+import {
+  edgeGeometry, offsetGeometry, exitSide, oppositeSide, sideAxis,
+  bezier, pointToSegment,
+} from "./flowchart-geometry";
+import type { Pt, EdgeGeometry } from "./flowchart-geometry";
+
 export interface FlowEdge {
   id: string;
   from: string;
@@ -199,11 +205,10 @@ export class FlowchartLayer<S extends FlowNode> {
     let bestDist = threshold;
     const byId = new Map<string, S>();
     for (const s of shapes) byId.set(s.id, s);
+    const offsets = this.edgeOffsets(byId);
     for (const e of this.edges) {
-      const a = byId.get(e.from);
-      const b = byId.get(e.to);
-      if (!a || !b) continue;
-      const geom = this.geometry(this.cfg.getBounds(a), this.cfg.getBounds(b));
+      const geom = this.placedGeometry(e, byId, offsets);
+      if (!geom) continue;
       // Sample 16 points along the bezier and check each segment.
       let prev = bezier(geom, 0);
       for (let i = 1; i <= 16; i++) {
@@ -226,11 +231,10 @@ export class FlowchartLayer<S extends FlowNode> {
   ): { x: number; y: number } | null {
     const e = this.edges.find((e) => e.id === edgeId);
     if (!e) return null;
-    const a = shapes.find((s) => s.id === e.from);
-    const b = shapes.find((s) => s.id === e.to);
-    if (!a || !b) return null;
-    const geom = this.geometry(this.cfg.getBounds(a), this.cfg.getBounds(b));
-    return bezier(geom, 0.5);
+    const byId = new Map<string, S>();
+    for (const s of shapes) byId.set(s.id, s);
+    const geom = this.placedGeometry(e, byId, this.edgeOffsets(byId));
+    return geom ? bezier(geom, 0.5) : null;
   }
 
   // --- Drop logic ---
@@ -477,115 +481,63 @@ export class FlowchartLayer<S extends FlowNode> {
 
   // --- Rendering ---
 
+  /** Anchor pair for one edge, before any stacking offset. */
   private geometry(ab: FlowBounds, bb: FlowBounds): EdgeGeometry {
-    return this.cfg.connectMode === "closest"
-      ? this.geometryClosest(ab, bb)
-      : this.geometryHorizontal(ab, bb);
+    return edgeGeometry(ab, bb, this.cfg.connectMode, this.cfg.arrowHeadSize);
   }
 
-  private geometryHorizontal(ab: FlowBounds, bb: FlowBounds): EdgeGeometry {
-    // Pick the side of each box closer to the other so the arrow looks sane
-    // even if the user drags the child to the parent's left/below.
-    const childOnRight = (bb.minX + bb.maxX) / 2 >= (ab.minX + ab.maxX) / 2;
-    const sx = childOnRight ? ab.maxX : ab.minX;
-    const sy = (ab.minY + ab.maxY) / 2;
-    const sign = childOnRight ? 1 : -1;
-    // Visual breathing room: tip stops 10px shy of the child's edge.
-    const TIP_GAP = 10;
-    const tipX = childOnRight ? bb.minX - TIP_GAP : bb.maxX + TIP_GAP;
-    const tipY = (bb.minY + bb.maxY) / 2;
-    // Back the line off by `ah` more so it terminates at the BASE of the
-    // arrowhead (rather than the tip). Tangent at t=1 is horizontal by
-    // construction.
-    const ah = this.cfg.arrowHeadSize;
-    const ex = tipX - sign * ah;
-    const ey = tipY;
-    const dx = Math.max(40, Math.abs(ex - sx) * 0.5);
-    const cp1x = sx + sign * dx;
-    const cp2x = ex - sign * dx;
-    return {
-      p0: { x: sx, y: sy },
-      cp1: { x: cp1x, y: sy },
-      cp2: { x: cp2x, y: ey },
-      p3: { x: ex, y: ey },
-      tip: { x: tipX, y: tipY },
-      sign,
-      perpX: 0,
-      perpY: sign,
+  /**
+   * Per-edge endpoint offsets that keep arrows sharing a box side from
+   * landing on top of each other. Both ends of an edge anchor at the
+   * *midpoint* of the side they touch, so a node with an arrow coming in
+   * and another going out on the same side draws them straight through
+   * one another. Group every endpoint by (node, side), then fan each
+   * group out along that side — incoming first, so it sits above (or
+   * left of) the outgoing one.
+   */
+  private edgeOffsets(byId: Map<string, S>): Map<string, { s: Pt; e: Pt }> {
+    const out = new Map<string, { s: Pt; e: Pt }>();
+    if (this.edges.length < 2) return out;
+    // key = `${nodeId}\u0000${side}` → endpoints landing there.
+    const groups = new Map<string, { id: string; incoming: boolean; side: string }[]>();
+    const add = (key: string, v: { id: string; incoming: boolean; side: string }) => {
+      const list = groups.get(key);
+      if (list) list.push(v); else groups.set(key, [v]);
     };
-  }
-
-  private geometryClosest(ab: FlowBounds, bb: FlowBounds): EdgeGeometry {
-    const acx = (ab.minX + ab.maxX) / 2;
-    const acy = (ab.minY + ab.maxY) / 2;
-    const bcx = (bb.minX + bb.maxX) / 2;
-    const bcy = (bb.minY + bb.maxY) / 2;
-
-    // Signed gap between facing edges along each axis. Positive = clear
-    // separation, negative = overlap on that axis. The axis with the larger
-    // gap is the one with clearer separation, so route the arrow that way.
-    const horizGap = bcx >= acx ? bb.minX - ab.maxX : ab.minX - bb.maxX;
-    const vertGap = bcy >= acy ? bb.minY - ab.maxY : ab.minY - bb.maxY;
-
-    let dirX = 0, dirY = 0;
-    let sx: number, sy: number, cx: number, cy: number;
-    if (horizGap >= vertGap) {
-      // Connect right↔left (or left↔right) — anchor at the vertical midpoint
-      // of each edge so the line is fixed to the centre of the side rather
-      // than sliding along it as the other box moves.
-      if (bcx >= acx) {
-        sx = ab.maxX; cx = bb.minX; dirX = 1;
-      } else {
-        sx = ab.minX; cx = bb.maxX; dirX = -1;
-      }
-      sy = acy;
-      cy = bcy;
-    } else {
-      // Connect bottom↔top (or top↔bottom) — anchor at the horizontal
-      // midpoint of each edge.
-      if (bcy >= acy) {
-        sy = ab.maxY; cy = bb.minY; dirY = 1;
-      } else {
-        sy = ab.minY; cy = bb.maxY; dirY = -1;
-      }
-      sx = acx;
-      cx = bcx;
+    for (const e of this.edges) {
+      const a = byId.get(e.from), b = byId.get(e.to);
+      if (!a || !b) continue;
+      const side = exitSide(this.geometry(this.cfg.getBounds(a), this.cfg.getBounds(b)));
+      const inSide = oppositeSide(side);
+      add(`${e.from}\u0000${side}`, { id: e.id, incoming: false, side });
+      add(`${e.to}\u0000${inSide}`, { id: e.id, incoming: true, side: inSide });
     }
+    const step = this.cfg.arrowWidth * 1.6 + 4;
+    for (const list of groups.values()) {
+      if (list.length < 2) continue;
+      list.sort((x, y) => Number(y.incoming) - Number(x.incoming));
+      const axis = sideAxis(list[0].side);
+      list.forEach((m, i) => {
+        const d = (i - (list.length - 1) / 2) * step;
+        const cur = out.get(m.id) || { s: { x: 0, y: 0 }, e: { x: 0, y: 0 } };
+        const end = m.incoming ? cur.e : cur.s;
+        end.x += axis.x * d;
+        end.y += axis.y * d;
+        out.set(m.id, cur);
+      });
+    }
+    return out;
+  }
 
-    const TIP_GAP = 10;
-    const tipX = cx - dirX * TIP_GAP;
-    const tipY = cy - dirY * TIP_GAP;
-
-    const ah = this.cfg.arrowHeadSize;
-    const ex = tipX - dirX * ah;
-    const ey = tipY - dirY * ah;
-
-    // Pull bezier control points along the arrow direction from each end so
-    // the curve leaves and arrives perpendicular to the edges it touches.
-    const span = Math.max(40, (Math.abs(ex - sx) + Math.abs(ey - sy)) * 0.5);
-    const cp1x = sx + dirX * span;
-    const cp1y = sy + dirY * span;
-    const cp2x = ex - dirX * span;
-    const cp2y = ey - dirY * span;
-
-    // Perpendicular unit vector — used to splay the arrowhead base.
-    const perpX = -dirY;
-    const perpY = dirX;
-    // `sign` is retained for legacy renderers that assume horizontal arrows.
-    // Picks something sensible for vertical arrows but new code should use
-    // perpX/perpY directly.
-    const sign = dirX !== 0 ? dirX : dirY;
-
-    return {
-      p0: { x: sx, y: sy },
-      cp1: { x: cp1x, y: cp1y },
-      cp2: { x: cp2x, y: cp2y },
-      p3: { x: ex, y: ey },
-      tip: { x: tipX, y: tipY },
-      sign,
-      perpX,
-      perpY,
-    };
+  /** Geometry for one edge with its stacking offset applied. */
+  private placedGeometry(
+    e: FlowEdge, byId: Map<string, S>, offsets: Map<string, { s: Pt; e: Pt }>,
+  ): EdgeGeometry | null {
+    const a = byId.get(e.from), b = byId.get(e.to);
+    if (!a || !b) return null;
+    const g = this.geometry(this.cfg.getBounds(a), this.cfg.getBounds(b));
+    const off = offsets.get(e.id);
+    return off ? offsetGeometry(g, off.s, off.e) : g;
   }
 
   /**
@@ -606,11 +558,10 @@ export class FlowchartLayer<S extends FlowNode> {
     ctx.lineJoin = "round";
 
     const ah = this.cfg.arrowHeadSize;
+    const offsets = this.edgeOffsets(byId);
     for (const e of this.edges) {
-      const a = byId.get(e.from);
-      const b = byId.get(e.to);
-      if (!a || !b) continue;
-      const g = this.geometry(this.cfg.getBounds(a), this.cfg.getBounds(b));
+      const g = this.placedGeometry(e, byId, offsets);
+      if (!g) continue;
 
       // Bezier from parent edge to base of arrowhead.
       ctx.beginPath();
@@ -653,48 +604,3 @@ function genId(): string {
   return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
 }
 
-interface Pt {
-  x: number;
-  y: number;
-}
-
-interface EdgeGeometry {
-  p0: Pt;
-  cp1: Pt;
-  cp2: Pt;
-  /** End of the line — base of the arrowhead. */
-  p3: Pt;
-  /** Tip of the arrowhead — touches the child shape's edge. */
-  tip: Pt;
-  /** Legacy hint kept for renderers that assume horizontal arrows.
-   *  +1 if child is to the right/below parent, -1 if to the left/above. */
-  sign: number;
-  /** Unit vector perpendicular to the arrow direction at the tip — used to
-   *  splay the arrowhead base. For a horizontal arrow this is (0, ±1); for
-   *  a vertical arrow (±1, 0). */
-  perpX: number;
-  perpY: number;
-}
-
-
-function bezier(g: EdgeGeometry, t: number): Pt {
-  const u = 1 - t;
-  const a = u * u * u;
-  const b = 3 * u * u * t;
-  const c = 3 * u * t * t;
-  const d = t * t * t;
-  return {
-    x: a * g.p0.x + b * g.cp1.x + c * g.cp2.x + d * g.p3.x,
-    y: a * g.p0.y + b * g.cp1.y + c * g.cp2.y + d * g.p3.y,
-  };
-}
-
-function pointToSegment(p: Pt, a: Pt, b: Pt): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len2 = dx * dx + dy * dy;
-  if (len2 < 1e-6) return Math.hypot(p.x - a.x, p.y - a.y);
-  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
-  t = Math.max(0, Math.min(1, t));
-  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
-}

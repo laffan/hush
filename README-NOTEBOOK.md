@@ -217,7 +217,9 @@ A rapid text-entry mode: each Enter creates a new text shape in an expanding spi
 
 ### Flowchart
 
-Portable layer ported from the Steiner project (`src/notebook/flowchart.ts`). Connects text shapes with directed bezier arrows; arrows render under the text (so the box always reads on top) and follow each connected node as it moves. The layer itself knows nothing about Hush's shape types — `DrawingState` configures it with `getBounds` / `isFlowable` callbacks so it only treats `TextShape` nodes as flowable.
+Portable layer ported from the Steiner project (`src/notebook/flowchart.ts`, with the anchor / bezier math in `flowchart-geometry.ts`). Connects text shapes with directed bezier arrows; arrows render under the text (so the box always reads on top) and follow each connected node as it moves. The layer itself knows nothing about Hush's shape types — `DrawingState` configures it with `getBounds` / `isFlowable` callbacks so it only treats `TextShape` nodes as flowable.
+
+**Arrows that share a box side fan apart.** Both ends of an edge anchor at the *midpoint* of the side they touch, so a node with an arrow coming in and another going out on the same side drew them straight through each other (as did two siblings leaving the same side). `edgeOffsets` groups every endpoint by (node, side) and spreads each group along that side — incoming sorted first, so it sits above the outgoing one on a left/right side, or left of it on a top/bottom one. The step scales with `arrowWidth`, so a default 1.5 px chart barely moves while the Desktop's 30 px document-order arrows clear each other properly. `draw`, `findEdgeNear` and `getEdgeMidpoint` all route through the same `placedGeometry`, so the hover hit-test and the delete dot stay on the curve the user sees.
 
 **Three ways to connect.**
 
