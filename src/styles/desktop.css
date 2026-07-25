@@ -37,10 +37,6 @@ body.desktop-active #editor-empty-state,
 body.desktop-active #notebook-container,
 body.desktop-active #pdf-container,
 body.desktop-active #stack-container,
-/* Floating / pinned panes belong to whatever file was open; the Desktop
-   replaces that file, so no pane should show through it. (Sticky notes
-   live in #sticky-container and stay — desktop-pinned stickies show.) */
-body.desktop-active #pane-container,
 /* The Outline View belongs to the doc that was open. Its panel and the
    hover-revealed edge trigger both hang off #app (position: fixed,
    z-index above the Desktop), so without this the trigger floats over
@@ -50,13 +46,29 @@ body.desktop-active .right-panel-trigger {
   visibility: hidden;
 }
 
-/* …except a pane the Desktop itself opened ("Open as pane" on a
-   thumbnail). `visibility` is inherited, so a descendant can opt back
-   in even though #pane-container is hidden. #pane-container's z-index
-   (--z-pane, 90) already sits above .desktop-view (50), so the pane
-   floats over the canvas the way it floats over an editor. */
-body.desktop-active #pane-container .floating-pane.desktop-pane {
-  visibility: visible;
+/* Panes belonging to whatever file the Desktop replaced must not show
+   through it — but a pane the Desktop itself opened ("Open as pane" on
+   a thumbnail) must. Note this hides the *panes*, one by one, rather
+   than hiding #pane-container and letting Desktop panes opt back in
+   with `visibility: visible`. That reads as equivalent (visibility is
+   inherited, so a descendant can override a hidden ancestor) and it is
+   — to everything except WebKit's paint invalidation. A pane appended
+   into a `visibility: hidden` container computed as fully visible,
+   sized, and composited at the right z, and simply never got painted:
+   no frame drop, no JS delay, the element just wasn't drawn until some
+   unrelated full-page invalidation (a zoom, another pane opening)
+   forced the region to repaint — which read as a ~20 s dead button.
+   Keeping the container visible and hiding individual panes avoids the
+   visible-inside-hidden nesting entirely.
+
+   `onContextChange` already `display: none`s panes that don't belong to
+   the active context, and while a Desktop is up that context is its own
+   `dt:<id>`. This rule is what covers the gap: **pinned** panes stay
+   displayed across every context, so without it a pinned pane from the
+   replaced file would float over the Desktop. (Sticky notes live in
+   #sticky-container and stay — desktop-pinned stickies show.) */
+body.desktop-active #pane-container > .floating-pane:not(.desktop-pane) {
+  visibility: hidden;
 }
 
 /* The canvas runs edge to edge, exactly like a notebook — so the 30 px

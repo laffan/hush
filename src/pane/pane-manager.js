@@ -308,9 +308,9 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
     ownerContext: opts.ownerContext ?? getCurrentContext(),
     localSync: opts.localSync || null,
     zotero: opts.zotero || null,
-    // Opened from a Desktop thumbnail: `body.desktop-active` hides
-    // #pane-container wholesale, so this pane opts back into visibility
-    // via `.desktop-pane` (desktop.css).
+    // Opened from a Desktop thumbnail: while a Desktop is up every other
+    // pane is hidden, and `.desktop-pane` is what exempts this one
+    // (desktop.css).
     desktopPane: !!opts.desktopPane,
   };
 

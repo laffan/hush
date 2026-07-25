@@ -14,10 +14,10 @@
  *                          rather than the project's joined buffer.
  *
  * The pane opened here belongs to the *Desktop*, not to a file: it's
- * tagged `desktopPane` so it stays visible while `body.desktop-active`
- * hides `#pane-container`, and owned by the Desktop's own pane context
- * (`dt:<containerId>`) so it hides when you leave and comes back when
- * you return.
+ * tagged `desktopPane` so it's exempt from the rule that hides every
+ * other pane while `body.desktop-active` is set, and owned by the
+ * Desktop's own pane context (`dt:<containerId>`) so it hides when you
+ * leave and comes back when you return.
  */
 
 /** Opt-in stage timing for the "Open as pane" path — set
