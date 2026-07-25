@@ -160,6 +160,65 @@ export async function mountDesktopPane(pane, state) {
   }
 }
 
+/** Write layout edits back to the shared envelope, so a thumbnail
+ *  dragged in the pane is where the full Desktop finds it next time.
+ *
+ *  Debounced, and read-modify-write rather than a blind overwrite: the
+ *  pane owns only the shapes and layers. Camera, options and background
+ *  are re-read from storage and passed through untouched — a pane's
+ *  viewport is nothing like a full window's, and the takeover should
+ *  reopen where the user left *it*.
+ *
+ *  fileRef dataUrls are stripped on the way out, exactly as the takeover
+ *  does (desktop-view's `persistNow`): they're regenerable cache, and
+ *  the envelope store is not where megabytes of WebP belong. */
+function attachPersist(host, canvas, containerId, alive) {
+  let timer = null;
+  // Where everything sat at the last write. A pointerup that didn't move
+  // anything (a plain selection click) is the common case, and it
+  // shouldn't cost a storage round-trip.
+  const layoutSig = () => canvas.state.shapes
+    .map((s) => `${s.id}:${Math.round(s.position?.x || 0)},${Math.round(s.position?.y || 0)}`).join("|");
+  // Seeded from the mounted layout: this is a record of *edits*, and the
+  // shapes as loaded are already what storage holds (files gridded in
+  // fresh here grid in the same way when the takeover next opens).
+  let lastSig = layoutSig();
+  const flush = async () => {
+    timer = null;
+    if (!alive()) return;
+    const sig = layoutSig();
+    if (sig === lastSig) return;
+    lastSig = sig;
+    const st = canvas.state;
+    const shapes = st.shapes.map((s) => {
+      if (s.type !== "image" || !s.fileRef) return s;
+      const copy = { ...s, dataUrl: "" };
+      delete copy.dataUrlDark;
+      return copy;
+    });
+    const prev = await loadDesktopEnvelope(containerId);
+    if (!alive()) return;
+    await saveDesktopEnvelope(containerId, {
+      ...(prev || { version: 1 }),
+      shapes,
+      layers: st.layers,
+      // Derived document-order arrows are re-chained from the live file
+      // order on every open, so they're never persisted.
+      flowEdges: [],
+      savedAt: Date.now(),
+    });
+  };
+  const schedule = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => { flush().catch(() => {}); }, 600);
+  };
+  // Only a completed drag changes the layout — `shapes` also fires for
+  // the hydration passes, which is harmless (same positions) but no
+  // reason to hit storage.
+  host.addEventListener("pointerup", schedule);
+  host.addEventListener("pointercancel", schedule);
+}
+
 /** Console hook for diagnosing a Desktop pane that renders arrows but no
  *  thumbnails: `__hushDesktopPaneDebug()` reports the canvas geometry,
  *  the camera, and — per fileRef shape — its rect, whether the render
