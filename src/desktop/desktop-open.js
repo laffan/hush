@@ -20,6 +20,15 @@
  * you return.
  */
 
+/** Opt-in stage timing for the "Open as pane" path — set
+ *  `window.__hushDesktopDebug = true` in the console to turn it on.
+ *  Off by default and free when off. */
+export function dtLog(...args) {
+  if (typeof window !== "undefined" && window.__hushDesktopDebug) {
+    console.log("[desktop]", performance.now().toFixed(0), ...args);
+  }
+}
+
 /** Open a thumbnail's file in place. `openDesktopFor(nodeId)` is
  *  desktop-view's own `openDesktop`, passed in to keep this module free
  *  of a circular import. */
@@ -64,8 +73,10 @@ export async function openFileRefWithGutter(state, ref) {
 export async function openFileRefSecondary(state, ref, ev, containerId) {
   if (!ref) return;
   const typeMap = { doc: "document", notebook: "notebook", pdf: "pdf", stack: "stack", project: "desktop" };
+  dtLog("openFileRefSecondary", ref.kind, ref.name);
   const { createPane } = await import("../pane/pane-manager.js");
   const { DEFAULT_WIDTH, TITLEBAR_HEIGHT } = await import("../pane/pane-state.js");
+  dtLog("pane modules resolved");
   const anchorX = (ev?.clientX ?? 200) + DEFAULT_WIDTH / 2 + 24;
   const anchorY = (ev?.clientY ?? 120) + TITLEBAR_HEIGHT / 2;
   try {
@@ -75,6 +86,7 @@ export async function openFileRefSecondary(state, ref, ev, containerId) {
       anchorX, anchorY,
       { desktopPane: true, ownerContext: containerId ? `dt:${containerId}` : "" },
     );
+    dtLog("createPane resolved");
   } catch (e) {
     console.error("Open as pane failed:", e);
   }

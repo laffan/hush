@@ -416,6 +416,9 @@ async function mountCanvas() {
   });
 
   attachCanvasListeners();
+  // Warm the "Open as pane" path — a cold chunk fetch inside the click
+  // handler is latency the user reads as a dead button.
+  Promise.all([import("../pane/pane-manager.js"), import("./desktop-pane.js")]).catch(() => {});
   setLoading(false);
   _hydrated = true;
   _state.emit("desktop-opened", _containerId);

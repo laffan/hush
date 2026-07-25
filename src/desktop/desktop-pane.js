@@ -37,7 +37,7 @@ import { ensureDesktopThumb, entrySig } from "./desktop-thumbs.js";
 import { buildShapes, fitCameraFor, applyThumbRefFields } from "./desktop-content.js";
 import { loadDesktopEnvelope, saveDesktopEnvelope, loadThumbRecord } from "./desktop-store.js";
 import { initDesktopConnections, applyDocConnections } from "./desktop-connections.js";
-import { openFileRef } from "./desktop-open.js";
+import { openFileRef, dtLog } from "./desktop-open.js";
 import { screenToCanvas } from "../notebook/utils.ts";
 import { findShapeAtPoint } from "../notebook/state-helpers.ts";
 
@@ -70,6 +70,7 @@ export function applyDesktopPaneBackground(pane) {
 
 export async function mountDesktopPane(pane, state) {
   const containerId = pane.fileId;
+  dtLog("mountDesktopPane enter");
   if (!findDesktopContainer(state, containerId)) return;
   // Mount straight into the pane body, exactly like a notebook pane —
   // floating-pane.css already sizes a bare canvas child.
@@ -79,7 +80,9 @@ export async function mountDesktopPane(pane, state) {
   const { computeNotebookSettings } = await import("../notebook/notebook-style-settings.js");
   if (!host.isConnected) return;
 
+  dtLog("notes-canvas module resolved");
   const canvas = new NotesCanvas(host, {});
+  dtLog("NotesCanvas constructed");
   // Every async step below re-checks this: a pane closed (or had its
   // content swapped) mid-hydration must not keep writing to the canvas.
   const alive = () => pane.notebook === canvas && host.isConnected;
@@ -117,7 +120,9 @@ export async function mountDesktopPane(pane, state) {
 
   // Pass one: cached thumbnails only, read in parallel. Entries that
   // miss come up as the renderer's placeholder card at their saved size.
+  dtLog(`peeking ${entries.length} cached thumbnails`);
   const cached = await Promise.all(entries.map((e) => peekThumb(state, e, themeCtx)));
+  dtLog(`cache pass done — ${cached.filter(Boolean).length}/${entries.length} hits`);
   if (!alive()) return;
   const thumbs = new Map();
   entries.forEach((e, i) => { if (cached[i]) thumbs.set(e.key, cached[i]); });
@@ -140,6 +145,7 @@ export async function mountDesktopPane(pane, state) {
 
   // Pass two: generate whatever pass one missed, one at a time so a big
   // project doesn't monopolise the main thread, applying each in place.
+  dtLog("mountDesktopPane done (canvas up)");
   const missing = entries.filter((e, i) => !cached[i]);
   if (missing.length) hydrateRest(pane, canvas, state, missing, themeCtx, alive);
 }
@@ -165,10 +171,12 @@ async function hydrateRest(pane, canvas, state, missing, themeCtx, alive) {
   pane._content.appendChild(chip);
   try {
     for (const entry of missing) {
+      dtLog("generating thumbnail", entry.kind, entry.name);
       const thumb = await ensureDesktopThumb(state, entry, themeCtx);
       if (!alive()) return;
       applyPaneThumb(canvas, entry.key, thumb);
     }
+    dtLog("background hydration done");
   } finally {
     chip.remove();
   }
