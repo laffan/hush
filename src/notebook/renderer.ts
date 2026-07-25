@@ -47,6 +47,12 @@ export interface RenderState {
    *  along the bottom of its thumbnail. Read per frame (not baked into
    *  the thumbnail image) so edits show without a regenerate. */
   fileStickies?: (kind: string, fileId: string) => { text: string }[];
+  /** Desktop-pinned stickies to paint onto this canvas, in world coords.
+   *  The full-window Desktop shows these as live DOM notes in its own
+   *  layer, so it leaves this unset; a Desktop *pane* has no such layer
+   *  (the notes are singletons bound to the open takeover) and paints
+   *  them instead — read-only, matching the pane's reading-half role. */
+  desktopStickies?: { text: string; wx: number; wy: number; w: number; h: number }[] | null;
   /** Active Hush style's background-image config, or null. Drawn over the
    *  solid fill and beneath the grid pattern. */
   backgroundImage?: BackgroundImageConfig | null;
@@ -271,6 +277,12 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     // while keeping their order relative to each other.
     for (const shape of layerShapes) if (!raisedIds.has(shape.id)) paintShape(shape);
     for (const shape of layerShapes) if (raisedIds.has(shape.id)) paintShape(shape);
+  }
+
+  // Above the thumbnails, mirroring the DOM layer's stacking in the
+  // full-window Desktop.
+  for (const note of state.desktopStickies || []) {
+    drawStickyBox(ctx, note.wx, note.wy, note.w, note.h, note.text, state.fontFamily);
   }
 
   if (state.desktopOutlineHover) drawOutlineHover(ctx, shapes, theme, state.desktopOutlineHover);

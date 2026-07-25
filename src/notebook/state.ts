@@ -187,6 +187,11 @@ export class DrawingState extends EventTarget {
    *  fit a Desktop of file thumbnails (e.g. the selection toolbar's
    *  Rasterize, which would bake live previews into dead pixels). */
   desktopMode = false;
+  /** Project node id whose Desktop-pinned stickies this canvas should
+   *  paint, or null to paint none. Set by a Desktop *pane*: the notes
+   *  themselves are live DOM singletons owned by the full-window
+   *  Desktop, so a pane renders them onto its canvas instead. */
+  desktopStickyTarget: string | null = null;
   /** Opacity the flowchart arrows paint at. The Desktop's derived
    *  document-order connections sit at 0.4 so they read as annotation
    *  over the thumbnails rather than as content. */

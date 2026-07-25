@@ -295,7 +295,7 @@ export function addSticky(state, kind) {
   activateNote(note);
   note.textarea.focus();
   if (note.kind === "desktop") repositionDesktopNotes();
-  else repaintDesktop(); // a new file sticky shows on its thumbnail
+  repaintDesktop(); // shows on its thumbnail badge / on any Desktop pane
   schedulePersist();
 }
 
@@ -353,7 +353,8 @@ function buildNoteDOM(note) {
   textarea.addEventListener("input", () => {
     note.text = textarea.value;
     if (note._excerptEl) note._excerptEl.textContent = excerptFor(note.text);
-    if (note.kind === "file") repaintDesktop(); // its thumbnail badge shows this text
+    // Shown by a file's thumbnail badge, and painted verbatim by a pane.
+    if (note.kind === "file" || note.kind === "desktop") repaintDesktop();
     schedulePersist();
   });
   el.appendChild(textarea);
@@ -553,6 +554,7 @@ function setupDrag(note, titlebar) {
         const toWorld = window.__hushDesktopScreenToWorld;
         const w = toWorld ? toWorld({ x: note.x, y: note.y }) : null;
         if (w) { note.wx = w.x; note.wy = w.y; }
+        repaintDesktop(); // it moved on any pane painting this Desktop
       }
       schedulePersist();
     };
@@ -596,6 +598,7 @@ function setupResize(note) {
         if (note.kind === "desktop") {
           const w = window.__hushDesktopScreenToWorld?.({ x: note.x, y: note.y });
           if (w) { note.wx = w.x; note.wy = w.y; }
+          repaintDesktop(); // it resized on any pane painting this Desktop
         }
         schedulePersist();
       };

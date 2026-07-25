@@ -92,6 +92,11 @@ export async function mountDesktopPane(pane, state) {
   canvas.state.flowchartEnabled = false;
   canvas.state.altDuplicateEnabled = false;
   canvas.state.desktopMode = true;
+  // Desktop-pinned stickies are live DOM notes owned by the full-window
+  // Desktop — one layer, bound to whichever project is open there. A pane
+  // can't borrow them, so it paints this project's onto its own canvas
+  // instead: read-only, like the rest of the pane.
+  canvas.state.desktopStickyTarget = containerId;
   initDesktopConnections(canvas);
   canvas.state.setDrawingToolbarMinimized(true);
   canvas.applySettings({ ...computeNotebookSettings(state, null), ...BG });
@@ -136,8 +141,12 @@ export async function mountDesktopPane(pane, state) {
     `layers=${canvas.state.layers.map((l) => `${l.id}${l.hidden ? ":hidden" : ""}`).join(",")}`);
   requestAnimationFrame(() => {
     if (!alive()) return;
+    // Pinned notes are content here (the pane paints them), so they set
+    // the frame like any thumbnail — a note parked off to one side would
+    // otherwise open outside the view.
     canvas.state.camera = fitCameraFor(
-      canvas.state.shapes, host.clientWidth || 400, host.clientHeight || 300);
+      [...canvas.state.shapes, ...stickyRects(containerId)],
+      host.clientWidth || 400, host.clientHeight || 300);
     canvas.state.notify("camera");
     canvas.state.rebasePinAnchor?.();
     dtLog(`camera ${JSON.stringify(canvas.state.camera)} host ${host.clientWidth}x${host.clientHeight}`);
@@ -145,7 +154,7 @@ export async function mountDesktopPane(pane, state) {
 
   attachOpenGesture(host, canvas, state, containerId);
   attachPersist(host, canvas, containerId, alive);
-  installPaneDebug(pane, canvas, host);
+  attachStickyRepaint(canvas, alive);
 
   // Pass two: generate whatever pass one missed, one at a time so a big
   // project doesn't monopolise the main thread, applying each in place.
@@ -158,6 +167,30 @@ export async function mountDesktopPane(pane, state) {
     hydrateRest(pane, canvas, state, missing, themeCtx, alive)
       .catch((err) => console.error("[desktop] pane hydration failed", err));
   }
+}
+
+/** This project's pinned notes as bare `fitCameraFor` rectangles. */
+function stickyRects(containerId) {
+  const fn = typeof window !== "undefined" ? window.__hushDesktopStickiesFor : null;
+  const notes = fn ? (fn(containerId) || []) : [];
+  return notes.map((n) => ({ position: { x: n.wx, y: n.wy }, width: n.w, height: n.h }));
+}
+
+/** Repaint when a Desktop-pinned sticky is added, edited, moved, resized
+ *  or closed. The notes are drawn live from the note list rather than
+ *  from anything on the canvas, so no shape changed and nothing would
+ *  otherwise invalidate the frame — "interaction" is the repaint-only
+ *  notify key, so this never marks the pane dirty.
+ *
+ *  Unsubscribes itself once the pane is gone: the listener sits on
+ *  `document`, so without this every opened-and-closed pane would leave
+ *  one behind. */
+function attachStickyRepaint(canvas, alive) {
+  const onChange = () => {
+    if (!alive()) { document.removeEventListener("desktop-stickies-changed", onChange); return; }
+    canvas.state.notify("interaction");
+  };
+  document.addEventListener("desktop-stickies-changed", onChange);
 }
 
 /** Write layout edits back to the shared envelope, so a thumbnail
@@ -217,36 +250,6 @@ function attachPersist(host, canvas, containerId, alive) {
   // reason to hit storage.
   host.addEventListener("pointerup", schedule);
   host.addEventListener("pointercancel", schedule);
-}
-
-/** Console hook for diagnosing a Desktop pane that renders arrows but no
- *  thumbnails: `__hushDesktopPaneDebug()` reports the canvas geometry,
- *  the camera, and — per fileRef shape — its rect, whether the render
- *  has a decoded image for it, and how big that image is. Cheap: one
- *  closure per mounted pane, nothing runs until it's called. */
-function installPaneDebug(pane, canvas, host) {
-  window.__hushDesktopPaneDebug = () => {
-    const st = canvas.state;
-    const cache = canvas.getImageCache?.() || new Map();
-    const el = host.querySelector("canvas");
-    return {
-      host: { w: host.clientWidth, h: host.clientHeight },
-      canvasEl: el ? { cssW: el.clientWidth, cssH: el.clientHeight, w: el.width, h: el.height } : null,
-      camera: { ...st.camera },
-      layers: (st.layers || []).map((l) => ({ id: l.id, hidden: !!l.hidden })),
-      edges: st.flowchart.edges.length,
-      shapes: st.shapes.map((s) => {
-        const img = cache.get(s.id);
-        return {
-          type: s.type, name: s.fileRef?.name || s.name || "",
-          layerId: s.layerId, pocketed: !!s.pocketed,
-          rect: `${Math.round(s.position?.x)},${Math.round(s.position?.y)} ${Math.round(s.width)}x${Math.round(s.height)}`,
-          dataUrl: s.dataUrl ? `${s.dataUrl.slice(0, 24)}… (${s.dataUrl.length})` : "(empty)",
-          img: img ? `complete=${img.complete} natural=${img.naturalWidth}x${img.naturalHeight}` : "(no cache entry)",
-        };
-      }),
-    };
-  };
 }
 
 /** Cache-only thumbnail lookup — the session cache inside

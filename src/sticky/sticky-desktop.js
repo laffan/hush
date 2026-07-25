@@ -162,6 +162,11 @@ export function repositionDesktopNotes(notes) {
  *  no shape changed — "interaction" is the repaint-only notify key, so
  *  this never marks the Desktop dirty for a save. */
 export async function repaintDesktop() {
+  // A Desktop *pane* has no sticky layer of its own — it paints its
+  // project's pinned notes straight onto its canvas — and it isn't the
+  // active notebook, so the nudge below never reaches it. Broadcast so it
+  // can repaint itself.
+  document.dispatchEvent(new CustomEvent("desktop-stickies-changed"));
   if (!desktopOpenId()) return;
   const { getActiveNotebookState } = await import("../notebook/notes-canvas.ts");
   getActiveNotebookState()?.notify("interaction");

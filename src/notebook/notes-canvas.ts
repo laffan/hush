@@ -53,6 +53,21 @@ function getFileStickiesFromHush(kind: string, fileId: string): { text: string }
   try { return fn ? fn(kind, fileId) || [] : []; } catch { return []; }
 }
 
+/** Desktop-pinned stickies for one project, in that Desktop's world
+ *  coords. Same bridge the composite thumbnails read (sticky-notes.js
+ *  publishes it); null target means this canvas paints none. */
+function getDesktopStickiesFromHush(projectId: string | null) {
+  if (!projectId) return null;
+  // When this project's own full-window Desktop is open, its notes are on
+  // screen as real (editable) DOM in that view's sticky layer. Painting
+  // them here as well would double them up.
+  if ((window as unknown as { __hushDesktopOpenId?: string }).__hushDesktopOpenId === projectId) return null;
+  const fn = (window as unknown as {
+    __hushDesktopStickiesFor?: (id: string) => { text: string; wx: number; wy: number; w: number; h: number }[];
+  }).__hushDesktopStickiesFor;
+  try { return fn ? fn(projectId) || null : null; } catch { return null; }
+}
+
 /** The notebook instance that most recently received a pointer interaction.
  *  The document-level "copy" listener below routes Cmd+C to this one. */
 let lastActiveNotebook: NotesCanvas | null = null;
@@ -931,6 +946,7 @@ export class NotesCanvas {
         touchMode: getTouchModeFromHush(),
         desktopOutlineHover: this.state.desktopOutlineHover,
         fileStickies: getFileStickiesFromHush,
+        desktopStickies: getDesktopStickiesFromHush(this.state.desktopStickyTarget),
     });
   }
 
