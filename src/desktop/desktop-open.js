@@ -51,15 +51,31 @@ export async function openFileRefWithGutter(state, ref) {
 }
 
 /** The hover row's pane button. A nested project opens as a `desktop`
- *  pane — its own canvas of thumbnails, floating over the parent's. */
+ *  pane — its own canvas of thumbnails, floating over the parent's.
+ *
+ *  `createPane` centres a pane on the point it's given, which for a
+ *  *button* click means the new pane lands squarely on top of the button
+ *  you just pressed — so a second click hits the pane instead of the
+ *  control, and the thumbnail disappears behind its own pane. The anchor
+ *  is nudged so the pane opens just down-and-right of the button
+ *  instead, leaving the thumbnail and its controls reachable.
+ *  (`clampPaneAxis` inside `createPane` pulls it back on screen near an
+ *  edge.) */
 export async function openFileRefSecondary(state, ref, ev, containerId) {
   if (!ref) return;
   const typeMap = { doc: "document", notebook: "notebook", pdf: "pdf", stack: "stack", project: "desktop" };
   const { createPane } = await import("../pane/pane-manager.js");
-  createPane(
-    ref.kind === "project" ? ref.nodeId : ref.fileId,
-    ref.name, typeMap[ref.kind] || "document",
-    ev?.clientX ?? 200, ev?.clientY ?? 120,
-    { desktopPane: true, ownerContext: containerId ? `dt:${containerId}` : "" },
-  );
+  const { DEFAULT_WIDTH, TITLEBAR_HEIGHT } = await import("../pane/pane-state.js");
+  const anchorX = (ev?.clientX ?? 200) + DEFAULT_WIDTH / 2 + 24;
+  const anchorY = (ev?.clientY ?? 120) + TITLEBAR_HEIGHT / 2;
+  try {
+    await createPane(
+      ref.kind === "project" ? ref.nodeId : ref.fileId,
+      ref.name, typeMap[ref.kind] || "document",
+      anchorX, anchorY,
+      { desktopPane: true, ownerContext: containerId ? `dt:${containerId}` : "" },
+    );
+  } catch (e) {
+    console.error("Open as pane failed:", e);
+  }
 }

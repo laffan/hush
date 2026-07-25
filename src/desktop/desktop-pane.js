@@ -17,15 +17,25 @@
  * full window's, and the full Desktop should reopen where the user left
  * *it*.
  *
+ * Hydration is two-pass and never blocks the mount. Generating a
+ * thumbnail means an IPC read plus a 2× canvas render and a WebP encode,
+ * so a serial pass over a fat project can run into the seconds — and
+ * because `createPane` centres the new pane on the click, a pane that
+ * sits empty while that runs parks itself right on top of the button
+ * you just pressed, which reads as "the click did nothing". So: pass one
+ * takes only what's already cached (parallel IDB reads) and puts the
+ * canvas up immediately; pass two fills the misses in behind it, each
+ * landing in place as it finishes.
+ *
  * Mounted through the pane system's custom-type hook, the same way the
  * Zotero highlight pane is (`pane-content.js#loadPaneContent`), with
  * `pane.fileId` holding the project's *node* id.
  */
 
 import { collectDesktopFiles, findDesktopContainer } from "./desktop-files.js";
-import { ensureDesktopThumb } from "./desktop-thumbs.js";
-import { buildShapes, fitCameraFor } from "./desktop-content.js";
-import { loadDesktopEnvelope, saveDesktopEnvelope } from "./desktop-store.js";
+import { ensureDesktopThumb, entrySig } from "./desktop-thumbs.js";
+import { buildShapes, fitCameraFor, applyThumbRefFields } from "./desktop-content.js";
+import { loadDesktopEnvelope, saveDesktopEnvelope, loadThumbRecord } from "./desktop-store.js";
 import { initDesktopConnections, applyDocConnections } from "./desktop-connections.js";
 import { openFileRef } from "./desktop-open.js";
 import { screenToCanvas } from "../notebook/utils.ts";
@@ -101,14 +111,16 @@ export async function mountDesktopPane(pane, state) {
   applyDesktopPaneBackground(pane);
 
   const entries = collectDesktopFiles(state, containerId)?.entries || [];
+  // Outline columns are a takeover affordance — a pane is too small to
+  // read one, and it would double the thumbnail's width.
+  for (const entry of entries) entry.outline = false;
+
+  // Pass one: cached thumbnails only, read in parallel. Entries that
+  // miss come up as the renderer's placeholder card at their saved size.
+  const cached = await Promise.all(entries.map((e) => peekThumb(state, e, themeCtx)));
+  if (!alive()) return;
   const thumbs = new Map();
-  for (const entry of entries) {
-    // Outline columns are a takeover affordance — a pane is too small to
-    // read one, and it would double the thumbnail's width.
-    entry.outline = false;
-    thumbs.set(entry.key, await ensureDesktopThumb(state, entry, themeCtx));
-    if (!alive()) return;
-  }
+  entries.forEach((e, i) => { if (cached[i]) thumbs.set(e.key, cached[i]); });
 
   canvas.loadShapes(
     buildShapes(envelope, entries, thumbs),
@@ -125,6 +137,66 @@ export async function mountDesktopPane(pane, state) {
 
   attachOpenGesture(host, canvas, state);
   attachPersist(host, canvas, containerId, alive);
+
+  // Pass two: generate whatever pass one missed, one at a time so a big
+  // project doesn't monopolise the main thread, applying each in place.
+  const missing = entries.filter((e, i) => !cached[i]);
+  if (missing.length) hydrateRest(pane, canvas, state, missing, themeCtx, alive);
+}
+
+/** Cache-only thumbnail lookup — the session cache inside
+ *  `ensureDesktopThumb` plus one IDB read, never a render. Returns null
+ *  on a miss (including PDFs, whose covers live in their own cache and
+ *  have no `entrySig`). */
+async function peekThumb(state, entry, themeCtx) {
+  const sig = entrySig(state, entry, themeCtx.sig);
+  if (!sig) return null;
+  const rec = await loadThumbRecord(entry.key);
+  return rec && rec.sig === sig && rec.dataUrl ? rec : null;
+}
+
+/** Background fill for the thumbnails pass one couldn't serve. Shows a
+ *  small corner chip while it runs so an in-flight Desktop reads as
+ *  loading rather than half-broken. */
+async function hydrateRest(pane, canvas, state, missing, themeCtx, alive) {
+  const chip = document.createElement("div");
+  chip.className = "desktop-pane-loading";
+  chip.textContent = "Loading…";
+  pane._content.appendChild(chip);
+  try {
+    for (const entry of missing) {
+      const thumb = await ensureDesktopThumb(state, entry, themeCtx);
+      if (!alive()) return;
+      applyPaneThumb(canvas, entry.key, thumb);
+    }
+  } finally {
+    chip.remove();
+  }
+}
+
+/** Swap one entry's thumbnail into the canvas in place. Mirrors
+ *  desktop-view's `applyThumbToShape`, including the image-cache
+ *  refresh — the cache only auto-reloads on an appearance swap, so a
+ *  content change would otherwise keep painting the placeholder. */
+function applyPaneThumb(canvas, key, thumb) {
+  if (!thumb) return;
+  const st = canvas.state;
+  const cache = canvas.getImageCache?.();
+  let changed = false;
+  st.shapes = st.shapes.map((s) => {
+    if (s.type !== "image" || s.fileRef?.key !== key) return s;
+    changed = true;
+    const out = { ...s, dataUrl: thumb.dataUrl || thumb.url || "" };
+    delete out.dataUrlDark;
+    const cached = cache?.get(s.id);
+    if (cached) cached.src = out.dataUrl;
+    const fileRef = { ...s.fileRef };
+    applyThumbRefFields(fileRef, thumb);
+    out.fileRef = fileRef;
+    if (thumb.w > 0 && thumb.h > 0) { out.width = thumb.w; out.height = thumb.h; }
+    return out;
+  });
+  if (changed) st.notify("shapes");
 }
 
 /** Persist shape / layer moves back into the shared envelope, keeping

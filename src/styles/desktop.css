@@ -90,6 +90,23 @@ body.desktop-active #drag-region {
   pointer-events: none;
 }
 
+/* Corner chip shown while a Desktop *pane* fills in the thumbnails its
+   cache couldn't serve. The canvas is already up and interactive
+   underneath — this just says the blanks are still coming. */
+.desktop-pane-loading {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  z-index: 5;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  pointer-events: none;
+  opacity: 0.75;
+  background: var(--theme-bg, var(--bg));
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
+}
+
 /* ── Hover controls over a file thumbnail ──────────────────────── */
 
 .desktop-hover {
