@@ -43,8 +43,13 @@
   gap: 12px;
 }
 
+/* Grid items default to `min-height: auto`, which lets a tall tree push
+   the column past the modal instead of scrolling inside it — both axes
+   are pinned to 0 so the inner list owns the overflow. */
 .cfd-col {
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -77,9 +82,10 @@
 }
 
 .cfd-list {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   position: relative;
   padding-bottom: 24px; /* a landing strip for "drop at the end" */
 }
@@ -134,12 +140,29 @@
 .cfd-arrow,
 .cfd-arrow-spacer {
   flex: 0 0 auto;
-  width: 10px;
-  font-size: 9px;
-  opacity: 0.6;
-  text-align: center;
-  cursor: pointer;
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
+.cfd-arrow {
+  opacity: 0.7;
+  cursor: pointer;
+  /* Hit area beyond the 7 px triangle so the toggle is easy to catch. */
+  margin: -4px;
+  padding: 4px;
+  box-sizing: content-box;
+}
+.cfd-arrow:hover { opacity: 1; }
+.cfd-arrow svg {
+  width: 8px;
+  height: 8px;
+  fill: currentColor;
+  stroke: none;
+  transition: transform 0.1s ease;
+}
+.cfd-arrow.open svg { transform: rotate(90deg); }
 .cfd-arrow-spacer { cursor: default; }
 
 .cfd-desk-head {
@@ -167,6 +190,8 @@
   font-style: italic;
 }
 .cfd-planned .cfd-icon { opacity: 0.5; }
+/* A container the plan will create (a PDFs folder for a copied PDF). */
+.cfd-planned-folder .cfd-name { font-style: italic; }
 .cfd-planned-from {
   font-size: 10px;
   opacity: 0.6;

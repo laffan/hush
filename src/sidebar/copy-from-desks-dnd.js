@@ -53,6 +53,7 @@ export function installCopyDrag(opts) {
       document.body.classList.add("cfd-dragging");
     }
     moveGhost(drag.ghost, e.clientX, e.clientY);
+    autoScroll(dstEl, e.clientY);
     drag.site = resolveDropSite(e.clientX, e.clientY, dstEl, opts.rootId);
     paintDropSite(dstEl, drag.site);
     opts.onHoverContainer?.(drag.site?.into || null);
@@ -79,6 +80,19 @@ export function installCopyDrag(opts) {
     document.removeEventListener("pointermove", onMove);
     document.removeEventListener("pointerup", onUp);
   };
+}
+
+/** The destination column scrolls, so a drag has to be able to reach a
+ *  target that's off-screen: hovering within 28 px of either edge nudges
+ *  the list, faster the closer the cursor gets. */
+function autoScroll(el, clientY) {
+  const r = el.getBoundingClientRect();
+  const zone = 28;
+  let delta = 0;
+  if (clientY < r.top + zone) delta = -(zone - (clientY - r.top));
+  else if (clientY > r.bottom - zone) delta = zone - (r.bottom - clientY);
+  if (!delta) return;
+  el.scrollTop += Math.max(-14, Math.min(14, delta / 2));
 }
 
 function makeGhost(count) {

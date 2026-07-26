@@ -87,8 +87,11 @@ export function searchForest(forest, query) {
   return { forest: out, expand };
 }
 
-const arrow = (open) =>
-  `<span class="cfd-arrow${open ? " open" : ""}">${open ? "▾" : "▸"}</span>`;
+/** Disclosure triangle. A filled 7 px SVG rather than a `▸` glyph — the
+ *  text arrows rendered at a couple of pixels and were easy to miss. The
+ *  open state rotates the same shape rather than swapping characters. */
+export const arrow = (open) =>
+  `<span class="cfd-arrow${open ? " open" : ""}"><svg viewBox="0 0 10 10" aria-hidden="true"><polygon points="2.5,0.5 8.5,5 2.5,9.5" /></svg></span>`;
 
 /**
  * Recursive row markup.
@@ -101,10 +104,16 @@ const arrow = (open) =>
 export function renderRows(nodes, opts) {
   const { side, expanded, parentId, depth = 0 } = opts;
   const entries = side === "dst" ? interleavePlan(nodes, parentId, opts.plan || []) : nodes.map((n) => ({ kind: "real", node: n }));
+  // Rows inside a planned container aren't real slots, so drops landing
+  // on them are redirected to the container's own real parent.
+  const anchor = opts.dropAnchor || null;
   let html = "";
   let realIndex = 0;
   for (const entry of entries) {
-    if (entry.kind === "plan") { html += plannedRow(entry.plan, depth, parentId, realIndex); continue; }
+    if (entry.kind === "plan") {
+      html += plannedRow(entry.plan, depth, anchor?.parentId ?? parentId, anchor?.index ?? realIndex);
+      continue;
+    }
     const node = entry.node;
     const index = realIndex++;
     const container = isContainerType(node.type);
@@ -120,8 +129,35 @@ export function renderRows(nodes, opts) {
       + `<span class="cfd-name">${escHtml(node.name || "Untitled")}</span>`
       + `</div>`;
     if (container && open) {
-      html += renderRows(kids, { ...opts, parentId: node.id, depth: depth + 1 });
+      html += renderRows(kids, { ...opts, parentId: node.id, depth: depth + 1, dropAnchor: null });
     }
+  }
+  if (side === "dst") html += renderGhostFolders(parentId, opts, depth, anchor?.index ?? realIndex);
+  return html;
+}
+
+/**
+ * Containers the plan will *create* — today only the PDFs folders a
+ * copied PDF needs. They render grey at the tail of their parent (where
+ * a PDFs folder gets pinned anyway) with their planned contents nested,
+ * so "copy a PDF into a desk that has none" shows the folder appearing
+ * before the user commits.
+ */
+function renderGhostFolders(parentId, opts, depth, anchorIndex) {
+  let html = "";
+  for (const g of (opts.ghosts || []).filter((x) => x.parentId === parentId)) {
+    html += `<div class="cfd-row cfd-planned cfd-planned-folder" data-ghost-id="${escHtml(g.id)}"`
+      + ` data-parent-id="${escHtml(parentId || "")}" data-index="${anchorIndex}" data-container="0" data-depth="${depth}"`
+      + ` style="--cfd-depth:${depth}">`
+      + `<span class="cfd-arrow-spacer"></span>`
+      + `<span class="cfd-icon">${typeIcons.folder}</span>`
+      + `<span class="cfd-name">${escHtml(g.name)}</span>`
+      + `<span class="cfd-planned-from">new folder</span>`
+      + `</div>`;
+    html += renderRows([], {
+      ...opts, parentId: g.id, depth: depth + 1,
+      dropAnchor: { parentId, index: anchorIndex },
+    });
   }
   return html;
 }
@@ -152,7 +188,7 @@ function plannedRow(plan, depth, parentId, index) {
     + `<span class="cfd-arrow-spacer"></span>`
     + `<span class="cfd-icon">${typeIcons[plan.type] || typeIcons.document}</span>`
     + `<span class="cfd-name">${escHtml(plan.name || "Untitled")}</span>`
-    + `<span class="cfd-planned-from">${escHtml(plan.deskName || "")}</span>`
+    + `<span class="cfd-planned-from">${escHtml(plan.alias ? "reference" : (plan.deskName || ""))}</span>`
     + `<button type="button" class="cfd-planned-remove" title="Remove from plan">×</button>`
     + `</div>`;
 }

@@ -63,7 +63,7 @@ export function addPdfAliasToProject(project, pdfNode) {
  *  desk doesn't have one yet — e.g. a cross-desk drop). `desk` may be
  *  null on a pre-migration flat tree, in which case the legacy bare
  *  `__pdfs__` at the root is used. */
-function ensureDeskPdfsFolder(tree, desk) {
+export function ensureDeskPdfsFolder(tree, desk) {
   const list = desk ? (desk.children || (desk.children = [])) : tree;
   const id = desk ? `__pdfs__:${desk.id}` : "__pdfs__";
   let folder = list.find((n) => n.id === id);

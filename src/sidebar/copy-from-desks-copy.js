@@ -24,7 +24,9 @@ import {
   findNode, uniqueChildName, enforceSpecialPositions,
   normalizeProjectChildren, isRealProjectNode,
 } from "../state/tree-helpers.js";
-import { normalizePdfProjectAliases, addPdfAliasToProject } from "../state/state-pdf-aliases.js";
+import {
+  normalizePdfProjectAliases, addPdfAliasToProject, ensureDeskPdfsFolder,
+} from "../state/state-pdf-aliases.js";
 import { isHiddenSpecialId, COPYABLE_TYPES } from "./copy-from-desks-tree.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
@@ -36,18 +38,34 @@ async function tauriInvoke(cmd, args) {
 
 /**
  * @param state AppState
- * @param plan  ordered `[{ srcNodeId, parentId, index, type, name }]`
+ * @param plan  ordered `[{ srcNodeId, parentId, index, type, name, alias?, projectId? }]`
  * @returns `{ copied, skipped }`
  */
 export async function runCopyPlan(state, plan) {
   const tree = state.fileTree;
-  const entries = (plan || []).map((p, seq) => ({ ...p, seq }));
-  if (!entries.length) return { copied: 0, skipped: 0 };
+  const all = (plan || []).map((p, seq) => ({ ...p, seq }));
+  if (!all.length) return { copied: 0, skipped: 0 };
 
   // `aliased` counts PDFs that were already in this desk and so became a
   // project reference instead of a new node — copied, just not a node.
   const ctx = { fileIdMap: new Map(), clonedStacks: [], aliased: 0 };
   let copied = 0, skipped = 0;
+
+  // Alias entries (a PDF referenced into a project) run last: they need
+  // the desk's real node, which the copy pass may be about to create.
+  const aliasEntries = all.filter((e) => e.alias);
+  const entries = all.filter((e) => !e.alias);
+
+  // A copied PDF always lands in the desk's PDFs folder regardless of
+  // where it was dropped — the same rule the planner previewed, applied
+  // to the live tree (creating the folder if the desk had none).
+  const desk = state.getActiveDesk?.() || null;
+  for (const e of entries) {
+    if (e.type !== "pdf" || !desk) continue;
+    const folder = ensureDeskPdfsFolder(tree, desk);
+    e.parentId = folder.id;
+    e.index = (folder.children || []).length;
+  }
 
   // Group by destination so several drops into the same container keep
   // the order the user planned them in.
@@ -75,6 +93,15 @@ export async function runCopyPlan(state, plan) {
       offset++;
       copied++;
     }
+  }
+
+  // Project references, now that every desk-level PDF node exists.
+  for (const e of aliasEntries) {
+    const src = findNode(tree, e.srcNodeId);
+    const project = findNode(tree, e.projectId);
+    const deskPdf = src && desk ? findRealPdf(desk.children || [], src.fileId) : null;
+    if (!src || !project || !deskPdf) { skipped++; continue; }
+    if (addPdfAliasToProject(project, deskPdf)) copied++; else skipped++;
   }
 
   await rewriteStackReferences(state, ctx.clonedStacks, ctx.fileIdMap);

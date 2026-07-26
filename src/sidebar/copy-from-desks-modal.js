@@ -16,11 +16,30 @@
  */
 
 import { escHtml } from "./files-panel-shared.js";
-import { findNode } from "../state/tree-helpers.js";
+import { findNode, isRealProjectNode } from "../state/tree-helpers.js";
+import { isProjectPdfFolder } from "../state/state-pdf-aliases.js";
 import {
-  buildSourceForest, filterCopyable, searchForest, renderRows, isContainerType,
+  buildSourceForest, filterCopyable, searchForest, renderRows, isContainerType, arrow,
 } from "./copy-from-desks-tree.js";
 import { installCopyDrag } from "./copy-from-desks-dnd.js";
+
+const isPdfsSpecialId = (id) =>
+  id === "__pdfs__" || String(id || "").startsWith("__pdfs__:");
+
+/** The desk's one real (non-alias) node for a PDF, if it has one. */
+function findRealPdfInDesk(nodes, fileId) {
+  for (const n of nodes || []) {
+    if (n?.type === "pdf" && !n.pdfAlias && n.fileId === fileId) return n;
+    const deeper = findRealPdfInDesk(n?.children, fileId);
+    if (deeper) return deeper;
+  }
+  return null;
+}
+
+function projectHasPdf(project, fileId) {
+  const folder = (project.children || []).find(isProjectPdfFolder);
+  return !!folder?.children?.some((c) => c?.type === "pdf" && c.fileId === fileId);
+}
 
 let _openEl = null;
 
@@ -40,6 +59,7 @@ export function openCopyFromDesksModal(state) {
     selection: [],
     anchor: null,
     plan: [],
+    ghosts: [],   // containers the plan will create (PDFs folders)
     planSeq: 0,
     busy: false,
   };
@@ -89,7 +109,7 @@ export function openCopyFromDesksModal(state) {
     srcList.innerHTML = forest.map((desk) => {
       const open = expanded.has(desk.id);
       return `<div class="cfd-desk-head${open ? " open" : ""}" data-desk-id="${escHtml(desk.id)}">`
-        + `<span class="cfd-arrow${open ? " open" : ""}">${open ? "▾" : "▸"}</span>`
+        + arrow(open)
         + `<span class="cfd-desk-name">${escHtml(desk.name)}</span></div>`
         + (open ? renderRows(desk.children, { side: "src", expanded, parentId: desk.id, selection, depth: 1 }) : "");
     }).join("") || `<div class="cfd-empty">No matches</div>`;
@@ -101,7 +121,7 @@ export function openCopyFromDesksModal(state) {
     dstList.innerHTML = `<div class="cfd-row cfd-desk-root" data-node-id="${escHtml(active.id)}"`
       + ` data-container="1" data-child-count="${children.length}" data-depth="-1" data-index="0" style="--cfd-depth:0">`
       + `<span class="cfd-arrow-spacer"></span><span class="cfd-name">${escHtml(active.name || "This desk")}</span></div>`
-      + renderRows(children, { side: "dst", expanded: ui.dstOpen, parentId: active.id, plan: ui.plan, depth: 0 });
+      + renderRows(children, { side: "dst", expanded: ui.dstOpen, parentId: active.id, plan: ui.plan, ghosts: ui.ghosts, depth: 0 });
     const n = ui.plan.length;
     statusEl.textContent = n
       ? `${n} file${n === 1 ? "" : "s"} planned`
@@ -146,6 +166,7 @@ export function openCopyFromDesksModal(state) {
     if (remove) {
       const planId = remove.closest(".cfd-planned")?.dataset.planId;
       ui.plan = ui.plan.filter((p) => p.planId !== planId);
+      pruneGhosts();
       renderDst();
       return;
     }
@@ -190,15 +211,17 @@ export function openCopyFromDesksModal(state) {
     for (const nodeId of ids) {
       const node = findNode(state.fileTree, nodeId);
       if (!node) continue;
+      // A PDF never lands where it was dropped — see planPdfDrop.
+      if (node.type === "pdf") { planPdfDrop(node, site); continue; }
       if (ui.plan.some((p) => p.srcNodeId === nodeId && p.parentId === site.parentId)) continue;
-      ui.plan.push({
-        planId: `plan-${++ui.planSeq}`,
+      pushPlan({
         srcNodeId: nodeId,
         parentId: site.parentId,
         index,
         displayIndex,
         type: node.type,
         name: node.name || "Untitled",
+        fileId: node.fileId || null,
         deskName: deskNameFor(nodeId),
       });
     }
@@ -207,6 +230,103 @@ export function openCopyFromDesksModal(state) {
     for (const id of ancestorsOf(site.parentId)) ui.dstOpen.add(id);
     ui.selection = [];
     render();
+  }
+
+  function pushPlan(entry) {
+    ui.plan.push({ planId: `plan-${++ui.planSeq}`, ...entry });
+  }
+
+  /**
+   * PDFs are registry entries with a per-device binary cache, so a copy
+   * doesn't go where it's dropped: the desk's PDFs folder holds the one
+   * real node, and dropping onto a project files a *reference* in that
+   * project's own PDFs folder. Either folder may not exist yet — then
+   * the plan grows a ghost folder so the user sees it appear.
+   */
+  function planPdfDrop(node, site) {
+    if (!node.fileId) return;
+    const already = findRealPdfInDesk(active.children, node.fileId);
+    const planned = (pred) => ui.plan.some(pred);
+    if (!already && !planned((p) => p.fileId === node.fileId && !p.alias)) {
+      const dest = deskPdfsSite();
+      pushPlan({ ...dest, srcNodeId: node.id, type: "pdf", name: node.name || "Untitled",
+        fileId: node.fileId, deskName: deskNameFor(node.id) });
+      expandTo(dest.parentId);
+    }
+    const project = nearestProjectFor(site.parentId);
+    if (!project) return;
+    if (projectHasPdf(project, node.fileId)) return;
+    if (planned((p) => p.fileId === node.fileId && p.alias && p.projectId === project.id)) return;
+    const dest = projectPdfsSite(project);
+    pushPlan({ ...dest, srcNodeId: node.id, type: "pdf", alias: true, projectId: project.id,
+      name: node.name || "Untitled", fileId: node.fileId, deskName: deskNameFor(node.id) });
+    expandTo(dest.parentId);
+  }
+
+  /** Slot for the desk's own PDFs folder, minting a ghost if it has none. */
+  function deskPdfsSite() {
+    const folder = (active.children || []).find((c) => isPdfsSpecialId(c.id));
+    if (folder) return endOfContainer(folder);
+    return ghostSite(active.id, "deskPdfs");
+  }
+
+  function projectPdfsSite(project) {
+    const folder = (project.children || []).find(isProjectPdfFolder);
+    if (folder) return endOfContainer(folder);
+    return ghostSite(project.id, "projectPdfs");
+  }
+
+  function endOfContainer(node) {
+    const real = node.children || [];
+    const planned = ui.plan.filter((p) => p.parentId === node.id).length;
+    return { parentId: node.id, index: real.length, displayIndex: filterCopyable(real).length + planned };
+  }
+
+  /** Find-or-create the planned "PDFs" folder for `parentId`. Planned
+   *  containers aren't real slots, so index/displayIndex just order the
+   *  ghost's own contents. */
+  function ghostSite(parentId, kind) {
+    let ghost = ui.ghosts.find((g) => g.parentId === parentId && g.kind === kind);
+    if (!ghost) {
+      ghost = { id: `ghost-${++ui.planSeq}`, parentId, kind, name: "PDFs" };
+      ui.ghosts.push(ghost);
+    }
+    const n = ui.plan.filter((p) => p.parentId === ghost.id).length;
+    return { parentId: ghost.id, index: n, displayIndex: n };
+  }
+
+  /** Open the destination (and everything above it) so a planned row
+   *  can't land inside a collapsed container the user never sees. */
+  function expandTo(parentId) {
+    const ghost = ui.ghosts.find((g) => g.id === parentId);
+    const realId = ghost ? ghost.parentId : parentId;
+    ui.dstOpen.add(realId);
+    for (const id of ancestorsOf(realId)) ui.dstOpen.add(id);
+  }
+
+  /** Drop the ghost folders whose planned contents have all been removed. */
+  function pruneGhosts() {
+    let changed = true;
+    while (changed) {
+      changed = false;
+      ui.ghosts = ui.ghosts.filter((g) => {
+        const used = ui.plan.some((p) => p.parentId === g.id) || ui.ghosts.some((o) => o.parentId === g.id);
+        if (!used) changed = true;
+        return used;
+      });
+    }
+  }
+
+  /** Nearest real project at or above `nodeId` — the thing a dropped PDF
+   *  would become a reference in. */
+  function nearestProjectFor(nodeId) {
+    const self = findNode(state.fileTree, nodeId);
+    if (isRealProjectNode(self)) return self;
+    for (const id of [...ancestorsOf(nodeId)].reverse()) {
+      const n = findNode(state.fileTree, id);
+      if (isRealProjectNode(n)) return n;
+    }
+    return null;
   }
 
   /** Translate a slot in the displayed (filtered) child list into the
