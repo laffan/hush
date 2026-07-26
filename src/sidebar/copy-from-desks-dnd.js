@@ -6,7 +6,7 @@
  * dragged batch is appended to the plan at the resolved slot, and the
  * destination column re-renders with grey ghost rows sitting exactly
  * where the files will land. The actual work happens later, when the
- * user presses Move Files.
+ * user presses Copy Files.
  *
  * Drop resolution mirrors the sidebar's sortable list: the top / bottom
  * quarter of a container row means "beside it", the middle means

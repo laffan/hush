@@ -9,7 +9,7 @@
  * Right column: the active desk's file browser, acting as the drop
  * surface. Dragging a batch across plans the copy — the files appear in
  * grey exactly where they'll land — and nothing touches the tree until
- * the **Move Files** button at the bottom runs the plan.
+ * the **Copy Files** button at the bottom runs the plan.
  *
  * Rendering + drag live in the sibling modules (`-tree.js`, `-dnd.js`);
  * the copy itself in `-copy.js`.
@@ -84,7 +84,7 @@ export function openCopyFromDesksModal(state) {
         <div class="cfd-status"></div>
         <div class="cfd-footer-actions">
           <button type="button" class="cfd-btn cfd-cancel">Cancel</button>
-          <button type="button" class="cfd-btn cfd-confirm" disabled>Move Files</button>
+          <button type="button" class="cfd-btn cfd-confirm" disabled>Copy Files</button>
         </div>
       </div>
     </div>`;
@@ -424,7 +424,7 @@ export function openCopyFromDesksModal(state) {
       console.error("Copy from desks failed:", err);
       ui.busy = false;
       confirmBtn.textContent = "Copy failed";
-      setTimeout(() => { confirmBtn.textContent = "Move Files"; confirmBtn.disabled = false; }, 2000);
+      setTimeout(() => { confirmBtn.textContent = "Copy Files"; confirmBtn.disabled = false; }, 2000);
     }
   });
 
