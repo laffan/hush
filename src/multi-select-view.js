@@ -15,6 +15,7 @@
  */
 import { typeIcons, escHtml, showDeleteConfirmModal, showPromptModal } from "./sidebar/files-panel-shared.js";
 import { findNodeByFileId, findAncestorIds, findNode, removeNode, normalizeProjectChildren, enforceSpecialPositions } from "./state/tree-helpers.js";
+import { newProjectSite, placeNodeAt } from "./sidebar/multi-select-project-site.js";
 import { deleteTreeNode } from "./state/state-tree.js";
 import { createColorPalette } from "./sidebar/files-panel-row-menu.js";
 
@@ -248,6 +249,10 @@ async function runBatchAction(action, rows) {
     // folder — the real node stays in the desk's PDFs folder.
     const movable = rows.filter((r) => r.type === "document" || r.type === "notebook");
     const pdfRows = rows.filter((r) => r.type === "pdf");
+    // Group the batch where it already lives: same container, same slot
+    // as the first selected row — resolved before anything moves so the
+    // indices still describe the tree the user was looking at.
+    const site = newProjectSite(_state.fileTree, rows.map((r) => r.nodeId));
     showPromptModal({
       title: "New project",
       label: "Name",
@@ -256,10 +261,12 @@ async function runBatchAction(action, rows) {
       confirmLabel: "Create",
       onConfirm: async (name) => {
         _state.clearSelectedDocs();
-        const proj = await _state.createProject(name, null);
+        const proj = await _state.createProject(name, site.parentId);
         if (!proj) return;
         const target = findNode(_state.fileTree, proj.id);
         if (!target) return;
+        // `create_project` appends; slot it back where the batch was.
+        placeNodeAt(_state.fileTree, site.parentId, proj.id, site.index);
         target.children = target.children || [];
         for (const r of movable) {
           const removed = removeNode(_state.fileTree, r.nodeId);

@@ -1,0 +1,248 @@
+/* ===== Copy Files from other Desks — two-column planning modal =====
+   Left: every other desk's tree (searchable, multi-selectable).
+   Right: the active desk, acting as the drop surface, with planned
+   copies drawn in grey where they'll land. */
+
+.cfd-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 599;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cfd-modal {
+  width: min(920px, 92vw);
+  height: min(640px, 86vh);
+  background: var(--panel-bg);
+  color: var(--fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 600;
+}
+
+.cfd-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cfd-columns {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.cfd-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.3));
+  border-radius: 8px;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.cfd-col-head {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+  padding: 4px 4px 0;
+}
+
+.cfd-search {
+  background: transparent;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.3));
+  border-radius: 5px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  outline: none;
+}
+.cfd-search:focus {
+  border-color: color-mix(in srgb, var(--fg) 45%, transparent);
+}
+
+.cfd-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  position: relative;
+  padding-bottom: 24px; /* a landing strip for "drop at the end" */
+}
+
+/* ----- rows ----- */
+.cfd-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 4px;
+  padding-left: calc(4px + var(--cfd-depth, 0) * 14px);
+  border-radius: 4px;
+  cursor: default;
+  user-select: none;
+  white-space: nowrap;
+}
+.cfd-src-list .cfd-row { cursor: grab; }
+.cfd-row:hover { background: rgba(128, 128, 128, 0.1); }
+.cfd-row.selected { background: rgba(70, 130, 220, 0.2); }
+
+.cfd-desk-root {
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.cfd-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  opacity: 0.8;
+}
+.cfd-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+.cfd-icon svg.notebook-icon circle { fill: currentColor; stroke: none; }
+.cfd-icon svg polygon { fill: none; }
+
+.cfd-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cfd-arrow,
+.cfd-arrow-spacer {
+  flex: 0 0 auto;
+  width: 10px;
+  font-size: 9px;
+  opacity: 0.6;
+  text-align: center;
+  cursor: pointer;
+}
+.cfd-arrow-spacer { cursor: default; }
+
+.cfd-desk-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 4px;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0.85;
+}
+.cfd-desk-head:hover { background: rgba(128, 128, 128, 0.1); }
+
+.cfd-empty {
+  padding: 10px 6px;
+  opacity: 0.55;
+  font-size: 12px;
+}
+
+/* ----- planned (not yet copied) rows ----- */
+.cfd-planned {
+  color: color-mix(in srgb, var(--fg) 55%, transparent);
+  font-style: italic;
+}
+.cfd-planned .cfd-icon { opacity: 0.5; }
+.cfd-planned-from {
+  font-size: 10px;
+  opacity: 0.6;
+  font-style: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cfd-planned-remove {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  opacity: 0.5;
+}
+.cfd-planned-remove:hover { opacity: 1; }
+
+/* ----- drop feedback ----- */
+.cfd-drop-line {
+  height: 2px;
+  margin: -1px 0;
+  background: rgba(70, 130, 220, 0.9);
+  border-radius: 1px;
+  pointer-events: none;
+}
+.cfd-drop-into {
+  outline: 1px solid rgba(70, 130, 220, 0.9);
+  outline-offset: -1px;
+  background: rgba(70, 130, 220, 0.12);
+}
+
+.cfd-drag-ghost {
+  position: fixed;
+  z-index: 900;
+  pointer-events: none;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.4));
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: system-ui, sans-serif;
+  color: var(--fg);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+}
+body.cfd-dragging { cursor: grabbing; }
+body.cfd-dragging .cfd-row { cursor: grabbing; }
+
+/* ----- footer ----- */
+.cfd-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cfd-status {
+  font-size: 11px;
+  opacity: 0.65;
+}
+.cfd-footer-actions {
+  display: flex;
+  gap: 6px;
+}
+.cfd-btn {
+  background: transparent;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
+  color: var(--fg);
+  border-radius: 5px;
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.cfd-btn:hover:not(:disabled) { background: rgba(128, 128, 128, 0.12); }
+.cfd-btn:disabled { opacity: 0.4; cursor: default; }
+.cfd-confirm:not(:disabled) {
+  border-color: rgba(70, 130, 220, 0.6);
+}
