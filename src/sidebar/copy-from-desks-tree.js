@@ -111,7 +111,10 @@ export function renderRows(nodes, opts) {
   let realIndex = 0;
   for (const entry of entries) {
     if (entry.kind === "plan") {
-      html += plannedRow(entry.plan, depth, anchor?.parentId ?? parentId, anchor?.index ?? realIndex);
+      html += plannedRow(entry.plan, depth, opts, {
+        parentId: anchor?.parentId ?? parentId,
+        index: anchor?.index ?? realIndex,
+      });
       continue;
     }
     const node = entry.node;
@@ -179,16 +182,51 @@ function interleavePlan(nodes, parentId, plan) {
   return out;
 }
 
-/** A ghost row carries the same parent / index attributes as a real one
- *  so a drop landing on it resolves to the slot it's standing in. */
-function plannedRow(plan, depth, parentId, index) {
-  return `<div class="cfd-row cfd-planned" data-plan-id="${escHtml(plan.planId)}"`
-    + ` data-parent-id="${escHtml(parentId || "")}" data-index="${index}" data-container="0" data-depth="${depth}"`
+/**
+ * A ghost row carries the same parent / index attributes as a real one
+ * so a drop landing on it resolves to the slot it's standing in.
+ *
+ * A planned Folder or Project brings its whole subtree, so the row gets
+ * a disclosure arrow over `plan.preview` (the source's copyable
+ * children, snapshotted when the drop was planned) — expanding it shows
+ * exactly what's coming across, keyed on the plan id so two drops of the
+ * same folder open independently.
+ */
+function plannedRow(plan, depth, opts, anchor) {
+  const kids = plan.preview || [];
+  const open = kids.length > 0 && !!opts.planOpen?.has(plan.planId);
+  let html = `<div class="cfd-row cfd-planned" data-plan-id="${escHtml(plan.planId)}"`
+    + ` data-parent-id="${escHtml(anchor.parentId || "")}" data-index="${anchor.index}" data-container="0" data-depth="${depth}"`
     + ` style="--cfd-depth:${depth}">`
-    + `<span class="cfd-arrow-spacer"></span>`
+    + (kids.length ? arrow(open) : `<span class="cfd-arrow-spacer"></span>`)
     + `<span class="cfd-icon">${typeIcons[plan.type] || typeIcons.document}</span>`
     + `<span class="cfd-name">${escHtml(plan.name || "Untitled")}</span>`
     + `<span class="cfd-planned-from">${escHtml(plan.alias ? "reference" : (plan.deskName || ""))}</span>`
     + `<button type="button" class="cfd-planned-remove" title="Remove from plan">×</button>`
     + `</div>`;
+  if (open) html += previewRows(kids, depth + 1, opts, `${plan.planId}/`, anchor);
+  return html;
+}
+
+/** The contents riding along inside a planned container. Read-only —
+ *  no remove button (they come or go with their parent) — and every row
+ *  inherits the parent's drop anchor so a drop on one lands in the real
+ *  container the planned row sits in. */
+function previewRows(nodes, depth, opts, keyPrefix, anchor) {
+  let html = "";
+  for (const node of nodes) {
+    const key = keyPrefix + node.id;
+    const kids = node.children || [];
+    const container = isContainerType(node.type) && kids.length > 0;
+    const open = container && !!opts.planOpen?.has(key);
+    html += `<div class="cfd-row cfd-planned cfd-preview" data-preview-key="${escHtml(key)}"`
+      + ` data-parent-id="${escHtml(anchor.parentId || "")}" data-index="${anchor.index}" data-container="0" data-depth="${depth}"`
+      + ` style="--cfd-depth:${depth}">`
+      + (container ? arrow(open) : `<span class="cfd-arrow-spacer"></span>`)
+      + `<span class="cfd-icon">${iconFor(node)}</span>`
+      + `<span class="cfd-name">${escHtml(node.name || "Untitled")}</span>`
+      + `</div>`;
+    if (open) html += previewRows(kids, depth + 1, opts, `${key}/`, anchor);
+  }
+  return html;
 }

@@ -16,7 +16,7 @@
  */
 
 import { escHtml } from "./files-panel-shared.js";
-import { findNode, isRealProjectNode } from "../state/tree-helpers.js";
+import { findNode, isRealProjectNode, normalizeProjectChildren } from "../state/tree-helpers.js";
 import { isProjectPdfFolder } from "../state/state-pdf-aliases.js";
 import {
   buildSourceForest, filterCopyable, searchForest, renderRows, isContainerType, arrow,
@@ -60,6 +60,7 @@ export function openCopyFromDesksModal(state) {
     anchor: null,
     plan: [],
     ghosts: [],   // containers the plan will create (PDFs folders)
+    planOpen: new Set(),   // expanded planned containers / preview rows
     planSeq: 0,
     busy: false,
   };
@@ -121,10 +122,11 @@ export function openCopyFromDesksModal(state) {
     dstList.innerHTML = `<div class="cfd-row cfd-desk-root" data-node-id="${escHtml(active.id)}"`
       + ` data-container="1" data-child-count="${children.length}" data-depth="-1" data-index="0" style="--cfd-depth:0">`
       + `<span class="cfd-arrow-spacer"></span><span class="cfd-name">${escHtml(active.name || "This desk")}</span></div>`
-      + renderRows(children, { side: "dst", expanded: ui.dstOpen, parentId: active.id, plan: ui.plan, ghosts: ui.ghosts, depth: 0 });
+      + renderRows(children, { side: "dst", expanded: ui.dstOpen, parentId: active.id, plan: ui.plan, ghosts: ui.ghosts, planOpen: ui.planOpen, depth: 0 });
     const n = ui.plan.length;
     statusEl.textContent = n
-      ? `${n} file${n === 1 ? "" : "s"} planned`
+      // "item", not "file" — a planned project carries a whole subtree.
+      ? `${n} item${n === 1 ? "" : "s"} planned`
       : "Drag files from the left onto this desk.";
     confirmBtn.disabled = n === 0 || ui.busy;
   }
@@ -171,6 +173,13 @@ export function openCopyFromDesksModal(state) {
       return;
     }
     const row = e.target.closest(".cfd-row");
+    // Planned rows twirl open over their snapshotted contents rather
+    // than over the live tree, so they key off the plan / preview id.
+    if (row?.classList.contains("cfd-planned") && e.target.closest(".cfd-arrow")) {
+      const key = row.dataset.previewKey || row.dataset.planId;
+      if (key) { toggle(ui.planOpen, key); renderDst(); }
+      return;
+    }
     if (row && !row.classList.contains("cfd-desk-root")
       && row.dataset.container === "1" && row.dataset.nodeId) {
       toggle(ui.dstOpen, row.dataset.nodeId);
@@ -223,6 +232,8 @@ export function openCopyFromDesksModal(state) {
         name: node.name || "Untitled",
         fileId: node.fileId || null,
         deskName: deskNameFor(nodeId),
+        // Snapshot of what rides along, for the row's disclosure arrow.
+        preview: previewOf(node),
       });
     }
     // Keep the drop target visible even if it was collapsed.
@@ -230,6 +241,17 @@ export function openCopyFromDesksModal(state) {
     for (const id of ancestorsOf(site.parentId)) ui.dstOpen.add(id);
     ui.selection = [];
     render();
+  }
+
+  /** What a planned container will actually contain: its copyable
+   *  subtree, run through the same project ordering the copy applies (so
+   *  the preview doesn't show notebooks above docs when the result won't).
+   *  `filterCopyable` clones, so normalizing here can't touch the tree. */
+  function previewOf(node) {
+    if (!isContainerType(node.type)) return [];
+    const wrapper = { ...node, children: filterCopyable(node.children) };
+    normalizeProjectChildren([wrapper]);
+    return wrapper.children;
   }
 
   function pushPlan(entry) {
@@ -396,7 +418,7 @@ export function openCopyFromDesksModal(state) {
       const { runCopyPlan } = await import("./copy-from-desks-copy.js");
       const { copied, skipped } = await runCopyPlan(state, ui.plan);
       if (skipped) console.warn(`[copy-from-desks] ${skipped} item(s) skipped`);
-      statusEl.textContent = `Copied ${copied} file${copied === 1 ? "" : "s"}`;
+      statusEl.textContent = `Copied ${copied} item${copied === 1 ? "" : "s"}`;
       close();
     } catch (err) {
       console.error("Copy from desks failed:", err);
