@@ -20,6 +20,8 @@
  * persistence.
  */
 
+import { pushDeskRecentFile } from "./recent-files.js";
+
 const SPECIAL_KINDS = ["__inbox__", "__images__", "__pdfs__", "__archive__", "__trash__"];
 
 /** Fire-and-forget write-through of a desk's portable meta (style,
@@ -205,9 +207,20 @@ export async function createDesk(state, name = "Untitled desk") {
   return id;
 }
 
-export async function renameDesk(state, deskId, newName) {
+/** Rename a desk. **Local desks take their name from their folder**, so
+ *  user-driven renames are refused for them — the folder on disk is the
+ *  source of truth and Hush never renames a directory the user owns.
+ *  The local-desk plumbing itself (make-local / adopt) passes
+ *  `{ force: true }` to write the folder's name in. */
+export async function renameDesk(state, deskId, newName, { force = false } = {}) {
   const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
   if (!desk) return;
+  if (!force && state.deskRoots?.[deskId]) {
+    throw Object.assign(
+      new Error("A local desk takes its name from its folder — rename the folder instead."),
+      { code: "desk-rename-local" },
+    );
+  }
   const oldName = desk.name;
   if (!newName || newName === oldName) return;
   desk.name = newName;
@@ -342,18 +355,13 @@ export function getDeskLastFile(state, deskId) {
  *  desks.json so other devices catch up. No-ops when there's no active
  *  desk yet (e.g. brand-new install before the migration runs). */
 export async function recordActiveDeskLastFile(state, fileId, type) {
-  // Update the global MRU first (per-device, not synced) so the
-  // Cmd+O picker can sort by recency even when the user hops between
-  // desks. Capped so settings.json doesn't grow unbounded.
-  if (fileId) {
-    const prev = Array.isArray(state.settings?.recentFileIds) ? state.settings.recentFileIds : [];
-    const next = [fileId, ...prev.filter((id) => id !== fileId)].slice(0, 50);
-    if (next.length !== prev.length || next[0] !== prev[0]) {
-      await state.updateSettings({ recentFileIds: next });
-    }
-  }
-
   const desk = getActiveDesk(state);
+  // Update this desk's MRU first (per-device, not synced) so the Cmd+O
+  // picker and the Recent Files panel can sort by recency. The list is
+  // per-desk, so hopping between desks doesn't evict either one's
+  // history; each is capped so settings.json can't grow unbounded.
+  if (fileId && desk) await pushDeskRecentFile(state, desk.id, fileId);
+
   if (!desk) return;
   const meta = { ...(state.settings?.desksMeta || {}) };
   const existing = meta[desk.id] || {};

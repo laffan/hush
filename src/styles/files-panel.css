@@ -675,6 +675,47 @@
   background: rgba(220, 50, 50, 0.25) !important;
 }
 
+/* Choice modal — a stack of full-width option buttons (label over a
+   line of explanatory detail) above the lone Cancel row. */
+.tree-choice-modal-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.tree-choice-modal-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  font-family: system-ui, sans-serif;
+}
+
+.tree-choice-modal-option:hover,
+.tree-choice-modal-option:focus-visible {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.tree-choice-modal-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tree-choice-modal-detail {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--sidebar-fg);
+  opacity: 0.85;
+}
+
 /* Prompt-modal confirm shares the layout slot with the delete-confirm
    button but is non-destructive — strip the red tint. */
 .tree-delete-modal-btns .tree-prompt-modal-confirm {

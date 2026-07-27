@@ -46,6 +46,24 @@ async function pickFolder(title) {
   return picked ? { path: picked, bookmark: null } : null;
 }
 
+/** Last path segment of a picked folder — a local desk's name. Handles
+ *  both separators and tolerates a trailing slash. */
+export function folderName(path) {
+  const parts = String(path || "").replace(/[\\/]+$/, "").split(/[\\/]/);
+  return parts[parts.length - 1] || "Desk";
+}
+
+/** Point a desk's name at its folder. Local desks are named by the
+ *  folder they live in, so this is the only writer of a local desk's
+ *  name — hence `force`, which steps past renameDesk's local guard. */
+async function adoptFolderName(state, deskId, path) {
+  try {
+    await state.renameDesk(deskId, folderName(path), { force: true });
+  } catch (e) {
+    console.warn("naming desk after its folder failed:", e);
+  }
+}
+
 /** Refresh `state.deskRoots` from Rust and notify listeners. */
 export async function refreshDeskRoots(state) {
   if (!IS_TAURI) { state.deskRoots = {}; return {}; }
@@ -83,10 +101,43 @@ export async function makeDeskLocal(state, deskId) {
     return false;
   }
   await refreshDeskRoots(state);
+  // The desk now lives in the user's folder, so the folder names it.
+  await adoptFolderName(state, deskId, picked.path);
   if (isIOSTauri()) {
     try { await plugin("start_watch", { path: picked.path }); } catch (_) {}
   }
   return true;
+}
+
+/** Create a brand-new desk that lives in a folder the user picks. The
+ *  desk is created internally first (Rust's `desk_make_local` moves an
+ *  *existing* desk folder), then moved out; a failed move rolls the
+ *  desk back so a cancelled/rejected pick leaves nothing behind.
+ *  Returns the new desk id, or null. */
+export async function createLocalDesk(state) {
+  if (!IS_TAURI) return null;
+  const picked = await pickFolder("Choose an empty folder for the new desk");
+  if (!picked) return null;
+  const name = folderName(picked.path);
+  const deskId = await state.createDesk(name);
+  if (!deskId) return null;
+  try {
+    await invoke("desk_make_local", { deskId, targetPath: picked.path, bookmark: picked.bookmark });
+  } catch (e) {
+    try { await state.deleteDesk(deskId); } catch (_) { /* leave it internal */ }
+    window.alert(
+      `Couldn't put the desk in that folder:\n${e}\n\n`
+      + "Pick an empty folder. To open a folder that already holds a desk, "
+      + 'use "Open Desk Folder…" instead.',
+    );
+    return null;
+  }
+  await refreshDeskRoots(state);
+  if (isIOSTauri()) {
+    try { await plugin("start_watch", { path: picked.path }); } catch (_) {}
+  }
+  await state.setActiveDesk(deskId);
+  return deskId;
 }
 
 /** Move a local desk's folder back into app data. */
@@ -122,13 +173,17 @@ export async function adoptDeskFolder(state) {
   await refreshDeskRoots(state);
   await reloadTree(state);
   // Mirror the desk into the settings registry so the switcher, pickers,
-  // and per-desk meta all see it.
+  // and per-desk meta all see it. A local desk is named by its folder,
+  // so the adopted name comes from the picked path rather than whatever
+  // the producing install happened to call it.
+  const name = folderName(picked.path);
   const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
   if (desk && !(state.settings.desks || []).some((d) => d.id === deskId)) {
-    const desks = [...(state.settings.desks || []), { id: deskId, name: desk.name, createdAt: desk.createdAt }];
+    const desks = [...(state.settings.desks || []), { id: deskId, name, createdAt: desk.createdAt }];
     const meta = { ...(state.settings.desksMeta || {}), [deskId]: { globalStyleId: null } };
     await state.updateSettings({ desks, desksMeta: meta });
   }
+  await adoptFolderName(state, deskId, picked.path);
   // The adopted .hushdesk carries the desk's portable meta (style
   // choice, last file, stickies) — fold it in over the null seed.
   try {

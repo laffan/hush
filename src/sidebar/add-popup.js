@@ -74,17 +74,8 @@ export function mountAddPopup(state, anchorEl) {
     } else if (action === "new-project") {
       await state.createProject("New Project");
     } else if (action === "new-desk") {
-      showPromptModal({
-        title: "New desk",
-        label: "Name",
-        placeholder: "Untitled desk",
-        initialValue: "Untitled desk",
-        confirmLabel: "Create",
-        onConfirm: async (name) => {
-          const id = await state.createDesk(name);
-          await state.setActiveDesk(id);
-        },
-      });
+      const { startNewDeskFlow } = await import("./new-desk-flow.js");
+      await startNewDeskFlow(state);
     } else if (action === "new-local-folder") {
       const { addLocalSyncFolder } = await import("../sync/local-sync.js");
       // Stamp the new mount with the currently active desk. Rust

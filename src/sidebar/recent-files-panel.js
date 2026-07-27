@@ -1,15 +1,23 @@
 /**
  * Recent Files panel — sidebar block above the footer that lists the 50
- * most-recently-opened files. Toggled via Settings > General > Show
- * Recent Files (or the command palette Show/Hide entries). The panel's
- * height is user-resizable by dragging its top border.
+ * most-recently-opened files **in the active desk**. Toggled via
+ * Settings > General > Show Recent Files (or the command palette
+ * Show/Hide entries). The panel's height is user-resizable by dragging
+ * its top border.
+ *
+ * The list is desk-scoped on both ends: rows come from the active desk's
+ * own MRU (`settings.recentFileIdsByDesk`, see state/recent-files.js) and
+ * each id is resolved against that desk's subtree, so a file that has
+ * since moved to another desk drops out rather than opening across the
+ * switcher.
  *
  * Each row shows the file's type icon + name. Hover surfaces two minimal
- * icons: remove (drops the file from `recentFileIds`) and flag (toggles
+ * icons: remove (drops the file from the desk's MRU) and flag (toggles
  * the tree node's `flagged` state). No dropdown menu.
  */
 
 import { findNodeByFileId } from "../state/tree-helpers.js";
+import { getDeskRecentFileIds, setDeskRecentFileIds } from "../state/recent-files.js";
 import { typeIcons } from "./files-panel-shared.js";
 
 const MIN_HEIGHT = 60;
@@ -66,13 +74,17 @@ export function createRecentFilesPanel(state) {
 
   function render() {
     list.innerHTML = "";
-    const ids = Array.isArray(state.settings?.recentFileIds) ? state.settings.recentFileIds : [];
+    const deskId = state.getActiveDesk?.()?.id || null;
+    // Resolve against the active desk's subtree only — an id that has
+    // wandered to another desk (or been deleted) simply drops out.
+    const scope = activeDeskChildren(state, deskId);
+    const ids = getDeskRecentFileIds(state, deskId);
     let rendered = 0;
     for (const fileId of ids) {
       if (rendered >= 50) break;
-      const node = findNodeByFileId(state.fileTree || [], fileId);
+      const node = findNodeByFileId(scope, fileId);
       if (!node) continue;
-      list.appendChild(buildRow(state, node, fileId, render));
+      list.appendChild(buildRow(state, node, fileId, deskId, render));
       rendered++;
     }
     if (rendered === 0) {
@@ -84,25 +96,39 @@ export function createRecentFilesPanel(state) {
   }
 
   // Repaint on file opens (MRU shifts), settings changes (flagged flips,
-  // remove from list), and tree edits (renames, deletes).
+  // remove from list), tree edits (renames, deletes), and desk switches
+  // (the whole list is desk-scoped, so it swaps wholesale).
   const onChange = () => render();
   state.on("settings-changed", onChange);
   state.on("files-changed", onChange);
   state.on("file-opened", onChange);
   state.on("notebook-open", onChange);
+  state.on("active-desk-changed", onChange);
+  state.on("desks-changed", onChange);
 
   panel._destroy = () => {
     state.off("settings-changed", onChange);
     state.off("files-changed", onChange);
     state.off("file-opened", onChange);
     state.off("notebook-open", onChange);
+    state.off("active-desk-changed", onChange);
+    state.off("desks-changed", onChange);
   };
 
   render();
   return panel;
 }
 
-function buildRow(state, node, fileId, refresh) {
+/** The active desk's children, or the whole tree on a (transient)
+ *  desk-less boot so the panel never blanks out mid-migration. */
+function activeDeskChildren(state, deskId) {
+  const tree = state.fileTree || [];
+  if (!deskId) return tree;
+  const desk = tree.find((n) => n.type === "desk" && n.id === deskId);
+  return desk ? (desk.children || []) : [];
+}
+
+function buildRow(state, node, fileId, deskId, refresh) {
   const row = document.createElement("div");
   row.className = "recent-files-row";
   if (node.flagged) row.classList.add("flagged");
@@ -138,7 +164,7 @@ function buildRow(state, node, fileId, refresh) {
   removeBtn.innerHTML = '<svg viewBox="0 0 16 16"><line x1="4" y1="4" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="12" y1="4" x2="4" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
   removeBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    removeFromRecent(state, fileId);
+    removeFromRecent(state, deskId, fileId);
   });
 
   actions.appendChild(flagBtn);
@@ -161,10 +187,9 @@ function pickIconKey(node) {
   return flagged ? "documentFlagged" : "document";
 }
 
-function removeFromRecent(state, fileId) {
-  const cur = Array.isArray(state.settings?.recentFileIds) ? state.settings.recentFileIds : [];
-  const next = cur.filter((id) => id !== fileId);
-  state.updateSettings({ recentFileIds: next })
+function removeFromRecent(state, deskId, fileId) {
+  const cur = getDeskRecentFileIds(state, deskId);
+  setDeskRecentFileIds(state, deskId, cur.filter((id) => id !== fileId))
     .catch((e) => console.warn("Remove from recent failed:", e));
 }
 

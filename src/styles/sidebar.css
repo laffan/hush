@@ -612,7 +612,12 @@ html.phone .cmd-floating-button.panel-open {
   min-height: 60px;
   border-top: 1px solid var(--panel-border, rgba(128,128,128,0.18));
   position: relative;
-  overflow: hidden;
+  /* Deliberately not `hidden`: the resize handle is pulled 3 px above
+     the panel so it straddles the top border, and clipping to the
+     padding box would put the border itself out of the handle's reach —
+     hovering the visible line would miss it. The list child does its own
+     scrolling, so nothing else overflows here. */
+  overflow: visible;
 }
 
 .recent-files-resizer {
@@ -621,6 +626,14 @@ html.phone .cmd-floating-button.panel-open {
   height: 8px;
   cursor: ns-resize;
   z-index: 2;
+}
+
+/* The panel-wide `#panel-overlay *` crosshair outranks the class rule
+   above on specificity, so the drag handle reasserts ns-resize with an
+   ID prefix — same trick the sidebar grip's col-resize strip uses. */
+#panel-overlay .recent-files-resizer,
+#panel-overlay .recent-files-resizer * {
+  cursor: ns-resize;
 }
 
 .recent-files-header {

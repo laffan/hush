@@ -292,13 +292,18 @@ export function createDefaultSettings() {
     lastFileId: null,
     lastProjectId: null,
     lastStackId: null,
-    // MRU of recently-opened doc/notebook fileIds, most-recent first.
-    // Used to order the Cmd+O picker so the file you were just in
-    // tops the list. Capped at 50; per-device, not synced.
+    // Legacy flat MRU of recently-opened fileIds. Superseded by the
+    // per-desk map below, which seeds itself from this list the first
+    // time a desk is read. Never written any more.
     recentFileIds: [],
+    // Per-desk MRU of recently-opened doc/notebook fileIds, most-recent
+    // first, keyed by desk id. Used to order the Cmd+O picker and fill
+    // the Recent Files panel, both of which are desk-scoped. Each desk's
+    // list is capped at 50; per-device, not synced.
+    recentFileIdsByDesk: {},
     // Sidebar Recent Files panel — when on, the panel mounts above the
-    // bottom footer and lists `recentFileIds`. Height is user-resizable
-    // via the panel's top border.
+    // bottom footer and lists the active desk's recent files. Height is
+    // user-resizable via the panel's top border.
     showRecentFiles: false,
     recentFilesPanelHeight: 150,
     typewriterMode: false,

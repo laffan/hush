@@ -21,6 +21,7 @@ import { sendSelectedToFile } from "./selection-extract.js";
 import { addNotebookAsGutter } from "./project/gutter-commands.js";
 import { typeIcons } from "./sidebar/files-panel-shared.js";
 import { collectFileLeaves, activeDeskSubtree } from "./command-palette-helpers.js";
+import { getDeskRecentFileIds } from "./state/recent-files.js";
 import deskRaw from "./sidebar/sidebar_icons/desk.svg?raw";
 
 /** Pane lands centred on its (x,y) anchor — pre-shift by half the
@@ -160,7 +161,8 @@ export function enterFilePicker(palette, state, placeholder, onPick, { includePr
   let leaves = collectFileLeaves(activeDeskSubtree(state));
   if (!includeProjects) leaves = leaves.filter((f) => f.type !== "project");
   // Sort MRU-first; files not in the MRU keep their tree order behind it.
-  const recents = Array.isArray(state.settings?.recentFileIds) ? state.settings.recentFileIds : [];
+  // The MRU is per-desk, matching the desk-scoped leaf list above.
+  const recents = getDeskRecentFileIds(state, state.getActiveDesk?.()?.id || null);
   const rank = new Map(recents.map((id, i) => [id, i]));
   leaves = leaves.slice().sort((a, b) => (rank.get(a.fileId) ?? Infinity) - (rank.get(b.fileId) ?? Infinity));
   const items = leaves.map((f) => ({

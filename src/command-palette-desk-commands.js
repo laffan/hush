@@ -16,10 +16,13 @@ export function buildDeskCommands({ icons, typeIcons, desktop, ipad, enterDeskPi
       hiddenIf: (s) => !multiDesk(s),
       keepOpen: true,
       action: (s, p) => enterDeskPicker(p, s) },
+    // Forks Internal / Local before anything else — a local desk is
+    // named by the folder it lands in, so the two branches ask for
+    // different things. See sidebar/new-desk-flow.js.
     { id: "desk-new", label: "New desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
       action: async (s) => {
-        const id = await s.createDesk("Untitled desk");
-        if (id) await s.setActiveDesk(id);
+        const { startNewDeskFlow } = await import("./sidebar/new-desk-flow.js");
+        await startNewDeskFlow(s);
       } },
     { id: "desk-send", label: "Send this file to another desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !multiDesk(s) || !currentFileTreeNodeId(s),

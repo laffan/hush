@@ -134,6 +134,57 @@ export function showDeleteConfirmModal(title, message, onConfirm) {
   showConfirmModal({ title, message, confirmLabel: "Delete", onConfirm });
 }
 
+/** Pick-one-of-N modal — a stack of full-width option buttons, each with
+ *  a label and a line of explanatory text, above a lone Cancel. Used when
+ *  a create flow forks before it can ask for anything else (New Desk →
+ *  Internal or Local). `options` is `[{ id, label, detail }]`; the
+ *  chosen `id` comes back through `onPick`. */
+export function showChoiceModal({ title, message = "", options = [], onPick, onCancel }) {
+  document.querySelectorAll(".tree-delete-modal-backdrop").forEach((el) => el.remove());
+  const backdrop = document.createElement("div");
+  backdrop.className = "tree-delete-modal-backdrop";
+  const modal = document.createElement("div");
+  modal.className = "tree-delete-modal";
+  modal.innerHTML = `
+    <div class="tree-delete-modal-title">${escHtml(title)}</div>
+    ${message ? `<pre class="tree-delete-modal-message">${escHtml(message)}</pre>` : ""}
+    <div class="tree-choice-modal-options">
+      ${options.map((o) => `
+        <button class="tree-choice-modal-option" type="button" data-choice="${escAttrValue(o.id)}">
+          <span class="tree-choice-modal-label">${escHtml(o.label)}</span>
+          ${o.detail ? `<span class="tree-choice-modal-detail">${escHtml(o.detail)}</span>` : ""}
+        </button>`).join("")}
+    </div>
+    <div class="tree-delete-modal-btns">
+      <button class="tree-delete-cancel">Cancel</button>
+    </div>`;
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+  const cleanup = () => {
+    backdrop.remove();
+    document.removeEventListener("keydown", onKey, true);
+  };
+  const cancel = () => { cleanup(); onCancel?.(); };
+  function onKey(e) {
+    if (e.key !== "Escape") return;
+    e.preventDefault();
+    cancel();
+  }
+  modal.querySelector(".tree-delete-cancel").addEventListener("click", cancel);
+  modal.querySelectorAll(".tree-choice-modal-option").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      // Tear the modal down *before* handing off — the picked branch
+      // usually opens a modal of its own, and these share a backdrop
+      // class that the next open would otherwise sweep away mid-flight.
+      cleanup();
+      onPick?.(btn.dataset.choice);
+    });
+  });
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) cancel(); });
+  document.addEventListener("keydown", onKey, true);
+  modal.querySelector(".tree-choice-modal-option")?.focus();
+}
+
 /** Single-input prompt modal — used by flows that need a name from the
  *  user before they create a file. Calls `onConfirm(trimmedValue)` with
  *  the input value (never empty — the confirm button stays disabled

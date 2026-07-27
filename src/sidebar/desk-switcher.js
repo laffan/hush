@@ -158,7 +158,11 @@ function deskRowHtml(d, activeId, canDelete, isLocal = false) {
   const localGlyph = isLocal
     ? `<svg viewBox="0 0 16 16" class="desk-switcher-local-glyph" data-tooltip="Local desk"><rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>`
     : "";
-  const pencilBtn = `<button class="desk-switcher-action" type="button" data-action="rename" data-tooltip="Rename">${PENCIL}</button>`;
+  // A local desk is named by its folder, so there's nothing to rename
+  // here — the pencil is dropped rather than shown disabled.
+  const pencilBtn = isLocal
+    ? ""
+    : `<button class="desk-switcher-action" type="button" data-action="rename" data-tooltip="Rename">${PENCIL}</button>`;
   const trashBtn = canDelete
     ? `<button class="desk-switcher-action" type="button" data-action="delete" data-tooltip="Delete">${TRASH}</button>`
     : "";
@@ -194,11 +198,21 @@ async function onPopoverClick(ev, popover) {
   ev.stopPropagation();
   const action = actionEl.dataset.action;
   if (action === "add") {
-    const newId = await _state.createDesk("Untitled desk");
-    await _state.setActiveDesk(newId);
-    // Reopen so the user lands on a row in inline-rename mode.
+    // The Internal / Local fork owns creation now (see new-desk-flow.js).
+    // The popover has to close first — the flow's modal takes over the
+    // screen — and reopens on the way out so the new desk is visible.
     closePopover();
-    setTimeout(() => { openPopover(); requestAnimationFrame(() => beginInlineRename(newId)); }, 0);
+    const { startNewDeskFlow } = await import("./new-desk-flow.js");
+    const newId = await startNewDeskFlow(_state, {
+      // Only an internal desk lands in inline-rename mode; a local desk
+      // is named by its folder and can't be renamed at all.
+      onCreated: (id, kind) => {
+        if (kind !== "internal") return;
+        setTimeout(() => { openPopover(); requestAnimationFrame(() => beginInlineRename(id)); }, 0);
+      },
+    });
+    // Backed out — put the popover back where it was.
+    if (!newId) setTimeout(() => openPopover(), 0);
     return;
   }
   const row = actionEl.closest(".desk-switcher-row");

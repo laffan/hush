@@ -19,10 +19,20 @@ export function handleDeskAction(action, deskId, state) {
   if (action === "set-active-desk") { state.setActiveDesk(deskId); return; }
   const desk = (state.settings.desks || []).find(d => d.id === deskId);
   if (action === "rename-desk") {
+    // Local desks are named by their folder; the menu drops this entry
+    // for them, so reaching here at all means the roots map moved under
+    // us — say so rather than throwing into the void.
+    if (state.deskRoots?.[deskId]) {
+      window.alert("This desk lives in a folder on disk and takes that folder's name. Rename the folder instead.");
+      return;
+    }
     showPromptModal({
       title: "Rename desk", label: "Name", initialValue: desk?.name || "",
       confirmLabel: "Rename",
-      onConfirm: async (name) => { await state.renameDesk(deskId, name); },
+      onConfirm: async (name) => {
+        try { await state.renameDesk(deskId, name); }
+        catch (e) { window.alert(String(e?.message || e)); }
+      },
     });
   } else if (action === "delete-desk") {
     const name = desk?.name || "this desk";
