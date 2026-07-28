@@ -109,37 +109,6 @@ export async function makeDeskLocal(state, deskId) {
   return true;
 }
 
-/** Create a brand-new desk that lives in a folder the user picks. The
- *  desk is created internally first (Rust's `desk_make_local` moves an
- *  *existing* desk folder), then moved out; a failed move rolls the
- *  desk back so a cancelled/rejected pick leaves nothing behind.
- *  Returns the new desk id, or null. */
-export async function createLocalDesk(state) {
-  if (!IS_TAURI) return null;
-  const picked = await pickFolder("Choose an empty folder for the new desk");
-  if (!picked) return null;
-  const name = folderName(picked.path);
-  const deskId = await state.createDesk(name);
-  if (!deskId) return null;
-  try {
-    await invoke("desk_make_local", { deskId, targetPath: picked.path, bookmark: picked.bookmark });
-  } catch (e) {
-    try { await state.deleteDesk(deskId); } catch (_) { /* leave it internal */ }
-    window.alert(
-      `Couldn't put the desk in that folder:\n${e}\n\n`
-      + "Pick an empty folder. To open a folder that already holds a desk, "
-      + 'use "Open Desk Folder…" instead.',
-    );
-    return null;
-  }
-  await refreshDeskRoots(state);
-  if (isIOSTauri()) {
-    try { await plugin("start_watch", { path: picked.path }); } catch (_) {}
-  }
-  await state.setActiveDesk(deskId);
-  return deskId;
-}
-
 /** Move a local desk's folder back into app data. */
 export async function makeDeskInternal(state, deskId) {
   if (!IS_TAURI) return false;
@@ -157,15 +126,22 @@ export async function makeDeskInternal(state, deskId) {
   return true;
 }
 
-/** Pick an existing desk folder (from another install / a synced copy)
- *  and register it as a desk. Returns the adopted desk id or null. */
-export async function adoptDeskFolder(state) {
+/** Pick a folder and open it **as** a desk — the folder itself becomes
+ *  the desk root. A folder another install already made into a desk is
+ *  adopted whole (identity, ordering, version history); any other folder
+ *  is initialised in place, and whatever docs, notebooks and images are
+ *  already sitting in it are absorbed as the desk's contents. Nothing is
+ *  moved or nested. Returns the desk id, or null.
+ *
+ *  Both the **New desk → Local folder…** branch and **Open Folder as
+ *  Desk…** land here; they differ only in the picker's prompt. */
+export async function adoptDeskFolder(state, title = "Open a folder as a desk") {
   if (!IS_TAURI) return null;
-  const picked = await pickFolder("Open an existing desk folder");
+  const picked = await pickFolder(title);
   if (!picked) return null;
   let deskId = null;
   try {
-    deskId = await invoke("desk_adopt_folder", { path: picked.path, bookmark: picked.bookmark });
+    deskId = await invoke("desk_open_folder_as_desk", { path: picked.path, bookmark: picked.bookmark });
   } catch (e) {
     window.alert(`Couldn't open that folder as a desk:\n${e}`);
     return null;
@@ -184,8 +160,10 @@ export async function adoptDeskFolder(state) {
     await state.updateSettings({ desks, desksMeta: meta });
   }
   await adoptFolderName(state, deskId, picked.path);
+  await ensureSpecials(state, deskId);
   // The adopted .hushdesk carries the desk's portable meta (style
-  // choice, last file, stickies) — fold it in over the null seed.
+  // choice, last file, stickies) — fold it in over the null seed. A
+  // folder we just initialised has none, so this is a no-op there.
   try {
     const { pullDeskMeta } = await import("./desk-meta.js");
     await pullDeskMeta(state, deskId);
@@ -196,6 +174,26 @@ export async function adoptDeskFolder(state) {
   state.emit("desks-changed");
   if (deskId) await state.setActiveDesk(deskId);
   return deskId;
+}
+
+/** Create a desk out of a folder the user picks — the New-desk fork's
+ *  Local branch. Same operation as adopting a desk folder; only the
+ *  picker's prompt differs. */
+export function createLocalDesk(state) {
+  return adoptDeskFolder(state, "Choose a folder for the new desk");
+}
+
+/** Safety net for the desk's Inbox / Images / Archive / Trash. Rust
+ *  seeds them when it initialises a folder, and a desk folder from
+ *  another install carries its own, so this normally finds nothing to
+ *  do — it only fires for a folder whose tree.json predates a special. */
+async function ensureSpecials(state, deskId) {
+  const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
+  if (!desk) return;
+  const { ensureDeskSpecials } = await import("../state/state-desks.js");
+  if (ensureDeskSpecials(desk).length === 0) return;
+  await state.saveFileTree();
+  state.emit("files-changed");
 }
 
 /** Reveal a local desk's folder in the OS file manager. */

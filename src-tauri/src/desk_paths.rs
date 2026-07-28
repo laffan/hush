@@ -3,7 +3,45 @@
 
 use crate::TreeNode;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Document extensions Hush recognises but never *writes*. A doc it
+/// created is always `.md`; these only ever arrive by adoption.
+const ADOPTED_DOC_EXTS: [&str; 2] = ["markdown", "txt"];
+
+/// `collect_expected` names every document `.md` — right for a doc Hush
+/// created, wrong for one it *adopted*. Opening a folder as a desk pulls
+/// in whatever `.txt` / `.markdown` files were already there, and
+/// renaming a user's files out from under them on the next tree save is
+/// not ours to do. So where the expected path differs from the file's
+/// current one only by that extension swap, the on-disk extension wins.
+/// Everything else — a real move, a rename of the stem, a doc Hush made
+/// — passes through untouched.
+pub(crate) fn preserve_doc_extensions(
+    new_indexes: &mut HashMap<String, HashMap<String, String>>,
+    old_global: &HashMap<String, (String, String)>,
+) {
+    for (desk_id, files) in new_indexes.iter_mut() {
+        for (id, rel) in files.iter_mut() {
+            let Some((old_desk, old_rel)) = old_global.get(id) else { continue };
+            if old_desk != desk_id {
+                continue;
+            }
+            if let Some(kept) = keep_doc_ext(old_rel, rel) {
+                *rel = kept;
+            }
+        }
+    }
+}
+
+fn keep_doc_ext(old: &str, expected: &str) -> Option<String> {
+    let old_ext = Path::new(old).extension()?.to_str()?.to_ascii_lowercase();
+    let expected_ext = Path::new(expected).extension()?.to_str()?.to_ascii_lowercase();
+    if expected_ext != "md" || !ADOPTED_DOC_EXTS.contains(&old_ext.as_str()) {
+        return None;
+    }
+    Some(format!("{}.{}", expected.strip_suffix(".md")?, old_ext))
+}
 
 /// Walk a desk's children computing each file-backed node's relative path
 /// and the set of expected directories. Sibling filenames are deduped with

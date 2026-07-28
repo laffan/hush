@@ -1,0 +1,441 @@
+//! Unit tests for local desk roots — Make Local / Make Internal, opening
+//! any folder as a desk, and the disk-wins reconcile. Split out of
+//! `desk_store_tests.rs` for the line cap; `use super::*` pulls in that
+//! module's helpers (`node`, `tmp`, `seed_simple_desk`, …) along with
+//! everything `desk_store.rs` itself re-exports into scope.
+
+use super::*;
+
+#[test]
+fn make_local_redirects_everything_and_round_trips() {
+    let dir = tmp();
+    let external = tmp();
+    let target = external.path().join("My Desk");
+    let store = seed_simple_desk(dir.path());
+
+    store.make_desk_local("d1", &target, None).unwrap();
+    // Folder moved wholesale; internal dir gone.
+    assert!(target.join(".hush/tree.json").exists());
+    assert!(target.join("Doc.md").exists());
+    assert!(!dir.path().join("desks/d1").exists());
+
+    // Reads, writes, and tree saves all resolve through the redirect.
+    let (content, _, _) = store.read_by_id("f1").unwrap();
+    assert_eq!(content, "body");
+    store.write_by_id("f1", "edited").unwrap();
+    assert_eq!(fs::read_to_string(target.join("Doc.md")).unwrap(), "edited");
+    let tree = vec![desk_with_id("d1", vec![node("n1", "document", "Renamed", Some("f1"), Vec::new())])];
+    store.save_forest(&tree).unwrap();
+    assert!(target.join("Renamed.md").exists());
+
+    // Back to internal.
+    let internal = store.make_desk_internal("d1").unwrap();
+    assert!(internal.join("Renamed.md").exists());
+    assert!(!target.exists(), "emptied external folder is removed");
+    assert!(store.list_roots().is_empty());
+    let (content, _, _) = store.read_by_id("f1").unwrap();
+    assert_eq!(content, "edited");
+}
+
+#[test]
+fn make_local_refuses_bad_targets() {
+    let dir = tmp();
+    let store = seed_simple_desk(dir.path());
+    // Inside app data.
+    let inside = dir.path().join("nested");
+    assert!(store.make_desk_local("d1", &inside, None).is_err());
+    // Non-empty target.
+    let external = tmp();
+    fs::write(external.path().join("occupied.txt"), "x").unwrap();
+    assert!(store.make_desk_local("d1", external.path(), None).is_err());
+}
+
+#[test]
+fn adopt_registers_a_foreign_desk_folder() {
+    // Build a desk in one install...
+    let install_a = tmp();
+    let store_a = seed_simple_desk(install_a.path());
+    let external = tmp();
+    let target = external.path().join("Shared Desk");
+    store_a.make_desk_local("d1", &target, None).unwrap();
+
+    // ...and adopt it from a second install.
+    let install_b = tmp();
+    let store_b = DeskStore::new(install_b.path());
+    let desk_id = store_b.adopt_desk_folder(&target, None).unwrap();
+    assert_eq!(desk_id, "d1");
+    let forest = store_b.load_forest().unwrap();
+    assert_eq!(forest.len(), 1);
+    assert_eq!(forest[0].name, "Personal");
+    let (content, _, _) = store_b.read_by_id("f1").unwrap();
+    assert_eq!(content, "body");
+    // Double-adopt refuses.
+    assert!(store_b.adopt_desk_folder(&target, None).is_err());
+}
+
+#[test]
+fn opening_a_plain_folder_initialises_it_as_a_desk_in_place() {
+    let install = tmp();
+    let store = DeskStore::new(install.path());
+    let external = tmp();
+    let folder = external.path().join("Novel");
+    fs::create_dir_all(folder.join("Chapters")).unwrap();
+    fs::write(folder.join("Outline.md"), "# Outline").unwrap();
+    fs::write(folder.join("Chapters/One.md"), "chapter one").unwrap();
+    fs::write(folder.join("ignore-me.pages"), "unrecognised").unwrap();
+
+    let desk_id = store.open_folder_as_desk(&folder, None).unwrap();
+
+    // The picked folder *is* the desk root — nothing moved or nested.
+    assert_eq!(store.list_roots().get(&desk_id).map(String::as_str), Some(folder.to_str().unwrap()));
+    assert!(folder.join(".hushdesk").exists());
+    assert!(folder.join(".hush/tree.json").exists());
+    assert!(folder.join("Outline.md").exists());
+    assert!(folder.join("Chapters/One.md").exists());
+
+    let forest = store.load_forest().unwrap();
+    assert_eq!(forest.len(), 1);
+    let desk = &forest[0];
+    assert_eq!(desk.name, "Novel", "desk takes the folder's name");
+    assert_eq!(desk.node_type, "desk");
+    // Specials are seeded with the ids the JS side builds.
+    let ids: Vec<&str> = desk.children.iter().map(|c| c.id.as_str()).collect();
+    for kind in ["__inbox__", "__images__", "__archive__", "__trash__"] {
+        assert!(ids.contains(&format!("{}:{}", kind, desk_id).as_str()), "missing {}", kind);
+    }
+    // The files already in the folder were absorbed.
+    let outline = desk.children.iter().find(|c| c.name == "Outline").expect("Outline absorbed");
+    assert_eq!(outline.node_type, "document");
+    let chapters = desk.children.iter().find(|c| c.name == "Chapters").expect("Chapters absorbed");
+    assert_eq!(chapters.children.len(), 1);
+    assert_eq!(chapters.children[0].name, "One");
+    let (content, _, _) = store.read_by_id(outline.file_id.as_ref().unwrap()).unwrap();
+    assert_eq!(content, "# Outline");
+    // Unrecognised extensions are left alone rather than adopted.
+    assert!(desk.children.iter().all(|c| c.name != "ignore-me"));
+}
+
+#[test]
+fn absorbed_docs_keep_their_own_extension_across_tree_saves() {
+    let install = tmp();
+    let store = DeskStore::new(install.path());
+    let external = tmp();
+    let folder = external.path().join("Notes");
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(folder.join("plain.txt"), "txt body").unwrap();
+    fs::write(folder.join("long.markdown"), "markdown body").unwrap();
+
+    store.open_folder_as_desk(&folder, None).unwrap();
+    let desk = store.load_forest().unwrap().remove(0);
+    let find = |name: &str| {
+        desk.children
+            .iter()
+            .find(|c| c.name == name)
+            .and_then(|c| c.file_id.clone())
+            .unwrap_or_else(|| panic!("{} absorbed", name))
+    };
+    let txt_id = find("plain");
+    let markdown_id = find("long");
+
+    // A plain tree save must not rewrite the user's files to `.md`.
+    store.save_forest(&[desk.clone()]).unwrap();
+    assert!(folder.join("plain.txt").exists(), "txt kept its extension");
+    assert!(folder.join("long.markdown").exists(), "markdown kept its extension");
+    assert!(!folder.join("plain.md").exists());
+    assert_eq!(store.read_by_id(&txt_id).unwrap().0, "txt body");
+    assert_eq!(store.read_by_id(&markdown_id).unwrap().0, "markdown body");
+
+    // Renaming the node still renames the file — stem only.
+    let mut renamed = desk.clone();
+    for child in renamed.children.iter_mut() {
+        if child.file_id.as_deref() == Some(txt_id.as_str()) {
+            child.name = "Renamed".to_string();
+        }
+    }
+    store.save_forest(&[renamed]).unwrap();
+    assert!(folder.join("Renamed.txt").exists());
+    assert!(!folder.join("plain.txt").exists());
+
+    // A doc Hush creates itself is unaffected — still `.md`.
+    let new_id = "fresh-doc";
+    store.stage_new(new_id).unwrap();
+    store.write_by_id(new_id, "fresh").unwrap();
+    let mut with_new = store.load_forest().unwrap().remove(0);
+    with_new
+        .children
+        .push(node("n-fresh", "document", "Fresh", Some(new_id), Vec::new()));
+    store.save_forest(&[with_new]).unwrap();
+    assert!(folder.join("Fresh.md").exists());
+}
+
+#[test]
+fn opening_an_existing_desk_folder_adopts_it_and_refuses_twice() {
+    // A desk produced by one install...
+    let install_a = tmp();
+    let store_a = seed_simple_desk(install_a.path());
+    let external = tmp();
+    let target = external.path().join("Shared Desk");
+    store_a.make_desk_local("d1", &target, None).unwrap();
+
+    // ...opened from a second install keeps its identity (no re-init).
+    let install_b = tmp();
+    let store_b = DeskStore::new(install_b.path());
+    assert_eq!(store_b.open_folder_as_desk(&target, None).unwrap(), "d1");
+    let (content, _, _) = store_b.read_by_id("f1").unwrap();
+    assert_eq!(content, "body");
+    assert!(store_b.open_folder_as_desk(&target, None).is_err(), "already registered");
+}
+
+#[test]
+fn open_folder_as_desk_refuses_bad_folders() {
+    let install = tmp();
+    let store = DeskStore::new(install.path());
+    // Inside app data.
+    let inside = install.path().join("desks").join("nested");
+    fs::create_dir_all(&inside).unwrap();
+    assert!(store.open_folder_as_desk(&inside, None).is_err());
+    // A file, not a folder.
+    let external = tmp();
+    let file = external.path().join("notes.md");
+    fs::write(&file, "x").unwrap();
+    assert!(store.open_folder_as_desk(&file, None).is_err());
+    // Half-initialised: .hushdesk with no .hush/tree.json.
+    let broken = external.path().join("Broken");
+    fs::create_dir_all(&broken).unwrap();
+    fs::write(broken.join(".hushdesk"), "{}").unwrap();
+    assert!(store.open_folder_as_desk(&broken, None).is_err());
+}
+
+#[test]
+fn deleting_a_local_desk_unregisters_without_touching_the_folder() {
+    let dir = tmp();
+    let external = tmp();
+    let target = external.path().join("Desk");
+    let store = seed_simple_desk(dir.path());
+    store.make_desk_local("d1", &target, None).unwrap();
+
+    // Desk vanishes from the tree (deleted) while another desk remains.
+    let tree = vec![node("d2", "desk", "Other", None, Vec::new())];
+    store.save_forest(&tree).unwrap();
+    assert!(target.join("Doc.md").exists(), "user folder untouched");
+    assert!(store.list_roots().is_empty(), "root unregistered");
+}
+
+#[test]
+fn reconcile_from_disk_follows_external_adds_and_removes() {
+    let dir = tmp();
+    let external = tmp();
+    let target = external.path().join("Desk");
+    let store = seed_simple_desk(dir.path());
+    store.make_desk_local("d1", &target, None).unwrap();
+
+    // No-op on an unchanged folder.
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert!(!report.changed());
+
+    // Another app drops files in (root + nested new folder)...
+    fs::write(target.join("From Finder.md"), "external").unwrap();
+    fs::create_dir_all(target.join("Research/Papers")).unwrap();
+    fs::write(target.join("Research/Papers/notes.txt"), "n").unwrap();
+    // ...and deletes the original doc.
+    fs::remove_file(target.join("Doc.md")).unwrap();
+
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!(report.added, 2);
+    assert_eq!(report.removed, 1);
+
+    let forest = store.load_forest().unwrap();
+    let desk = &forest[0];
+    assert!(desk.children.iter().any(|n| n.name == "From Finder"));
+    let research = desk.children.iter().find(|n| n.name == "Research").unwrap();
+    assert_eq!(research.node_type, "folder");
+    assert_eq!(research.children[0].name, "Papers");
+    assert_eq!(research.children[0].children[0].name, "notes");
+    assert!(!desk.children.iter().any(|n| n.name == "Doc"));
+
+    // The adopted files read back through the normal id path.
+    let added = desk.children.iter().find(|n| n.name == "From Finder").unwrap();
+    let (content, _, _) = store.read_by_id(added.file_id.as_ref().unwrap()).unwrap();
+    assert_eq!(content, "external");
+}
+
+#[test]
+fn reconcile_pairs_external_rename_by_content_hash() {
+    let dir = tmp();
+    let external = tmp();
+    let target = external.path().join("Desk");
+    let store = seed_simple_desk(dir.path());
+    store.make_desk_local("d1", &target, None).unwrap();
+    store.reconcile_desk_from_disk("d1").unwrap(); // seeds the hash cache
+
+    fs::rename(target.join("Doc.md"), target.join("Renamed.md")).unwrap();
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!(report.renamed, 1);
+    assert_eq!(report.added, 0);
+    assert_eq!(report.removed, 0);
+
+    // Same fileId — history, panes, recents all survive the rename.
+    let forest = store.load_forest().unwrap();
+    let renamed = forest[0].children.iter().find(|n| n.name == "Renamed").unwrap();
+    assert_eq!(renamed.file_id.as_deref(), Some("f1"));
+    let (content, _, name) = store.read_by_id("f1").unwrap();
+    assert_eq!(content, "body");
+    assert_eq!(name, "Renamed");
+}
+
+#[test]
+fn reconcile_pairs_external_move_into_new_folder() {
+    let dir = tmp();
+    let external = tmp();
+    let target = external.path().join("Desk");
+    let store = seed_simple_desk(dir.path());
+    store.make_desk_local("d1", &target, None).unwrap();
+    store.reconcile_desk_from_disk("d1").unwrap();
+
+    fs::create_dir_all(target.join("Archive")).unwrap();
+    fs::rename(target.join("Doc.md"), target.join("Archive").join("Doc.md")).unwrap();
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!((report.renamed, report.added, report.removed), (1, 0, 0));
+
+    let forest = store.load_forest().unwrap();
+    let archive = forest[0].children.iter().find(|n| n.name == "Archive").unwrap();
+    assert_eq!(archive.node_type, "folder");
+    assert_eq!(archive.children[0].file_id.as_deref(), Some("f1"));
+}
+
+#[test]
+fn rename_pairing_works_from_save_time_hashes() {
+    // No prior reconcile: the hash recorded by write_by_id alone must
+    // be enough to pair a Finder rename that happens right after a save.
+    let dir = tmp();
+    let external = tmp();
+    let target = external.path().join("Desk");
+    let store = seed_simple_desk(dir.path());
+    store.make_desk_local("d1", &target, None).unwrap();
+    store.write_by_id("f1", "updated").unwrap();
+
+    fs::rename(target.join("Doc.md"), target.join("Other.md")).unwrap();
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!(report.renamed, 1);
+    let (content, _, name) = store.read_by_id("f1").unwrap();
+    assert_eq!(content, "updated");
+    assert_eq!(name, "Other");
+}
+
+#[test]
+fn rename_with_changed_content_falls_back_to_remove_plus_add() {
+    let dir = tmp();
+    let external = tmp();
+    let target = external.path().join("Desk");
+    let store = seed_simple_desk(dir.path());
+    store.make_desk_local("d1", &target, None).unwrap();
+    store.reconcile_desk_from_disk("d1").unwrap();
+
+    fs::remove_file(target.join("Doc.md")).unwrap();
+    fs::write(target.join("Different.md"), "not the same bytes").unwrap();
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!((report.renamed, report.added, report.removed), (0, 1, 1));
+    assert!(store.read_by_id("f1").is_err());
+}
+
+#[test]
+fn conflict_sibling_patterns_resolve_to_originals() {
+    use crate::desk_conflicts::original_for_conflict;
+    assert_eq!(
+        original_for_conflict("Doc (nate's conflicted copy 2026-07-13).md").as_deref(),
+        Some("Doc.md")
+    );
+    assert_eq!(
+        original_for_conflict("Doc (conflicted copy).md").as_deref(),
+        Some("Doc.md")
+    );
+    assert_eq!(
+        original_for_conflict("Doc.sync-conflict-20260713-123456-ABCDEF7.md").as_deref(),
+        Some("Doc.md")
+    );
+    // Not conflict markers.
+    assert_eq!(original_for_conflict("Doc (draft).md"), None);
+    assert_eq!(original_for_conflict("Doc 2.md"), None); // iCloud's pattern is too ambiguous
+    assert_eq!(original_for_conflict("Doc.md"), None);
+}
+
+#[test]
+fn newer_conflicted_copy_wins_and_both_sides_are_snapshotted() {
+    let dir = tmp();
+    let external = tmp();
+    let target = external.path().join("Desk");
+    let store = seed_simple_desk(dir.path());
+    store.make_desk_local("d1", &target, None).unwrap();
+    store.reconcile_desk_from_disk("d1").unwrap();
+
+    std::thread::sleep(std::time::Duration::from_millis(15));
+    fs::write(
+        target.join("Doc (nate's conflicted copy 2026-07-13).md"),
+        "the other device's edit",
+    )
+    .unwrap();
+
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!(report.conflicts, 1);
+    assert_eq!((report.added, report.removed, report.renamed), (0, 0, 0));
+
+    // Newer bytes won the real path; the sibling is gone.
+    assert_eq!(store.read_by_id("f1").unwrap().0, "the other device's edit");
+    assert!(!target.join("Doc (nate's conflicted copy 2026-07-13).md").exists());
+
+    // Both sides live on in Versions under the same fileId.
+    let snaps = crate::snapshots::SnapshotManager::new(dir.path());
+    let entries = snaps.get_snapshots("f1").unwrap();
+    let contents: Vec<&str> = entries.iter().map(|e| e.content.as_str()).collect();
+    assert!(contents.contains(&"body"));
+    assert!(contents.contains(&"the other device's edit"));
+}
+
+#[test]
+fn older_conflicted_copy_is_archived_without_touching_the_file() {
+    let dir = tmp();
+    let external = tmp();
+    let target = external.path().join("Desk");
+    let store = seed_simple_desk(dir.path());
+    store.make_desk_local("d1", &target, None).unwrap();
+    store.reconcile_desk_from_disk("d1").unwrap();
+
+    fs::write(
+        target.join("Doc.sync-conflict-20260713-123456-ABCDEF7.md"),
+        "stale fork",
+    )
+    .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(15));
+    store.write_by_id("f1", "fresh local edit").unwrap();
+
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!(report.conflicts, 1);
+    assert_eq!(store.read_by_id("f1").unwrap().0, "fresh local edit");
+    assert!(!target.join("Doc.sync-conflict-20260713-123456-ABCDEF7.md").exists());
+    let snaps = crate::snapshots::SnapshotManager::new(dir.path());
+    let contents: Vec<String> = snaps
+        .get_snapshots("f1")
+        .unwrap()
+        .into_iter()
+        .map(|e| e.content)
+        .collect();
+    assert!(contents.iter().any(|c| c == "stale fork"));
+}
+
+#[test]
+fn conflicted_copy_replaces_a_vanished_original() {
+    let dir = tmp();
+    let external = tmp();
+    let target = external.path().join("Desk");
+    let store = seed_simple_desk(dir.path());
+    store.make_desk_local("d1", &target, None).unwrap();
+    store.reconcile_desk_from_disk("d1").unwrap();
+
+    fs::remove_file(target.join("Doc.md")).unwrap();
+    fs::write(target.join("Doc (conflicted copy).md"), "survivor").unwrap();
+
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!(report.conflicts, 1);
+    assert_eq!((report.added, report.removed), (0, 0));
+    assert_eq!(store.read_by_id("f1").unwrap().0, "survivor");
+}

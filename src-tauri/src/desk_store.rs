@@ -239,6 +239,10 @@ impl DeskStore {
             expected_dirs.insert(desk.id.clone(), dirs);
         }
 
+        // Documents adopted from a user's folder keep their own
+        // extension — see desk_paths::preserve_doc_extensions.
+        crate::desk_paths::preserve_doc_extensions(&mut new_indexes, &old_global);
+
         // Move / create / adopt every expected file.
         for desk in &desks {
             fs::create_dir_all(self.desk_dir(&desk.id).join(".hush"))?;

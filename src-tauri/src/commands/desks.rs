@@ -84,12 +84,14 @@ pub fn desk_make_internal(state: State<AppState>, desk_id: String) -> Result<Str
         .map_err(|e| e.to_string())
 }
 
-/// Register an existing desk folder (from another install, or a synced
-/// copy) and start watching it. Runs a disk reconcile so files added to
-/// the folder since its tree.json was written surface immediately.
-/// Returns the adopted desk id.
+/// Open a folder as a desk and start watching it. A folder that already
+/// carries `.hushdesk` + `.hush/tree.json` is adopted (the handoff case:
+/// another install, or a synced copy); any other folder is initialised
+/// as a desk in place, absorbing the files already inside it. Either way
+/// a disk reconcile runs so the folder's current contents surface
+/// immediately. Returns the desk id.
 #[tauri::command]
-pub fn desk_adopt_folder(
+pub fn desk_open_folder_as_desk(
     app: AppHandle,
     state: State<AppState>,
     path: String,
@@ -98,7 +100,7 @@ pub fn desk_adopt_folder(
     let s = store();
     let watch = bookmark.is_none();
     let desk_id = s
-        .adopt_desk_folder(Path::new(&path), bookmark)
+        .open_folder_as_desk(Path::new(&path), bookmark)
         .map_err(|e| e.to_string())?;
     let _ = s.reconcile_desk_from_disk(&desk_id);
     // The adopted desk may carry Google Doc links — fold them into the

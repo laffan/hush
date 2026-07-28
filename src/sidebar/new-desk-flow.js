@@ -7,11 +7,12 @@
  * two kinds are named differently:
  *
  *   - **Internal** — lives in Hush's app data. Prompt for a name.
- *   - **Local** — lives in a folder the user picks (an iCloud Drive or
- *     Dropbox folder, a USB stick, anywhere). A local desk takes the
- *     *folder's* name, so there's nothing to prompt for — the picker is
- *     the whole flow, and the desk can't be renamed afterwards (rename
- *     the folder instead).
+ *   - **Local** — the folder the user picks (an iCloud Drive or Dropbox
+ *     folder, a USB stick, anywhere) *becomes* the desk: Hush writes its
+ *     sidecar into it and absorbs whatever files are already there. A
+ *     local desk takes the *folder's* name, so there's nothing to prompt
+ *     for — the picker is the whole flow, and the desk can't be renamed
+ *     afterwards (rename the folder instead).
  *
  * Outside Tauri there is no folder picker, so the fork is skipped and
  * the internal prompt opens directly.
@@ -61,8 +62,8 @@ export function startNewDeskFlow(state, { onCreated } = {}) {
         {
           id: "local",
           label: "Local folder…",
-          detail: "Lives in an empty folder you pick, so a sync provider can carry it between "
-            + "devices. It takes that folder's name.",
+          detail: "The folder you pick becomes the desk — it takes that folder's name, and any "
+            + "files already inside come with it. A sync provider can then carry it between devices.",
         },
       ],
       onPick: async (choice) => {

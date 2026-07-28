@@ -491,7 +491,7 @@ pub fn run() {
             commands::desks::desk_meta_set,
             commands::desks::desk_make_local,
             commands::desks::desk_make_internal,
-            commands::desks::desk_adopt_folder,
+            commands::desks::desk_open_folder_as_desk,
             commands::desks::desk_reconcile,
             commands::local_sync::local_sync_add,
             commands::local_sync::local_sync_remove,

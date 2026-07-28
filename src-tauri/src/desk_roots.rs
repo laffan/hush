@@ -26,7 +26,9 @@
 //! Bookmarked roots get no filesystem watcher — iOS has none — and are
 //! instead reconciled on app foreground.
 
+use crate::atomic::write_atomic_str;
 use crate::desk_store::DeskStore;
+use crate::TreeNode;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -264,6 +266,131 @@ impl DeskStore {
         self.append_to_order(&desk_id)?;
         Ok(desk_id)
     }
+
+    /// Open **any** folder as a desk, in place.
+    ///
+    /// A folder that already carries `.hushdesk` + `.hush/tree.json` is
+    /// adopted as-is (the handoff case). Anything else is *initialised*:
+    /// the sidecar is written into the folder the user picked — the
+    /// folder itself becomes the desk root, nothing is moved or nested —
+    /// and the disk-wins reconcile then absorbs whatever was already
+    /// inside as tree nodes. So pointing Hush at a directory of loose
+    /// `.md` files turns it into a desk holding those documents.
+    ///
+    /// Returns the desk id either way.
+    pub fn open_folder_as_desk(
+        &self,
+        path: &Path,
+        bookmark: Option<String>,
+    ) -> Result<String, BoxError> {
+        if !path.is_absolute() {
+            return Err("path must be absolute".into());
+        }
+        if !path.is_dir() {
+            return Err("that isn't a folder".into());
+        }
+        // Already a desk — the adopt path owns identity and registration.
+        if path.join(".hushdesk").exists() && path.join(".hush").join("tree.json").exists() {
+            return self.adopt_desk_folder(path, bookmark);
+        }
+        let data_dir = self.desks_dir.parent().unwrap_or(&self.desks_dir);
+        if path.starts_with(data_dir) {
+            return Err("folder must live outside Hush's app data".into());
+        }
+        let mut roots = load_entries(&self.desks_dir);
+        if roots.values().any(|e| Path::new(e.path()) == path) {
+            return Err("that folder is already open as a desk".into());
+        }
+        // A half-initialised folder (one sidecar but not the other) is
+        // not something to guess at — say so rather than overwrite.
+        if path.join(".hushdesk").exists() || path.join(".hush").exists() {
+            return Err("that folder holds a damaged desk (.hushdesk / .hush mismatch)".into());
+        }
+
+        let desk_id = uuid::Uuid::new_v4().to_string();
+        let name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Desk")
+            .to_string();
+        let created_at = now_secs();
+        let desk = TreeNode {
+            id: desk_id.clone(),
+            name: name.clone(),
+            node_type: "desk".to_string(),
+            children: desk_specials(&desk_id),
+            ..Default::default()
+        };
+
+        // Written directly against `path` rather than through
+        // `self.tree_path(&desk_id)` so the sidecar lands before the root
+        // is registered — no dependence on the roots cache refreshing
+        // between the two writes.
+        let hush_dir = path.join(".hush");
+        fs::create_dir_all(&hush_dir)?;
+        write_atomic_str(
+            &hush_dir.join("tree.json"),
+            &serde_json::to_string_pretty(&desk)?,
+        )?;
+        write_atomic_str(
+            &hush_dir.join("index.json"),
+            &serde_json::to_string_pretty(&serde_json::json!({
+                "format": "hush-index", "version": 1, "files": {},
+            }))?,
+        )?;
+        write_atomic_str(
+            &path.join(".hushdesk"),
+            &serde_json::to_string_pretty(&serde_json::json!({
+                "format": "hush-desk",
+                "version": 1,
+                "id": desk_id,
+                "name": name,
+                "createdAt": created_at,
+            }))?,
+        )?;
+
+        roots.insert(
+            desk_id.clone(),
+            RootEntry::new(path.to_string_lossy().into_owned(), bookmark),
+        );
+        save_entries(&self.desks_dir, &roots)?;
+        self.append_to_order(&desk_id)?;
+        // Absorb what was already in the folder. A failure here leaves a
+        // registered but empty desk rather than losing the folder, so it
+        // isn't fatal — the next reconcile picks the files up.
+        let _ = self.reconcile_desk_from_disk(&desk_id);
+        Ok(desk_id)
+    }
+}
+
+/// The four per-desk specials, ids namespaced exactly the way
+/// `state-desks.js#specialNodeId` builds them (`<kind>:<deskId>`) and in
+/// the order `ensureDeskSpecials` pins them: Inbox first, then Images,
+/// Archive, Trash. Created up front so the reconcile that follows folds
+/// an existing `Inbox/` (or `Images/`, …) directory into the matching
+/// special instead of adding a second plain folder beside it.
+fn desk_specials(desk_id: &str) -> Vec<TreeNode> {
+    [
+        ("__inbox__", "project", "Inbox"),
+        ("__images__", "folder", "Images"),
+        ("__archive__", "folder", "Archive"),
+        ("__trash__", "folder", "Trash"),
+    ]
+    .into_iter()
+    .map(|(kind, node_type, name)| TreeNode {
+        id: format!("{}:{}", kind, desk_id),
+        name: name.to_string(),
+        node_type: node_type.to_string(),
+        ..Default::default()
+    })
+    .collect()
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// Empty, or nothing but `.DS_Store` junk.

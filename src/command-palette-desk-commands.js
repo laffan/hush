@@ -69,7 +69,9 @@ export function buildDeskCommands({ icons, typeIcons, desktop, ipad, enterDeskPi
         const desk = s.getActiveDesk();
         if (desk) await (await import("./sync/desk-roots.js")).revealDeskRoot(s, desk.id);
       } },
-    { id: "desk-adopt", label: "Open Desk Folder…", icon: icons.desk, shortcutKey: null, ctx: "shared",
+    // Any folder, not just one that already holds a desk — a plain
+    // directory is initialised in place and its files absorbed.
+    { id: "desk-adopt", label: "Open Folder as Desk…", icon: icons.desk, shortcutKey: null, ctx: "shared",
       hiddenIf: () => !desktop && !ipad,
       action: async (s) => (await import("./sync/desk-roots.js")).adoptDeskFolder(s) },
     { id: "desk-convert-folder", label: "Convert folder to desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
