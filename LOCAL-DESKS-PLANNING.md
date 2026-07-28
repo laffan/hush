@@ -171,6 +171,12 @@ Unchanged and still useful for ad-hoc folders that shouldn't become desks.
 `.hush/` into the folder (or decline if it's someone else's directory and
 copy instead), register it as a desk root, drop the mount.
 
+*Update (Phase 5):* the mechanism now exists — `open_folder_as_desk` does
+exactly that write-and-register for any folder. A **Convert Local Folder
+to Desk** entry on a mount's row would be a thin wrapper over it plus
+dropping the mount; it hasn't been wired up, since **Open Folder as
+Desk…** already reaches the same folder from the picker.
+
 ## Phasing
 
 0. **Delete Dropbox sync.** ✅ *Shipped 2026-07.* Engine, Rust backend,
@@ -201,7 +207,7 @@ copy instead), register it as a desk root, drop the mount.
    the single redirect seam that makes files, images, snapshots, and the
    tree all resolve identically for local desks. **Make Desk Local…**
    moves the folder out (cross-volume-safe), **Make Desk Internal**
-   moves it back, **Open Desk Folder…** adopts a desk another install
+   moves it back, **Open Folder as Desk…** adopts a desk another install
    produced (the handoff flow), **Reveal Desk Folder** opens Finder —
    all in the command palette + the desk row menu, with an
    outline-square badge in the desk switcher. A `notify` watcher per
@@ -241,6 +247,24 @@ copy instead), register it as a desk root, drop the mount.
    while the app is frontmost; foreground reconcile stays the fallback
    for non-iCloud providers). Still on the user: real two-device runs
    over iCloud Drive and a Dropbox folder.
+5. **Any folder is a desk.** ✅ *Shipped 2026-07.* Closes the loop on the
+   model at the top of this document: "a desk *is* a folder" now runs in
+   both directions. `DeskStore::open_folder_as_desk` initialises **any**
+   directory in place — `.hushdesk` + `.hush/` written into the folder
+   the user picked, the four specials pre-seeded under their
+   `<kind>:<deskId>` ids so an existing `Inbox/` folds into the special
+   rather than doubling it, then the Phase-3 reconciler absorbs whatever
+   was already there. A folder that already carries the sidecar still
+   falls through to Phase 3's adopt, so handoff is unchanged. Creating a
+   local desk and opening a folder as a desk are now literally the same
+   call — the picked folder becomes the root; nothing is moved or
+   nested. Two consequences worth recording: a local desk takes its
+   folder's name and refuses in-app renames (the directory is the source
+   of truth, and Hush doesn't rename a user's directories), and
+   `save_forest` gained `preserve_doc_extensions` — absorbed `.txt` /
+   `.markdown` files keep their extension instead of being rewritten to
+   `.md` on the next tree save, which only mattered once desks could
+   contain files Hush didn't create.
 
 Phases 1–2 are the overhaul's risk concentrated where it's cheapest: still
 single-device, still internal, fully testable before any folder is shared.
