@@ -75,6 +75,11 @@
   background: #fff;
   flex-shrink: 0;
   overflow: hidden; /* a stretched content box mid-resize clips to the wrapper */
+  /* Wrappers always carry explicit inline dimensions, so full
+     containment is safe — and it means a page's content swap
+     (render / evict) can't invalidate layout or paint of its
+     siblings, keeping scroll-time DOM churn page-local. */
+  contain: strict;
 }
 .pdf-page-canvas { display: block; }
 
@@ -146,13 +151,21 @@
   align-items: center;
   justify-content: center;
 }
+/* The spinner only turns while the renderer is actually working on the
+   page (`.loading`, set by pdf-viewer-render.js). With eviction in the
+   picture most placeholders are idle, and hundreds of infinitely
+   animating pseudo-elements cost style recalcs on every frame of a
+   scroll for nothing. */
 .pdf-page-placeholder::after {
   content: "";
   width: 24px;
   height: 24px;
-  border: 2px solid rgba(128, 128, 128, 0.3);
-  border-top-color: rgba(128, 128, 128, 0.7);
+  border: 2px solid rgba(128, 128, 128, 0.2);
   border-radius: 50%;
+}
+.pdf-page-placeholder.loading::after {
+  border-color: rgba(128, 128, 128, 0.3);
+  border-top-color: rgba(128, 128, 128, 0.7);
   animation: pdf-spin 0.8s linear infinite;
 }
 @keyframes pdf-spin { to { transform: rotate(360deg); } }
@@ -467,6 +480,7 @@ html.ios:not(.phone) #pdf-container .pdf-zoom-toolbar::after {
   border: 2px solid transparent;
   border-radius: 4px;
   overflow: hidden;
+  contain: strict; /* explicit inline size; content swaps stay cell-local */
   transition: border-color 0.15s, transform 0.1s;
 }
 .pdf-thumb-cell:hover {
@@ -513,6 +527,7 @@ html.ios:not(.phone) #pdf-container .pdf-zoom-toolbar::after {
   background: #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
   transition: height 0.15s ease;
+  contain: strict; /* explicit inline size; fold renders stay fold-local */
 }
 .pdf-fold-page {
   position: absolute;

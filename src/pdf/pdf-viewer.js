@@ -92,6 +92,7 @@ export function createPdfViewer(container, opts = {}) {
       annotLayer.paintAnnotationsOnPage(idx);
       void linkMgr.attach(idx, page);
     },
+    onUpdate: () => updatePageIndicator(),
   });
 
   root.appendChild(body);
@@ -289,21 +290,10 @@ export function createPdfViewer(container, opts = {}) {
       pageIndicator.textContent = `${foldLayer.getCurrentPage()} / ${pages.length}`;
       return;
     }
-    if (layoutMode === MODE_HORIZONTAL) {
-      const scrollMid = scrollArea.scrollLeft + scrollArea.clientWidth / 2;
-      let cur = 1;
-      for (let i = 0; i < pages.length; i++) {
-        if (pages[i].wrapper && pages[i].wrapper.offsetLeft <= scrollMid) cur = i + 1;
-      }
-      pageIndicator.textContent = `${cur} / ${pages.length}`;
-    } else {
-      const scrollMid = scrollArea.scrollTop + scrollArea.clientHeight / 2;
-      let cur = 1;
-      for (let i = 0; i < pages.length; i++) {
-        if (pages[i].wrapper && pages[i].wrapper.offsetTop <= scrollMid) cur = i + 1;
-      }
-      pageIndicator.textContent = `${cur} / ${pages.length}`;
-    }
+    // Pure arithmetic over the renderer's cached page geometry — the
+    // old per-page offset walk forced a layout read per page per
+    // scroll event.
+    pageIndicator.textContent = `${renderer.pageAtViewCenter()} / ${pages.length}`;
   }
 
   scrollArea.addEventListener("scroll", () => {
@@ -312,8 +302,12 @@ export function createPdfViewer(container, opts = {}) {
     // that synthetic 0 to leak out and overwrite the host pane's saved
     // scroll position before resume has put it back.
     if (suspendMgr.isSuspended() || suspendMgr.isResuming()) return;
-    renderer.scheduleUpdate();
-    updatePageIndicator();
+    // The render-set update is rAF-coalesced and refreshes the page
+    // indicator via env.onUpdate, so the raw handler does no DOM work.
+    // Folded mode short-circuits the renderer, so its indicator (a walk
+    // over the few folds) updates here instead.
+    if (folded) updatePageIndicator();
+    else renderer.scheduleUpdate();
     for (const cb of scrollListeners) cb();
   });
 
@@ -391,6 +385,7 @@ export function createPdfViewer(container, opts = {}) {
           p.contentEl.style.transform = Math.abs(k - 1) > 0.001 ? `scale(${k})` : "";
         }
       }
+      renderer.invalidateGeometry();
       renderer.scheduleUpdate();
       renderer.scheduleSettle();
     } finally {
@@ -403,6 +398,7 @@ export function createPdfViewer(container, opts = {}) {
     const pdfjs = await getPdfjs();
     if (destroyed) return;
     if (pdfDoc) { await pdfDoc.destroy(); pdfDoc = null; }
+    renderer.reset();
     pages = [];
     scrollArea.innerHTML = "";
 
@@ -555,6 +551,7 @@ export function createPdfViewer(container, opts = {}) {
         applyLayoutClass();
       }
       renderer.clearAll();
+      renderer.reset();
       if (pdfDoc) { try { pdfDoc.destroy(); } catch (_) {} pdfDoc = null; }
       pages = [];
       scrollArea.innerHTML = "";
@@ -593,7 +590,10 @@ export function createPdfViewer(container, opts = {}) {
       // Render-set refresh always (covers a hidden container gaining
       // size, where no scroll event fires); fit-mode geometry follows
       // behind a short debounce — the relayout itself is style-only,
-      // the crisp re-render waits for the renderer's settle pass.
+      // the crisp re-render waits for the renderer's settle pass. A
+      // container resize can re-wrap fixed-zoom rows, so the cached
+      // page geometry is stale either way.
+      renderer.invalidateGeometry();
       renderer.scheduleUpdate();
       if (layoutMode === MODE_FIXED) return;
       if (resizeTimer) clearTimeout(resizeTimer);
