@@ -35,8 +35,8 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   │                                   every highlight on pages whose crop box origin isn't (0,0))
 │   ├── pdf-viewer-folds.js            (folded view: annotation-region folds + type/colour filter, default red ink + red highlights)
 │   ├── pdf-viewer-suspend.js          (suspend/resume JPEG snapshot + restoreView, extracted from pdf-viewer.js)
-│   ├── pdf-viewer-render.js           (page raster policy: scroll-driven render window + eviction, canvas pixel caps,
-│   │                                   render-task cancellation, post-resize settle pass)
+│   ├── pdf-viewer-render.js           (page raster policy: cached-geometry render window, keep-budget + idle
+│   │                                   eviction, bounded render queue, canvas pixel caps, post-resize settle pass)
 │   ├── pdf-viewer-links.js            (the PDF's own Link annotations — internal GoTo dests navigate via goToPage,
 │   │                                   URLs open through the opener plugin)
 │   ├── pdf-bridge.js                  ├── pdfs.rs
