@@ -93,7 +93,7 @@ body.desktop-active #drag-region {
   z-index: 85; /* over the editor + #drag-region (80), under panes (90) */
   display: flex;
   align-items: stretch;
-  font-family: var(--font-family);
+  font-family: var(--ui-font-family); /* chrome, not content — UI font like the hover labels */
   font-size: 12px;
   color: var(--fg);
   background: var(--theme-bg, var(--bg));
