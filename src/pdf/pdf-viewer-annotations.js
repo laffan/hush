@@ -285,7 +285,12 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
     const pages = viewer.getPages();
     const p = pages[pageIdx];
     if (!p?.rendered || !p.canvas) return;
-    let layer = p.wrapper.querySelector(".pdf-annot-layer");
+    // The overlay joins the page's content box so it stretches with the
+    // raster during a drag-resize; geometry uses the paint-time content
+    // size (offset* ignores the stretch transform), not the live
+    // wrapper size, so a mid-resize paint can't skew it.
+    const host = p.contentEl || p.wrapper;
+    let layer = host.querySelector(".pdf-annot-layer");
     if (layer) layer.remove();
     layer = document.createElement("div");
     layer.className = "pdf-annot-layer";
@@ -294,10 +299,10 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
       return pos && pos.pageIndex === pageIdx;
     });
     if (!pageAnnots.length) return;
-    const scaleX = p.wrapper.offsetWidth / p.viewport.width;
-    const scaleY = p.wrapper.offsetHeight / p.viewport.height;
+    const scaleX = host.offsetWidth / p.viewport.width;
+    const scaleY = host.offsetHeight / p.viewport.height;
     paintAnnotationsInto(layer, pageAnnots, p.viewport, scaleX, scaleY);
-    if (layer.children.length) p.wrapper.appendChild(layer);
+    if (layer.children.length) host.appendChild(layer);
   }
 
   // ── Public API ────────────────────────────────────────────────────

@@ -66,18 +66,36 @@ export function createThumbnailManager(root, viewerState) {
     if (!thumbScroll) return;
     thumbObserver = new IntersectionObserver((entries) => {
       for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
         const idx = parseInt(entry.target.dataset.thumbIdx, 10);
-        if (!isNaN(idx)) renderThumb(idx);
+        if (isNaN(idx)) continue;
+        if (entry.isIntersecting) renderThumb(idx);
+        // Scrolled-away thumbnails drop their canvas — a large PDF's
+        // grid would otherwise accumulate one per page browsed.
+        else clearThumb(entry.target);
       }
     }, { root: thumbScroll, rootMargin: "300px" });
     for (const cell of thumbScroll.children) thumbObserver.observe(cell);
   }
 
+  function clearThumb(cell) {
+    if (!cell?.dataset.thumbRendered) return;
+    delete cell.dataset.thumbRendered;
+    cell.querySelector(".pdf-thumb-canvas")?.remove();
+    if (!cell.querySelector(".pdf-thumb-placeholder")) {
+      const placeholder = document.createElement("div");
+      placeholder.className = "pdf-thumb-placeholder";
+      cell.insertBefore(placeholder, cell.firstChild);
+    }
+  }
+
   function hide() {
     if (!thumbPanel) return;
-    thumbPanel.style.display = "none";
     if (thumbObserver) { thumbObserver.disconnect(); thumbObserver = null; }
+    // Drop the whole panel rather than display:none-ing it — the grid
+    // is rebuilt lazily on the next show, and keeping it alive would
+    // pin every rendered thumbnail canvas for the rest of the session.
+    thumbPanel.remove();
+    thumbPanel = null;
   }
 
   function parseAnnotPos(annot) {
@@ -110,7 +128,8 @@ export function createThumbnailManager(root, viewerState) {
       canvas.className = "pdf-thumb-canvas";
 
       await page.render({ canvas, viewport: svp, background: "#ffffff" }).promise;
-      if (viewerState.isDestroyed()) return;
+      // Evicted (scrolled away) or torn down while rendering — drop it.
+      if (viewerState.isDestroyed() || !cell.isConnected || !cell.dataset.thumbRendered) return;
 
       const allAnnots = viewerState.getAnnotations();
       if (allAnnots.length) {

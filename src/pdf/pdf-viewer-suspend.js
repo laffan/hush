@@ -6,10 +6,17 @@
  * panes don't hold pdfjs instances in memory; resume reloads from the
  * cached bytes and re-asserts the pre-suspend viewport.
  *
+ * The bytes needed for resume are pulled back from the pdf.js worker
+ * (`env.getData` → `pdfDoc.getData()`) at suspend time, right before
+ * the document is torn down — the viewer no longer keeps a standing
+ * copy of the whole binary alive on the off-chance it might suspend
+ * (which stack columns and the main viewer never do).
+ *
  * @param {HTMLElement} scrollArea  The viewer's scroll container
  * @param {object}      env         Callbacks into the viewer factory
  * @param {function}    env.isDestroyed      () => boolean
  * @param {function}    env.hasDoc           () => boolean
+ * @param {function}    env.getData          () => Promise<Uint8Array> — bytes from the worker
  * @param {function}    env.getZoom          () => number (encoded zoom mode)
  * @param {function}    env.setZoom          (level) => void
  * @param {function}    env.relayoutPages    () => void
@@ -27,6 +34,7 @@ export function createPdfSuspendManager(scrollArea, env) {
   let _suspendScrollLeft = 0;
   let _suspendZoomLevel = null;
   let cachedPdfData = null;
+  let suspendInFlight = null;
 
   /** Restore zoom mode + scroll. Fit-mode page heights derive from the
    *  container's measured size, often unsettled at mount/resume — a single
@@ -52,7 +60,7 @@ export function createPdfSuspendManager(scrollArea, env) {
     requestAnimationFrame(tick);
   }
 
-  function suspend() {
+  async function suspend() {
     if (suspended || env.isDestroyed() || !env.hasDoc()) return;
     _suspendScrollTop = scrollArea.scrollTop;
     _suspendScrollLeft = scrollArea.scrollLeft;
@@ -79,6 +87,17 @@ export function createPdfSuspendManager(scrollArea, env) {
       }
     } catch (_) {}
 
+    // Pull the raw bytes back from the worker before the doc dies —
+    // the only copy the viewer holds, and only while suspended.
+    suspendInFlight = (async () => {
+      if (!cachedPdfData) {
+        try { cachedPdfData = await env.getData(); } catch (_) {}
+      }
+    })();
+    await suspendInFlight;
+    suspendInFlight = null;
+    if (env.isDestroyed()) return;
+
     env.teardownContent();
 
     if (suspendImg) {
@@ -92,6 +111,9 @@ export function createPdfSuspendManager(scrollArea, env) {
 
   async function resume() {
     if (!suspended || env.isDestroyed()) return;
+    // A rapid suspend → resume can interleave with the byte pull above;
+    // wait it out so reload has data to work with.
+    if (suspendInFlight) { try { await suspendInFlight; } catch (_) {} }
     suspended = false;
     resuming = true;
     scrollArea.classList.remove("pdf-suspended");
@@ -99,15 +121,14 @@ export function createPdfSuspendManager(scrollArea, env) {
 
     env.onResumeStart();
 
-    // pdf.js's getDocument takes ownership of (neuters) the TypedArray it's
-    // handed, so passing `cachedPdfData` straight through would detach our
-    // master copy — the first resume would work but every resume after it
-    // would load an empty buffer and render a blank frame (the classic
-    // "survives one reopen, never more" symptom). Hand reload a throwaway
-    // copy and keep the cache intact for the next cycle.
+    // pdf.js's getDocument takes ownership of (neuters) the TypedArray
+    // it's handed, so hand the cache over outright and drop our
+    // reference — a resumed viewer holds no standing copy, and the
+    // *next* suspend pulls fresh bytes back from the worker.
     if (cachedPdfData) {
-      const copy = cachedPdfData instanceof Uint8Array ? new Uint8Array(cachedPdfData) : cachedPdfData;
-      await env.reload(copy);
+      const data = cachedPdfData;
+      cachedPdfData = null;
+      await env.reload(data);
     }
 
     // restoreView re-applies zoom (a horizontal layout clamps scrollTop to
@@ -118,18 +139,10 @@ export function createPdfSuspendManager(scrollArea, env) {
     if (_suspendScrollTop <= 0 && _suspendScrollLeft <= 0) resuming = false;
   }
 
-  /** Cache the raw PDF bytes so resume can rebuild the document. */
-  function cacheData(data) {
-    if (data instanceof Uint8Array) cachedPdfData = new Uint8Array(data);
-    else if (Array.isArray(data)) cachedPdfData = new Uint8Array(data);
-    else cachedPdfData = data;
-  }
-
   return {
     suspend,
     resume,
     restoreView,
-    cacheData,
     isSuspended: () => suspended,
     isResuming: () => resuming,
   };

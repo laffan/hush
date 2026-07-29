@@ -2,6 +2,8 @@ import { createAnnotationLayer } from "./pdf-viewer-annotations.js";
 import { createFoldLayer } from "./pdf-viewer-folds.js";
 import { createPdfSuspendManager } from "./pdf-viewer-suspend.js";
 import { createThumbnailManager } from "./pdf-viewer-thumbnails.js";
+import { createPageRenderer } from "./pdf-viewer-render.js";
+import { createLinkLayerManager } from "./pdf-viewer-links.js";
 import { buildPdfToolbar, applyToolbarInfo } from "./pdf-toolbar-build.js";
 import { attachPageHoverButtons, createToolbarBookmarkButton } from "./pdf-bookmarks.js";
 import { getPdfjs } from "./pdfjs-loader.js";
@@ -10,7 +12,6 @@ import { getPdfjs } from "./pdfjs-loader.js";
 export { getPdfjs };
 
 const ZOOM_LEVELS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
-const RENDER_BUFFER = 2;
 
 const MODE_FIT = "fit";
 const MODE_FIT_2 = "fit-2";
@@ -67,6 +68,30 @@ export function createPdfViewer(container, opts = {}) {
     getEffectiveZoom: () => getEffectiveZoom(),
     isDestroyed: () => destroyed,
     getFileId: () => _fileId,
+  });
+
+  // ── Page raster policy + link overlays ────────────────────────────
+  // Rendering, eviction, resize settling, and canvas caps live in
+  // pdf-viewer-render.js; the PDF's own link annotations (TOC rows,
+  // cross-references, external URLs) in pdf-viewer-links.js.
+  const linkMgr = createLinkLayerManager({
+    getPdfDoc: () => pdfDoc,
+    getPages: () => pages,
+    goToPage: (n) => goToPage(n),
+    isDestroyed: () => destroyed,
+  });
+  const renderer = createPageRenderer(scrollArea, {
+    getPages: () => pages,
+    getPdfDoc: () => pdfDoc,
+    getEffectiveZoom: () => getEffectiveZoom(),
+    getLayoutMode: () => layoutMode,
+    isFolded: () => folded,
+    isDestroyed: () => destroyed,
+    isSuspended: () => suspendMgr.isSuspended(),
+    onPageRendered: (idx, page) => {
+      annotLayer.paintAnnotationsOnPage(idx);
+      void linkMgr.attach(idx, page);
+    },
   });
 
   root.appendChild(body);
@@ -208,46 +233,6 @@ export function createPdfViewer(container, opts = {}) {
   }
   window.addEventListener("keydown", onKeydown);
 
-  // ── Observer ─────────────────────────────────────────────────────
-  let observer = null;
-
-  function setupObserver() {
-    if (observer) observer.disconnect();
-    observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        const idx = parseInt(entry.target.dataset.pageIndex, 10);
-        if (isNaN(idx) || !pages[idx]) continue;
-        if (entry.isIntersecting) {
-          renderPage(idx);
-          for (let b = 1; b <= RENDER_BUFFER; b++) {
-            if (idx - b >= 0) renderPage(idx - b);
-            if (idx + b < pages.length) renderPage(idx + b);
-          }
-        }
-      }
-    }, { root: scrollArea, rootMargin: "200px" });
-    for (const p of pages) {
-      if (p.wrapper) observer.observe(p.wrapper);
-    }
-    renderVisiblePages();
-  }
-
-  function renderVisiblePages() {
-    // Page wrappers are display:none while folded — their zero rects
-    // would otherwise pass the visibility check and render every page.
-    if (folded) return;
-    if (!pages.length || !scrollArea.clientHeight) return;
-    const areaRect = scrollArea.getBoundingClientRect();
-    if (areaRect.width === 0 && areaRect.height === 0) return;
-    for (let i = 0; i < pages.length; i++) {
-      const p = pages[i];
-      if (p.rendered || !p.wrapper) continue;
-      const r = p.wrapper.getBoundingClientRect();
-      if (r.bottom < areaRect.top - 200 || r.top > areaRect.bottom + 200) continue;
-      renderPage(i);
-    }
-  }
-
   // ── Zoom calculations ────────────────────────────────────────────
   function getEffectiveZoom() {
     if (!pages.length || !pdfDoc) return 1;
@@ -327,6 +312,7 @@ export function createPdfViewer(container, opts = {}) {
     // that synthetic 0 to leak out and overwrite the host pane's saved
     // scroll position before resume has put it back.
     if (suspendMgr.isSuspended() || suspendMgr.isResuming()) return;
+    renderer.scheduleUpdate();
     updatePageIndicator();
     for (const cb of scrollListeners) cb();
   });
@@ -382,61 +368,12 @@ export function createPdfViewer(container, opts = {}) {
     }
   }
 
-  // ── Page rendering ───────────────────────────────────────────────
-  async function renderPage(idx) {
-    const p = pages[idx];
-    if (!p || p.rendered || p.rendering || destroyed) return;
-    p.rendering = true;
-    try {
-      const page = await pdfDoc.getPage(idx + 1);
-      if (destroyed) return;
-      const scale = getEffectiveZoom();
-      const dpr = window.devicePixelRatio || 1;
-      const viewport = page.getViewport({ scale: scale * dpr });
-
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(viewport.width);
-      canvas.height = Math.round(viewport.height);
-      canvas.className = "pdf-page-canvas";
-
-      const cssW = Math.round(viewport.width / dpr);
-      const cssH = Math.round(viewport.height / dpr);
-      canvas.style.width = `${cssW}px`;
-      canvas.style.height = `${cssH}px`;
-
-      const renderTask = page.render({ canvas, viewport, background: "#ffffff" });
-      await renderTask.promise;
-      if (destroyed) return;
-
-      p.wrapper.style.width = `${cssW}px`;
-      p.wrapper.style.height = `${cssH}px`;
-      const placeholder = p.wrapper.querySelector(".pdf-page-placeholder");
-      if (placeholder) placeholder.remove();
-      p.wrapper.insertBefore(canvas, p.wrapper.firstChild);
-      p.rendered = true;
-      p.renderedZoom = scale;
-      p.canvas = canvas;
-      annotLayer.paintAnnotationsOnPage(idx);
-    } catch (e) {
-      console.error(`Failed to render page ${idx + 1}:`, e);
-    } finally {
-      p.rendering = false;
-    }
-  }
-
-  function clearPage(idx) {
-    const p = pages[idx];
-    if (!p || !p.rendered) return;
-    if (p.canvas) { p.canvas.remove(); p.canvas = null; }
-    const annotOverlay = p.wrapper.querySelector(".pdf-annot-layer");
-    if (annotOverlay) annotOverlay.remove();
-    const placeholder = document.createElement("div");
-    placeholder.className = "pdf-page-placeholder";
-    p.wrapper.insertBefore(placeholder, p.wrapper.firstChild);
-    p.rendered = false;
-    p.renderedZoom = null;
-  }
-
+  // ── Page layout ──────────────────────────────────────────────────
+  // Geometry only — rasterisation lives in pdf-viewer-render.js. A
+  // relayout resizes every wrapper and *stretches* the existing canvas
+  // sandwich (CSS transform, no canvas work), so a drag-resize costs
+  // style writes alone; the renderer's settle pass re-renders crisp at
+  // the final scale once the geometry has been still for a beat.
   let relayoutGuard = false;
   function relayoutPages() {
     if (relayoutGuard || !pdfDoc || !pages.length || suspendMgr.isSuspended()) return;
@@ -444,24 +381,18 @@ export function createPdfViewer(container, opts = {}) {
     relayoutGuard = true;
     try {
       const scale = getEffectiveZoom();
-      let zoomChanged = false;
-      for (let i = 0; i < pages.length; i++) {
-        const p = pages[i];
+      for (const p of pages) {
         const cssW = Math.round(p.viewport.width * scale);
         const cssH = Math.round(p.viewport.height * scale);
         p.wrapper.style.width = `${cssW}px`;
         p.wrapper.style.height = `${cssH}px`;
-        if (p.rendered && Math.abs(p.renderedZoom - scale) > 0.001) {
-          clearPage(i);
-          zoomChanged = true;
+        if (p.contentEl && p.contentW) {
+          const k = cssW / p.contentW;
+          p.contentEl.style.transform = Math.abs(k - 1) > 0.001 ? `scale(${k})` : "";
         }
       }
-      if (zoomChanged || !observer) {
-        if (observer) observer.disconnect();
-        setupObserver();
-      } else {
-        renderVisiblePages();
-      }
+      renderer.scheduleUpdate();
+      renderer.scheduleSettle();
     } finally {
       relayoutGuard = false;
     }
@@ -494,17 +425,18 @@ export function createPdfViewer(container, opts = {}) {
 
     applyLayoutClass();
 
+    // Only page 1's dimensions are fetched up front — the rest of the
+    // wrappers are seeded from them and adopt their real size on first
+    // render (pdf-viewer-render.js). Fetching every page proxy here made
+    // opening a large PDF a serial walk over the whole document.
+    const firstPage = await pdfDoc.getPage(1);
+    if (destroyed) return;
+    const defaultViewport = firstPage.getViewport({ scale: 1 });
+
     for (let i = 0; i < pdfDoc.numPages; i++) {
-      const page = await pdfDoc.getPage(i + 1);
-      const viewport = page.getViewport({ scale: 1 });
       const wrapper = document.createElement("div");
       wrapper.className = "pdf-page-wrapper";
       wrapper.dataset.pageIndex = i;
-      const scale = getEffectiveZoom();
-      const cssW = Math.round(viewport.width * scale);
-      const cssH = Math.round(viewport.height * scale);
-      wrapper.style.width = `${cssW}px`;
-      wrapper.style.height = `${cssH}px`;
       const placeholder = document.createElement("div");
       placeholder.className = "pdf-page-placeholder";
       wrapper.appendChild(placeholder);
@@ -514,10 +446,20 @@ export function createPdfViewer(container, opts = {}) {
       attachPageHoverButtons(wrapper, i + 1, { zoteroAttKey: _zoteroAttKey, fileId: _fileId });
 
       scrollArea.appendChild(wrapper);
-      pages.push({ wrapper, viewport, rendered: false, rendering: false, canvas: null, renderedZoom: null });
+      pages.push({
+        wrapper, viewport: defaultViewport, realViewport: i === 0,
+        rendered: false, rendering: false, canvas: null, renderedZoom: null,
+        contentEl: null, contentW: 0, contentH: 0,
+      });
+    }
+    // Size every wrapper at the effective zoom (needs pages[0] in place).
+    const scale = getEffectiveZoom();
+    for (const p of pages) {
+      p.wrapper.style.width = `${Math.round(p.viewport.width * scale)}px`;
+      p.wrapper.style.height = `${Math.round(p.viewport.height * scale)}px`;
     }
 
-    setupObserver();
+    renderer.update();
     // A reload while folded (e.g. resume) wiped the fold DOM with
     // scrollArea.innerHTML above — rebuild it against the new pages.
     if (folded) foldLayer.enable();
@@ -581,6 +523,7 @@ export function createPdfViewer(container, opts = {}) {
   const suspendMgr = createPdfSuspendManager(scrollArea, {
     isDestroyed: () => destroyed,
     hasDoc: () => !!pdfDoc,
+    getData: () => (pdfDoc ? pdfDoc.getData() : Promise.reject(new Error("no doc"))),
     getZoom: () => getZoom(),
     setZoom: (level) => setZoom(level),
     relayoutPages: () => relayoutPages(),
@@ -600,7 +543,7 @@ export function createPdfViewer(container, opts = {}) {
       thumbs.destroy();
       window.removeEventListener("keydown", onKeydown);
       if (resizeObserver) resizeObserver.disconnect();
-      if (observer) { observer.disconnect(); observer = null; }
+      renderer.destroy();
     },
     teardownContent: () => {
       // Folded state was captured via getZoom (-5) already; drop the
@@ -611,7 +554,7 @@ export function createPdfViewer(container, opts = {}) {
         foldLayer.disable();
         applyLayoutClass();
       }
-      for (let i = 0; i < pages.length; i++) clearPage(i);
+      renderer.clearAll();
       if (pdfDoc) { try { pdfDoc.destroy(); } catch (_) {} pdfDoc = null; }
       pages = [];
       scrollArea.innerHTML = "";
@@ -629,19 +572,13 @@ export function createPdfViewer(container, opts = {}) {
     },
   });
 
-  // Wrap loadPdf to cache the raw data for resume
-  async function loadPdfAndCache(data) {
-    suspendMgr.cacheData(data);
-    await loadPdf(data);
-  }
-
   // ── Cleanup ──────────────────────────────────────────────────────
   async function destroy() {
     destroyed = true;
     foldLayer.destroy();
     thumbs.destroy();
+    renderer.destroy();
     window.removeEventListener("keydown", onKeydown);
-    if (observer) { observer.disconnect(); observer = null; }
     scrollListeners = [];
     if (pdfDoc) { try { await pdfDoc.destroy(); } catch (_) {} pdfDoc = null; }
     pages = [];
@@ -652,7 +589,13 @@ export function createPdfViewer(container, opts = {}) {
   let resizeTimer = null;
   try {
     resizeObserver = new ResizeObserver(() => {
-      if (layoutMode === MODE_FIXED || !pages.length || suspendMgr.isSuspended()) return;
+      if (!pages.length || suspendMgr.isSuspended()) return;
+      // Render-set refresh always (covers a hidden container gaining
+      // size, where no scroll event fires); fit-mode geometry follows
+      // behind a short debounce — the relayout itself is style-only,
+      // the crisp re-render waits for the renderer's settle pass.
+      renderer.scheduleUpdate();
+      if (layoutMode === MODE_FIXED) return;
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => { resizeTimer = null; relayoutPages(); }, 80);
     });
@@ -660,7 +603,7 @@ export function createPdfViewer(container, opts = {}) {
   } catch (_) {}
 
   return {
-    loadPdf: loadPdfAndCache,
+    loadPdf,
     destroy: async () => {
       if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null; }
       await destroy();

@@ -17,6 +17,7 @@
 
 import { parseAnnotationPosition, paintAnnotationsInto, pdfPointToViewport } from "./pdf-viewer-annotations.js";
 import { attachFoldBookmarkButton } from "./pdf-bookmarks.js";
+import { capRenderScale } from "./pdf-viewer-render.js";
 
 const FOLD_PAD = 28;   // page units (~2 text lines) above/below the annotation
 const MERGE_GAP = 16;  // merge folds whose padded regions come this close
@@ -261,15 +262,28 @@ export function createFoldLayer(scrollArea, viewer) {
   function setupObserver() {
     observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
         const idx = parseInt(entry.target.dataset.foldIndex, 10);
         if (isNaN(idx) || !folds[idx]) continue;
+        if (!entry.isIntersecting) {
+          // Each fold holds a *full-page* canvas (clipped by its
+          // wrapper), so scrolled-away folds are dropped to keep memory
+          // bounded — mirroring the main view's page eviction. Expanded
+          // folds stay: the user explicitly opened those.
+          if (folds[idx].rendered && !folds[idx].expanded) clearFold(folds[idx]);
+          continue;
+        }
         renderFold(folds[idx]);
         if (folds[idx - 1]) renderFold(folds[idx - 1]);
         if (folds[idx + 1]) renderFold(folds[idx + 1]);
       }
     }, { root: scrollArea, rootMargin: "300px" });
     for (const f of folds) observer.observe(f.wrapper);
+  }
+
+  function clearFold(fold) {
+    fold.inner.innerHTML = "";
+    fold.canvas = null;
+    fold.rendered = false;
   }
 
   async function renderFold(fold) {
@@ -280,8 +294,21 @@ export function createFoldLayer(scrollArea, viewer) {
     try {
       const page = await pdfDoc.getPage(fold.pageIndex + 1);
       if (!enabled || viewer.isDestroyed() || !fold.wrapper.isConnected) return;
+      // Pages are seeded from page 1's dimensions until first render
+      // (see pdf-viewer-render.js); adopt the real ones here so fold
+      // geometry on odd-sized pages corrects itself.
+      const p = viewer.getPages()[fold.pageIndex];
+      if (p && !p.realViewport) {
+        const vp1 = page.getViewport({ scale: 1 });
+        const differed = Math.abs(vp1.width - p.viewport.width) > 0.5
+          || Math.abs(vp1.height - p.viewport.height) > 0.5;
+        p.realViewport = true;
+        p.viewport = vp1;
+        if (differed) { queueMicrotask(() => refresh(true)); return; }
+      }
       const dpr = window.devicePixelRatio || 1;
-      const viewport = page.getViewport({ scale: fold.scale * dpr });
+      const viewport = page.getViewport({
+        scale: capRenderScale(fold.scale * dpr, page.getViewport({ scale: 1 })) });
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(viewport.width);
       canvas.height = Math.round(viewport.height);
