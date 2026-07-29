@@ -1241,6 +1241,50 @@ button.desk-switcher-row.desk-switcher-add {
   opacity: 0.85;
 }
 
+/* ===== Project-heading rows under document nodes =====
+ * Synthetic rows injected while Show Project Headings is on
+ * (files-panel-headings.js). One row per markdown heading, indented a
+ * step per level; click opens the doc scrolled to that section. */
+.sl-item[data-type="doc-heading"] {
+  margin-left: 4px;
+}
+.sl-item[data-type="doc-heading"] > .sl-item-content .sl-fold-arrow {
+  visibility: hidden;
+  width: 6px;
+}
+.tree-heading-row {
+  padding: 1px 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.tree-heading-glyph {
+  flex: none;
+  font-size: 0.7em;
+  letter-spacing: -0.08em;
+  opacity: 0.45;
+  color: var(--fg);
+}
+.tree-heading-name {
+  font-size: 0.85em;
+  color: color-mix(in srgb, var(--fg) 65%, transparent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.tree-heading-h1 {
+  font-weight: 600;
+}
+.sl-item[data-type="doc-heading"]:hover .tree-heading-name {
+  color: var(--fg);
+}
+.sl-item[data-type="doc-heading"]:hover .tree-heading-glyph {
+  opacity: 0.8;
+}
+
 /* ===== PDF two-line sidebar rows ===== */
 .tree-item-row:has(.tree-item-pdf) {
   align-items: flex-start;

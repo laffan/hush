@@ -306,6 +306,10 @@ export function createDefaultSettings() {
     // user-resizable via the panel's top border.
     showRecentFiles: false,
     recentFilesPanelHeight: 150,
+    // Sidebar file browser — when on, every doc row lists its markdown
+    // headings as small indented child rows (command palette:
+    // Show / Hide Project Headings). Clicking one jumps to the section.
+    showProjectHeadings: false,
     typewriterMode: false,
     dryMode: false,
     scrollPosition: null,

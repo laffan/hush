@@ -28,8 +28,9 @@ export function isTabMarkerItem(item) {
 }
 
 /** Read the live content for `fileId`, preferring the editor's buffer
- *  when it's the active doc so unsaved tab edits show up immediately. */
-function readDocContent(state, fileId) {
+ *  when it's the active doc so unsaved tab edits show up immediately.
+ *  Shared with files-panel-headings.js. */
+export function readDocContent(state, fileId) {
   if (state?.currentFileId === fileId && state?.editor?.getContent) {
     try { return state.editor.getContent() || ""; } catch (_) { /* fall through */ }
   }

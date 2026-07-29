@@ -26,10 +26,8 @@ import {
   handleConvertProjectToDoc, handleConvertDocToProject,
   handleRestore, handlePermanentDelete, handleDeskAction,
 } from "./files-panel-actions.js";
-import {
-  isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree,
-  renderTabMarkerRow, openDocAtTab,
-} from "./files-panel-tabs.js";
+import { isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree, renderTabMarkerRow, openDocAtTab } from "./files-panel-tabs.js";
+import { isHeadingItem, augmentTreeWithHeadings, stripHeadingsFromTree, renderHeadingRow, openDocAtHeading } from "./files-panel-headings.js";
 
 let sortableInstance = null;
 let flaggedContainerEl = null;
@@ -81,7 +79,7 @@ export function createFilesPanel(container, state, hidePanel) {
   }
 
   reapplyGutterMarkers(state.fileTree);
-  const sortedTree = augmentTreeWithTabs(state, sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state))));
+  const sortedTree = augmentTreeWithHeadings(state, augmentTreeWithTabs(state, sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state)))));
   numberLabels = computeNumberLabels(sortedTree, numberSkip, isInboxId);
 
   sortableInstance = new SortableList(listContainer, {
@@ -91,9 +89,9 @@ export function createFilesPanel(container, state, hidePanel) {
     setChildren: (item, children) => { item.children = children; },
     canNest: (item) => (item.type === "folder" || item.type === "project" || item.type === "desk") && !isImagesId(item.id) && !isPdfsId(item.id),
     canDrop: (draggedItem, targetItem) => {
-      // Tab markers are synthetic — they can never be a drop target
-      // and the dragged item can never be one (canDrag blocks them).
-      if (isTabMarkerItem(targetItem)) return false;
+      // Tab markers and heading rows are synthetic — they can never be a
+      // drop target and the dragged item can never be one (canDrag blocks them).
+      if (isTabMarkerItem(targetItem) || isHeadingItem(targetItem)) return false;
       // Images stay inside the Images folder; desks can't nest
       // (root-level drops only).
       if (draggedItem.type === "image") return !!targetItem && isImagesId(targetItem.id);
@@ -118,7 +116,7 @@ export function createFilesPanel(container, state, hidePanel) {
       return false;
     },
     canDrag: (item) => {
-      if (isTabMarkerItem(item)) return false;
+      if (isTabMarkerItem(item) || isHeadingItem(item)) return false;
       // In the all-desks view, desk rows are reorderable; everywhere else
       // the desk container itself stays put.
       if (item.type === "desk") return isAllDesksMode(state);
@@ -140,6 +138,13 @@ export function createFilesPanel(container, state, hidePanel) {
         return renderTabMarkerRow(item, (entry) => {
           if (state.selectedDocIds.length) state.clearSelectedDocs();
           void openDocAtTab(state, entry.fileId, entry.tabOffset);
+          if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
+        });
+      }
+      if (isHeadingItem(item)) {
+        return renderHeadingRow(item, (entry) => {
+          if (state.selectedDocIds.length) state.clearSelectedDocs();
+          void openDocAtHeading(state, entry.fileId, entry.headingOffset);
           if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
         });
       }
@@ -277,9 +282,9 @@ export function createFilesPanel(container, state, hidePanel) {
     },
 
     onChange: (newData) => {
-      // Tab markers are synthetic — strip them before any tree write so
-      // the persisted tree never inherits one (re-added on next render).
-      const cleaned = stripTabMarkersFromTree(newData);
+      // Tab markers and heading rows are synthetic — strip them before any
+      // tree write so the persisted tree never inherits one (re-added on render).
+      const cleaned = stripHeadingsFromTree(stripTabMarkersFromTree(newData));
       if (isAllDesksMode(state)) {
         // The top level *is* the desk list. Re-pin specials inside each
         // desk (a cross-desk move can land an item beside Inbox/Trash).
@@ -628,7 +633,7 @@ function positionLocalSync(state) { positionLocalSyncImpl(state, treeListEl, pan
 function refreshList(state) {
   if (sortableInstance) {
     reapplyGutterMarkers(state.fileTree);
-    const sorted = augmentTreeWithTabs(state, sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state))));
+    const sorted = augmentTreeWithHeadings(state, augmentTreeWithTabs(state, sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state)))));
     numberLabels = computeNumberLabels(sorted, numberSkip, isInboxId);
     sortableInstance.setData(sorted);
   }

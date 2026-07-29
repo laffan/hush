@@ -11,6 +11,7 @@ import { findParentOfNode } from "../state/tree-helpers.js";
 import { typeIcons, escHtml } from "./files-panel-shared.js";
 import { renderRowMenuButton, renderFlagOnlyMenuButton } from "./files-panel-row-menu.js";
 import { isTabMarkerItem } from "./files-panel-tabs.js";
+import { isHeadingItem } from "./files-panel-headings.js";
 
 // Per-desk specials: `<kind>:<deskId>`; bare ids only surface for the
 // one boot tick before `migrateLegacyTreeIfNeeded` runs.
@@ -42,8 +43,8 @@ export const visibleTopLevel = (s) => {
     (!isImagesId(n.id) || (n.children && n.children.length > 0)));
 };
 
-// Skip predicate for outline-number labels (specials + tab markers).
-export const numberSkip = (n) => isAnySpecialId(n.id) || isTabMarkerItem(n);
+// Skip predicate for outline-number labels (specials + synthetic rows).
+export const numberSkip = (n) => isAnySpecialId(n.id) || isTabMarkerItem(n) || isHeadingItem(n);
 
 /** A doc has a paired gutter when one of its project siblings is a gutter
  *  notebook stamped for this doc. Such docs show their pane icons on the

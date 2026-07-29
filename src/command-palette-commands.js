@@ -592,6 +592,12 @@ function buildCommands(state) {
     { id: "recent-files-hide", label: "Hide Recent Files", icon: null, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.settings?.showRecentFiles,
       action: (s) => s.updateSettings({ showRecentFiles: false }) },
+    { id: "project-headings-show", label: "Show Project Headings", icon: null, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !!s.settings?.showProjectHeadings,
+      action: (s) => s.updateSettings({ showProjectHeadings: true }) },
+    { id: "project-headings-hide", label: "Hide Project Headings", icon: null, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !s.settings?.showProjectHeadings,
+      action: (s) => s.updateSettings({ showProjectHeadings: false }) },
     ...buildDeskCommands({ icons, typeIcons, desktop, ipad, enterDeskPicker, currentFileTreeNodeId }),
   ];
 

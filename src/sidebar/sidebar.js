@@ -339,6 +339,7 @@ export function createSidebar(state) {
   let _lastLocalSyncSerialised = JSON.stringify(state.settings.localSyncFolders || []);
   let _lastGoogleLinksSerialised = JSON.stringify(state.settings.googleDocLinks || {});
   let _lastDeskDisplayMode = state.settings.deskDisplayMode || "single";
+  let _lastShowHeadings = !!state.settings.showProjectHeadings;
   state.on("settings-changed", () => {
     const next = JSON.stringify(state.settings.localSyncFolders || []);
     if (next !== _lastLocalSyncSerialised) {
@@ -355,6 +356,13 @@ export function createSidebar(state) {
     const nextMode = state.settings.deskDisplayMode || "single";
     if (nextMode !== _lastDeskDisplayMode) {
       _lastDeskDisplayMode = nextMode;
+      if (panelMode === "files") refreshFilesPanel(state);
+    }
+    // Toggling the per-doc heading rows adds / removes synthetic children
+    // across the whole tree, so repaint on change.
+    const nextHeadings = !!state.settings.showProjectHeadings;
+    if (nextHeadings !== _lastShowHeadings) {
+      _lastShowHeadings = nextHeadings;
       if (panelMode === "files") refreshFilesPanel(state);
     }
   });

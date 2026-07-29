@@ -232,6 +232,10 @@ pub struct AppSettings {
     pub show_recent_files: bool,
     #[serde(default = "default_recent_files_panel_height")]
     pub recent_files_panel_height: u32,
+    /// Sidebar file browser: list every doc's markdown headings as
+    /// indented child rows (command palette: Show / Hide Project Headings).
+    #[serde(default)]
+    pub show_project_headings: bool,
     /// Legacy flat MRU. Superseded by `recent_file_ids_by_desk`; kept so
     /// installs written by older builds still parse, and so the per-desk
     /// map can seed itself from it the first time a desk is read.
@@ -603,6 +607,7 @@ impl Default for AppSettings {
             sticky_headers: false,
             show_recent_files: false,
             recent_files_panel_height: default_recent_files_panel_height(),
+            show_project_headings: false,
             recent_file_ids: Vec::new(),
             recent_file_ids_by_desk: serde_json::json!({}),
             styles: Vec::new(),
