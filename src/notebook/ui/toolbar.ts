@@ -90,7 +90,24 @@ export function createToolbar(state: DrawingState): HTMLElement {
     container.style.maxWidth = compact ? "calc(min(100%, 320px))" : "";
   }
 
+  // The bar's centring math reads the parent's live size, but nothing
+  // re-ran it when the parent itself resized — a window resize fires the
+  // listener below, a *pane* resize fires nothing, so the bar drifted
+  // off-centre as its pane was dragged wider or narrower. Observe the
+  // parent directly (lazily — the bar isn't mounted yet at create time).
+  let observedParent: HTMLElement | null = null;
+  let parentRO: ResizeObserver | null = null;
+  function ensureParentObserver() {
+    const parentEl = container.parentElement;
+    if (!parentEl || parentEl === observedParent || typeof ResizeObserver === "undefined") return;
+    parentRO?.disconnect();
+    observedParent = parentEl;
+    parentRO = new ResizeObserver(() => update());
+    parentRO.observe(parentEl);
+  }
+
   function update() {
+    ensureParentObserver();
     const theme = state.theme;
     container.style.background = theme.uiBackground;
 
