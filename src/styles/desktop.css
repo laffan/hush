@@ -239,6 +239,7 @@ body.desktop-active #drag-region {
   transform: translateX(-50%);
   pointer-events: none;
   text-align: center;
+  font-family: var(--ui-font-family);
   font-size: 12px;
   line-height: 1.4;
   color: var(--fg);
@@ -276,6 +277,7 @@ body.desktop-active #drag-region {
   position: absolute;
   z-index: 19;
   text-align: left;
+  font-family: var(--ui-font-family);
   font-size: 12px;
   line-height: 1.5;
   color: var(--fg);

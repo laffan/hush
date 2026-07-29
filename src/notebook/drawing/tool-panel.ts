@@ -29,6 +29,7 @@ import type { DrawingSubTool } from "../types";
 import { h } from "../ui/dom-helpers";
 import { icon } from "../ui/icons";
 import { createBrushSlots } from "./brush-slots";
+import { createSnapZones } from "./tool-panel-snap";
 import { ensureFlyoutSliderStyle, applyFlyoutSliderTheme } from "./flyout-styles";
 
 interface SubToolDef {
@@ -56,10 +57,6 @@ export interface DrawingToolPanelHandle {
 const END_CAP_DEPTH = 32;
 const BAR_HEIGHT_HORIZONTAL = 38;
 const BAR_WIDTH_VERTICAL = 52;
-/** Margin of the drop zone from the canvas edge it represents. */
-const SNAP_ZONE_MARGIN = 12;
-/** Thickness of each drop zone strip. */
-const SNAP_ZONE_THICKNESS = 80;
 
 export function createDrawingToolPanel(
   state: DrawingState,
@@ -152,73 +149,9 @@ export function createDrawingToolPanel(
   dragGrip.className = "notebook-tool-panel-drag-grip";
   dragTab.appendChild(dragGrip);
 
-  // ----- Snap-zone overlays -----------------------------------------
+  // ----- Snap-zone overlays (tool-panel-snap.ts) --------------------
 
-  function makeZone(): HTMLElement {
-    const z = document.createElement("div");
-    z.className = "notebook-toolbar-snap-zone";
-    Object.assign(z.style, {
-      position: "absolute",
-      display: "none",
-      borderRadius: "12px",
-      background: "rgba(66, 153, 225, 0.18)",
-      border: "2px dashed rgba(66, 153, 225, 0.65)",
-      pointerEvents: "none",
-      zIndex: "99",
-      transition: "background 80ms",
-    } as Partial<CSSStyleDeclaration>);
-    return z;
-  }
-  const zoneTop = makeZone();
-  const zoneBottom = makeZone();
-  const zoneLeft = makeZone();
-
-  function positionSnapZones(): void {
-    const parent = bottomToolbar.parentElement;
-    if (!parent) return;
-    const r = parent.getBoundingClientRect();
-    const leftInset = state.leftInset || 0;
-    const rightInset = state.rightInset || 0;
-    const innerW = r.width - leftInset - rightInset;
-    const innerX = leftInset;
-    const zoneW = Math.min(innerW * 0.7, 600);
-    const zoneX = innerX + (innerW - zoneW) / 2;
-    Object.assign(zoneTop.style, {
-      left: `${zoneX}px`, top: `${SNAP_ZONE_MARGIN}px`,
-      width: `${zoneW}px`, height: `${SNAP_ZONE_THICKNESS}px`,
-    });
-    Object.assign(zoneBottom.style, {
-      left: `${zoneX}px`, top: `${r.height - SNAP_ZONE_MARGIN - SNAP_ZONE_THICKNESS}px`,
-      width: `${zoneW}px`, height: `${SNAP_ZONE_THICKNESS}px`,
-    });
-    const zoneH = Math.min(r.height * 0.7, 600);
-    Object.assign(zoneLeft.style, {
-      left: `${leftInset + SNAP_ZONE_MARGIN}px`, top: `${(r.height - zoneH) / 2}px`,
-      width: `${SNAP_ZONE_THICKNESS}px`, height: `${zoneH}px`,
-    });
-  }
-  function showSnapZones(show: boolean): void {
-    for (const z of [zoneTop, zoneBottom, zoneLeft]) {
-      z.style.display = show ? "block" : "none";
-      z.style.background = "rgba(66, 153, 225, 0.18)";
-    }
-    if (show) positionSnapZones();
-  }
-  function highlightZone(zone: HTMLElement | null): void {
-    for (const z of [zoneTop, zoneBottom, zoneLeft]) {
-      z.style.background = z === zone ? "rgba(66, 153, 225, 0.40)" : "rgba(66, 153, 225, 0.18)";
-    }
-  }
-  function hitTestZone(clientX: number, clientY: number): "top" | "bottom" | "left" | null {
-    function inside(z: HTMLElement): boolean {
-      const r = z.getBoundingClientRect();
-      return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
-    }
-    if (inside(zoneTop)) return "top";
-    if (inside(zoneBottom)) return "bottom";
-    if (inside(zoneLeft)) return "left";
-    return null;
-  }
+  const snapZones = createSnapZones(state, bottomToolbar);
 
   // ----- Drag-to-reposition wiring + clamp --------------------------
 
@@ -345,7 +278,7 @@ export function createDrawingToolPanel(
         // Re-read dragStartOffset since promote may schedule an update.
         promoteToCustomForDrag();
         dragStartOffset = { ...state.drawingToolbarOffset };
-        showSnapZones(true);
+        snapZones.show(true);
       }
     }
     // While minimized, suppress drag-to-reposition — a small slip during
@@ -353,8 +286,7 @@ export function createDrawingToolPanel(
     if (bottomToolbar.classList.contains("notebook-toolbar-minimized")) return;
     const clamped = clampOffset(dragStartOffset.x + dx, dragStartOffset.y + dy);
     state.setDrawingToolbarOffset(clamped.x, clamped.y);
-    const zone = hitTestZone(e.clientX, e.clientY);
-    highlightZone(zone === "top" ? zoneTop : zone === "bottom" ? zoneBottom : zone === "left" ? zoneLeft : null);
+    snapZones.highlight(snapZones.hitTest(e.clientX, e.clientY));
   }
   function onDragPointerUp(e: PointerEvent) {
     if (dragStartClient === null || e.pointerId !== dragPointerId) return;
@@ -364,13 +296,13 @@ export function createDrawingToolPanel(
     if (isClick) {
       toggleMinimized();
     } else if (!bottomToolbar.classList.contains("notebook-toolbar-minimized")) {
-      const zone = hitTestZone(e.clientX, e.clientY);
+      const zone = snapZones.hitTest(e.clientX, e.clientY);
       if (zone) state.setDrawingToolbarPosition(zone);
     }
     dragStartClient = null;
     dragPointerId = null;
     dragTab.style.cursor = "grab";
-    showSnapZones(false);
+    snapZones.show(false);
   }
   dragTab.addEventListener("pointerdown", onDragPointerDown);
   dragTab.addEventListener("pointermove", onDragPointerMove);
@@ -541,6 +473,10 @@ export function createDrawingToolPanel(
    *  back to the top. The detection runs at minimize-time so the
    *  decision survives even after display:none zeroes the bar's bbox. */
   const MINIMIZED_EDGE_OFFSET = 15;
+  /** Inside a pane — whose edges are interior chrome, not the screen's —
+   *  and against the bottom edge (where the safe tokens already model
+   *  the reserved iPadOS band) the pill parks much tighter. */
+  const MINIMIZED_EDGE_OFFSET_TIGHT = 6;
   const MINIMIZED_HANDLE_LENGTH_HORIZONTAL = 220;
   const MINIMIZED_HANDLE_LENGTH_VERTICAL = 220;
 
@@ -554,6 +490,17 @@ export function createDrawingToolPanel(
     const parentRect = parent.getBoundingClientRect();
     const tbRect = bottomToolbar.getBoundingClientRect();
     const vertical = state.drawingToolbarVertical;
+    // A programmatic minimize (gutter promote, Desktop-pane mount) can
+    // land before the bar has ever been laid out — its rect reads 0×0,
+    // and the captured centre would park the pill in the corner. Fall
+    // back to the parent's own centre, which is where a snapped bar
+    // would have sat anyway.
+    if (!tbRect.width && !tbRect.height) {
+      minimizedEdge = vertical ? "left"
+        : state.drawingToolbarPosition === "bottom" ? "bottom" : "top";
+      minimizedAxisCenter = vertical ? parentRect.height / 2 : parentRect.width / 2;
+      return;
+    }
     if (vertical) {
       // Vertical bar: snap to left or right edge based on which side of
       // the parent its centre falls in.
@@ -575,32 +522,41 @@ export function createDrawingToolPanel(
     dragTab.style.top = "auto";
     dragTab.style.bottom = "auto";
     dragTab.style.transform = "none";
+    const paneEdgeOff = MINIMIZED_EDGE_OFFSET_TIGHT;
     if (vertical) {
       const handleH = Math.min(MINIMIZED_HANDLE_LENGTH_VERTICAL, parentRect.height);
-      dragTab.style.top = `${Math.max(0, minimizedAxisCenter - handleH / 2)}px`;
+      // Clamp within the parent so a pane resized after minimizing
+      // can't strand the pill half outside its bounds.
+      const maxTop = Math.max(0, parentRect.height - handleH);
+      dragTab.style.top = `${Math.min(Math.max(0, minimizedAxisCenter - handleH / 2), maxTop)}px`;
       dragTab.style.width = `${DRAG_STRIP_THICKNESS}px`;
       dragTab.style.height = `${handleH}px`;
+      const edgeOff = state.paneHosted ? paneEdgeOff : MINIMIZED_EDGE_OFFSET;
       if (minimizedEdge === "right") {
         const rightInset = (state.rightInset || 0);
-        dragTab.style.right = `${MINIMIZED_EDGE_OFFSET + rightInset}px`;
+        dragTab.style.right = `${edgeOff + rightInset}px`;
       } else {
         // Track the left chrome (sidebar + any left-dock) so the minimized
         // handle parks at the visible canvas edge instead of springing to
         // the window edge and hiding under the sidebar.
         const leftInset = (state.leftInset || 0) + (state.dockedLeftWidth || 0);
-        dragTab.style.left = `${MINIMIZED_EDGE_OFFSET + leftInset}px`;
+        dragTab.style.left = `${edgeOff + leftInset}px`;
       }
     } else {
       const handleW = Math.min(MINIMIZED_HANDLE_LENGTH_HORIZONTAL, parentRect.width);
-      dragTab.style.left = `${Math.max(0, minimizedAxisCenter - handleW / 2)}px`;
+      const maxLeft = Math.max(0, parentRect.width - handleW);
+      dragTab.style.left = `${Math.min(Math.max(0, minimizedAxisCenter - handleW / 2), maxLeft)}px`;
       dragTab.style.width = `${handleW}px`;
       dragTab.style.height = `${DRAG_STRIP_THICKNESS}px`;
-      // Fold in the iPadOS 26 safe zones so the minimized toggle pill
-      // isn't swallowed by the top menu band (top-dock) or the
-      // bottom-centre grab handle (bottom-dock). The tokens resolve to 0
-      // off iPad, so `max(...)` collapses to the bare 15px offset there.
-      if (minimizedEdge === "bottom") {
-        dragTab.style.bottom = `calc(max(env(safe-area-inset-bottom, 0px), var(--ipad-safe-bottom, 0px)) + ${MINIMIZED_EDGE_OFFSET}px)`;
+      if (state.paneHosted) {
+        // Pane edges are interior — park the pill tight against them.
+        if (minimizedEdge === "bottom") dragTab.style.bottom = `${paneEdgeOff}px`;
+        else dragTab.style.top = `${paneEdgeOff}px`;
+      } else if (minimizedEdge === "bottom") {
+        // The safe tokens already model the reserved iPadOS bands (and
+        // resolve to 0 off iPad), so past them the pill only needs a
+        // whisker of its own margin.
+        dragTab.style.bottom = `calc(max(env(safe-area-inset-bottom, 0px), var(--ipad-safe-bottom, 0px)) + ${MINIMIZED_EDGE_OFFSET_TIGHT}px)`;
       } else {
         dragTab.style.top = `calc(max(env(safe-area-inset-top, 0px), var(--ipad-safe-top, 0px)) + ${MINIMIZED_EDGE_OFFSET}px)`;
       }
@@ -685,9 +641,7 @@ export function createDrawingToolPanel(
   flyoutGroup.appendChild(slots.flyout);
   flyoutGroup.appendChild(slots.miniPalette);
   flyoutGroup.appendChild(lassoFlyout);
-  flyoutGroup.appendChild(zoneTop);
-  flyoutGroup.appendChild(zoneBottom);
-  flyoutGroup.appendChild(zoneLeft);
+  for (const z of snapZones.elements) flyoutGroup.appendChild(z);
 
   return { dragTab, flyout: flyoutGroup, relayout: applyLayout };
 }

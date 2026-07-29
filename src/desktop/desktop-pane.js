@@ -83,6 +83,7 @@ export async function mountDesktopPane(pane, state) {
 
   dtLog("notes-canvas module resolved");
   const canvas = new NotesCanvas(host, {});
+  canvas.state.paneHosted = true;
   dtLog("NotesCanvas constructed");
   // Every async step below re-checks this: a pane closed (or had its
   // content swapped) mid-hydration must not keep writing to the canvas.
@@ -112,6 +113,9 @@ export async function mountDesktopPane(pane, state) {
     thumbLongEdge: envelope?.options?.thumbLongEdge ?? 400,
     showConnections: envelope?.options?.showConnections !== false,
   };
+  // Nested-project captions follow the project's Thumbnail-labels option
+  // in the pane too (renderer.ts paints them per-canvas).
+  canvas.state.showFileLabels = envelope?.options?.showLabels !== false;
   const themeCtx = makeThemeCtx(canvas, options);
   // Parked on the pane so a later theme sync can put it back: that pass
   // re-applies the *notebook* settings to every `pane.notebook`, which

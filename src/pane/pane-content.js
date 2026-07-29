@@ -7,13 +7,8 @@
  * notebook bridge) lives in pane-state.js.
  */
 import {
-  IS_TAURI,
-  tauriInvoke,
-  panes,
-  appState,
-  notebookBridge,
-  syncing,
-  setSyncing,
+  IS_TAURI, tauriInvoke, panes, appState,
+  notebookBridge, syncing, setSyncing,
 } from "./pane-state.js";
 import { createPaneEditor, attachPaneTextDrop } from "./pane-editor.js";
 import { findLockedStyleForFile } from "./pane-locked-style.js";
@@ -194,6 +189,9 @@ async function loadNotebookPane(pane) {
   };
 
   const canvas = new NotesCanvas(pane._content, shortcuts);
+  // The pane carves around the window chrome itself — the canvas must
+  // not mirror global dock footprints or window safe-area insets.
+  canvas.state.paneHosted = true;
   pane.notebook = canvas;
 
   // Inherit the current Hush editor style (appearance/theme/font/grid) —

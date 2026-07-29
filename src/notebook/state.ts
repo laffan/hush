@@ -187,6 +187,16 @@ export class DrawingState extends EventTarget {
    *  fit a Desktop of file thumbnails (e.g. the selection toolbar's
    *  Rasterize, which would bake live previews into dead pixels). */
   desktopMode = false;
+  /** True for a canvas hosted inside a floating / docked pane or a stack
+   *  column rather than owning the main editor area. Those hosts already
+   *  carve around the window chrome, so the canvas must NOT mirror the
+   *  global pane-dock footprints (a bottom-docked notebook pane would
+   *  absorb its *own* height and push its toolbar to the ceiling) and
+   *  must not apply window safe-area insets — its edges are interior. */
+  paneHosted = false;
+  /** Desktop "Thumbnail labels" option, mirrored per-canvas. Gates the
+   *  persistent caption nested-project thumbnails paint (renderer.ts). */
+  showFileLabels = true;
   /** Project node id whose Desktop-pinned stickies this canvas should
    *  paint, or null to paint none. Set by a Desktop *pane*: the notes
    *  themselves are live DOM singletons owned by the full-window

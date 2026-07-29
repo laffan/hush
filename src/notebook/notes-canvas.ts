@@ -560,10 +560,13 @@ export class NotesCanvas {
       // A gutter canvas is itself a right-docked pane, so the global
       // right-dock width is its OWN width — applying it as `dockedRightWidth`
       // would push the pocket inset across the whole canvas and pocket every
-      // dropped shape. A gutter canvas hosts no docks of its own, so zero them.
-      const isGutter = !!this.state.gutterScrollDOM;
-      const l = isGutter ? 0 : (+d.leftWidth || 0), r = isGutter ? 0 : (+d.rightWidth || 0);
-      const t = isGutter ? 0 : (+d.topHeight || 0), b = isGutter ? 0 : (+d.bottomHeight || 0);
+      // dropped shape. The same goes for every pane-hosted canvas (notebook
+      // panes, stack columns, Desktop panes): a bottom-docked notebook pane
+      // would absorb its own height and hoist its toolbar to the ceiling.
+      // These hosts carve around the docks themselves, so zero the mirrors.
+      const ignore = !!this.state.gutterScrollDOM || this.state.paneHosted;
+      const l = ignore ? 0 : (+d.leftWidth || 0), r = ignore ? 0 : (+d.rightWidth || 0);
+      const t = ignore ? 0 : (+d.topHeight || 0), b = ignore ? 0 : (+d.bottomHeight || 0);
       if (
         this.state.dockedLeftWidth === l && this.state.dockedRightWidth === r
         && this.state.dockedTopHeight === t && this.state.dockedBottomHeight === b

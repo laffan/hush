@@ -167,7 +167,9 @@ export function attachDesktopHover(canvasHost, notesCanvas, handlers, opts = {})
       showStackList(stackId, shape.id);
     } else {
       stackLabels.classList.add("hidden");
-      if (opts.showLabels ? opts.showLabels() !== false : true) {
+      // Nested projects carry a persistent canvas-painted caption
+      // (renderer.ts), so the hover label would double it exactly.
+      if (!isProject && (opts.showLabels ? opts.showLabels() !== false : true)) {
         labelName.textContent = shape.fileRef.name || shape.name || "";
         labelSlice.textContent = "";
         const mid = canvasToScreen({ x: (bounds.minX + bounds.maxX) / 2, y: bounds.maxY }, state.camera);

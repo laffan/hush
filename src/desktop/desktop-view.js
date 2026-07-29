@@ -366,6 +366,7 @@ async function mountCanvas() {
   const envelope = await loadDesktopEnvelope(_containerId);
   if (token !== _openToken) return;
   _options = normalizeDesktopOptions(envelope?.options);
+  _canvas.state.showFileLabels = _options.showLabels;
   _themeCtx = makeThemeCtx();
   // Per-Desktop options ride the background-settings flyout.
   const { buildDesktopOptionsSection } = await import("./desktop-options.js");
@@ -504,8 +505,12 @@ function focusThumb(key) {
 function setDesktopOption(key, value) {
   _options = normalizeDesktopOptions({ ..._options, [key]: value });
   if (key === "showLabels") {
-    // Labels are hover-only DOM now — the option just gates them; the
-    // hover module reads it live, so nothing to repaint here.
+    // Hover labels are DOM and read the option live; the nested-project
+    // captions are canvas-painted, so mirror the flag and repaint.
+    if (_canvas) {
+      _canvas.state.showFileLabels = _options.showLabels;
+      _canvas.state.notify("interaction");
+    }
   } else if (key === "showConnections") {
     const collected = collectDesktopFiles(_state, _containerId, collectOpts());
     applyDocConnections(_canvas, collected?.entries || [], _options.showConnections);

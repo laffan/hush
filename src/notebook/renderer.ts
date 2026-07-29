@@ -47,6 +47,10 @@ export interface RenderState {
    *  along the bottom of its thumbnail. Read per frame (not baked into
    *  the thumbnail image) so edits show without a regenerate. */
   fileStickies?: (kind: string, fileId: string) => { text: string }[];
+  /** Desktop "Thumbnail labels" option. Gates the persistent caption a
+   *  nested project's thumbnail carries (hover labels are DOM and gate
+   *  themselves). Unset counts as on. */
+  showFileLabels?: boolean;
   /** Desktop-pinned stickies to paint onto this canvas, in world coords.
    *  The full-window Desktop shows these as live DOM notes in its own
    *  layer, so it leaves this unset; a Desktop *pane* has no such layer
@@ -270,6 +274,13 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
               width: c.w, height: c.h,
             } as ImageShape, notes, state.fontFamily, fr.projectScale || 1);
           }
+        }
+        // A nested project's caption stays up without hover — the
+        // composite reads as one card, and which project it pictures
+        // shouldn't require pointing at it. Members of a pile skip it
+        // (the pile's hover title list owns naming there).
+        if (fr && fr.kind === "project" && !fr.stackId && state.showFileLabels !== false) {
+          drawProjectLabel(ctx, shape as ImageShape, camera.zoom, theme);
         }
       }
     };
@@ -790,6 +801,34 @@ const FILEREF_TINTS: Record<string, string> = {
   green: "76,175,80", teal: "0,188,212", blue: "66,165,245",
   indigo: "92,107,192", purple: "171,71,188", pink: "236,64,122",
 };
+
+/** The app's UI font stack (base.css --ui-font-family), for canvas text
+ *  that should read as chrome rather than picking up the editor style. */
+const UI_FONT_STACK = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+
+/** Persistent caption under a nested project's thumbnail. Mirrors the
+ *  hover DOM label (12 px UI font, centred 8 px below the card, 0.85
+ *  opacity, ellipsised at 340 px) but painted on the canvas each frame,
+ *  screen-constant via /zoom, so it shows without the pointer — in the
+ *  takeover and in Desktop panes alike. */
+function drawProjectLabel(ctx: CanvasRenderingContext2D, shape: ImageShape, zoom: number, theme?: CanvasTheme) {
+  const name = shape.fileRef?.name;
+  if (!name || !(zoom > 0)) return;
+  ctx.save();
+  ctx.font = `${12 / zoom}px ${UI_FONT_STACK}`;
+  ctx.fillStyle = theme?.foreground || "#333333";
+  ctx.globalAlpha = 0.85;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const maxW = Math.max(shape.width, 340 / zoom);
+  let text = name;
+  if (ctx.measureText(text).width > maxW) {
+    while (text.length > 1 && ctx.measureText(text + "…").width > maxW) text = text.slice(0, -1);
+    text += "…";
+  }
+  ctx.fillText(text, shape.position.x + shape.width / 2, shape.position.y + shape.height + 8 / zoom);
+  ctx.restore();
+}
 
 /** Desktop file-thumbnail chrome: a hairline border so the preview
  *  reads as a card against the canvas. Filenames are no longer painted
