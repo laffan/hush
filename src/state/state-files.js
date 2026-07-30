@@ -92,10 +92,17 @@ export async function saveCurrentFile(state) {
 export async function newFile(state, parentId = null, opts = {}) {
   const openImmediately = opts.openImmediately !== false;
   if (openImmediately && state.dirty) await state.saveCurrentFile();
-  // Unmount any active notebook/stack (only when actually switching to the new file)
+  // Unmount any active notebook/PDF/stack (only when actually switching
+  // to the new file). Without the PDF branch the `file-opened` handler
+  // sees a live currentPdfFileId and never swaps the surface back to the
+  // editor, so Cmd+N from the PDF viewer left the PDF on screen.
   if (openImmediately && state.currentNotebookFileId) {
     state.emit("notebook-unmount");
     state.currentNotebookFileId = null;
+  }
+  if (openImmediately && state.currentPdfFileId) {
+    state.emit("pdf-unmount");
+    state.currentPdfFileId = null;
   }
   if (openImmediately && state.currentStackFileId) {
     state.emit("stack-unmount");
@@ -105,32 +112,38 @@ export async function newFile(state, parentId = null, opts = {}) {
   // Default new files go into the Inbox (active desk's Inbox when desks on)
   const targetParent = parentId || state.getInboxId();
   let fileId;
+  let createdEntry = null;
   if (IS_TAURI) {
-    try { const file = await tauriInvoke("create_file"); fileId = file.id; state.files = await tauriInvoke("list_files"); }
+    try { createdEntry = await tauriInvoke("create_file"); fileId = createdEntry.id; }
     catch (e) { console.error("Create file failed:", e); return; }
-  } else { fileId = state._createLocalFile().id; }
+  } else { createdEntry = state._createLocalFile(); fileId = createdEntry.id; }
   // Imported docs ship with their original basename via `opts.initialName`;
   // brand-new docs fall back to "Untitled" and get uniquified.
   const baseName = (typeof opts.initialName === "string" && opts.initialName.trim()) ? opts.initialName.trim() : "Untitled";
   const initialName = uniqueChildName(findNode(state.fileTree, targetParent), baseName, "document");
-  if (initialName !== "Untitled" && IS_TAURI) try { await tauriInvoke("rename_file", { id: fileId, name: initialName }); state.files = await tauriInvoke("list_files"); } catch (_) {}
+  // No rename_file round-trip here: the file is still staged (unplaced),
+  // where the Rust rename is a documented no-op — the tree node's name
+  // decides the on-disk path when saveFileTree places it below.
   const initialContent = (typeof opts.initialContent === "string") ? opts.initialContent : "";
   if (initialContent && IS_TAURI) {
     try { await tauriInvoke("save_file", { id: fileId, content: initialContent }); }
     catch (e) { console.error("Save initial content failed:", e); }
   }
+  // Patch the files cache in place rather than re-reading the whole
+  // library — list_files loads every file's content (inflating each
+  // notebook envelope along the way), which is what made creating a
+  // doc take seconds on a large library.
+  createdEntry.name = initialName;
+  createdEntry.content = initialContent;
+  if (IS_TAURI) state.files.unshift(createdEntry);
+  else state._saveFilesLocal();
   const treeNode = { id: crypto.randomUUID(), type: "document", name: initialName, fileId, children: [], flagged: false };
   // New files land at the *top* of the Inbox (newest-first); elsewhere
   // they keep the tail position so project/folder ordering is untouched.
   insertNode(state.fileTree, treeNode, targetParent, findNode, targetParent === state.getInboxId());
-  await state.saveFileTree();
-  // Report through the external-store creation hook (no-op today; the
-  // desk-folder write-through re-attaches here). Brand-new empty
-  // Untitled docs are skipped — the first non-empty save reports via
-  // syncFileToExternal instead.
-  if (!isEmptyUntitled(initialName, initialContent)) {
-    state.syncCreateFile(treeNode.id, fileId, initialContent);
-  }
+  // Editor first, disk after: swap the editor to the new doc and emit the
+  // surface events before the tree write-through, so the doc is visible
+  // and typeable immediately while saveFileTree persists behind it.
   if (openImmediately) {
     // Park the outgoing doc's undo history before pointing the editor
     // at the new file (which starts with a fresh, empty history).
@@ -138,17 +151,31 @@ export async function newFile(state, parentId = null, opts = {}) {
     state.currentFileId = fileId;
     state.currentProjectId = null;
     state.projectDocIds = [];
-    if (state.editor) {
-      state.editor.loadDocState(`doc:${fileId}`, initialContent);
-      state.editor.focus();
-    }
+    if (state.editor) state.editor.loadDocState(`doc:${fileId}`, initialContent);
   }
   state.emit("files-changed");
   if (openImmediately) {
     state.emit("file-opened");
+    // Focus after `file-opened` — that emit is what swaps the mode
+    // containers, so focusing earlier lands on a still-hidden editor (a
+    // silent no-op) whenever the previous surface was a notebook, stack,
+    // PDF, or the empty pane. The rAF pass re-asserts focus after the
+    // listeners' own DOM churn settles.
+    if (state.editor) {
+      state.editor.focus();
+      requestAnimationFrame(() => state.editor?.focus());
+    }
     // Record into the active desk so a desk switch round-trips back
     // to this brand-new doc (matches the openFile path).
     state.recordActiveDeskLastFile(fileId, "document");
+  }
+  await state.saveFileTree();
+  // Report through the external-store creation hook (no-op today; the
+  // desk-folder write-through re-attaches here). Brand-new empty
+  // Untitled docs are skipped — the first non-empty save reports via
+  // syncFileToExternal instead.
+  if (!isEmptyUntitled(initialName, initialContent)) {
+    state.syncCreateFile(treeNode.id, fileId, initialContent);
   }
   return { fileId, name: treeNode.name };
 }
@@ -337,17 +364,18 @@ export async function duplicateFile(state, id) {
 
 /** Move a freshly-created Inbox child to the top of the Inbox so new
  *  files read newest-first. Notebooks and stacks are inserted tree-side
- *  by the Rust `create_*` commands (which append), so after the JS tree
- *  is re-read we hoist the new node and persist. No-op when the node
+ *  by the Rust `create_*` commands (which append), so the mirrored JS
+ *  node is hoisted in memory here — the caller persists via
+ *  saveFileTree when this returns true. No-op (false) when the node
  *  isn't a direct Inbox child or is already first. */
-async function hoistInboxChildToTop(state, fileId) {
+function hoistInboxChildToTop(state, fileId) {
   const inbox = findNode(state.fileTree, state.getInboxId());
-  if (!inbox || !Array.isArray(inbox.children)) return;
+  if (!inbox || !Array.isArray(inbox.children)) return false;
   const idx = inbox.children.findIndex((c) => c.fileId === fileId);
-  if (idx <= 0) return;
+  if (idx <= 0) return false;
   const [node] = inbox.children.splice(idx, 1);
   inbox.children.unshift(node);
-  await state.saveFileTree();
+  return true;
 }
 
 export async function createNotebook(state, name, parentId = null, opts = {}) {
@@ -367,10 +395,22 @@ export async function createNotebook(state, name, parentId = null, opts = {}) {
         try { await tauriInvoke("save_file", { id: result.file.id, content: initialContent }); }
         catch (e) { console.error("Save imported notebook content failed:", e); }
       }
-      state.files = await tauriInvoke("list_files");
-      state.fileTree = await tauriInvoke("get_file_tree");
-      // New notebooks land at the top of the Inbox (newest-first).
-      if (targetParent === state.getInboxId()) await hoistInboxChildToTop(state, result.file.id);
+      // Mirror the Rust-side insert into the in-memory caches instead of
+      // re-reading the whole library (list_files inflates every notebook
+      // envelope) and the forest — those two full re-reads were most of
+      // the create lag on a large library. Rust appends the node to the
+      // target parent's children, so append the returned node the same
+      // way; the forest re-read stays as the not-found fallback.
+      const parentNode = findNode(state.fileTree, targetParent);
+      if (parentNode && result.node) parentNode.children.push(result.node);
+      else state.fileTree = await tauriInvoke("get_file_tree");
+      state.files.unshift({
+        id: result.file.id, name: result.node?.name || finalName,
+        content: initialContent, modified: Math.floor(Date.now() / 1000),
+      });
+      // New notebooks land at the top of the Inbox (newest-first). The
+      // hoist reorders in memory; the saveFileTree below persists it.
+      const hoisted = targetParent === state.getInboxId() && hoistInboxChildToTop(state, result.file.id);
       state.emit("files-changed");
       // Report through the external-store creation hook (no-op today;
       // the desk-folder write-through re-attaches here).
@@ -380,6 +420,7 @@ export async function createNotebook(state, name, parentId = null, opts = {}) {
       // openNotebook records via recordActiveDeskLastFile; nothing to
       // do here when openImmediately is false (the notebook isn't the
       // user's "current" file in that case).
+      if (hoisted) await state.saveFileTree();
       return { fileId: result.file.id, name: result.node?.name || finalName };
     } catch (e) { console.error("Create notebook failed:", e); }
   }
@@ -594,14 +635,22 @@ export async function createStack(state, name, parentId = null, opts = {}) {
         try { await tauriInvoke("save_file", { id: result.file.id, content: initialContent }); }
         catch (e) { console.error("Save imported stack content failed:", e); }
       }
-      state.files = await tauriInvoke("list_files");
-      state.fileTree = await tauriInvoke("get_file_tree");
+      // In-memory cache patches instead of whole-library re-reads — same
+      // reasoning as createNotebook above.
+      const parentNode = findNode(state.fileTree, targetParent);
+      if (parentNode && result.node) parentNode.children.push(result.node);
+      else state.fileTree = await tauriInvoke("get_file_tree");
+      state.files.unshift({
+        id: result.file.id, name: result.node?.name || finalName,
+        content: initialContent, modified: Math.floor(Date.now() / 1000),
+      });
       // New stacks land at the top of the Inbox (newest-first).
-      if (targetParent === state.getInboxId()) await hoistInboxChildToTop(state, result.file.id);
+      const hoisted = targetParent === state.getInboxId() && hoistInboxChildToTop(state, result.file.id);
       state.emit("files-changed");
       const stNode = findNodeByFileId(state.fileTree, result.file.id);
       if (stNode) state.syncCreateFile(stNode.id, result.file.id, initialContent);
       if (openImmediately) await openStack(state, result.file.id);
+      if (hoisted) await state.saveFileTree();
       return { fileId: result.file.id, name: result.node?.name || finalName };
     } catch (e) { console.error("Create stack failed:", e); }
   }

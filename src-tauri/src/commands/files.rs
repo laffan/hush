@@ -4,7 +4,10 @@ use tauri::State;
 use crate::{AppState, FileEntry, TreeNode};
 
 #[tauri::command]
-pub fn list_files(state: State<AppState>) -> Result<Vec<FileEntry>, String> {
+// Async: reads every file in the library (inflating each `.hushnote`
+// zip on the way up) — as a sync command that whole-library scan ran on
+// the main thread and froze the webview for its full duration.
+pub async fn list_files(state: State<'_, AppState>) -> Result<Vec<FileEntry>, String> {
     state.file_manager.lock().unwrap().list_files().map_err(|e| e.to_string())
 }
 
@@ -74,7 +77,9 @@ pub async fn save_file_raw(
 }
 
 #[tauri::command]
-pub fn create_file(state: State<AppState>) -> Result<FileEntry, String> {
+// Async: on the Cmd+N critical path — the staging write is small, but
+// even small IO doesn't belong on the webview's main thread.
+pub async fn create_file(state: State<'_, AppState>) -> Result<FileEntry, String> {
     state.file_manager.lock().unwrap().create_file().map_err(|e| e.to_string())
 }
 
@@ -94,7 +99,10 @@ pub fn get_file_tree(state: State<AppState>) -> Result<Vec<TreeNode>, String> {
 }
 
 #[tauri::command]
-pub fn save_file_tree(state: State<AppState>, tree: Vec<TreeNode>) -> Result<(), String> {
+// Async: a tree save reconciles every desk folder (placements, index +
+// tree + meta writes, empty-dir pruning) — main-thread IO of that size
+// stalled the webview on every create/move/rename, worst on iPad.
+pub async fn save_file_tree(state: State<'_, AppState>, tree: Vec<TreeNode>) -> Result<(), String> {
     state.file_manager.lock().unwrap().save_file_tree(&tree).map_err(|e| e.to_string())
 }
 
