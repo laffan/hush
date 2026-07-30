@@ -24,8 +24,10 @@ export const shortcutCategories = [
       { key: "shortcutZenFocus", label: "Toggle Zen Focus" },
       { key: "shortcutToggleWordCount", label: "Toggle word count" },
       { key: "shortcutToggleProperties", label: "View/Hide properties" },
-      { key: "shortcutNewFile", label: "New file" },
+      { key: "shortcutNewFile", label: "New document" },
+      { key: "shortcutNewFilePane", label: "New document as pane" },
       { key: "shortcutNewNotebook", label: "New notebook" },
+      { key: "shortcutNewNotebookPane", label: "New notebook as pane" },
       { key: "shortcutSave", label: "Save file" },
       { key: "shortcutQuickFind", label: "Quick find (current document)" },
       { key: "shortcutFind", label: "Find / replace (all files)" },
@@ -272,12 +274,13 @@ const ARROW_GLYPHS = {
 
 export function renderShortcutKeys(shortcut) {
   if (!shortcut) return `<span class="shortcut-keys"><kbd>None</kbd></span>`;
-  const display = shortcut
-    .replace(/CmdOrCtrl|Mod/g, navigator.platform.includes("Mac") ? "⌘" : "Ctrl");
-  const parts = display.split("+").map((p) => {
-    const d = (ARROW_GLYPHS[p] || p)
-      .replace("Shift", "⇧")
-      .replace("Alt", navigator.platform.includes("Mac") ? "⌥" : "Alt");
+  const isMac = navigator.platform.includes("Mac");
+  const parts = shortcut.split("+").map((p) => {
+    let d = ARROW_GLYPHS[p] || p;
+    if (/^(CmdOrCtrl|Mod)$/.test(d)) d = isMac ? "⌘" : "Ctrl";
+    else if (/^(Cmd|Meta)$/.test(d)) d = isMac ? "⌘" : "Win";
+    else if (/^Ctrl$/.test(d)) d = isMac ? "⌃" : "Ctrl";
+    else d = d.replace("Shift", "⇧").replace("Alt", isMac ? "⌥" : "Alt");
     return `<kbd>${d}</kbd>`;
   });
   return `<span class="shortcut-keys">${parts.join("")}</span>`;

@@ -95,8 +95,10 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutToggleSidebar) settings.shortcutToggleSidebar = "CmdOrCtrl+\\";
   if (!settings.shortcutToggleOutline) settings.shortcutToggleOutline = "CmdOrCtrl+Shift+\\";
   if (!settings.shortcutTypewriter) settings.shortcutTypewriter = "Mod+T";
-  if (!settings.shortcutNewFile) settings.shortcutNewFile = "Mod+N";
-  if (!settings.shortcutNewNotebook) settings.shortcutNewNotebook = "Mod+Shift+N";
+  if (!settings.shortcutNewFile) settings.shortcutNewFile = "Cmd+N";
+  if (!settings.shortcutNewFilePane) settings.shortcutNewFilePane = "Cmd+Shift+N";
+  if (!settings.shortcutNewNotebook) settings.shortcutNewNotebook = "Ctrl+N";
+  if (!settings.shortcutNewNotebookPane) settings.shortcutNewNotebookPane = "Ctrl+Shift+N";
   if (!settings.shortcutShuffleSentences) settings.shortcutShuffleSentences = "Mod+Shift+E";
   if (!settings.shortcutFind) settings.shortcutFind = "Mod+F";
   if (!settings.shortcutSelectSentence) settings.shortcutSelectSentence = "Mod+L";
@@ -582,7 +584,11 @@ function startShortcutRecording(display, settingKey) {
     }
 
     const parts = [];
-    if (e.metaKey || e.ctrlKey) parts.push("CmdOrCtrl");
+    // Record the two primary modifiers distinctly (strict `Cmd` / `Ctrl`
+    // tokens) so ⌘-combos and ⌃-combos can carry different bindings —
+    // e.g. the default Cmd+N (new doc) vs Ctrl+N (new notebook).
+    if (e.metaKey) parts.push("Cmd");
+    if (e.ctrlKey) parts.push("Ctrl");
     if (e.shiftKey) parts.push("Shift");
     if (e.altKey) parts.push("Alt");
     parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);

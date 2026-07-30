@@ -569,12 +569,25 @@ export class AppState {
    *  when a swap was applied (so the caller can persist). */
   _migrateShortcutDefaults() {
     const s = this.settings;
+    let changed = false;
     if (s.shortcutReduceSentence === "Alt+Shift+L" && s.shortcutSelectParagraph === "Mod+Shift+L") {
       s.shortcutReduceSentence = "Mod+Shift+L";
       s.shortcutSelectParagraph = "Alt+Shift+L";
-      return true;
+      changed = true;
     }
-    return false;
+    // New-document shortcut regrouping: Cmd creates Docs, Ctrl creates
+    // Notebooks, Shift makes either an "as pane" create. Installs still
+    // carrying the old defaults are moved onto the new ones; customised
+    // bindings are left alone.
+    if (s.shortcutNewFile === "Mod+N") {
+      s.shortcutNewFile = "Cmd+N";
+      changed = true;
+    }
+    if (s.shortcutNewNotebook === "Mod+Shift+N") {
+      s.shortcutNewNotebook = "Ctrl+N";
+      changed = true;
+    }
+    return changed;
   }
 
   async updateSettings(partial, opts = {}) {

@@ -5,8 +5,10 @@
  * panel is the single source of truth.  This module provides:
  *
  * - `parseShortcut(str)` — parse a stored shortcut string into a normalized
- *   `{ mod, shift, alt, key }` object.  Accepts Electron/Tauri-style tokens
- *   like `CmdOrCtrl`, `Mod`, `Shift`, `Alt`, `Option`.
+ *   `{ mod, meta, ctrl, shift, alt, key }` object.  Accepts Electron/Tauri-
+ *   style tokens like `CmdOrCtrl`, `Mod`, `Shift`, `Alt`, `Option`, plus
+ *   the strict `Cmd` (meta only) and `Ctrl` (control only) forms so the
+ *   two primary modifiers can carry different bindings.
  * - `toCodeMirrorKey(str)` — convert a stored shortcut to CodeMirror's
  *   hyphen-delimited key format (e.g. `Mod-Shift-f`).
  * - `matchesDomEvent(event, str)` — test whether a DOM `KeyboardEvent`
@@ -19,14 +21,24 @@
  * so every shortcut has exactly one definition.
  */
 
-/** Parse a stored shortcut like `"CmdOrCtrl+Shift+F"` into a normalized struct. */
+/** Parse a stored shortcut like `"CmdOrCtrl+Shift+F"` into a normalized
+ *  struct. Three modifier flavours are distinguished:
+ *  - `CmdOrCtrl` / `Mod` → `mod`: either primary modifier (⌘ or ⌃).
+ *  - `Cmd` / `Meta`      → `meta`: strictly the command (meta) key.
+ *  - `Ctrl`              → `ctrl`: strictly the control key.
+ *  The strict forms let e.g. `Cmd+N` and `Ctrl+N` bind different
+ *  commands on the same keyboard. */
 export function parseShortcut(str) {
   if (!str || typeof str !== "string") return null;
   const parts = str.split("+").map((p) => p.trim()).filter(Boolean);
-  const out = { mod: false, shift: false, alt: false, key: "" };
+  const out = { mod: false, meta: false, ctrl: false, shift: false, alt: false, key: "" };
   for (const p of parts) {
-    if (p === "CmdOrCtrl" || p === "Mod" || p === "Cmd" || p === "Ctrl" || p === "Meta") {
+    if (p === "CmdOrCtrl" || p === "Mod") {
       out.mod = true;
+    } else if (p === "Cmd" || p === "Meta") {
+      out.meta = true;
+    } else if (p === "Ctrl") {
+      out.ctrl = true;
     } else if (p === "Shift") {
       out.shift = true;
     } else if (p === "Alt" || p === "Option") {
@@ -48,6 +60,10 @@ export function toCodeMirrorKey(str) {
   // canonical order keeps things readable.
   if (p.alt) segs.push("Alt");
   if (p.mod) segs.push("Mod");
+  // CM keeps the same strict/either distinction: `Cmd-` is the meta key,
+  // `Ctrl-` the control key, `Mod-` the platform primary.
+  if (p.meta) segs.push("Cmd");
+  if (p.ctrl) segs.push("Ctrl");
   if (p.shift) segs.push("Shift");
   // Single-character keys must be lowercase for CM's matcher
   const k = p.key.length === 1 ? p.key.toLowerCase() : p.key;
@@ -76,8 +92,15 @@ const CODE_TO_KEY = {
 export function matchesDomEvent(event, str) {
   const p = parseShortcut(str);
   if (!p) return false;
-  const mod = event.metaKey || event.ctrlKey;
-  if (!!p.mod !== !!mod) return false;
+  if (p.mod) {
+    // Either-primary form: ⌘ or ⌃ both satisfy it (legacy behaviour).
+    if (!(event.metaKey || event.ctrlKey)) return false;
+  } else {
+    // Strict forms — `Cmd+N` must not fire on Ctrl+N and vice versa, and
+    // an unmodified binding must not fire while either key is held.
+    if (!!p.meta !== !!event.metaKey) return false;
+    if (!!p.ctrl !== !!event.ctrlKey) return false;
+  }
   if (!!p.shift !== !!event.shiftKey) return false;
   if (!!p.alt !== !!event.altKey) return false;
   // Normalize key names.  `event.key` is uppercase when Shift is held for

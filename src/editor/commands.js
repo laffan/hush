@@ -210,6 +210,21 @@ export function buildEditorCommands() {
       return true;
     },
     shortcutNewFile: (state) => { state.newFile(); return true; },
+    shortcutNewFilePane: (state) => {
+      // Mirror the "New document as pane" palette entry. The pane and
+      // picker modules load lazily so the command registry stays out of
+      // their dependency graphs.
+      Promise.all([
+        import("../command-palette-pickers.js"),
+        import("../pane/pane-manager.js"),
+      ]).then(async ([pickers, paneManager]) => {
+        const created = await state.newFile(null, { openImmediately: false });
+        if (!created) return;
+        const { x, y } = pickers.paneAnchorClickPoint(state);
+        paneManager.createPane(created.fileId, created.name, "document", x, y);
+      });
+      return true;
+    },
     shortcutNewNotebook: (state) => {
       // Mirror promptNewNotebookName (command-palette-pickers) without
       // pulling in that module's heavy dependency graph from the editor
@@ -222,6 +237,31 @@ export function buildEditorCommands() {
           initialValue: "New Notebook",
           confirmLabel: "Create",
           onConfirm: (name) => state.createNotebook(name),
+        });
+      });
+      return true;
+    },
+    shortcutNewNotebookPane: (state) => {
+      // "New notebook as pane" — same name prompt as shortcutNewNotebook,
+      // then the created notebook opens as a floating pane instead of
+      // taking over the main view.
+      import("../sidebar/files-panel-shared.js").then(({ showPromptModal }) => {
+        showPromptModal({
+          title: "New notebook",
+          label: "Name",
+          placeholder: "New Notebook",
+          initialValue: "New Notebook",
+          confirmLabel: "Create",
+          onConfirm: async (name) => {
+            const [pickers, paneManager] = await Promise.all([
+              import("../command-palette-pickers.js"),
+              import("../pane/pane-manager.js"),
+            ]);
+            const created = await state.createNotebook(name, null, { openImmediately: false });
+            if (!created) return;
+            const { x, y } = pickers.paneAnchorClickPoint(state);
+            paneManager.createPane(created.fileId, created.name, "notebook", x, y);
+          },
         });
       });
       return true;

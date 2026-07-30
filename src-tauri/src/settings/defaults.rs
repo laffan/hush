@@ -133,11 +133,19 @@ pub fn default_shortcut_toggle_outline() -> String {
 pub fn default_shortcut_typewriter() -> String {
     "Mod+Shift+T".to_string()
 }
+// Create shortcuts pair strict modifiers: Cmd makes Docs, Ctrl makes
+// Notebooks, Shift makes either an "as pane" create.
 pub fn default_shortcut_new_file() -> String {
-    "Mod+N".to_string()
+    "Cmd+N".to_string()
+}
+pub fn default_shortcut_new_file_pane() -> String {
+    "Cmd+Shift+N".to_string()
 }
 pub fn default_shortcut_new_notebook() -> String {
-    "Mod+Shift+N".to_string()
+    "Ctrl+N".to_string()
+}
+pub fn default_shortcut_new_notebook_pane() -> String {
+    "Ctrl+Shift+N".to_string()
 }
 pub fn default_shortcut_shuffle_sentences() -> String {
     "Mod+Shift+E".to_string()

@@ -198,7 +198,7 @@ function buildCommands(state) {
     { id: "new-notebook", label: "New notebook", icon: icons.notebook, shortcutKey: "shortcutNewNotebook", ctx: "shared",
       action: (s) => promptNewNotebookName((name) => s.createNotebook(name)) },
     { id: "new-stack", label: "New stack", icon: icons.stack, shortcutKey: null, ctx: "shared", action: (s) => promptNewStackName((name) => s.createStack(name)) },
-    { id: "new-doc-pane", label: "New document as pane", icon: icons.pane, shortcutKey: null, ctx: "shared",
+    { id: "new-doc-pane", label: "New document as pane", icon: icons.pane, shortcutKey: "shortcutNewFilePane", ctx: "shared",
       action: async (s) => {
         const created = await s.newFile(null, { openImmediately: false });
         if (created) {
@@ -206,7 +206,7 @@ function buildCommands(state) {
           createPane(created.fileId, created.name, "document", x, y);
         }
       } },
-    { id: "new-notebook-pane", label: "New notebook as pane", icon: icons.pane, shortcutKey: null, ctx: "shared",
+    { id: "new-notebook-pane", label: "New notebook as pane", icon: icons.pane, shortcutKey: "shortcutNewNotebookPane", ctx: "shared",
       action: (s) => promptNewNotebookName(async (name) => {
         const created = await s.createNotebook(name, null, { openImmediately: false });
         if (created) {

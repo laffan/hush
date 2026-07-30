@@ -79,7 +79,8 @@ export function formatShortcutKeys(raw) {
   return parts.map((p) => {
     let label = p;
     if (isMac) {
-      if (/^(CmdOrCtrl|Mod)$/i.test(p)) label = "⌘";
+      if (/^(CmdOrCtrl|Mod|Cmd|Meta)$/i.test(p)) label = "⌘";
+      else if (/^Ctrl$/i.test(p)) label = "⌃";
       else if (/^Shift$/i.test(p)) label = "⇧";
       else if (/^Alt$/i.test(p)) label = "⌥";
       else if (/^ArrowUp$/i.test(p)) label = "↑";
@@ -89,7 +90,8 @@ export function formatShortcutKeys(raw) {
       else if (p === "\\\\") label = "\\";
       else label = p.length === 1 ? p.toUpperCase() : p;
     } else {
-      if (/^(CmdOrCtrl|Mod)$/i.test(p)) label = "Ctrl";
+      if (/^(CmdOrCtrl|Mod|Ctrl)$/i.test(p)) label = "Ctrl";
+      else if (/^(Cmd|Meta)$/i.test(p)) label = "Win";
       else if (/^ArrowUp$/i.test(p)) label = "↑";
       else if (/^ArrowDown$/i.test(p)) label = "↓";
       else if (/^ArrowLeft$/i.test(p)) label = "←";

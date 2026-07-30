@@ -75,22 +75,29 @@ const DEFAULTS: NotebookShortcuts = {
 
 /**
  * Test if a KeyboardEvent matches a shortcut string like "Mod+Shift+Z" or "T".
- * "Mod" matches Cmd on Mac, Ctrl elsewhere.
+ * "Mod" / "CmdOrCtrl" match either primary modifier; the strict "Cmd" and
+ * "Ctrl" tokens match only their own key (same semantics as shortcuts.js).
  */
 function matchesKey(e: KeyboardEvent, shortcut: string): boolean {
   if (!shortcut) return false;
   const parts = shortcut.split("+");
-  let wantMod = false, wantShift = false, wantAlt = false;
+  let wantMod = false, wantMeta = false, wantCtrl = false, wantShift = false, wantAlt = false;
   let key = "";
   for (const p of parts) {
     const lp = p.toLowerCase();
-    if (lp === "mod" || lp === "cmdorctrl" || lp === "cmd" || lp === "ctrl" || lp === "meta") wantMod = true;
+    if (lp === "mod" || lp === "cmdorctrl") wantMod = true;
+    else if (lp === "cmd" || lp === "meta") wantMeta = true;
+    else if (lp === "ctrl") wantCtrl = true;
     else if (lp === "shift") wantShift = true;
     else if (lp === "alt" || lp === "option") wantAlt = true;
     else key = p;
   }
-  const hasMod = e.metaKey || e.ctrlKey;
-  if (wantMod !== hasMod) return false;
+  if (wantMod) {
+    if (!(e.metaKey || e.ctrlKey)) return false;
+  } else {
+    if (wantMeta !== e.metaKey) return false;
+    if (wantCtrl !== e.ctrlKey) return false;
+  }
   if (wantShift !== e.shiftKey) return false;
   if (wantAlt !== e.altKey) return false;
   // Compare key case-insensitively
