@@ -67,6 +67,9 @@ export function createDefaultSettings() {
     // x, y, width, height, collapsed, fontSize, text, createdAt }.
     // Closing a note deletes it permanently.
     stickyNotes: [],
+    // YOU ARE HERE marker registry — one `{ fileId, fileType, shapeId?,
+    // offset? }` entry per desk id (see src/you-are-here.js).
+    youAreHere: {},
     // Notebook-only floating minimap widget. Off by default; toggled
     // via the command palette ("Show minimap" / "Hide minimap"). The
     // widget unmounts itself whenever a non-notebook is open.

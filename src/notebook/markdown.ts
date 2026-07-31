@@ -22,6 +22,9 @@ export interface TextRun {
    *  renderer (and shelf) resolve this against the user's flagColors
    *  setting; the field is just the tag, not the colour. */
   highlightFlag?: string;
+  /** The literal `YOUAREHERE` marker — renders as a bright red rounded
+   *  tag with white glyphs (see src/you-are-here.js for the feature). */
+  youAreHere?: boolean;
 }
 
 export interface ParsedLine {
@@ -126,7 +129,7 @@ function parseInlineFormatting(text: string, sizeScale: number): TextRun[] {
   // they aren't swallowed by `\[…\](…)`. Group 8 captures the inner
   // title (no leading `!` exclusion needed — `[[` can't follow `!]` in
   // markdown image syntax).
-  const pattern = /(\[\[([^\[\]\n]+?)\]\]|\*\*(.+?)\*\*|\*(.+?)\*|_(.+?)_|\[([^\]]+)\]\(([^)]+)\)|==(.+?)==)/g;
+  const pattern = /(\[\[([^\[\]\n]+?)\]\]|\*\*(.+?)\*\*|\*(.+?)\*|_(.+?)_|\[([^\]]+)\]\(([^)]+)\)|==(.+?)==|(YOUAREHERE))/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -176,6 +179,10 @@ function parseInlineFormatting(text: string, sizeScale: number): TextRun[] {
           runs.push({ ...r, highlight: true });
         }
       }
+    } else if (match[9] !== undefined) {
+      // Literal YOUAREHERE marker — its own run so the renderer can
+      // paint the red tag around exactly the token.
+      runs.push({ text: match[9], bold: false, italic: false, sizeScale, youAreHere: true });
     }
 
     lastIndex = match.index + match[0].length;
@@ -304,10 +311,10 @@ function tokensToRuns(tokens: { word: string; run: TextRun; trailingSpace: boole
     const t = tokens[i];
     const text = (i > 0 ? " " : "") + t.word;
     const last = result[result.length - 1];
-    if (last && last.bold === t.run.bold && last.italic === t.run.italic && last.link === t.run.link && last.wikilink === t.run.wikilink && last.highlight === t.run.highlight && last.highlightFlag === t.run.highlightFlag) {
+    if (last && last.bold === t.run.bold && last.italic === t.run.italic && last.link === t.run.link && last.wikilink === t.run.wikilink && last.highlight === t.run.highlight && last.highlightFlag === t.run.highlightFlag && last.youAreHere === t.run.youAreHere) {
       last.text += text;
     } else {
-      result.push({ text, bold: t.run.bold, italic: t.run.italic, sizeScale: t.run.sizeScale, link: t.run.link, wikilink: t.run.wikilink, highlight: t.run.highlight, highlightFlag: t.run.highlightFlag });
+      result.push({ text, bold: t.run.bold, italic: t.run.italic, sizeScale: t.run.sizeScale, link: t.run.link, wikilink: t.run.wikilink, highlight: t.run.highlight, highlightFlag: t.run.highlightFlag, youAreHere: t.run.youAreHere });
     }
   }
   return result;

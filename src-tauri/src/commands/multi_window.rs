@@ -6,13 +6,26 @@
 // whenever it changes, and the sidebar listens to `windows-updated`
 // to paint per-window numeral badges.
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::multi_window::WindowInfo;
 use crate::AppState;
 
+/// Drop registry entries whose window the runtime no longer knows about.
+/// A destroy notification can be missed entirely (iPad scene teardown,
+/// a webview killed before its unload handler ran), which used to leave
+/// phantom numeral badges in every sibling's sidebar — one more per
+/// open/close cycle. Reconciling against `app.webview_windows()` on
+/// every registry touch guarantees the list self-heals no matter how
+/// the window went away.
+fn prune_dead_windows(app: &AppHandle, state: &State<AppState>) {
+    let alive: Vec<String> = app.webview_windows().keys().cloned().collect();
+    state.window_registry.prune(&alive);
+}
+
 #[tauri::command]
-pub fn list_windows(state: State<AppState>) -> Vec<WindowInfo> {
+pub fn list_windows(app: AppHandle, state: State<AppState>) -> Vec<WindowInfo> {
+    prune_dead_windows(&app, &state);
     state.window_registry.list()
 }
 
@@ -22,6 +35,7 @@ pub fn register_window(
     state: State<AppState>,
     label: String,
 ) -> WindowInfo {
+    prune_dead_windows(&app, &state);
     let info = state.window_registry.ensure(&label);
     let _ = app.emit("windows-updated", state.window_registry.list());
     info
@@ -35,6 +49,7 @@ pub fn set_window_file(
     file_id: Option<String>,
     file_type: Option<String>,
 ) {
+    prune_dead_windows(&app, &state);
     state.window_registry.set_file(&label, file_id, file_type);
     let _ = app.emit("windows-updated", state.window_registry.list());
 }
@@ -42,6 +57,7 @@ pub fn set_window_file(
 #[tauri::command]
 pub fn unregister_window(app: AppHandle, state: State<AppState>, label: String) {
     state.window_registry.remove(&label);
+    prune_dead_windows(&app, &state);
     let _ = app.emit("windows-updated", state.window_registry.list());
 }
 

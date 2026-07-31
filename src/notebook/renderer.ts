@@ -554,6 +554,11 @@ function resolveThemeColor(raw: string, theme: CanvasTheme): string {
  *  background — keeps Docs and Notebooks visually consistent. */
 const DEFAULT_HIGHLIGHT_BG = "rgba(255, 208, 0, 0.3)";
 
+/** YOUAREHERE tag — fixed red/white matching `.cm-youarehere` in the
+ *  doc editor so the marker reads identically on both surfaces. */
+const YAH_TAG_BG = "#ff2b2b";
+const YAH_TAG_FG = "#ffffff";
+
 function hexToRgba(hex: string, alpha: number): string {
   const h = hex.startsWith("#") ? hex.slice(1) : hex;
   if (h.length !== 6) return DEFAULT_HIGHLIGHT_BG;
@@ -701,14 +706,25 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
       const style = run.italic ? "italic" : "normal";
       const fontSize = baseFontSize * run.sizeScale;
       ctx.font = `${style} ${weight} ${fontSize}px ${ff}`;
-      if (run.highlight) {
+      if (run.youAreHere) {
+        // Bright red rounded tag behind the token — a couple px of
+        // overhang instead of real padding so the run's advance width
+        // (and therefore wrapping / bounds) stays untouched.
+        ctx.save();
+        ctx.fillStyle = YAH_TAG_BG;
+        ctx.beginPath();
+        (ctx as any).roundRect(x - 3, y - 1, ctx.measureText(run.text).width + 6, fontSize + 4, 4);
+        ctx.fill();
+        ctx.restore();
+      } else if (run.highlight) {
         ctx.save();
         ctx.fillStyle = resolveHighlightBg(run.highlightFlag, flagColors);
         ctx.fillRect(x, y, ctx.measureText(run.text).width, fontSize + 2);
         ctx.restore();
       }
       const isLinkish = !!(run.link || run.wikilink);
-      ctx.fillStyle = isLinkish ? (theme.linkColor || theme.foreground) : (isHeading ? headingColor : textColor);
+      ctx.fillStyle = run.youAreHere ? YAH_TAG_FG
+        : isLinkish ? (theme.linkColor || theme.foreground) : (isHeading ? headingColor : textColor);
       // PDF export overlays vector text on top, so it asks us to skip the rasterized glyphs.
       if (!omitGlyphs) ctx.fillText(run.text, x, y);
       const runW = ctx.measureText(run.text).width;

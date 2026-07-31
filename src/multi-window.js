@@ -47,6 +47,15 @@ export function getInitialFileFromHash() {
   return null;
 }
 
+/** Desk id this window was launched into, or `null`. "Open in new
+ *  window" seeds it with the opener's active desk so the new window
+ *  starts where the user was — desks are per-window after that (the
+ *  opener's later switches don't follow it). */
+export function getInitialDeskFromHash() {
+  const h = getInitialHashParams();
+  return h.desk || null;
+}
+
 async function getLabel() {
   if (currentLabel != null) return currentLabel;
   if (!IS_TAURI) {
@@ -119,7 +128,7 @@ export async function fetchWindowList() {
  *  from `index.html#file=<id>&type=<type>`; its `main.js` picks the
  *  hash up via `getInitialFileFromHash()` and overrides the usual
  *  "restore last file" behaviour. */
-export async function openInNewWindow(fileId, fileType) {
+export async function openInNewWindow(fileId, fileType, deskId = null) {
   if (!IS_TAURI) return;
   if (!fileId || !fileType) return;
   const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
@@ -130,7 +139,8 @@ export async function openInNewWindow(fileId, fileType) {
     : Math.random().toString(36).slice(2, 14);
   const label = `window-${id}`;
   const url =
-    `index.html#file=${encodeURIComponent(fileId)}&type=${encodeURIComponent(fileType)}`;
+    `index.html#file=${encodeURIComponent(fileId)}&type=${encodeURIComponent(fileType)}`
+    + (deskId ? `&desk=${encodeURIComponent(deskId)}` : "");
   // iPad multi-window is native since Tauri 2.11: `new WebviewWindow` spawns
   // a real UIScene with full IPC, seeded by the same URL hash the desktop
   // path uses. iOS scenes are sized/decorated by the system, so the desktop
@@ -276,6 +286,7 @@ export async function setupMultiWindow(state) {
         const { invoke } = await import("@tauri-apps/api/core");
         if (kind === "settings") {
           const fresh = await invoke("get_settings");
+          const yahBefore = JSON.stringify(state.settings.youAreHere || {});
           // Preserve this window's per-window keys — the sender stripped
           // them on its way out, but we re-pin them here defensively so
           // a buggy sender can't blow away our session state in memory.
@@ -286,10 +297,20 @@ export async function setupMultiWindow(state) {
             scrollPosition: state.settings.scrollPosition,
             typewriterMode: state.settings.typewriterMode,
             dryMode: state.settings.dryMode,
+            // Desks are per-window: a sibling switching desks (or saving
+            // settings while on another desk) must not flip this window's
+            // sidebar / style / shortcut-target desk out from under it.
+            activeDeskId: state.settings.activeDeskId,
           };
           Object.assign(state.settings, fresh, keep);
           state.emit("settings-changed");
           state.emit("theme-changed");
+          // A sibling planting/clearing a YOUAREHERE marker must repaint
+          // this window's sidebar row too — scoped to actual registry
+          // changes so ordinary settings echoes don't rebuild the panel.
+          if (JSON.stringify(state.settings.youAreHere || {}) !== yahBefore) {
+            state.emit("you-are-here-changed");
+          }
         } else if (kind === "files") {
           state.fileTree = await invoke("get_file_tree");
           state.files = await invoke("list_files");
@@ -349,8 +370,31 @@ export async function setupMultiWindow(state) {
 
   // Best-effort cleanup — Rust drops us from the registry on
   // `WindowEvent::Destroyed`, but the JS unload path beats that for the
-  // "user closed the window" case.
+  // "user closed the window" case. `pagehide` rides along because iOS
+  // WebKit frequently skips `beforeunload` entirely (unregister is
+  // idempotent, so both firing is harmless).
   window.addEventListener("beforeunload", () => { unregisterThisWindow(); });
+  window.addEventListener("pagehide", (e) => {
+    if (e.persisted) return; // backgrounded, not closing
+    unregisterThisWindow();
+  });
+
+  // Coming back to the foreground re-syncs the list from the registry
+  // (the backend prunes entries whose window the runtime no longer
+  // knows about). Heals any badge left behind by a close event this
+  // window slept through — the iPad case, where a suspended scene
+  // receives no events while a sibling closes.
+  const resyncWindowList = async () => {
+    const list = await fetchWindowList();
+    const current = JSON.stringify(state.windowList || []);
+    if (JSON.stringify(list) === current) return;
+    state.windowList = list;
+    state.emit("windows-changed");
+  };
+  window.addEventListener("focus", () => { void resyncWindowList(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void resyncWindowList();
+  });
 }
 
 /** Apply a sibling window's live doc edit to the local editor when our

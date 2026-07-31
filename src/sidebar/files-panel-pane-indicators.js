@@ -1,22 +1,46 @@
 /**
- * Pane indicator strip painted under each doc/notebook row in the
- * files panel. One small rectangle per floating pane the file owns;
- * cmd-hovering a cell reveals the pane's filename in a small tooltip.
+ * Pane + sticky indicator strip painted under each doc/notebook row in
+ * the files panel. One small outlined rectangle per floating pane the
+ * file owns, followed by one small filled square per File Sticky
+ * attached to it; cmd-hovering a cell reveals the pane's filename (or
+ * the sticky's excerpt) in a small tooltip.
  *
  * When the file's panes are hidden via the command palette
- * (`settings.panesHiddenByContext`), the strip collapses to a thin
- * dim bar so the row signals "this is a desktop, just temporarily
- * tucked away" without taking real vertical space.
+ * (`settings.panesHiddenByContext`), the pane cells dim so the row
+ * signals "this is a desktop, just temporarily tucked away" without
+ * taking real vertical space — sticky cells stay at full strength
+ * since hiding panes doesn't hide stickies.
  */
 import { getPanesForContext, contextIdForFile } from "../pane/pane-manager.js";
 
-function buildStrip(ctxPanes, hidden, inline) {
+// tree-node type → the kind key `window.__hushFileStickies` expects.
+const STICKY_KIND = { document: "doc", notebook: "notebook", pdf: "pdf", stack: "stack" };
+
+/** File Stickies attached to this file, read live from the sticky
+ *  module's registry (registered on window by initStickyNotes — absent
+ *  in early boot or non-sticky builds, hence the guard). */
+function stickiesForFile(itemType, fileId) {
+  const kind = STICKY_KIND[itemType];
+  if (!kind || !fileId) return [];
+  const fn = typeof window !== "undefined" ? window.__hushFileStickies : null;
+  if (typeof fn !== "function") return [];
+  try { return fn(kind, fileId) || []; } catch (_) { return []; }
+}
+
+function buildStrip(ctxPanes, stickies, hidden, inline) {
   const strip = document.createElement("span");
-  strip.className = (inline ? "tree-pane-indicators-inline" : "tree-pane-indicators") + (hidden ? " dimmed" : "");
+  strip.className = inline ? "tree-pane-indicators-inline" : "tree-pane-indicators";
   for (const p of ctxPanes) {
     const cell = document.createElement("span");
-    cell.className = "tree-pane-cell";
+    cell.className = "tree-pane-cell" + (hidden ? " dimmed" : "");
     cell.dataset.paneName = p.fileName || "Untitled";
+    strip.appendChild(cell);
+  }
+  for (const s of stickies) {
+    const cell = document.createElement("span");
+    cell.className = "tree-pane-cell tree-sticky-cell";
+    const excerpt = (s.text || "").trim().split("\n")[0].slice(0, 42);
+    cell.dataset.paneName = excerpt || "Sticky";
     strip.appendChild(cell);
   }
   return strip;
@@ -31,17 +55,25 @@ export function paneIndicatorsFor(item, state) {
   if (item.type === "notebook" && item.gutter) {
     const ctx = contextIdForFile(item.gutterForDoc, "document");
     const docPanes = getPanesForContext(ctx).filter((p) => !p.gutter);
-    if (!docPanes.length) return null;
-    return buildStrip(docPanes, !!(state.settings?.panesHiddenByContext || {})[ctx], true);
+    const docStickies = stickiesForFile("document", item.gutterForDoc);
+    if (!docPanes.length && !docStickies.length) return null;
+    return buildStrip(docPanes, docStickies, !!(state.settings?.panesHiddenByContext || {})[ctx], true);
   }
-  if (item.type !== "document" && item.type !== "notebook") return null;
-  const ctx = contextIdForFile(item.fileId, item.type);
-  // Drop the gutter pane — a gutter never shows a square (its row carries the
-  // doc's other panes instead).
-  const ctxPanes = getPanesForContext(ctx).filter((p) => !p.gutter);
-  if (!ctxPanes.length) return null;
-  const hidden = !!(state.settings?.panesHiddenByContext || {})[ctx];
-  return buildStrip(ctxPanes, hidden, false);
+  if (!(item.type in STICKY_KIND)) return null;
+  const stickies = stickiesForFile(item.type, item.fileId);
+  // Pane squares stay a doc/notebook affordance; PDF and stack rows can
+  // still carry sticky squares.
+  let ctxPanes = [];
+  let hidden = false;
+  if (item.type === "document" || item.type === "notebook") {
+    const ctx = contextIdForFile(item.fileId, item.type);
+    // Drop the gutter pane — a gutter never shows a square (its row carries the
+    // doc's other panes instead).
+    ctxPanes = getPanesForContext(ctx).filter((p) => !p.gutter);
+    hidden = !!(state.settings?.panesHiddenByContext || {})[ctx];
+  }
+  if (!ctxPanes.length && !stickies.length) return null;
+  return buildStrip(ctxPanes, stickies, hidden, false);
 }
 
 let _paneTooltipEl = null;

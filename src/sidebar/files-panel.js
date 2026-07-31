@@ -28,6 +28,7 @@ import {
 } from "./files-panel-actions.js";
 import { isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree, renderTabMarkerRow, openDocAtTab } from "./files-panel-tabs.js";
 import { isHeadingItem, augmentTreeWithHeadings, stripHeadingsFromTree, renderHeadingRow, openDocAtHeading } from "./files-panel-headings.js";
+import { renderYouAreHereRows } from "./files-panel-you-are-here.js";
 
 let sortableInstance = null;
 let flaggedContainerEl = null;
@@ -460,6 +461,11 @@ const flaggedNodeCollapsed = new Set();
 function renderFlaggedSection(state) {
   if (!flaggedContainerEl) return;
   flaggedContainerEl.innerHTML = "";
+
+  // YOU ARE HERE — one red marker row per visible desk, pinned above
+  // the Flagged list (rendered before the flagged early-return so a
+  // desk with no flags still shows its marker).
+  renderYouAreHereRows(state, flaggedContainerEl, storedHidePanel);
 
   // Scope to the visible desk(s) so flagged items stay desk-specific.
   const flaggedItems = collectFlaggedItems(visibleTopLevel(state));

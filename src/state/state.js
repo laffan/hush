@@ -32,6 +32,10 @@ const _PER_WINDOW_SETTINGS_KEYS = new Set([
   "scrollPosition",
   "typewriterMode",
   "dryMode",
+  // Each window operates its own desk: switching desks in a secondary
+  // window must not drag the main window (or any sibling) along with it,
+  // and only the main window's choice persists as the app's "last desk".
+  "activeDeskId",
   // Sidebar panel state — which panel was open and whether it was pinned
   // when the session ended. Per-window so each window remembers its own
   // chrome layout.
@@ -167,11 +171,17 @@ export class AppState {
     // `initialFile` overrides the usual "restore last file" branch — used
     // by secondary windows opened via "Open in new window" so the new
     // window lands on the file the user picked, not whatever the global
-    // `lastFileId` happens to be.
+    // `lastFileId` happens to be. `initialDesk` seeds this window's
+    // active desk the same way (desks are per-window; the hash carries
+    // the opener's desk so the new window starts where the user was).
     const initialFile = opts.initialFile || null;
+    const initialDesk = opts.initialDesk || null;
     if (IS_TAURI) {
       try {
         Object.assign(this.settings, await tauriInvoke("get_settings"));
+        // In-memory only: activeDeskId is a per-window key, so a
+        // secondary window never writes it back to disk.
+        if (initialDesk) this.settings.activeDeskId = initialDesk;
         if (this._migrateShortcutDefaults()) {
           try { await tauriInvoke("save_settings", { settings: this.settings }); } catch (_) {}
         }

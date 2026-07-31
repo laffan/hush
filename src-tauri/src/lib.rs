@@ -4,11 +4,11 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use tauri::WindowEvent;
 #[cfg(desktop)]
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconEvent,
-    WindowEvent,
 };
 
 mod atomic;
@@ -385,9 +385,9 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            let label = window.label().to_string();
             #[cfg(desktop)]
             {
-                let label = window.label().to_string();
                 if label == "main" {
                     match event {
                         WindowEvent::CloseRequested { api, .. } => {
@@ -404,23 +404,26 @@ pub fn run() {
                         }
                         _ => {}
                     }
-                } else if label != "settings" {
-                    // Secondary editor windows opened by "Open in new
-                    // window". When they're destroyed we drop them from
-                    // the registry so the sidebar's window-number badges
-                    // disappear in lockstep.
-                    if let WindowEvent::Destroyed = event {
-                        if let Some(state) = window.try_state::<AppState>() {
-                            state.window_registry.remove(&label);
-                            let _ = window
-                                .app_handle()
-                                .emit("windows-updated", state.window_registry.list());
-                        }
+                }
+            }
+            // Secondary editor windows opened by "Open in new window"
+            // (and iPad scene windows). When they're destroyed we drop
+            // them from the registry so the sidebar's window-number
+            // badges disappear in lockstep. This must run on mobile too
+            // — iPad scene teardown is exactly the case where the JS
+            // unload handler can't be relied on, and gating this behind
+            // cfg(desktop) left a stale badge behind for every closed
+            // iPad window.
+            if label != "main" && label != "settings" {
+                if let WindowEvent::Destroyed = event {
+                    if let Some(state) = window.try_state::<AppState>() {
+                        state.window_registry.remove(&label);
+                        let _ = window
+                            .app_handle()
+                            .emit("windows-updated", state.window_registry.list());
                     }
                 }
             }
-            #[cfg(mobile)]
-            let _ = (window, event);
         })
         .invoke_handler(tauri::generate_handler![
             commands::settings::get_settings,

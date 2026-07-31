@@ -1,0 +1,42 @@
+/* YOU ARE HERE — the literal YOUAREHERE token renders as a bright red
+   rounded tag wherever it appears, and the sidebar pins a matching red
+   row above the Flagged list. Fixed red/white on purpose (like sticky
+   notes' fixed palette) so the marker reads identically across every
+   theme and appearance. */
+
+.cm-youarehere {
+  background: #ff2b2b;
+  color: #ffffff;
+  border-radius: 5px;
+  padding: 1px 5px;
+  font-weight: 600;
+}
+
+/* Sidebar row above the Flagged list */
+.yah-row {
+  cursor: pointer;
+  list-style: none;
+}
+
+.yah-row .tree-item-row {
+  padding: 2px 0;
+}
+
+.yah-badge {
+  display: inline-block;
+  background: #ff2b2b;
+  color: #ffffff;
+  border-radius: 5px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.yah-row:hover .yah-badge {
+  filter: brightness(1.08);
+}

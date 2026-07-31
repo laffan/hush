@@ -473,6 +473,12 @@ pub struct AppSettings {
     #[serde(default)]
     pub sticky_notes: Vec<serde_json::Value>,
 
+    // YOU ARE HERE marker registry — `{ deskId: { fileId, fileType,
+    // shapeId?, offset? } }`, one marker per desk. Opaque to Rust; JS
+    // owns detection and the one-per-desk enforcement.
+    #[serde(default)]
+    pub you_are_here: serde_json::Value,
+
     /// Per-context "panes are hidden" flags, keyed by `pane.ownerContext`
     /// (`doc:<id>` / `nb:<id>` / `pj:<id>`); a truthy entry puts that file
     /// in "file" mode (panes off-screen until **Show panes** clears it).
@@ -667,6 +673,7 @@ impl Default for AppSettings {
             ratchet_encourage_typing: false,
             persisted_panes: Vec::new(),
             sticky_notes: Vec::new(),
+            you_are_here: serde_json::json!({}),
             panes_hidden_by_context: serde_json::json!({}),
             window_width: None, window_height: None, window_x: None, window_y: None,
             last_file_id: None, last_project_id: None, last_stack_id: None,

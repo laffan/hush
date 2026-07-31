@@ -551,6 +551,20 @@ export async function copyPanesBetweenContexts(sourceContextId, targetContextId)
  * canvas's own shapes. Each entry includes the live editor content so a
  * shelf rebuild reflects whatever the user is reading right now.
  */
+/** CodeMirror views of every open doc pane showing `fileId`. Lets
+ *  app-level rewrites (the YOUAREHERE enforcement) land as real editor
+ *  transactions instead of stale-buffer disk writes. */
+export function getDocPaneViewsForFile(fileId) {
+  const out = [];
+  if (!fileId) return out;
+  for (const [, p] of panes) {
+    if (p.fileType === "document" && p.fileId === fileId && p.editor?.view) {
+      out.push(p.editor.view);
+    }
+  }
+  return out;
+}
+
 export function getNotebookCanvasPanes() {
   if (!appState || !appState.currentNotebookFileId) return [];
   const out = [];

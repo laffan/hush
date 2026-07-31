@@ -373,6 +373,8 @@ export function createSidebar(state) {
   state.on("pdf-open", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
   state.on("panes-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
   state.on("panes-hidden-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
+  state.on("stickies-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
+  state.on("you-are-here-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
   state.on("windows-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
 
   // Replay persisted open state. Any truthy value reopens the Files

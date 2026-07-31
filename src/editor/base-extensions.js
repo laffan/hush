@@ -29,6 +29,7 @@ import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js
 import { getMarkdownHighlight, resolveHeaderColorOverride } from "./markdown-highlight.js";
 import { CommentExtension, HighlightExtension } from "./markdown-extensions.js";
 import { createFlagHighlightPlugin } from "./flag-highlight.js";
+import { createYouAreHerePlugin } from "./plugins/you-are-here.js";
 import { createLineIndicatorPlugin } from "./line-indicator.js";
 import { createSpellcheckPlugin, spellcheckClickHandler } from "./plugins/spellcheck.js";
 import { buildFoldingExtension } from "./folding.js";
@@ -178,6 +179,7 @@ export function createBaseExtensions(state, onChange, opts) {
     createCalloutPlugin(),
     createFootnotePlugin(state),
     createFlagHighlightPlugin(state),
+    createYouAreHerePlugin(),
     createLineIndicatorPlugin(state),
     createLinkDecoratorPlugin(state),
     createWikilinkPlugin(state),

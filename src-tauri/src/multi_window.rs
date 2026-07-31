@@ -22,7 +22,6 @@ pub struct WindowInfo {
 
 struct Inner {
     windows: HashMap<String, WindowInfo>,
-    next_number: u32,
 }
 
 pub struct WindowRegistry {
@@ -34,20 +33,23 @@ impl WindowRegistry {
         Self {
             inner: Mutex::new(Inner {
                 windows: HashMap::new(),
-                next_number: 1,
             }),
         }
     }
 
-    /// Insert (or fetch) the entry for a label, assigning the next
-    /// sequential number on first sighting.
+    /// Insert (or fetch) the entry for a label, assigning the smallest
+    /// number not currently in use on first sighting. Reusing freed
+    /// numbers keeps the sidebar badges at 1..N across open/close cycles
+    /// instead of counting up forever.
     pub fn ensure(&self, label: &str) -> WindowInfo {
         let mut inner = self.inner.lock().unwrap();
         if let Some(info) = inner.windows.get(label) {
             return info.clone();
         }
-        let n = inner.next_number;
-        inner.next_number += 1;
+        let mut n: u32 = 1;
+        while inner.windows.values().any(|w| w.number == n) {
+            n += 1;
+        }
         let info = WindowInfo {
             label: label.to_string(),
             number: n,
@@ -56,6 +58,21 @@ impl WindowRegistry {
         };
         inner.windows.insert(label.to_string(), info.clone());
         info
+    }
+
+    /// Drop every entry whose label is not in `alive` — the set of
+    /// windows the Tauri runtime still knows about. Registry entries can
+    /// outlive their window when the destroy notification is missed
+    /// (iPad scene teardown, a webview that never ran its unload
+    /// handler), and each survivor paints a phantom numeral badge in
+    /// the sidebar. Returns true when anything was removed.
+    pub fn prune<S: AsRef<str>>(&self, alive: &[S]) -> bool {
+        let mut inner = self.inner.lock().unwrap();
+        let before = inner.windows.len();
+        inner
+            .windows
+            .retain(|label, _| alive.iter().any(|a| a.as_ref() == label));
+        inner.windows.len() != before
     }
 
     pub fn set_file(&self, label: &str, file_id: Option<String>, file_type: Option<String>) {

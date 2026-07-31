@@ -25,6 +25,7 @@ import { installWindowShortcuts, installActivationFocus } from "./window-shortcu
 import { setTooltipsEnabled } from "./tooltips.js";
 import {
   getInitialFileFromHash,
+  getInitialDeskFromHash,
   getCurrentWindowLabel,
   setupMultiWindow,
 } from "./multi-window.js";
@@ -48,7 +49,8 @@ async function init() {
     window.__hushOpenWikilinkAsPane = (title) => { void openWikilinkAsPane(state, title); };
   }
   const initialFile = state.isSecondaryWindow ? getInitialFileFromHash() : null;
-  await state.init({ initialFile });
+  const initialDesk = state.isSecondaryWindow ? getInitialDeskFromHash() : null;
+  await state.init({ initialFile, initialDesk });
   if (typeof window !== "undefined") window.__hushState__ = state;
 
   // Drop any bundled style presets the user hasn't seen yet into the
@@ -250,6 +252,9 @@ async function init() {
   initPaneManager(state);
   // Sticky notes — temporary reminders floating above every surface.
   import("./sticky/sticky-notes.js").then(({ initStickyNotes }) => initStickyNotes(state));
+  // YOU ARE HERE — one marker per desk; save-pipeline detection +
+  // one-per-desk enforcement (see src/you-are-here.js).
+  import("./you-are-here.js").then(({ initYouAreHere }) => initYouAreHere(state));
   // Session history journal — records workspace states (open surface,
   // pane layout, focus) for the History panel's 100-step timeline.
   import("./state/history-journal.js").then(({ initHistoryJournal }) => initHistoryJournal(state));
@@ -462,6 +467,9 @@ async function init() {
         scrollPosition: state.settings.scrollPosition,
         typewriterMode: state.settings.typewriterMode,
         dryMode: state.settings.dryMode,
+        // Desks are per-window — the settings window's payload carries
+        // whichever desk it captured (typically main's).
+        activeDeskId: state.settings.activeDeskId,
       } : {};
       Object.assign(state.settings, newSettings, keepPerWindow);
 

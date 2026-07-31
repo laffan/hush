@@ -270,7 +270,9 @@ function buildCommands(state) {
           : s.currentProjectId ? "project"
           : s.currentFileId ? "document" : null;
         if (!fileId || !fileType) return;
-        openInNewWindow(fileId, fileType);
+        // Seed the new window with this window's active desk so it opens
+        // where the user is working (desks stay independent afterwards).
+        openInNewWindow(fileId, fileType, s.getActiveDesk?.()?.id || null);
       } },
     { id: "delete-current", label: "Delete current file", icon: icons.trash, shortcutKey: null, ctx: "shared",
       action: async (s) => {
