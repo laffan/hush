@@ -158,13 +158,17 @@
 }
 
 /* File Stickies read as square, filled cells beside the rectangular
-   outlined pane ones. */
+   outlined pane ones — painted the sticky's own pale pink (the file-
+   sticky scope colour, see sticky-notes.css) at full strength, with a
+   faint theme-tracking outline so the pale fill still reads on light
+   sidebars. */
 .tree-pane-cell.tree-sticky-cell {
   width: 7px;
   height: 7px;
-  border: none;
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
   border-radius: 1.5px;
-  background: currentColor;
+  background: #ffe4ec;
+  opacity: 1;
 }
 
 /* Hidden-panes dim rides on the pane cells only — stickies aren't part

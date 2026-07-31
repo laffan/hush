@@ -44,6 +44,7 @@ import {
   CommentExtension, HighlightExtension,
 } from "./markdown-extensions.js";
 import { createFlagHighlightPlugin, hexToRgba } from "./flag-highlight.js";
+import { createYouAreHerePlugin } from "./plugins/you-are-here.js";
 import {
   defaultLocalSyncContext, buildShortcutExtension, createBaseExtensions,
   programmaticAnnotations, isProgrammaticUpdate,
@@ -260,6 +261,7 @@ export function createEditor(container, state) {
   const projectViewField = createProjectViewField(state);
   const separatorFilter = createSeparatorFilter(state);
   const flagHighlightPlugin = createFlagHighlightPlugin(state);
+  const youAreHerePlugin = createYouAreHerePlugin();
   const linkDecoratorPlugin = createLinkDecoratorPlugin(state);
   const wikilinkPlugin = createWikilinkPlugin(state, {
     onInlinePaneRequest: (_view, { title, occurrence }) =>
@@ -319,6 +321,7 @@ export function createEditor(container, state) {
       calloutPlugin,
       footnotePlugin,
       flagHighlightPlugin,
+      youAreHerePlugin,
       buildFoldingExtension(),
       createFoldArrowPlugin(),
       createLineIndicatorPlugin(state),
