@@ -3994,6 +3994,7 @@ dependencies = [
  "notify",
  "objc2 0.5.2",
  "pulldown-cmark",
+ "raw-window-handle",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",

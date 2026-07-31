@@ -57,5 +57,11 @@ ecow = "0.2"
 objc2 = { version = "0.5", features = ["exception"] }
 block2 = "0.5"
 
+# Window-title plumbing on iPad: Tauri's set_title is a windowing no-op
+# on iOS, so set_window_display_title walks the raw UiKit handle to the
+# scene and sets UIWindowScene.title itself. Same 0.6 line Tauri uses.
+[target.'cfg(target_os = "ios")'.dependencies]
+raw-window-handle = "0.6"
+
 [dev-dependencies]
 tempfile = "3"

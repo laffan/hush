@@ -16,6 +16,7 @@
 
 import { isIOSTauri } from "./command-palette-helpers.js";
 import { applyExternalDocContent } from "./sync/apply-external.js";
+import { findNode, findNodeByFileId } from "./state/tree-helpers.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -259,6 +260,43 @@ function currentFileFromState(state) {
   return { fileId: null, fileType: null };
 }
 
+/** "[Desk Name]-[File Name]" for the native window title. The in-window
+ *  chrome hides titles, but Mission Control (macOS) and the app
+ *  switcher / Stage Manager pickers (iPadOS) read them. Falls back to
+ *  the desk alone with nothing open, and to "Hush" before boot. */
+function computeWindowTitle(state) {
+  const deskName = state.getActiveDesk?.()?.name || "";
+  const tree = state.fileTree || [];
+  let fileName = "";
+  if (state.currentProjectId) {
+    fileName = findNode(tree, state.currentProjectId)?.name || "";
+  } else {
+    const fileId = state.currentStackFileId || state.currentPdfFileId
+      || state.currentNotebookFileId || state.currentFileId;
+    if (fileId) fileName = findNodeByFileId(tree, fileId)?.name || "";
+    else if (state.currentLocalSync?.name) fileName = state.currentLocalSync.name;
+  }
+  return [deskName, fileName].filter(Boolean).join("-") || "Hush";
+}
+
+let _lastPushedTitle = null;
+
+/** Push the computed title to the native window (deduped — most of the
+ *  triggering events fire far more often than the title changes). */
+export async function updateWindowTitle(state) {
+  if (!IS_TAURI) return;
+  const title = computeWindowTitle(state);
+  if (title === _lastPushedTitle) return;
+  _lastPushedTitle = title;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const label = await getLabel();
+    await invoke("set_window_display_title", { label, title });
+  } catch (e) {
+    console.warn("set_window_display_title failed:", e);
+  }
+}
+
 /** End-to-end multi-window wiring for `main.js`. Subscribes to every
  *  cross-window event first (so the upcoming register/push echoes feed
  *  back through the same pipe and `state.windowList` populates without
@@ -345,6 +383,16 @@ export async function setupMultiWindow(state) {
   };
   state.on("file-opened", syncWindowFile);
   state.on("notebook-open", syncWindowFile);
+
+  // Native window title — "[Desk Name]-[File Name]". Recomputed on
+  // anything that can change either half: opening any surface,
+  // switching desks, and renames (files-changed / desks-changed).
+  const syncTitle = () => { void updateWindowTitle(state); };
+  for (const ev of [
+    "file-opened", "notebook-open", "pdf-open", "stack-open",
+    "active-desk-changed", "files-changed", "desks-changed",
+  ]) state.on(ev, syncTitle);
+  syncTitle();
 
   // Live doc broadcast — fires on the doc-content-changed pulse main.js
   // adds to markDirty(). Debounced so a fast typist doesn't flood the

@@ -522,6 +522,7 @@ pub fn run() {
             commands::window::set_always_on_top,
             commands::window::set_activation_policy,
             commands::window::set_traffic_lights_visible,
+            commands::window::set_window_display_title,
             commands::multi_window::list_windows,
             commands::multi_window::register_window,
             commands::multi_window::set_window_file,
