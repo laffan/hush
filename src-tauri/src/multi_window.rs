@@ -153,16 +153,20 @@ impl WindowRegistry {
         changed
     }
 
-    /// Drop entries that haven't heartbeated within `max_age`. "main" is
-    /// exempt — it's hidden rather than closed on macOS and must keep
-    /// ordinal 1. Used on mobile, where a closed iPad scene produces no
-    /// destroy event and can even linger in the runtime's window list.
+    /// Drop entries that haven't heartbeated within `max_age`. Used on
+    /// mobile only, where a closed iPad scene produces no destroy event
+    /// and can even linger in the runtime's window list. "main" gets no
+    /// exemption — iPadOS lets the user close the main scene like any
+    /// other, and an immortal stale entry would inflate every number
+    /// minted after it. (Desktop, where macOS hides main instead of
+    /// closing it, never runs this path.) A resumed main re-registers
+    /// and — seq 0 being pinned — reads as 1 again.
     pub fn prune_stale(&self, max_age: Duration) -> bool {
         let mut inner = self.inner.lock().unwrap();
         let before = inner.windows.len();
         inner
             .windows
-            .retain(|label, e| label == "main" || e.last_seen.elapsed() <= max_age);
+            .retain(|_, e| e.last_seen.elapsed() <= max_age);
         let changed = inner.windows.len() != before;
         if changed {
             Self::renumber(&mut inner);
@@ -252,14 +256,19 @@ mod tests {
     }
 
     #[test]
-    fn stale_entries_expire_but_main_survives() {
+    fn stale_entries_expire_including_main() {
         let reg = WindowRegistry::new();
         reg.ensure("main");
         reg.ensure("window-a");
         reg.ensure("window-b");
         reg.backdate("main", Duration::from_secs(60));
         reg.backdate("window-a", Duration::from_secs(60));
+        // iPadOS can close the main scene like any other — no exemption,
+        // or its immortal entry would inflate every number minted after.
         assert!(reg.prune_stale(Duration::from_secs(15)));
+        assert_eq!(numbers(&reg), vec![("window-b".into(), 1)]);
+        // A resumed main re-registers and, with seq 0 pinned, reads 1.
+        reg.ensure("main");
         assert_eq!(
             numbers(&reg),
             vec![("main".into(), 1), ("window-b".into(), 2)]

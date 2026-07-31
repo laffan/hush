@@ -20,16 +20,18 @@ use crate::AppState;
 ///     scene teardown can be entirely silent — no `Destroyed` event,
 ///     and the dead scene may even linger in the runtime's window list
 ///     — so age is the only trustworthy liveness signal there. The
-///     15 s window is ~3 missed beats of the JS side's 4 s heartbeat;
-///     a scene the OS suspends (parked in the app switcher) expires
-///     too, then re-registers the moment the user returns to it.
+///     10 s window is 2 missed beats of the JS side's 4 s heartbeat
+///     plus slack; a scene the OS suspends (parked in the app switcher)
+///     expires too, then re-registers the moment the user returns to
+///     it. Kept tight so a freshly-registering window (the moment its
+///     badge number is minted) counts as few dead siblings as possible.
 fn prune_dead_windows(app: &AppHandle, state: &State<AppState>) {
     let alive: Vec<String> = app.webview_windows().keys().cloned().collect();
     state.window_registry.prune(&alive);
     #[cfg(mobile)]
     state
         .window_registry
-        .prune_stale(std::time::Duration::from_secs(15));
+        .prune_stale(std::time::Duration::from_secs(10));
 }
 
 #[tauri::command]

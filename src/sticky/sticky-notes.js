@@ -90,6 +90,12 @@ export function initStickyNotes(state) {
   // the freshly-merged settings list.
   state.on("desk-meta-pulled", ({ deskId }) => rebuildDeskNotes(deskId));
 
+  // Sibling windows edit the same settings-backed sticky list; this
+  // window's notes Map was hydrated at boot, so a sticky added or
+  // closed in another window would never materialise here without a
+  // rebuild on the cross-window merge pulse.
+  state.on("remote-settings-merged", () => rebuildFromSettings());
+
   // Click anywhere outside a sticky drops the active highlight.
   window.addEventListener("pointerdown", (e) => {
     if (e.target instanceof Element && e.target.closest(".sticky-note")) return;
@@ -134,6 +140,80 @@ function schedulePersist() {
   }, 500);
 }
 
+/** Build a live note record from its serialized settings shape (shared
+ *  by boot restore and both rebuild paths). */
+function noteFromSerialized(s) {
+  const width = clampSize(s.width);
+  const note = {
+    id: s.id, kind: s.kind, target: s.target ?? null,
+    x: clampAxis(s.x ?? 40, width, window.innerWidth),
+    y: clampAxis(s.y ?? 40, HEADER_HEIGHT, window.innerHeight),
+    width, height: clampSize(s.height),
+    collapsed: !!s.collapsed,
+    fontSize: clampFont(s.fontSize),
+    text: typeof s.text === "string" ? s.text : "",
+    createdAt: s.createdAt || Date.now(),
+  };
+  if (typeof s.wx === "number" && typeof s.wy === "number") { note.wx = s.wx; note.wy = s.wy; }
+  return note;
+}
+
+/** Reconcile the live notes Map against `settings.stickyNotes` after a
+ *  sibling window's write was merged in: remove notes the sibling
+ *  closed, create ones it added, and refresh geometry/text on the rest.
+ *  A note whose textarea currently has focus is left completely alone —
+ *  the merged list may lag this window's own 500 ms-debounced persist,
+ *  and clobbering mid-typing text would be worse than a brief skew. */
+function rebuildFromSettings() {
+  const list = appState?.settings?.stickyNotes;
+  if (!Array.isArray(list)) return;
+  const byId = new Map(list.filter((s) => s && s.id).map((s) => [s.id, s]));
+  let changed = false;
+  for (const [id, n] of [...notes]) {
+    if (byId.has(id)) continue;
+    if (document.activeElement === n.textarea) continue; // mid-edit here
+    n.el.remove();
+    notes.delete(id);
+    changed = true;
+  }
+  for (const [id, s] of byId) {
+    const existing = notes.get(id);
+    if (existing) {
+      if (document.activeElement === existing.textarea) continue;
+      existing.kind = s.kind;
+      existing.target = s.target ?? null;
+      existing.x = clampAxis(s.x ?? existing.x, clampSize(s.width), window.innerWidth);
+      existing.y = clampAxis(s.y ?? existing.y, HEADER_HEIGHT, window.innerHeight);
+      existing.width = clampSize(s.width);
+      existing.height = clampSize(s.height);
+      existing.fontSize = clampFont(s.fontSize);
+      existing.collapsed = !!s.collapsed;
+      existing.text = typeof s.text === "string" ? s.text : "";
+      existing.el.className = `sticky-note sticky-${existing.kind}` + (existing.collapsed ? " collapsed" : "");
+      Object.assign(existing.el.style, {
+        left: existing.x + "px", top: existing.y + "px",
+        width: existing.width + "px",
+        height: (existing.collapsed ? HEADER_HEIGHT : existing.height) + "px",
+      });
+      existing.textarea.value = existing.text;
+      existing.textarea.style.fontSize = existing.fontSize + "px";
+      if (existing._ctxBtn) {
+        existing._ctxBtn.innerHTML = ctxIconFor(existing.kind);
+        existing._ctxBtn.title = labelFor(existing);
+      }
+      if (existing._excerptEl) existing._excerptEl.textContent = excerptFor(existing.text);
+      continue;
+    }
+    if (!targetStillExists(s.kind, s.target)) continue;
+    const note = noteFromSerialized(s);
+    buildNoteDOM(note);
+    notes.set(note.id, note);
+    changed = true;
+  }
+  refreshVisibility();
+  if (changed) emitStickiesChanged();
+}
+
 /** Drop and re-create one desk's notes from `settings.stickyNotes` —
  *  called after a desk-meta pull replaced that desk's entries. */
 function rebuildDeskNotes(deskId) {
@@ -147,18 +227,7 @@ function rebuildDeskNotes(deskId) {
   const list = appState?.settings?.stickyNotes || [];
   for (const s of list) {
     if (!s || s.kind !== "desk" || s.target !== deskId || notes.has(s.id)) continue;
-    const width = clampSize(s.width);
-    const height = clampSize(s.height);
-    const note = {
-      id: s.id, kind: s.kind, target: s.target,
-      x: clampAxis(s.x ?? 40, width, window.innerWidth),
-      y: clampAxis(s.y ?? 40, HEADER_HEIGHT, window.innerHeight),
-      width, height,
-      collapsed: !!s.collapsed,
-      fontSize: clampFont(s.fontSize),
-      text: typeof s.text === "string" ? s.text : "",
-      createdAt: s.createdAt || Date.now(),
-    };
+    const note = noteFromSerialized(s);
     buildNoteDOM(note);
     notes.set(note.id, note);
   }
@@ -171,22 +240,7 @@ function restoreNotes() {
   for (const s of list) {
     if (!s || !s.id || !s.kind) continue;
     if (!targetStillExists(s.kind, s.target)) continue; // dropped forever
-    const width = clampSize(s.width);
-    const height = clampSize(s.height);
-    const note = {
-      id: s.id,
-      kind: s.kind,
-      target: s.target ?? null,
-      x: clampAxis(s.x ?? 40, width, window.innerWidth),
-      y: clampAxis(s.y ?? 40, HEADER_HEIGHT, window.innerHeight),
-      width,
-      height,
-      collapsed: !!s.collapsed,
-      fontSize: clampFont(s.fontSize),
-      text: typeof s.text === "string" ? s.text : "",
-      createdAt: s.createdAt || Date.now(),
-    };
-    if (typeof s.wx === "number" && typeof s.wy === "number") { note.wx = s.wx; note.wy = s.wy; }
+    const note = noteFromSerialized(s);
     buildNoteDOM(note);
     notes.set(note.id, note);
   }

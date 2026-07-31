@@ -27,6 +27,21 @@ function stickiesForFile(itemType, fileId) {
   try { return fn(kind, fileId) || []; } catch (_) { return []; }
 }
 
+/** Persisted-pane fallback for a context with no LIVE panes in this
+ *  window. Panes are per-window runtime objects, so a pane opened in a
+ *  sibling window never lands in this window's pane manager — but it
+ *  does land in the shared `settings.persistedPanes`, and the file
+ *  should read as a desktop in every window's sidebar. Only consulted
+ *  when the local set is empty so a context with live panes never
+ *  double-counts. */
+function persistedPanesForContext(state, ctx) {
+  const list = state.settings?.persistedPanes;
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((p) => p && p.ownerContext === ctx && !p.gutter)
+    .map((p) => ({ fileName: p.fileName || "Untitled" }));
+}
+
 function buildStrip(ctxPanes, stickies, hidden, inline) {
   const strip = document.createElement("span");
   strip.className = inline ? "tree-pane-indicators-inline" : "tree-pane-indicators";
@@ -54,7 +69,8 @@ export function paneIndicatorsFor(item, state) {
   // name span; the doc's own below-strip is suppressed when it has a gutter.
   if (item.type === "notebook" && item.gutter) {
     const ctx = contextIdForFile(item.gutterForDoc, "document");
-    const docPanes = getPanesForContext(ctx).filter((p) => !p.gutter);
+    let docPanes = getPanesForContext(ctx).filter((p) => !p.gutter);
+    if (!docPanes.length) docPanes = persistedPanesForContext(state, ctx);
     const docStickies = stickiesForFile("document", item.gutterForDoc);
     if (!docPanes.length && !docStickies.length) return null;
     return buildStrip(docPanes, docStickies, !!(state.settings?.panesHiddenByContext || {})[ctx], true);
@@ -70,6 +86,7 @@ export function paneIndicatorsFor(item, state) {
     // Drop the gutter pane — a gutter never shows a square (its row carries the
     // doc's other panes instead).
     ctxPanes = getPanesForContext(ctx).filter((p) => !p.gutter);
+    if (!ctxPanes.length) ctxPanes = persistedPanesForContext(state, ctx);
     hidden = !!(state.settings?.panesHiddenByContext || {})[ctx];
   }
   if (!ctxPanes.length && !stickies.length) return null;

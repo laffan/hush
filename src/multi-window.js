@@ -355,6 +355,14 @@ export async function setupMultiWindow(state) {
           if (JSON.stringify(state.settings.youAreHere || {}) !== yahBefore) {
             state.emit("you-are-here-changed");
           }
+          // Settings-backed live state (sticky notes, persisted panes)
+          // was hydrated at THIS window's boot — a sibling's additions
+          // land in `state.settings` above but nothing rebuilds from
+          // them on plain settings-changed. This dedicated pulse lets
+          // the sticky module rebuild its notes and the sidebar repaint
+          // its indicator squares without every local settings write
+          // paying for a rebuild.
+          state.emit("remote-settings-merged");
         } else if (kind === "files") {
           state.fileTree = await invoke("get_file_tree");
           state.files = await invoke("list_files");
