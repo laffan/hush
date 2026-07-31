@@ -271,11 +271,15 @@ impl DeskStore {
     ///
     /// A folder that already carries `.hushdesk` + `.hush/tree.json` is
     /// adopted as-is (the handoff case). Anything else is *initialised*:
-    /// the sidecar is written into the folder the user picked — the
-    /// folder itself becomes the desk root, nothing is moved or nested —
-    /// and the disk-wins reconcile then absorbs whatever was already
-    /// inside as tree nodes. So pointing Hush at a directory of loose
-    /// `.md` files turns it into a desk holding those documents.
+    /// whatever docs, notebooks and images are already inside are
+    /// absorbed into the desk tree **first** — the sidecar written into
+    /// the folder the user picked already carries them, so at no point
+    /// does the folder look like an empty desk (a window a concurrent
+    /// tree save once mistook for "this desk has no files", which is how
+    /// a populated folder could be wiped to a bare skeleton). The folder
+    /// itself becomes the desk root; nothing is moved or nested. A
+    /// failure mid-initialise removes the partial sidecars so the folder
+    /// is left exactly as picked.
     ///
     /// Returns the desk id either way.
     pub fn open_folder_as_desk(
@@ -314,40 +318,56 @@ impl DeskStore {
             .unwrap_or("Desk")
             .to_string();
         let created_at = now_secs();
-        let desk = TreeNode {
+        let mut desk = TreeNode {
             id: desk_id.clone(),
             name: name.clone(),
             node_type: "desk".to_string(),
             children: desk_specials(&desk_id),
             ..Default::default()
         };
+        // Absorb the folder's existing files into the tree + index
+        // before anything is written, so the first sidecar on disk is
+        // already complete. The specials were seeded above, so an
+        // existing `Inbox/` (or `Images/`, …) directory folds into the
+        // matching special instead of doubling beside it.
+        let mut index = std::collections::HashMap::new();
+        crate::desk_scan::absorb_disk_files(path, &mut desk, &mut index);
 
         // Written directly against `path` rather than through
         // `self.tree_path(&desk_id)` so the sidecar lands before the root
         // is registered — no dependence on the roots cache refreshing
-        // between the two writes.
-        let hush_dir = path.join(".hush");
-        fs::create_dir_all(&hush_dir)?;
-        write_atomic_str(
-            &hush_dir.join("tree.json"),
-            &serde_json::to_string_pretty(&desk)?,
-        )?;
-        write_atomic_str(
-            &hush_dir.join("index.json"),
-            &serde_json::to_string_pretty(&serde_json::json!({
-                "format": "hush-index", "version": 1, "files": {},
-            }))?,
-        )?;
-        write_atomic_str(
-            &path.join(".hushdesk"),
-            &serde_json::to_string_pretty(&serde_json::json!({
-                "format": "hush-desk",
-                "version": 1,
-                "id": desk_id,
-                "name": name,
-                "createdAt": created_at,
-            }))?,
-        )?;
+        // between the two writes. Any failure from here on rolls the
+        // partial sidecars back so a re-pick starts clean.
+        let init = || -> Result<(), BoxError> {
+            let hush_dir = path.join(".hush");
+            fs::create_dir_all(&hush_dir)?;
+            write_atomic_str(
+                &hush_dir.join("tree.json"),
+                &serde_json::to_string_pretty(&desk)?,
+            )?;
+            write_atomic_str(
+                &hush_dir.join("index.json"),
+                &serde_json::to_string_pretty(&serde_json::json!({
+                    "format": "hush-index", "version": 1, "files": index,
+                }))?,
+            )?;
+            write_atomic_str(
+                &path.join(".hushdesk"),
+                &serde_json::to_string_pretty(&serde_json::json!({
+                    "format": "hush-desk",
+                    "version": 1,
+                    "id": desk_id,
+                    "name": name,
+                    "createdAt": created_at,
+                }))?,
+            )?;
+            Ok(())
+        };
+        if let Err(e) = init() {
+            let _ = fs::remove_file(path.join(".hushdesk"));
+            let _ = fs::remove_dir_all(path.join(".hush"));
+            return Err(e);
+        }
 
         roots.insert(
             desk_id.clone(),
@@ -355,10 +375,6 @@ impl DeskStore {
         );
         save_entries(&self.desks_dir, &roots)?;
         self.append_to_order(&desk_id)?;
-        // Absorb what was already in the folder. A failure here leaves a
-        // registered but empty desk rather than losing the folder, so it
-        // isn't fatal — the next reconcile picks the files up.
-        let _ = self.reconcile_desk_from_disk(&desk_id);
         Ok(desk_id)
     }
 }

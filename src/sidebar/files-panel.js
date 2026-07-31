@@ -11,7 +11,7 @@ import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pan
 import { typeIcons, escHtml, attachLeafHoverHandlers, showPromptModal, googleLinkBadgeHtml, computeNumberLabels, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
 import {
   isInboxId, isImagesId, isPdfsId, isTrashId, isAnySpecialId, allSpecialIds,
-  visibleTopLevel, isAllDesksMode, numberSkip, hasPairedGutter, getIcon, windowBadgesHtml,
+  visibleTopLevel, renderedDeskIdFor, commitRenderedChildren, isAllDesksMode, numberSkip, hasPairedGutter, getIcon, windowBadgesHtml,
   actionButtons, flagOnlyButton, getPdfSync, buildPdfRowHtml, sortFlaggedItems,
   isItemActive,
 } from "./files-panel-rows.js";
@@ -41,6 +41,10 @@ let localSyncRootEl = null;
 
 // Outline-number labels for rows inside a project with `showNumbers`.
 let numberLabels = new Map();
+
+// Desk the sortable was seeded from — onChange commits into THIS desk
+// (commitRenderedChildren), never the currently-active one.
+let renderedDeskId = null;
 
 export function createFilesPanel(container, state, hidePanel) {
   storedHidePanel = hidePanel;
@@ -79,6 +83,7 @@ export function createFilesPanel(container, state, hidePanel) {
   }
 
   reapplyGutterMarkers(state.fileTree);
+  renderedDeskId = renderedDeskIdFor(state);
   const sortedTree = augmentTreeWithHeadings(state, augmentTreeWithTabs(state, sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state)))));
   numberLabels = computeNumberLabels(sortedTree, numberSkip, isInboxId);
 
@@ -309,11 +314,13 @@ export function createFilesPanel(container, state, hidePanel) {
         queueMicrotask(() => positionLocalSync(state)); // re-nest Local Folders after the re-render
         return;
       }
-      enforceSpecialPositions(cleaned);
       normalizeProjectChildren(cleaned);
-      const active = state.fileTree.find(n => n.type === "desk" && n.id === state.settings?.activeDeskId)
-        || state.fileTree.find(n => n.type === "desk");
-      if (active) active.children = cleaned; else state.fileTree = cleaned;
+      // Commit into the desk this list was rendered from; bail + re-render
+      // if it's gone (see commitRenderedChildren).
+      if (!commitRenderedChildren(state, renderedDeskId, cleaned)) {
+        refreshList(state);
+        return;
+      }
       normalizePdfProjectAliases(state.fileTree);
       state.saveFileTree();
       state.reconcileSync();

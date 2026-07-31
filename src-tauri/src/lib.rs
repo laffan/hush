@@ -18,6 +18,7 @@ mod desk_hashes;
 mod desk_meta;
 mod desk_migrate;
 mod desk_paths;
+mod desk_place;
 mod desk_roots;
 mod desk_scan;
 mod desk_store;
@@ -492,6 +493,7 @@ pub fn run() {
             commands::desks::desk_make_local,
             commands::desks::desk_make_internal,
             commands::desks::desk_open_folder_as_desk,
+            commands::desks::desk_unregister_root,
             commands::desks::desk_reconcile,
             commands::local_sync::local_sync_add,
             commands::local_sync::local_sync_remove,

@@ -207,18 +207,33 @@ fn open_folder_as_desk_refuses_bad_folders() {
 }
 
 #[test]
-fn deleting_a_local_desk_unregisters_without_touching_the_folder() {
+fn deleting_a_local_desk_takes_an_explicit_unregister() {
     let dir = tmp();
     let external = tmp();
     let target = external.path().join("Desk");
     let store = seed_simple_desk(dir.path());
     store.make_desk_local("d1", &target, None).unwrap();
 
-    // Desk vanishes from the tree (deleted) while another desk remains.
+    // A tree save that merely lacks the desk (a stale tree from a second
+    // window, an interleaved save) must NOT disconnect it — the desk
+    // stays registered and resurfaces from its folder on the next load.
     let tree = vec![node("d2", "desk", "Other", None, Vec::new())];
     store.save_forest(&tree).unwrap();
     assert!(target.join("Doc.md").exists(), "user folder untouched");
-    assert!(store.list_roots().is_empty(), "root unregistered");
+    assert_eq!(store.list_roots().len(), 1, "stale save keeps the registration");
+    let forest = store.load_forest().unwrap();
+    assert!(
+        forest.iter().any(|d| d.id == "d1" && !d.children.is_empty()),
+        "desk resurrects from its folder"
+    );
+
+    // Real deletion says so out loud (the delete-desk flow calls
+    // `desk_unregister_root` before the tree save). Folder untouched.
+    crate::desk_roots::unregister(&store.desks_dir, "d1");
+    store.save_forest(&tree).unwrap();
+    assert!(store.list_roots().is_empty(), "explicit unregister removes the root");
+    assert!(target.join("Doc.md").exists(), "user folder still untouched");
+    assert!(store.load_forest().unwrap().iter().all(|d| d.id != "d1"));
 }
 
 #[test]

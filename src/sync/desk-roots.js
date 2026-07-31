@@ -196,6 +196,26 @@ async function ensureSpecials(state, deskId) {
   state.emit("files-changed");
 }
 
+/** Explicitly disconnect a local desk's folder — the delete-desk path.
+ *  `save_forest` never unregisters a root on its own (a desk missing
+ *  from one saved tree is indistinguishable from a stale tree), so
+ *  deletion has to say so out loud before the tree save. The folder on
+ *  disk is untouched. */
+export async function unregisterDeskRoot(state, deskId) {
+  if (!IS_TAURI) return;
+  const path = state.deskRoots?.[deskId];
+  if (!path) return;
+  if (isIOSTauri()) {
+    try { await plugin("stop_watch", { path }); } catch (_) {}
+  }
+  try {
+    await invoke("desk_unregister_root", { deskId });
+  } catch (e) {
+    console.warn("desk_unregister_root failed:", e);
+  }
+  await refreshDeskRoots(state);
+}
+
 /** Reveal a local desk's folder in the OS file manager. */
 export async function revealDeskRoot(state, deskId) {
   const path = state.deskRoots?.[deskId];
