@@ -492,7 +492,7 @@ The Settings > Editor **Make space for panes** / **Shift column to** controls we
 
 Sibling helpers next to the main file: **`add-popup.js`** (footer Add button popover), **`sidebar-export.js`** (markdown export path), **`doc-export-modal.js`** (format / style / layout / citation picker for doc and project exports), **`ratchet-dropdown.js`** (centered duration grid surfaced by the command palette), and **`panel-resizer.js`** (exports `applyPanelWidth(px)` and `attachGripResize(state, resizeEl, panelOverlay)`).
 
-### Files Panel (`sidebar/files-panel.js`, `files-panel-shared.js`, `files-panel-local-sync.js`, `files-panel-row-menu.js`, `files-panel-actions.js`, `files-panel-multi-select.js`)
+### Files Panel (`sidebar/files-panel.js`, `files-panel-shared.js`, `files-panel-local-sync.js`, `files-panel-row-menu.js`, `files-panel-actions.js`, `files-panel-multi-select.js`, `files-panel-flagged.js`)
 
 Nested tree view with four node types:
 

@@ -5,20 +5,20 @@
 
 import { SortableList } from "./sortable-list/sortable-list.js";
 import { AppState } from "../state/state.js";
-import { collectFlaggedItems, findAncestorIds, findNode, findNodeByFileId, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode, reapplyGutterMarkers } from "../state/tree-helpers.js";
+import { findNode, findNodeByFileId, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode, reapplyGutterMarkers } from "../state/tree-helpers.js";
 import { createPane } from "../pane/pane-manager.js";
 import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
-import { typeIcons, escHtml, attachLeafHoverHandlers, showPromptModal, googleLinkBadgeHtml, computeNumberLabels, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
+import { escHtml, showPromptModal, googleLinkBadgeHtml, computeNumberLabels, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
 import {
   isInboxId, isImagesId, isPdfsId, isTrashId, isAnySpecialId, allSpecialIds,
   visibleTopLevel, renderedDeskIdFor, commitRenderedChildren, isAllDesksMode, numberSkip, hasPairedGutter, getIcon, windowBadgesHtml,
-  actionButtons, flagOnlyButton, getPdfSync, buildPdfRowHtml, sortFlaggedItems,
+  actionButtons, getPdfSync, buildPdfRowHtml, sortFlaggedItems,
   isItemActive,
 } from "./files-panel-rows.js";
 import { normalizePdfProjectAliases } from "../state/state-pdf-aliases.js";
 import { refreshTooltips } from "../tooltips.js";
 import { renderLocalSyncSection, getLocalSyncContainer, onLocalDropExternal, positionLocalSync as positionLocalSyncImpl } from "./files-panel-local-sync.js";
-import { openRowMenu, rowColorRgba } from "./files-panel-row-menu.js";
+import { openRowMenu } from "./files-panel-row-menu.js";
 import { collectVisibleDocs, handleDocMultiClick, installDragSelect } from "./files-panel-multi-select.js";
 import {
   handleRename, handleRevealInFinder, handleConvertContainer,
@@ -28,7 +28,7 @@ import {
 } from "./files-panel-actions.js";
 import { isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree, renderTabMarkerRow, openDocAtTab } from "./files-panel-tabs.js";
 import { isHeadingItem, augmentTreeWithHeadings, stripHeadingsFromTree, renderHeadingRow, openDocAtHeading } from "./files-panel-headings.js";
-import { renderYouAreHereRows } from "./files-panel-you-are-here.js";
+import { renderFlaggedSection } from "./files-panel-flagged.js";
 
 let sortableInstance = null;
 let flaggedContainerEl = null;
@@ -343,8 +343,13 @@ export function createFilesPanel(container, state, hidePanel) {
   sortableInstance.render();
   positionLocalSync(state);
 
-  // Render the virtual Flagged folder
-  renderFlaggedSection(state);
+  // Render the virtual Flagged folder (files-panel-flagged.js — the refs
+  // let its fold / reveal interactions re-render and expand the tree).
+  renderFlaggedSection(state, {
+    container: flaggedContainerEl,
+    hidePanel: storedHidePanel,
+    getSortable: () => sortableInstance,
+  });
 
   // Delegated action handlers
   listContainer.addEventListener("click", onActionClick);
@@ -456,189 +461,6 @@ function onActionClick(e) {
   dispatchRowAction(action, nodeId, { anchor: actionBtn, targetType: actionBtn.dataset.targetType });
 }
 
-
-// ===== Virtual Flagged Folder =====
-
-let flaggedCollapsed = false;
-// Per-node collapse state for nested entries inside the Flagged section.
-// Keyed by the real tree node id — not stored cross-session, matching
-// how the main tree's SortableList handles collapse.
-const flaggedNodeCollapsed = new Set();
-
-function renderFlaggedSection(state) {
-  if (!flaggedContainerEl) return;
-  flaggedContainerEl.innerHTML = "";
-
-  // YOU ARE HERE — one red marker row per visible desk, pinned above
-  // the Flagged list (rendered before the flagged early-return so a
-  // desk with no flags still shows its marker).
-  renderYouAreHereRows(state, flaggedContainerEl, storedHidePanel);
-
-  // Scope to the visible desk(s) so flagged items stay desk-specific.
-  const flaggedItems = collectFlaggedItems(visibleTopLevel(state));
-  if (flaggedItems.length === 0) return;
-
-  // Create the flagged folder as a regular li that looks like a folder
-  const folderLi = document.createElement("li");
-  folderLi.className = "sl-item flagged-virtual-folder";
-  folderLi.dataset.id = "__flagged__";
-
-  const contentWrapper = document.createElement("div");
-  contentWrapper.className = "sl-item-content";
-
-  // Fold arrow
-  const foldArrow = document.createElement("button");
-  foldArrow.className = "sl-fold-arrow";
-  foldArrow.type = "button";
-  foldArrow.textContent = flaggedCollapsed ? "\u25B6\uFE0E" : "\u25BC";
-  foldArrow.setAttribute("aria-label", flaggedCollapsed ? "Expand" : "Collapse");
-  foldArrow.addEventListener("click", (e) => {
-    e.stopPropagation();
-    flaggedCollapsed = !flaggedCollapsed;
-    renderFlaggedSection(state);
-  });
-  contentWrapper.appendChild(foldArrow);
-
-  // Label
-  const label = document.createElement("span");
-  label.className = "sl-item-label";
-  const mainLabel = document.createElement("span");
-  mainLabel.className = "sl-item-main-label";
-  const row = document.createElement("span");
-  row.className = "tree-item-row";
-  row.innerHTML = `${typeIcons.flaggedFolder}<span class="tree-item-name">Flagged</span>`;
-  mainLabel.appendChild(row);
-  label.appendChild(mainLabel);
-  contentWrapper.appendChild(label);
-  folderLi.appendChild(contentWrapper);
-
-  // Render children if not collapsed
-  if (!flaggedCollapsed) {
-    const childList = document.createElement("ul");
-    childList.className = "sl-list";
-    for (const item of flaggedItems) {
-      childList.appendChild(renderFlaggedNode(item, state, /*isBubbled=*/false));
-    }
-    folderLi.appendChild(childList);
-  }
-
-  flaggedContainerEl.appendChild(folderLi);
-}
-
-/**
- * Render one node inside the Flagged section. Folders/projects render
- * their children nested underneath, matching the main file tree layout.
- * `isBubbled` is true for descendants of a flagged folder — those get
- * no unflag button (clicking it would flag them independently).
- */
-function renderFlaggedNode(item, state, isBubbled) {
-  const li = document.createElement("li");
-  li.className = "sl-item flagged-link-item";
-  li.dataset.id = item.id;
-  // Keep the row's highlight tint on its flagged copy (mirrors the main tree).
-  const bgRgba = rowColorRgba(item?.bgColor);
-  if (bgRgba) li.style.setProperty("--item-bg", bgRgba);
-
-  const itemContent = document.createElement("div");
-  itemContent.className = "sl-item-content";
-
-  const hasChildren = Array.isArray(item.children) && item.children.length > 0;
-  const isCollapsed = flaggedNodeCollapsed.has(item.id);
-  if (hasChildren) li.classList.add("has-children");
-  if (hasChildren && isCollapsed) li.classList.add("collapsed");
-
-  const foldBtn = document.createElement("button");
-  foldBtn.className = "sl-fold-arrow" + (hasChildren ? "" : " sl-fold-empty");
-  foldBtn.type = "button";
-  if (hasChildren) {
-    foldBtn.textContent = isCollapsed ? "\u25B6\uFE0E" : "\u25BC";
-    foldBtn.setAttribute("aria-label", isCollapsed ? "Expand" : "Collapse");
-    foldBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (flaggedNodeCollapsed.has(item.id)) flaggedNodeCollapsed.delete(item.id);
-      else flaggedNodeCollapsed.add(item.id);
-      renderFlaggedSection(state);
-    });
-  } else {
-    foldBtn.tabIndex = -1;
-  }
-  itemContent.appendChild(foldBtn);
-
-  const itemLabel = document.createElement("span");
-  itemLabel.className = "sl-item-label";
-  const itemMain = document.createElement("span");
-  itemMain.className = "sl-item-main-label";
-  const itemRow = document.createElement("span");
-  itemRow.className = "tree-item-row";
-  // Only items directly flagged by the user get the unflag button —
-  // descendants of a flagged folder bubble up without one.
-  const button = (item.flagged && !isBubbled) ? flagOnlyButton(item.id) : "";
-  // A gutter notebook is stored as `<docName>-gutter` (to avoid same-name
-  // collisions) but reads as just "Gutter" beneath its doc.
-  const displayName = (item.type === "notebook" && item.gutter) ? "Gutter" : item.name;
-  itemRow.innerHTML = `${getIcon(item)}<span class="tree-item-name">${escHtml(displayName)}</span>${button}`;
-  itemMain.appendChild(itemRow);
-  itemLabel.appendChild(itemMain);
-  itemContent.appendChild(itemLabel);
-  li.appendChild(itemContent);
-
-  attachLeafHoverHandlers(li);
-
-  // Click the row: for docs/notebooks/projects, open + reveal. For
-  // folders, toggle the nested children in place.
-  itemContent.addEventListener("click", (e) => {
-    if (e.target.closest("[data-tree-action]")) return;
-    if (e.target.closest(".sl-fold-arrow")) return;
-    if (item.type === "folder") {
-      if (flaggedNodeCollapsed.has(item.id)) flaggedNodeCollapsed.delete(item.id);
-      else flaggedNodeCollapsed.add(item.id);
-      renderFlaggedSection(state);
-      return;
-    }
-    revealAndOpen(item, state);
-  });
-
-  // Nested children (for a flagged folder or any of its sub-folders)
-  if (hasChildren && !isCollapsed) {
-    const childUl = document.createElement("ul");
-    childUl.className = "sl-list";
-    for (const child of item.children) {
-      childUl.appendChild(renderFlaggedNode(child, state, /*isBubbled=*/true));
-    }
-    li.appendChild(childUl);
-  }
-
-  return li;
-}
-
-function revealAndOpen(item, state) {
-  // Expand all ancestors in the sortable list so the item is visible
-  const ancestors = findAncestorIds(state.fileTree, item.id);
-  if (ancestors && sortableInstance) {
-    for (const aid of ancestors) {
-      sortableInstance.state.collapsedIds.delete(aid);
-    }
-    sortableInstance.render();
-    renderFlaggedSection(state);
-  }
-
-  // Open the item
-  const isInset = document.querySelector("#panel-overlay")?.classList.contains("panel-inset");
-  if (item.type === "document" && item.fileId) {
-    state.openFile(item.fileId);
-    if (!isInset && storedHidePanel) storedHidePanel();
-  } else if (item.type === "notebook" && item.fileId) {
-    state.openNotebook(item.fileId);
-    if (!isInset && storedHidePanel) storedHidePanel();
-  } else if (item.type === "pdf" && item.fileId) {
-    state.openPdf(item.fileId);
-    if (!isInset && storedHidePanel) storedHidePanel();
-  } else if (item.type === "project") {
-    state.openProject(item.id);
-    if (!isInset && storedHidePanel) storedHidePanel();
-  }
-}
-
 /** Re-place the Local Folders section above Trash. Thin wrapper over the
  *  impl in files-panel-local-sync.js (which owns the localSync container). */
 function positionLocalSync(state) { positionLocalSyncImpl(state, treeListEl, panelRootEl); }
@@ -651,7 +473,11 @@ function refreshList(state) {
     sortableInstance.setData(sorted);
   }
   positionLocalSync(state);
-  renderFlaggedSection(state);
+  renderFlaggedSection(state, {
+    container: flaggedContainerEl,
+    hidePanel: storedHidePanel,
+    getSortable: () => sortableInstance,
+  });
   // Any rows we might have had a tooltip open over may have been re-
   // rendered or removed — drop the tooltip so it can't linger.
   import("../editor/image-preview.js").then(({ hideImageTooltip }) => hideImageTooltip());
