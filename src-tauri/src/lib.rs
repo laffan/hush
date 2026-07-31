@@ -526,6 +526,7 @@ pub fn run() {
             commands::multi_window::register_window,
             commands::multi_window::set_window_file,
             commands::multi_window::unregister_window,
+            commands::multi_window::window_heartbeat,
             commands::multi_window::broadcast_state_change,
             commands::multi_window::broadcast_doc_changed,
             commands::multi_window::broadcast_notebook_changed,

@@ -274,11 +274,17 @@ function currentFileFromState(state) {
 export async function setupMultiWindow(state) {
   if (!IS_TAURI) return;
 
+  const myLabel = await getLabel();
+
   // Subscribe BEFORE register/push so the broadcasts that those calls
   // emit are picked up as our own initial windowList population.
   await subscribeCrossWindow({
     onWindowsUpdated: (list) => {
       state.windowList = list || [];
+      // Numbers are derived ordinals now (renumbered 1..N on every
+      // membership change), so our own can shift when a sibling closes.
+      const mine = state.windowList.find((w) => w.label === myLabel);
+      if (mine?.number) state.currentWindowNumber = mine.number;
       state.emit("windows-changed");
     },
     onStateChanged: async (kind) => {
@@ -379,16 +385,38 @@ export async function setupMultiWindow(state) {
     unregisterThisWindow();
   });
 
-  // Coming back to the foreground re-syncs the list from the registry
-  // (the backend prunes entries whose window the runtime no longer
-  // knows about). Heals any badge left behind by a close event this
-  // window slept through — the iPad case, where a suspended scene
-  // receives no events while a sibling closes.
+  // Liveness heartbeat. iPad scene teardown can be completely silent —
+  // no destroy event, no unload — so the registry expires entries that
+  // stop beating (mobile-side, 15 s) and this ping is what keeps ours
+  // alive. A `true` reply means we had been expired while suspended and
+  // were just re-registered: re-push our file so our badge comes back
+  // on the right row. Timers stop while iOS suspends us, which is
+  // exactly the point — a scene that isn't running drops off siblings'
+  // sidebars, then reappears here the moment it resumes.
+  const heartbeat = async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const reRegistered = await invoke("window_heartbeat", { label: myLabel });
+      if (reRegistered) syncWindowFile();
+    } catch (_) { /* backend unavailable mid-teardown */ }
+  };
+  setInterval(heartbeat, 4000);
+
+  // Coming back to the foreground: re-assert ourselves (our entry may
+  // have been expired while we slept), re-push our file, and re-fetch
+  // the pruned list so any badge left by a close we slept through
+  // clears immediately instead of on the next heartbeat.
   const resyncWindowList = async () => {
+    try {
+      await registerThisWindow();
+      syncWindowFile();
+    } catch (_) {}
     const list = await fetchWindowList();
     const current = JSON.stringify(state.windowList || []);
     if (JSON.stringify(list) === current) return;
     state.windowList = list;
+    const mine = list.find((w) => w.label === myLabel);
+    if (mine?.number) state.currentWindowNumber = mine.number;
     state.emit("windows-changed");
   };
   window.addEventListener("focus", () => { void resyncWindowList(); });

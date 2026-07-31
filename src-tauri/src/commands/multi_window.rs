@@ -11,16 +11,25 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::multi_window::WindowInfo;
 use crate::AppState;
 
-/// Drop registry entries whose window the runtime no longer knows about.
-/// A destroy notification can be missed entirely (iPad scene teardown,
-/// a webview killed before its unload handler ran), which used to leave
-/// phantom numeral badges in every sibling's sidebar — one more per
-/// open/close cycle. Reconciling against `app.webview_windows()` on
-/// every registry touch guarantees the list self-heals no matter how
-/// the window went away.
+/// Drop registry entries whose window is gone. Two passes:
+///
+///  1. Reconcile against `app.webview_windows()` — catches windows the
+///     runtime knows are dead but whose destroy notification we missed
+///     (a webview killed before its unload handler ran).
+///  2. Mobile only: expire entries that stopped heartbeating. iPad
+///     scene teardown can be entirely silent — no `Destroyed` event,
+///     and the dead scene may even linger in the runtime's window list
+///     — so age is the only trustworthy liveness signal there. The
+///     15 s window is ~3 missed beats of the JS side's 4 s heartbeat;
+///     a scene the OS suspends (parked in the app switcher) expires
+///     too, then re-registers the moment the user returns to it.
 fn prune_dead_windows(app: &AppHandle, state: &State<AppState>) {
     let alive: Vec<String> = app.webview_windows().keys().cloned().collect();
     state.window_registry.prune(&alive);
+    #[cfg(mobile)]
+    state
+        .window_registry
+        .prune_stale(std::time::Duration::from_secs(15));
 }
 
 #[tauri::command]
@@ -50,6 +59,9 @@ pub fn set_window_file(
     file_type: Option<String>,
 ) {
     prune_dead_windows(&app, &state);
+    // Register-if-missing so a resumed scene's file push can't be lost
+    // to ordering (its entry may have been expired while it slept).
+    state.window_registry.ensure(&label);
     state.window_registry.set_file(&label, file_id, file_type);
     let _ = app.emit("windows-updated", state.window_registry.list());
 }
@@ -59,6 +71,27 @@ pub fn unregister_window(app: AppHandle, state: State<AppState>, label: String) 
     state.window_registry.remove(&label);
     prune_dead_windows(&app, &state);
     let _ = app.emit("windows-updated", state.window_registry.list());
+}
+
+/// Periodic liveness ping from each window's JS side. Refreshes the
+/// caller's stamp, expires the dead, and — only when the visible list
+/// actually changed — broadcasts `windows-updated`, so steady-state
+/// heartbeats stay silent instead of re-rendering every sidebar each
+/// beat. Returns true when the caller had been expired and was
+/// re-registered (the JS side re-pushes its current file in response).
+#[tauri::command]
+pub fn window_heartbeat(app: AppHandle, state: State<AppState>, label: String) -> bool {
+    let before = state.window_registry.list();
+    let known = state.window_registry.touch(&label);
+    if !known {
+        state.window_registry.ensure(&label);
+    }
+    prune_dead_windows(&app, &state);
+    let after = state.window_registry.list();
+    if after != before {
+        let _ = app.emit("windows-updated", after);
+    }
+    !known
 }
 
 /// Broadcast a generic "the file tree / settings changed in some other
