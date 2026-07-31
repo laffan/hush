@@ -345,3 +345,8 @@ fn desk_with_id(id: &str, children: Vec<TreeNode>) -> TreeNode {
 // along with everything desk_store.rs pulls into scope.
 #[path = "desk_roots_tests.rs"]
 mod roots_tests;
+
+// Full New-Desk-from-Local-Folder flow (the frontend's post-adopt call
+// sequence). Same child-module pattern as roots_tests above.
+#[path = "desk_adopt_flow_tests.rs"]
+mod adopt_flow_tests;

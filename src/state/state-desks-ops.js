@@ -109,6 +109,18 @@ export async function collapseDeskToFolder(state, deskId) {
   if (deskIdx < 0) throw new Error("desk not found");
   const desk = tree[deskIdx];
 
+  // A local desk operates from the user's own folder — collapsing it
+  // would move that folder's contents into another desk's storage, and
+  // the registered root would keep resurrecting the desk from disk.
+  // Bring it internal first, then collapse.
+  if (state.deskRoots?.[deskId]) {
+    const err = new Error(
+      "This desk lives in a local folder. Run “Make Desk Internal” first, then collapse it.",
+    );
+    err.code = "desk-collapse-blocked";
+    throw err;
+  }
+
   const blocking = nonEmptyBlockingSpecials(desk);
   if (blocking.length > 0) {
     const labels = blocking.map((k) => (k === "__inbox__" ? "Inbox" : "Trash"));

@@ -86,7 +86,7 @@ impl DeskStore {
         self.desks_dir.join(".staging").join(id)
     }
 
-    fn abs_path(&self, desk_id: &str, rel: &str) -> PathBuf {
+    pub(crate) fn abs_path(&self, desk_id: &str, rel: &str) -> PathBuf {
         self.desk_dir(desk_id).join(rel)
     }
 
@@ -227,6 +227,7 @@ impl DeskStore {
             .collect();
 
         let old_global = self.global_index();
+        let roots = crate::desk_roots::load_roots(&self.desks_dir);
 
         // Expected placement for every file-backed node, per desk.
         let mut new_indexes: HashMap<String, HashMap<String, String>> = HashMap::new();
@@ -243,8 +244,38 @@ impl DeskStore {
         // extension — see desk_paths::preserve_doc_extensions.
         crate::desk_paths::preserve_doc_extensions(&mut new_indexes, &old_global);
 
+        // A desk node whose folder doesn't exist and whose file-backed
+        // nodes resolve to nothing we know (not indexed anywhere, not
+        // staged) can only be a stale or foreign tree — materialising it
+        // would fabricate a desk full of blank files. Skip it wholesale;
+        // it costs one order.json slot and heals on the next load.
+        let staged: HashSet<String> = self.staged_ids().into_iter().collect();
+        let mut fabricated: HashSet<String> = HashSet::new();
+        for desk in &desks {
+            let files = &new_indexes[&desk.id];
+            if files.is_empty() {
+                continue;
+            }
+            if self.tree_path(&desk.id).exists() {
+                continue;
+            }
+            let any_known = files
+                .keys()
+                .any(|id| old_global.contains_key(id) || staged.contains(id));
+            if !any_known {
+                eprintln!(
+                    "save_forest: desk {} has no folder and no resolvable files — skipping instead of fabricating it",
+                    desk.id
+                );
+                fabricated.insert(desk.id.clone());
+            }
+        }
+
         // Move / create / adopt every expected file.
         for desk in &desks {
+            if fabricated.contains(&desk.id) {
+                continue;
+            }
             fs::create_dir_all(self.desk_dir(&desk.id).join(".hush"))?;
             for dir in expected_dirs.get(&desk.id).into_iter().flatten() {
                 fs::create_dir_all(self.desk_dir(&desk.id).join(dir))?;
@@ -272,7 +303,13 @@ impl DeskStore {
 
         // Orphans: indexed files whose node vanished without a delete.
         // Park them under .hush/orphans/ so nothing is silently lost and
-        // the namespace stays clean for future same-name files.
+        // the namespace stays clean for future same-name files. Local
+        // desks are exempt: their folder belongs to the user and the
+        // disk-wins reconciler owns its file lifecycle — a file the tree
+        // doesn't mention is simply re-absorbed on the next reconcile,
+        // whereas parking it would move the user's file into a hidden
+        // directory (a stale tree save once emptied a freshly-adopted
+        // folder exactly this way).
         let mut all_new: HashSet<&String> = HashSet::new();
         for files in new_indexes.values() {
             all_new.extend(files.keys());
@@ -282,10 +319,13 @@ impl DeskStore {
             if all_new.contains(id) {
                 continue;
             }
-            // The whole desk is vanishing — retirement (or, for local
-            // desks, unregistration) owns its folder; shuffling files
-            // into orphans first would rearrange a user's directory.
+            // The whole desk is vanishing — retirement owns its folder;
+            // shuffling files into orphans first would rearrange a
+            // user's directory.
             if !live_ids.contains(desk_id.as_str()) {
+                continue;
+            }
+            if roots.contains_key(desk_id) {
                 continue;
             }
             let src = self.abs_path(desk_id, rel);
@@ -305,6 +345,9 @@ impl DeskStore {
 
         // Persist per-desk metadata + indexes.
         for desk in &desks {
+            if fabricated.contains(&desk.id) {
+                continue;
+            }
             self.save_index(&desk.id, &new_indexes[&desk.id])?;
             write_atomic_str(
                 &self.tree_path(&desk.id),
@@ -326,24 +369,45 @@ impl DeskStore {
                 meta["createdAt"] = now_secs().into();
             }
             write_atomic_str(&meta_path, &serde_json::to_string_pretty(&meta)?)?;
-            self.prune_empty_dirs(&desk.id, &expected_dirs[&desk.id]);
+            // Inside a local desk only directories Hush itself emptied
+            // (they used to hold indexed files) may be pruned — an empty
+            // directory the user made in their own folder is theirs.
+            let managed = roots.contains_key(&desk.id).then(|| {
+                let mut dirs = HashSet::new();
+                for (old_desk, rel) in old_global.values() {
+                    if old_desk != &desk.id {
+                        continue;
+                    }
+                    let mut p = Path::new(rel);
+                    while let Some(parent) = p.parent() {
+                        if parent.as_os_str().is_empty() {
+                            break;
+                        }
+                        dirs.insert(parent.to_path_buf());
+                        p = parent;
+                    }
+                }
+                dirs
+            });
+            self.prune_empty_dirs(&desk.id, &expected_dirs[&desk.id], managed.as_ref());
         }
 
         // Retire desk folders whose node vanished. Guarded on the tree
         // actually carrying desks so a transient empty save can't retire
-        // the whole library.
+        // the whole library. Local desks are never retired *or*
+        // unregistered here: a desk node missing from one save is
+        // indistinguishable from a stale tree (a second window, an
+        // interleaved save), and silently disconnecting the user's
+        // folder over that lost real desks. Explicit deletion goes
+        // through the `desk_unregister_root` command; until that runs,
+        // `load_forest` keeps resurrecting the desk from its folder.
         if !desks.is_empty() {
             let live: HashSet<&str> = desks.iter().map(|d| d.id.as_str()).collect();
-            let roots = crate::desk_roots::load_roots(&self.desks_dir);
             for desk_id in self.desk_ids_on_disk() {
                 if live.contains(desk_id.as_str()) {
                     continue;
                 }
                 if roots.contains_key(&desk_id) {
-                    // A local desk's folder belongs to the user — never
-                    // relocate it into app data. Deleting the desk just
-                    // unregisters the root.
-                    crate::desk_roots::unregister(&self.desks_dir, &desk_id);
                     continue;
                 }
                 let trash = self.desks_dir.join(".deleted");
@@ -361,92 +425,8 @@ impl DeskStore {
         Ok(())
     }
 
-    /// Ensure the file for `id` exists at its expected location, sourcing
-    /// from (in priority order) its previous indexed location, the staging
-    /// area, an already-present file at the target (adopt), or — for text
-    /// kinds — a fresh default payload.
-    fn place_file(
-        &self,
-        id: &str,
-        desk_id: &str,
-        rel: &str,
-        old_global: &HashMap<String, (String, String)>,
-    ) -> Result<(), BoxError> {
-        let dst = self.abs_path(desk_id, rel);
-        if let Some(parent) = dst.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        if let Some((old_desk, old_rel)) = old_global.get(id) {
-            if old_desk == desk_id && old_rel == rel {
-                return Ok(()); // already in place
-            }
-            let src = self.abs_path(old_desk, old_rel);
-            if src.exists() {
-                if dst.exists() {
-                    // Shouldn't happen (names are deduped) — don't clobber.
-                    return Ok(());
-                }
-                fs::rename(&src, &dst)?;
-                // A cross-desk move carries the file's version history
-                // along so a handed-off desk stays complete.
-                if old_desk != desk_id {
-                    let old_versions = self.desk_dir(old_desk).join(".hush").join("versions").join(id);
-                    if old_versions.is_dir() {
-                        let new_versions = self.desk_dir(desk_id).join(".hush").join("versions").join(id);
-                        if let Some(parent) = new_versions.parent() {
-                            let _ = fs::create_dir_all(parent);
-                        }
-                        if !new_versions.exists() {
-                            let _ = fs::rename(&old_versions, &new_versions);
-                        }
-                    }
-                }
-                return Ok(());
-            }
-        }
-
-        let staged = self.staging_path(id);
-        if staged.exists() {
-            let content = fs::read_to_string(&staged).unwrap_or_default();
-            write_content_at(&dst, &content)?;
-            let _ = fs::remove_file(&staged);
-            return Ok(());
-        }
-
-        if dst.exists() {
-            return Ok(()); // adopt (e.g. a binary the image manager already wrote)
-        }
-
-        // Images have no default payload — the binary either exists or the
-        // ref is broken; creating an empty file would mask that.
-        if is_image_rel(rel) {
-            return Ok(());
-        }
-        write_content_at(&dst, "")?;
-        Ok(())
-    }
-
-    /// Remove directories that are now empty and no longer expected.
-    fn prune_empty_dirs(&self, desk_id: &str, expected: &HashSet<PathBuf>) {
-        let root = self.desk_dir(desk_id);
-        let mut dirs = Vec::new();
-        collect_dirs(&root, &root, &mut dirs);
-        // Deepest first so nested empties collapse upward.
-        dirs.sort_by_key(|d| std::cmp::Reverse(d.components().count()));
-        for rel in dirs {
-            if rel.starts_with(".hush") {
-                continue;
-            }
-            if expected.contains(&rel) {
-                continue;
-            }
-            let abs = root.join(&rel);
-            if fs::read_dir(&abs).map(|mut it| it.next().is_none()).unwrap_or(false) {
-                let _ = fs::remove_dir(&abs);
-            }
-        }
-    }
+    // `place_file` and `prune_empty_dirs` live in desk_place.rs (split
+    // for the line cap).
 
     // ===== Content by fileId =====
 
@@ -631,22 +611,6 @@ pub fn write_content_at(path: &Path, content: &str) -> Result<String, BoxError> 
 }
 
 // ===== Small helpers =====
-
-fn collect_dirs(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(rd) = fs::read_dir(dir) else { return };
-    for entry in rd.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            if let Ok(rel) = path.strip_prefix(root) {
-                if rel.starts_with(".hush") {
-                    continue;
-                }
-                out.push(rel.to_path_buf());
-            }
-            collect_dirs(root, &path, out);
-        }
-    }
-}
 
 fn mtime_secs(path: &Path) -> u64 {
     fs::metadata(path)

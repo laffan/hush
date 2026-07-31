@@ -102,7 +102,12 @@ pub fn desk_open_folder_as_desk(
     let desk_id = s
         .open_folder_as_desk(Path::new(&path), bookmark)
         .map_err(|e| e.to_string())?;
-    let _ = s.reconcile_desk_from_disk(&desk_id);
+    // Initialising a plain folder already absorbed its files; this pass
+    // covers the adopt branch (refresh a handed-off desk against its
+    // current folder contents) and seeds the rename-pairing hash cache.
+    if let Err(e) = s.reconcile_desk_from_disk(&desk_id) {
+        eprintln!("post-adopt reconcile failed for {}: {}", desk_id, e);
+    }
     // The adopted desk may carry Google Doc links — fold them into the
     // app-wide cache so the link bar sees them immediately.
     crate::commands::google_docs::refresh_gdoc_link_cache(&state);
@@ -116,6 +121,17 @@ pub fn desk_open_folder_as_desk(
         }
     }
     Ok(desk_id)
+}
+
+/// Explicitly disconnect a local desk's folder — the delete-desk path.
+/// `save_forest` deliberately never unregisters a root on its own (a
+/// desk missing from one saved tree is indistinguishable from a stale
+/// tree), so deletion calls this first; the folder itself is untouched.
+#[tauri::command]
+pub fn desk_unregister_root(state: State<AppState>, desk_id: String) -> Result<(), String> {
+    state.desk_watch_manager.unwatch(&desk_id);
+    crate::desk_roots::unregister(&crate::get_data_dir().join("desks"), &desk_id);
+    Ok(())
 }
 
 /// Repoint a local desk's root — the iOS boot path, where resolving a

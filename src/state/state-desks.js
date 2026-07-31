@@ -231,13 +231,20 @@ export async function renameDesk(state, deskId, newName, { force = false } = {})
 }
 
 /** Delete a desk and all of its content. The very last desk can't be
- *  deleted — the file tree must always carry at least one desk. */
+ *  deleted — the file tree must always carry at least one desk. A local
+ *  desk's folder is never touched: deletion just unregisters the root
+ *  (explicitly, before the tree save — `save_forest` refuses to infer
+ *  desk deletion from a tree that merely lacks the desk). */
 export async function deleteDesk(state, deskId) {
   const tree = state.fileTree || [];
   const desks = tree.filter((n) => n.type === "desk");
   if (desks.length <= 1) throw new Error("cannot delete the last desk");
   const idx = tree.findIndex((n) => n.type === "desk" && n.id === deskId);
   if (idx < 0) return;
+  if (state.deskRoots?.[deskId]) {
+    const { unregisterDeskRoot } = await import("../sync/desk-roots.js");
+    await unregisterDeskRoot(state, deskId);
+  }
   tree.splice(idx, 1);
 
   const remaining = (state.settings.desks || []).filter((d) => d.id !== deskId);

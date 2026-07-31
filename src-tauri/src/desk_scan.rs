@@ -303,14 +303,26 @@ fn kind_for_rel(rel: &str) -> Option<String> {
 
 /// Resolve (creating as needed) the children Vec for a directory chain
 /// under the desk. Existing containers — folders, projects, and the
-/// desk's specials — match by name; missing segments become plain
-/// folders.
-fn ensure_container_chain<'a>(desk: &'a mut TreeNode, segments: &[String]) -> &'a mut Vec<TreeNode> {
+/// desk's specials — match by name (exact first, then case-insensitive,
+/// so a folder holding `inbox/` or `TRASH/` folds into the matching
+/// special instead of forking an `inbox (2)` sibling on the next save —
+/// macOS filesystems treat those as the same directory anyway); missing
+/// segments become plain folders.
+pub(crate) fn ensure_container_chain<'a>(
+    desk: &'a mut TreeNode,
+    segments: &[String],
+) -> &'a mut Vec<TreeNode> {
     let mut current: &mut Vec<TreeNode> = &mut desk.children;
     for seg in segments {
-        let pos = current.iter().position(|n| {
-            (n.node_type == "folder" || n.node_type == "project") && n.name == *seg
-        });
+        let is_container = |n: &TreeNode| n.node_type == "folder" || n.node_type == "project";
+        let pos = current
+            .iter()
+            .position(|n| is_container(n) && n.name == *seg)
+            .or_else(|| {
+                current
+                    .iter()
+                    .position(|n| is_container(n) && n.name.eq_ignore_ascii_case(seg))
+            });
         let idx = match pos {
             Some(i) => i,
             None => {
@@ -321,6 +333,48 @@ fn ensure_container_chain<'a>(desk: &'a mut TreeNode, segments: &[String]) -> &'
         current = &mut current[idx].children;
     }
     current
+}
+
+/// Absorb a folder's existing files into a fresh desk node + index —
+/// the initialise-in-place half of `open_folder_as_desk`. Same mapping
+/// the reconciler applies (directories mirror as containers, an
+/// existing `Inbox/` folds into the seeded special) but built *before*
+/// any sidecar exists, so the desk's first `tree.json` already carries
+/// the folder's contents and there is no empty-skeleton window for a
+/// concurrent tree save to mistake for a desk with no files.
+pub(crate) fn absorb_disk_files(
+    root: &Path,
+    desk: &mut TreeNode,
+    index: &mut std::collections::HashMap<String, String>,
+) {
+    let mut on_disk = Vec::new();
+    walk_files(root, root, &mut on_disk);
+    for rel in on_disk {
+        let Some(node_type) = kind_for_rel(&rel) else { continue };
+        let path = Path::new(&rel);
+        let filename = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&rel)
+            .to_string();
+        let name = if node_type == "image" {
+            filename.clone()
+        } else {
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(&filename)
+                .to_string()
+        };
+        let file_id = if node_type == "image" {
+            filename
+        } else {
+            Uuid::new_v4().to_string()
+        };
+        let segments = dir_segments(path);
+        let container = ensure_container_chain(desk, &segments);
+        container.push(new_node(&node_type, &name, Some(&file_id)));
+        index.insert(file_id, rel);
+    }
 }
 
 fn remove_node_by_file_id(nodes: &mut Vec<TreeNode>, file_id: &str) -> bool {

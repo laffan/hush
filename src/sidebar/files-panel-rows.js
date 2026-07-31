@@ -7,7 +7,7 @@
  */
 
 import { AppState } from "../state/state.js";
-import { findParentOfNode } from "../state/tree-helpers.js";
+import { findParentOfNode, enforceSpecialPositions } from "../state/tree-helpers.js";
 import { typeIcons, escHtml } from "./files-panel-shared.js";
 import { renderRowMenuButton, renderFlagOnlyMenuButton } from "./files-panel-row-menu.js";
 import { isTabMarkerItem } from "./files-panel-tabs.js";
@@ -42,6 +42,43 @@ export const visibleTopLevel = (s) => {
     (!isPdfsId(n.id) || (n.children && n.children.length > 0)) &&
     (!isImagesId(n.id) || (n.children && n.children.length > 0)));
 };
+
+/** The desk `visibleTopLevel` renders from (null in all-desks mode or a
+ *  pre-migration flat tree). The files panel records this at render time
+ *  so its drag onChange writes back into the desk the rows came from —
+ *  never whichever desk happens to be active at drop time. Must mirror
+ *  `visibleTopLevel`'s desk pick exactly. */
+export const renderedDeskIdFor = (s) => {
+  if (isAllDesksMode(s)) return null;
+  const desks = s.fileTree.filter((n) => n.type === "desk");
+  const active = desks.find((n) => n.id === s.settings?.activeDeskId) || desks[0];
+  return active?.id || null;
+};
+
+/** Write a drag-reordered single-desk row list back into the desk it was
+ *  rendered from. Returns false — commit nothing, caller re-renders —
+ *  when the tree has desks but the rendered one is gone (deleted, or the
+ *  tree was replaced under the panel); committing into whatever desk is
+ *  active at drop time instead once transplanted another desk's children
+ *  into a fresh local desk and orphaned the folder's real files. */
+export function commitRenderedChildren(state, renderedDeskId, cleaned) {
+  const hasDesks = state.fileTree.some((n) => n.type === "desk");
+  const rendered = renderedDeskId
+    ? state.fileTree.find((n) => n.type === "desk" && n.id === renderedDeskId)
+    : null;
+  if (hasDesks && !rendered) return false;
+  if (rendered) {
+    // Re-add specials the render filtered out (empty Images / PDFs).
+    const present = new Set(cleaned.map((n) => n.id));
+    for (const orig of (rendered.children || [])) {
+      if (isAnySpecialId(orig.id) && !present.has(orig.id)) cleaned.push(orig);
+    }
+  }
+  enforceSpecialPositions(cleaned);
+  if (rendered) rendered.children = cleaned;
+  else state.fileTree = cleaned;
+  return true;
+}
 
 // Skip predicate for outline-number labels (specials + synthetic rows).
 export const numberSkip = (n) => isAnySpecialId(n.id) || isTabMarkerItem(n) || isHeadingItem(n);

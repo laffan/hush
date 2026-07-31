@@ -128,11 +128,18 @@ fn two_installs_share_one_desk_folder() {
     assert!(find_by_file_id(&forest_b[0].children, "f1").is_some());
     assert!(!forest_b[0].children.iter().any(|n| n.name == "From B"));
 
-    // --- B walks away: deleting its registration never touches the
-    // folder A still uses. (A save with only B's own desk left — an
-    // empty forest is deliberately treated as a bad save and retires
-    // nothing.)
+    // --- B walks away. Deleting a local desk is an *explicit*
+    // unregister (the JS delete flow calls `desk_unregister_root`) — a
+    // tree save that merely lacks the desk no longer disconnects it, so
+    // a stale save from a second window can't sever a live desk.
     let b_own = vec![node("d2", "desk", "B's Desk", None, Vec::new())];
+    store_b.save_forest(&b_own).unwrap();
+    assert_eq!(
+        store_b.list_roots().len(),
+        1,
+        "a save without the desk leaves its registration alone"
+    );
+    crate::desk_roots::unregister(&store_b.desks_dir, "d1");
     store_b.save_forest(&b_own).unwrap();
     assert!(store_b.list_roots().is_empty());
     assert!(desk_root.join("Doc v2.md").exists());
