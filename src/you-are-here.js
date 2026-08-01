@@ -429,6 +429,26 @@ async function stripDuplicatesInFile(state, type, fileId, content, entry) {
 
 // ── Sidebar entries + jump ────────────────────────────────────────────
 
+/** Desk id of the file currently open in the editor surface, or null.
+ *  The sidebar unions this into its marker-row desks: a torn restore
+ *  can land the editor on a file from a non-active desk (lastFileId
+ *  and activeDeskId are written at different moments), and the user
+ *  staring at a marker doc should see its row regardless of which
+ *  desk the sidebar is browsing. */
+export function deskIdOfOpenFile(state) {
+  const tree = state.fileTree || [];
+  let nodeId = null;
+  if (state.currentProjectId) {
+    nodeId = state.currentProjectId;
+  } else {
+    const fileId = state.currentStackFileId || state.currentPdfFileId
+      || state.currentNotebookFileId || state.currentFileId;
+    if (fileId) nodeId = findNodeByFileId(tree, fileId)?.id || null;
+  }
+  if (!nodeId) return null;
+  return deskOfNode(state, nodeId)?.id || null;
+}
+
 /** `[{ deskId, fileId, fileType, fileName }]` for the desks whose
  *  markers should show in the sidebar right now (the active desk, or
  *  every desk in the all-desks view). */

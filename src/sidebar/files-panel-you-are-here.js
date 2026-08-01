@@ -7,7 +7,7 @@
  */
 import { escHtml } from "./files-panel-shared.js";
 import { isAllDesksMode } from "./files-panel-rows.js";
-import { youAreHereEntriesFor, jumpToYouAreHere } from "../you-are-here.js";
+import { youAreHereEntriesFor, deskIdOfOpenFile, jumpToYouAreHere } from "../you-are-here.js";
 
 /** Append the marker rows (if any) to `containerEl`. `hidePanel` is the
  *  files panel's overlay-dismiss callback (null when inset). */
@@ -17,6 +17,11 @@ export function renderYouAreHereRows(state, containerEl, hidePanel) {
     const deskIds = isAllDesksMode(state)
       ? (state.settings?.desks || []).map((d) => d.id)
       : [state.getActiveDesk?.()?.id].filter(Boolean);
+    // The open file's desk rides along even when it isn't the active
+    // desk — a torn restore can show a marker doc in the editor while
+    // the sidebar browses another desk, and the row must not hide then.
+    const openDesk = deskIdOfOpenFile(state);
+    if (openDesk && !deskIds.includes(openDesk)) deskIds.push(openDesk);
     entries = youAreHereEntriesFor(state, deskIds);
   } catch (_) { return; }
   for (const entry of entries) {
