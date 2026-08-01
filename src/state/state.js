@@ -602,9 +602,17 @@ export class AppState {
 
   async updateSettings(partial, opts = {}) {
     Object.assign(this.settings, partial);
-    // Secondary windows: skip disk writes for purely per-window updates,
-    // and on shared-key writes overlay the main window's per-window
-    // values from disk so we don't clobber its session state.
+    // Secondary windows: skip disk writes for purely per-window updates.
+    // Shared-key writes are KEY-SCOPED — fresh disk settings plus only
+    // the keys this partial actually changes — rather than a dump of
+    // this window's full in-memory copy. A secondary window's memory
+    // can be stale for shared keys it didn't touch (it booted before a
+    // sibling's write, or an iPad scene slept through the broadcast),
+    // and the old full-copy write silently reverted those keys on disk:
+    // the sibling kept showing its in-memory value all session and the
+    // loss only surfaced on the next launch (the vanishing YOUAREHERE
+    // registry). Per-window keys never reach disk from here at all —
+    // disk holds the main window's session.
     if (this.isSecondaryWindow) {
       if (_allKeysPerWindow(partial)) {
         this.emit("settings-changed");
@@ -613,7 +621,7 @@ export class AppState {
       if (IS_TAURI) {
         try {
           const fresh = await tauriInvoke("get_settings");
-          const toSave = { ...this.settings };
+          const toSave = { ...fresh, ...partial };
           for (const k of _PER_WINDOW_SETTINGS_KEYS) {
             if (k in fresh) toSave[k] = fresh[k];
           }

@@ -83,12 +83,41 @@ export function initYouAreHere(state) {
 
   // Files get deleted / moved between desks — keep the registry honest.
   state.on("files-changed", () => { void pruneRegistry(state); });
+
+  // Self-heal: opening a doc whose buffer carries the token re-plants
+  // the registry entry when the desk's slot is empty (or already this
+  // file). Recovers from any historical registry wipe without waiting
+  // for an edit — the marker text in the doc is the source of truth.
+  state.on("file-opened", () => {
+    try {
+      const fileId = state.currentFileId;
+      if (!fileId || state.currentProjectId || !state.editor?.view) return;
+      const content = state.editor.view.state.doc.toString();
+      if (!content.includes(YAH_TOKEN)) return;
+      const node = findNodeByFileId(state.fileTree || [], fileId);
+      const desk = node ? deskOfNode(state, node.id) : null;
+      if (!desk) return;
+      const entry = registry(state)[desk.id];
+      // An entry pointing at a DIFFERENT file keeps priority — merely
+      // opening this doc must not steal the marker; a real edit (the
+      // save pipeline) settles that case.
+      if (entry && entry.fileId && entry.fileId !== fileId) return;
+      void onFileContentSaved(state, fileId, content);
+    } catch (e) {
+      console.warn("YOUAREHERE heal-on-open failed:", e);
+    }
+  });
 }
 
 /** Drop registry entries whose file vanished; re-home entries whose
  *  file moved to a different desk (only when that desk's slot is free —
  *  when it's taken, the next save of either file settles the winner). */
 async function pruneRegistry(state) {
+  const tree = state.fileTree || [];
+  // A transient tree state (mid-rebuild, boot tick, desk adoption)
+  // must never wipe the registry — same guard the sticky module's
+  // orphan pruning uses. Only prune against a tree that has desks.
+  if (!tree.length || !tree.some((n) => n.type === "desk")) return;
   const reg = registry(state);
   const next = { ...reg };
   let changed = false;
