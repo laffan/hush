@@ -88,25 +88,44 @@ export function initYouAreHere(state) {
   // the registry entry when the desk's slot is empty (or already this
   // file). Recovers from any historical registry wipe without waiting
   // for an edit — the marker text in the doc is the source of truth.
-  state.on("file-opened", () => {
-    try {
-      const fileId = state.currentFileId;
-      if (!fileId || state.currentProjectId || !state.editor?.view) return;
-      const content = state.editor.view.state.doc.toString();
-      if (!content.includes(YAH_TOKEN)) return;
-      const node = findNodeByFileId(state.fileTree || [], fileId);
-      const desk = node ? deskOfNode(state, node.id) : null;
-      if (!desk) return;
-      const entry = registry(state)[desk.id];
-      // An entry pointing at a DIFFERENT file keeps priority — merely
-      // opening this doc must not steal the marker; a real edit (the
-      // save pipeline) settles that case.
-      if (entry && entry.fileId && entry.fileId !== fileId) return;
-      void onFileContentSaved(state, fileId, content);
-    } catch (e) {
-      console.warn("YOUAREHERE heal-on-open failed:", e);
-    }
-  });
+  state.on("file-opened", () => healOpenDoc(state));
+  // This module initializes AFTER state.init already opened the boot
+  // file (its file-opened fired before the listener above existed), so
+  // run the heal once for whatever is open right now.
+  queueMicrotask(() => healOpenDoc(state));
+
+  // Debug handle — inspect the live registry and force a rescan of the
+  // open doc from a console: __hushYouAreHere().
+  if (typeof window !== "undefined") {
+    window.__hushYouAreHere = () => {
+      healOpenDoc(state);
+      return {
+        registry: state.settings?.youAreHere ?? null,
+        activeDeskId: state.getActiveDesk?.()?.id || null,
+        currentFileId: state.currentFileId || null,
+      };
+    };
+  }
+}
+
+/** Re-register the open doc's marker when the desk slot is empty or
+ *  already points at it (mere opening never steals another file's
+ *  marker — a real edit settles that through the save pipeline). */
+function healOpenDoc(state) {
+  try {
+    const fileId = state.currentFileId;
+    if (!fileId || state.currentProjectId || !state.editor?.view) return;
+    const content = state.editor.view.state.doc.toString();
+    if (!content.includes(YAH_TOKEN)) return;
+    const node = findNodeByFileId(state.fileTree || [], fileId);
+    const desk = node ? deskOfNode(state, node.id) : null;
+    if (!desk) return;
+    const entry = registry(state)[desk.id];
+    if (entry && entry.fileId && entry.fileId !== fileId) return;
+    void onFileContentSaved(state, fileId, content);
+  } catch (e) {
+    console.warn("YOUAREHERE heal-on-open failed:", e);
+  }
 }
 
 /** Drop registry entries whose file vanished; re-home entries whose
