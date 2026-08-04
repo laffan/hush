@@ -81,5 +81,12 @@ export function buildDeskCommands({ icons, typeIcons, desktop, ipad, enterDeskPi
       keepOpen: true,
       hiddenIf: (s) => !multiDesk(s),
       action: async (s, p) => (await import("./state/state-desks-ops.js")).enterCollapseDeskPicker(p, s, { fallbackIcon: icons.desk }) },
+    // Archiving replaces deleting a desk, so there has to be somewhere to
+    // find what was archived — and to build a new desk back out of it.
+    { id: "desk-archives", label: "View archived desks", icon: icons.desk, shortcutKey: null, ctx: "shared",
+      action: async (s) => {
+        const m = await import("./sidebar/desk-archive.js");
+        await m.openArchivedDesksModal(s);
+      } },
   ];
 }

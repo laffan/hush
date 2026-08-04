@@ -197,11 +197,12 @@ async function ensureSpecials(state, deskId) {
   state.emit("files-changed");
 }
 
-/** Explicitly disconnect a local desk's folder — the delete-desk path.
+/** Explicitly disconnect a local desk's folder — the archive-desk path.
  *  `save_forest` never unregisters a root on its own (a desk missing
  *  from one saved tree is indistinguishable from a stale tree), so
- *  deletion has to say so out loud before the tree save. The folder on
- *  disk is untouched. */
+ *  removing a desk has to say so out loud before the tree save. The
+ *  folder on disk is untouched: archiving a local desk copies it into the
+ *  archive and leaves the user's own folder exactly where it is. */
 export async function unregisterDeskRoot(state, deskId) {
   if (!IS_TAURI) return;
   const path = state.deskRoots?.[deskId];

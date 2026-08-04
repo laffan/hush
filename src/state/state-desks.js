@@ -231,28 +231,36 @@ export async function renameDesk(state, deskId, newName, { force = false } = {})
   state.emit("desks-changed");
 }
 
-/** Delete a desk and all of its content. The very last desk can't be
- *  deleted — the file tree must always carry at least one desk. A local
- *  desk's folder is never touched: deletion just unregisters the root
- *  (explicitly, before the tree save — `save_forest` refuses to infer
- *  desk deletion from a tree that merely lacks the desk). */
-export async function deleteDesk(state, deskId) {
+/** Take a desk out of the app. The very last desk can't be removed — the
+ *  file tree must always carry at least one desk. A local desk's folder
+ *  is never touched: this just unregisters the root (explicitly, before
+ *  the tree save — `save_forest` refuses to infer desk removal from a
+ *  tree that merely lacks the desk).
+ *
+ *  The user-facing path is **Archive** (sidebar/desk-archive.js), which
+ *  zips the desk first and passes `{ archived: true }` so this skips the
+ *  retire step — the archive already holds the folder, and the caller
+ *  removes it afterwards. Without that flag the folder is retired into
+ *  `desks/.deleted/` rather than wiped, so nothing here is ever the last
+ *  copy of anything. */
+export async function deleteDesk(state, deskId, { archived = false } = {}) {
   const tree = state.fileTree || [];
   const desks = tree.filter((n) => n.type === "desk");
   if (desks.length <= 1) throw new Error("cannot delete the last desk");
   const idx = tree.findIndex((n) => n.type === "desk" && n.id === deskId);
   if (idx < 0) return;
   const doomed = tree[idx];
-  logActivity("desks", "warn", `Deleting desk "${doomed?.name || deskId}"`, {
+  logActivity("desks", "warn", `Removing desk "${doomed?.name || deskId}"`, {
     deskId,
+    archived,
     local: !!state.deskRoots?.[deskId],
     topLevelChildren: (doomed?.children || []).map((c) => c?.name),
   });
   if (state.deskRoots?.[deskId]) {
     const { unregisterDeskRoot } = await import("../sync/desk-roots.js");
     await unregisterDeskRoot(state, deskId);
-  } else {
-    // Say the deletion out loud. `save_forest` no longer infers it from a
+  } else if (!archived) {
+    // Say the removal out loud. `save_forest` no longer infers it from a
     // tree that merely lacks the desk — that signal is indistinguishable
     // from a stale tree, and inferring it is how a live desk's folder
     // could be swept aside by another window's out-of-date save. The

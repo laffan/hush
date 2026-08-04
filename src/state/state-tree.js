@@ -42,7 +42,7 @@ export async function createTreeNode(state, command, type, name, parentId) {
 export async function deleteTreeNode(state, nodeId) {
   // Special nodes (Inbox / Images / Trash) — global or per-desk — and
   // top-level desk nodes themselves are not deletable through this path.
-  // Desk deletion goes through `state.deleteDesk(deskId)`.
+  // Removing a desk goes through Archive (sidebar/desk-archive.js).
   if (state.isSpecialNodeId(nodeId)) return;
   const node = findNode(state.fileTree, nodeId);
   if (!node) return;

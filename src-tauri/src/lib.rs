@@ -14,6 +14,7 @@ use tauri::{
 mod activity_log;
 mod atomic;
 mod commands;
+mod desk_archive;
 mod desk_conflicts;
 mod desk_dedupe;
 mod desk_hashes;
@@ -501,6 +502,12 @@ pub fn run() {
             commands::desks::desk_open_folder_as_desk,
             commands::desks::desk_unregister_root,
             commands::desks::desk_reconcile,
+            commands::desks::desk_archive,
+            commands::desks::desk_discard_archived,
+            commands::desks::desk_archives_list,
+            commands::desks::desk_archive_restore,
+            commands::desks::desk_archive_delete,
+            commands::desks::desk_archive_bytes,
             commands::diagnostics::activity_log_append,
             commands::diagnostics::activity_log_read,
             commands::diagnostics::activity_log_clear,

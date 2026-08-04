@@ -533,7 +533,7 @@ export class AppState {
   enableDesks(name) { return _desks.enableDesks(this, name); }
   createDesk(name) { return _desks.createDesk(this, name); }
   renameDesk(id, name, opts) { return _desks.renameDesk(this, id, name, opts); }
-  deleteDesk(id) { return _desks.deleteDesk(this, id); }
+  deleteDesk(id, opts) { return _desks.deleteDesk(this, id, opts); }
   setActiveDesk(id) { return _desks.setActiveDesk(this, id); }
   async reorderDesks(orderedIds) { const m = await import("./state-desks-ops.js"); return m.reorderDesks(this, orderedIds); }
   getActiveDesk() { return _desks.getActiveDesk(this); }

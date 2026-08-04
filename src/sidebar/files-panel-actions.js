@@ -34,11 +34,8 @@ export function handleDeskAction(action, deskId, state) {
         catch (e) { window.alert(String(e?.message || e)); }
       },
     });
-  } else if (action === "delete-desk") {
-    const name = desk?.name || "this desk";
-    showDeleteConfirmModal(`Delete "${name}"`,
-      `Delete "${name}" and everything inside it?\n\nThis cannot be undone.`,
-      async () => { try { await state.deleteDesk(deskId); } catch (e) { console.warn("delete desk failed:", e); } });
+  } else if (action === "archive-desk") {
+    import("./desk-archive.js").then((m) => m.confirmArchiveDesk(state, deskId));
   }
 }
 
