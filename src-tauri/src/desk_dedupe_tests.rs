@@ -228,3 +228,95 @@ fn repair_restores_files_from_a_retired_desk() {
     assert_eq!(report.restored, 1, "{:?}", report.notes);
     assert_eq!(store.read_by_id("f-cities").unwrap().0, "cities essay");
 }
+
+/// The interleaving that put one desk's files under two desks at once.
+///
+/// It needs three things that only line up on a device with local
+/// (file-provider) desks and more than one window:
+///
+///  1. a forest that **omits** a desk — routine on iOS, where a local
+///     desk's folder is unreachable until its security-scoped bookmark is
+///     resolved, so `load_forest` skips it. `save_forest` writes only the
+///     desks it was handed, so the omitted desk's `index.json` is left
+///     behind, still claiming files;
+///  2. that same save placing those files under a *different* desk —
+///     which is what a second window does when it disagrees about where a
+///     node belongs (the per-window active desk decided that, before
+///     stragglers were pinned to the first desk);
+///  3. the file provider putting the moved file back in the first desk's
+///     folder, at which point the disk-wins reconciler pairs it by content
+///     hash and re-attaches its **original fileId** — so both desks now
+///     claim the same id rather than two different ones.
+///
+/// Every step is individually reasonable; together they split one file's
+/// identity across two desks. The cross-desk invariant is what makes the
+/// outcome unreachable, so this asserts the repair, not the disease.
+#[test]
+fn a_forest_that_omits_a_desk_cannot_split_a_file_across_two() {
+    let dir = tempfile::tempdir().unwrap();
+    let external = tempfile::tempdir().unwrap();
+    let school_root = external.path().join("School");
+    std::fs::create_dir_all(school_root.join("Essays")).unwrap();
+    std::fs::write(school_root.join("Essays/Cities.md"), "cities essay").unwrap();
+    let store = DeskStore::new(dir.path());
+
+    // School operates from a folder the user picked.
+    let school_id = store.open_folder_as_desk(&school_root, None).unwrap();
+    store.reconcile_desk_from_disk(&school_id).unwrap();
+    let f_cities = store
+        .load_index(&school_id)
+        .into_iter()
+        .find(|(_, rel)| rel.ends_with("Cities.md"))
+        .map(|(id, _)| id)
+        .expect("the essay is indexed under School");
+
+    // Step 1+2: a window saves a forest that omits School (its folder was
+    // unreadable when the tree was read) and files School's essay under
+    // Personal instead.
+    let personal = desk(
+        "personal",
+        "Personal",
+        vec![node(
+            "p-essays",
+            "project",
+            "Essays",
+            None,
+            vec![node("n-cities", "document", "Cities", Some(&f_cities), Vec::new())],
+        )],
+    );
+    store.save_forest(&[personal.clone()]).unwrap();
+
+    // School's folder survives — a save that merely omits a desk is not a
+    // deletion — but its index was never rewritten, so it still claims the
+    // essay it no longer holds.
+    assert!(school_root.join(".hush/tree.json").exists(), "School must survive");
+    assert!(store.load_index(&school_id).contains_key(&f_cities));
+
+    // Step 3: the file provider puts the file back in School's folder.
+    // The reconciler pairs it by content hash and re-attaches the ORIGINAL
+    // fileId — the step that makes this a split identity rather than two
+    // unrelated files.
+    std::fs::write(school_root.join("Essays/Cities.md"), "cities essay").unwrap();
+    store.reconcile_desk_from_disk(&school_id).unwrap();
+    assert_eq!(
+        store.load_index(&school_id).get(&f_cities).map(String::as_str),
+        Some("Essays/Cities.md"),
+        "precondition: the reconciler re-attached the original id to School",
+    );
+
+    // Both desks' trees now name the same file. The next save is where the
+    // damage used to compound; the invariant resolves it to the desk that
+    // holds the bytes instead.
+    let school_tree = store.load_desk_tree(&school_id).unwrap();
+    store.save_forest(&[school_tree, personal]).unwrap();
+
+    let school_claims = store.load_index(&school_id).contains_key(&f_cities);
+    let personal_claims = store.load_index("personal").contains_key(&f_cities);
+    assert!(
+        school_claims ^ personal_claims,
+        "exactly one desk may claim the file — School: {}, Personal: {}",
+        school_claims,
+        personal_claims,
+    );
+    assert_eq!(store.read_by_id(&f_cities).unwrap().0, "cities essay");
+}
