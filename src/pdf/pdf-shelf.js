@@ -117,6 +117,13 @@ export function initPdfShelf(state) {
   }, true);
 }
 
+/** The PDFs-folder node the shelf is currently showing, or null. Lets
+ *  callers tell whether the shelf belongs to something that's about to
+ *  go away (see state/desk-teardown.js). */
+export function currentShelfContainerId() {
+  return _containerId;
+}
+
 /** Open the shelf for a PDFs folder node (the desk special or a
  *  project's `pdfFolder`). */
 export function openPdfShelf(state, containerId) {

@@ -62,6 +62,23 @@ export async function archiveDesk(state, deskId) {
   if (!desk) throw new Error("that desk is no longer open");
   if (!IS_TAURI) throw new Error("archiving is only available in the app");
 
+  // 0. Flush whatever is in the editor before the zip reads the folder,
+  //    so the archive carries the last keystroke rather than the last
+  //    autosave tick — and so no write is still in flight when the folder
+  //    goes away.
+  try {
+    if (state.dirty) await state.saveCurrentFile();
+    // Notebooks save on their own 2 s tick via an event, which can't be
+    // awaited — call the saver directly so the flush actually completes
+    // before the zip reads the folder.
+    if (state.currentNotebookFileId) {
+      const { saveNotebook } = await import("../notebook/notebook-bridge.js");
+      await saveNotebook();
+    }
+  } catch (e) {
+    logActivity("desks", "warn", "Flush before archiving failed", { deskId, error: String(e) });
+  }
+
   // 1. Zip first. Nothing is removed until this returns.
   const info = await invoke("desk_archive", { deskId, deskName: desk.name || "Untitled desk" });
   logActivity("desks", "info", `Archived desk "${desk.name}"`, info);

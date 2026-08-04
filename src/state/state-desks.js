@@ -272,19 +272,52 @@ export async function deleteDesk(state, deskId, { archived = false } = {}) {
       logActivity("desks", "error", "desk_retire failed", { deskId, error: String(e) });
     }
   }
+  // Close what the desk had on screen *before* it leaves the tree, while
+  // its subtree is still there to tell us which files were its. Panes and
+  // takeover views outlive the sidebar rows that spawned them, so nothing
+  // else would ever close them.
+  const { tearDownDeskSurfaces } = await import("./desk-teardown.js");
+  const { ownedActiveSurface } = await tearDownDeskSurfaces(state, doomed);
+
   tree.splice(idx, 1);
 
   const remaining = (state.settings.desks || []).filter((d) => d.id !== deskId);
   const meta = { ...(state.settings.desksMeta || {}) };
   delete meta[deskId];
+  // The per-desk Local Folder slot is keyed by desk id too, and a stale
+  // one would restore a departed desk's file on the next switch.
+  const deskLocal = { ...(state.settings.deskLastLocalSync || {}) };
+  delete deskLocal[deskId];
 
-  let activeDeskId = state.settings.activeDeskId;
-  if (activeDeskId === deskId) activeDeskId = remaining[0]?.id || null;
+  const previousActiveDeskId = state.settings.activeDeskId;
+  const activeDeskId = previousActiveDeskId === deskId
+    ? (remaining[0]?.id || null)
+    : previousActiveDeskId;
 
-  await state.updateSettings({ desks: remaining, desksMeta: meta, activeDeskId });
+  await state.updateSettings({
+    desks: remaining, desksMeta: meta, deskLastLocalSync: deskLocal, activeDeskId,
+  });
   await state.saveFileTree();
   state.emit("desks-changed");
-  if (activeDeskId !== state.settings.activeDeskId) state.emit("active-desk-changed", activeDeskId);
+
+  // `updateSettings` assigns into `state.settings` synchronously, so the
+  // old guard here compared `activeDeskId` against the value it had just
+  // written — always equal, so this never fired. That's why archiving the
+  // desk you were working in left its document open in the editor while
+  // the sidebar had already moved on: the one listener that lands the
+  // editor on the new desk (main.js → `openLastFileForDesk`) was never
+  // told the desk had changed. Compare against the value from *before*
+  // the write.
+  if (activeDeskId !== previousActiveDeskId) {
+    state.emit("active-desk-changed", activeDeskId);
+  } else if (ownedActiveSurface) {
+    // Same desk still active, but the file on screen belonged to the one
+    // that just left (the all-desks view can open across desks). Re-land
+    // on the active desk's own content, or its empty pane.
+    const { openLastFileForDesk } = await import("./state-desks-ops.js");
+    if (activeDeskId) await openLastFileForDesk(state, activeDeskId);
+    else await state.clearActiveFile();
+  }
 }
 
 /** Every special-node id of `kind` currently in the tree (one per desk).
