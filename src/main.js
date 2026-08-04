@@ -23,6 +23,7 @@ import { initCmdHeldSliders } from "./cmd-held-sliders.js";
 import { applyActiveStyle, applyFocusModeOpacity, applyDeskGlobalStyle, handleOAuthCode } from "./style-application.js";
 import { installWindowShortcuts, installActivationFocus } from "./window-shortcuts.js";
 import { setTooltipsEnabled } from "./tooltips.js";
+import { installActivityCapture, configureActivityLog, logActivity } from "./activity-log.js";
 import {
   getInitialFileFromHash,
   getInitialDeskFromHash,
@@ -48,10 +49,46 @@ async function init() {
     window.__hushOpenWikilink = (title) => { void openWikilink(state, title); };
     window.__hushOpenWikilinkAsPane = (title) => { void openWikilinkAsPane(state, title); };
   }
+  // Start the activity log before anything can go wrong — boot is the
+  // stretch we most often need a trail for, and it's the stretch no
+  // console is watching.
+  installActivityCapture();
+  if (IS_TAURI) {
+    try {
+      configureActivityLog({
+        windowLabel: await getCurrentWindowLabel(),
+        deskName: () => (state.fileTree || []).find(
+          (n) => n.type === "desk" && n.id === state.settings?.activeDeskId,
+        )?.name || "",
+      });
+    } catch (_) { /* defaults are fine */ }
+  }
+
+  // **Before** the tree is read: on iOS a local desk's folder is only
+  // reachable through a security-scoped bookmark, and until it's resolved
+  // every `std::fs` call against that folder fails. `load_forest` skips a
+  // desk it can't read, so a boot that ran ahead of this saw a forest
+  // with the local desks missing — and then repaired, re-registered and
+  // saved that short forest as if the desks were gone. This has to happen
+  // first; the rest of the desk-roots lifecycle can stay where it is.
+  if (IS_TAURI && isIOS()) {
+    try {
+      const m = await import("./sync/desk-roots.js");
+      await m.acquireLocalDeskAccess(state);
+    } catch (e) {
+      logActivity("desks", "error", "Could not re-open local desk folders before boot", { error: String(e) });
+    }
+  }
+
   const initialFile = state.isSecondaryWindow ? getInitialFileFromHash() : null;
   const initialDesk = state.isSecondaryWindow ? getInitialDeskFromHash() : null;
   await state.init({ initialFile, initialDesk });
   if (typeof window !== "undefined") window.__hushState__ = state;
+  logActivity("boot", "info", "Window initialised", {
+    desks: (state.fileTree || []).filter((n) => n.type === "desk").map((n) => n.name),
+    activeDeskId: state.settings?.activeDeskId || null,
+    secondary: state.isSecondaryWindow,
+  });
 
   // Drop any bundled style presets the user hasn't seen yet into the
   // styles list so they show up as normal entries in the rail. Each

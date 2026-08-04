@@ -7,6 +7,8 @@
 import { findNode, findNodeByFileId, insertNode, removeNode, uniqueChildName } from "./tree-helpers.js";
 import { stashActiveEditorState } from "./editor-cache-key.js";
 import * as _naming from "./state-naming.js";
+import { logActivity } from "../activity-log.js";
+import { reportUnopenableFile } from "./unopenable-file.js";
 
 /** A doc is "empty Untitled" when it carries the placeholder name and
  *  has no actual content. Such docs are user noise — created when the
@@ -22,6 +24,25 @@ const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 async function tauriInvoke(cmd, args) {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke(cmd, args);
+}
+
+/** Persist the whole forest. Every window writes *every* desk, so this
+ *  is the moment one window's view of the library becomes everyone's —
+ *  which makes it the single most useful thing to have in the activity
+ *  log. When a desk's contents change without anyone meaning them to,
+ *  the shape recorded here is what says which window did it. */
+export async function saveFileTree(state) {
+  const tree = state.fileTree || [];
+  logActivity("tree", "debug", "Saving file tree", {
+    desks: tree.filter((n) => n.type === "desk").map((n) => `${n.name}:${(n.children || []).length}`),
+    strays: tree.filter((n) => n.type !== "desk").length,
+  });
+  if (IS_TAURI) {
+    try { await tauriInvoke("save_file_tree", { tree: state.fileTree }); }
+    catch (e) { logActivity("tree", "error", "Save tree failed", { error: String(e) }); }
+  } else { state._saveTreeLocal(); }
+  state._broadcastCrossWindow("files");
+  state.emit("files-changed");
 }
 
 export async function saveCurrentFile(state) {
@@ -214,7 +235,7 @@ export async function openFile(state, id) {
   state.currentLocalSync = null;
   if (IS_TAURI) {
     try { const file = await tauriInvoke("load_file", { id }); state.currentFileId = file.id; if (state.editor) state.editor.loadDocState(`doc:${file.id}`, file.content); }
-    catch (e) { console.error("Load file failed:", e); }
+    catch (e) { await reportUnopenableFile(state, id, node, e); }
   } else {
     const file = state.files.find((f) => f.id === id);
     if (file) { state.currentFileId = file.id; if (state.editor) state.editor.loadDocState(`doc:${file.id}`, file.content); }

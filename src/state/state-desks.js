@@ -21,6 +21,7 @@
  */
 
 import { pushDeskRecentFile } from "./recent-files.js";
+import { logActivity } from "../activity-log.js";
 
 const SPECIAL_KINDS = ["__inbox__", "__images__", "__pdfs__", "__archive__", "__trash__"];
 
@@ -241,9 +242,27 @@ export async function deleteDesk(state, deskId) {
   if (desks.length <= 1) throw new Error("cannot delete the last desk");
   const idx = tree.findIndex((n) => n.type === "desk" && n.id === deskId);
   if (idx < 0) return;
+  const doomed = tree[idx];
+  logActivity("desks", "warn", `Deleting desk "${doomed?.name || deskId}"`, {
+    deskId,
+    local: !!state.deskRoots?.[deskId],
+    topLevelChildren: (doomed?.children || []).map((c) => c?.name),
+  });
   if (state.deskRoots?.[deskId]) {
     const { unregisterDeskRoot } = await import("../sync/desk-roots.js");
     await unregisterDeskRoot(state, deskId);
+  } else {
+    // Say the deletion out loud. `save_forest` no longer infers it from a
+    // tree that merely lacks the desk — that signal is indistinguishable
+    // from a stale tree, and inferring it is how a live desk's folder
+    // could be swept aside by another window's out-of-date save. The
+    // folder is retired (moved under `desks/.deleted/`), never wiped.
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("desk_retire", { deskId });
+    } catch (e) {
+      logActivity("desks", "error", "desk_retire failed", { deskId, error: String(e) });
+    }
   }
   tree.splice(idx, 1);
 
@@ -294,7 +313,14 @@ export function seedNewArchivesCollapsed(state, createdIds) {
  *  boot and produces the desk to fold into. */
 export function ensureDesksTreeSpecials(state, tree) {
   const desks = tree.filter((n) => n.type === "desk");
-  const target = desks.find((d) => d.id === state.settings?.activeDeskId) || desks[0];
+  // Stragglers land in the **first** desk, not the active one. The active
+  // desk is per-window: two windows running side by side (Stage Manager
+  // on iPad, two windows on desktop) would each fold the same homeless
+  // node into a different desk and then each save the whole forest,
+  // leaving the node recorded in two desks at once — the state that made
+  // a project show up under two desks and go unopenable when one of them
+  // was deleted. The first desk is the same answer in every window.
+  const target = desks[0];
   if (target) {
     // A top-level non-desk node whose name matches a known desk is an
     // unfinished desk absorption (left behind by an interrupted import
@@ -340,6 +366,8 @@ export async function setActiveDesk(state, deskId) {
   const desks = state.settings?.desks || [];
   if (!desks.some((d) => d.id === deskId)) return;
   if (state.settings?.activeDeskId === deskId) return;
+  logActivity("desks", "info",
+    `Switched to desk "${desks.find((d) => d.id === deskId)?.name || deskId}"`, { deskId });
   await state.updateSettings({ activeDeskId: deskId });
   state.emit("active-desk-changed", deskId);
 }

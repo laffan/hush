@@ -82,11 +82,26 @@ impl DeskStore {
         if is_image_rel(rel) {
             return Ok(());
         }
-        // An id we can't trace (not indexed, not staged) writing into a
-        // *local* desk would drop a blank file into the user's folder —
-        // the signature of a stale tree, not a real create (every real
-        // create stages first). Leave it; the disk-wins reconcile drops
-        // the dangling node on its next pass.
+        // Nothing traceable, but a retired desk folder may still hold this
+        // file — the shape left behind when a desk that had (wrongly) taken
+        // ownership of another desk's content was deleted. Put the real
+        // bytes back rather than fabricating an empty document over them:
+        // an empty doc reads as a healthy file, and the first keystroke in
+        // it would make the loss permanent.
+        if let Some(source) = self.find_rescue_copy(id) {
+            fs::copy(&source, &dst)?;
+            crate::activity_log::note(
+                "desks",
+                "warn",
+                format!("Restored {} from a retired desk folder while placing it", rel),
+            );
+            return Ok(());
+        }
+        // An id we can't trace (not indexed, not staged, not recoverable)
+        // writing into a *local* desk would drop a blank file into the
+        // user's folder — the signature of a stale tree, not a real create
+        // (every real create stages first). Leave it; the disk-wins
+        // reconcile drops the dangling node on its next pass.
         if crate::desk_roots::root_for(&self.desks_dir, desk_id).is_some() {
             return Ok(());
         }

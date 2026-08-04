@@ -11,9 +11,10 @@ import {
   isIOSSettings,
   renderGeneralTab, renderEditorTab, renderShortcutsTab,
   renderDryTab, renderFlagsSettingsTab, renderSyncTab, renderPrivacyTab, renderZoteroTab,
-  renderProofreadTab, bindProofreadTab, renderDebugTab,
+  renderProofreadTab, bindProofreadTab, renderDebugTab, bindDebugTab,
 } from "./settings-tabs.js";
 import { setSyncSubTab } from "./settings-tabs-sync.js";
+import { installActivityCapture, configureActivityLog } from "../activity-log.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -64,6 +65,11 @@ function readTabFromLocation() {
 export async function initSettingsInto(rootEl, saveCallback) {
   settingsRootEl = rootEl;
   onSaveCallback = saveCallback || null;
+  // The settings window is its own webview with its own console. Route
+  // its warnings and errors into the shared activity log so the Debug
+  // tab shows one trail rather than a partial one.
+  configureActivityLog({ windowLabel: "settings" });
+  installActivityCapture();
   // Honour a `#sync/google`-style deep link. The iOS modal path passes the tab in
   // via setActiveTab() before this runs, so the hash check there is a
   // no-op (the page URL never carries one).
@@ -323,6 +329,7 @@ function bindAll() {
 
   // Debug tab
   bindCheckbox("setting-debug-perf-hud", "debugPerfHud");
+  bindDebugTab();
 
   // Flags tab
   bindFlagsTab(saveSetting, settings, render);

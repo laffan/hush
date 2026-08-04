@@ -17,6 +17,7 @@
 
 import { applyExternalDocContent } from "./apply-external.js";
 import { isIOSTauri } from "../command-palette-helpers.js";
+import { logActivity } from "../activity-log.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -240,6 +241,9 @@ export async function reconcileDesk(state, deskId) {
     return;
   }
   if (report && (report.added > 0 || report.removed > 0 || report.renamed > 0)) {
+    const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
+    logActivity("desks", report.removed > 0 ? "warn" : "info",
+      `Desk folder reconciled: "${desk?.name || deskId}"`, report);
     await reloadTree(state);
     try {
       const { appendSyncLog } = await import("./sync-feedback.js");
@@ -332,6 +336,24 @@ async function resolveBookmarkedRoots() {
   }
 }
 
+/** Re-grant this process access to every local desk folder, and cache the
+ *  roots map. **Must run before anything reads the file tree.**
+ *
+ *  On iOS a folder outside the app container is only reachable through a
+ *  security-scoped bookmark; until `resolve_bookmark` has run, plain
+ *  `std::fs` calls against that folder fail. `load_forest` skips a desk
+ *  whose `.hush/tree.json` it can't read, so a boot that got ahead of
+ *  this saw a forest with every local desk missing — and the boot repair
+ *  downstream took that at face value: it pruned the desk registry,
+ *  folded loose nodes into whichever desk was left, and saved the short
+ *  forest back. Idempotent and cheap on desktop (no bookmarks to
+ *  resolve), so callers don't have to branch on platform. */
+export async function acquireLocalDeskAccess(state) {
+  if (!IS_TAURI) return;
+  if (isIOSTauri()) await resolveBookmarkedRoots();
+  await refreshDeskRoots(state);
+}
+
 /** Reconcile every local desk — the iOS baseline in place of the
  *  desktop filesystem watcher, run at boot and on each return to
  *  foreground. */
@@ -380,8 +402,10 @@ export async function installDeskRootsLifecycle(state) {
   if (!IS_TAURI) return;
   const { pullAllDeskMeta } = await import("./desk-meta.js");
   if (isIOSTauri()) {
-    await resolveBookmarkedRoots();
-    await refreshDeskRoots(state);
+    // main.js already ran this before `state.init()` so the boot tree
+    // load could see the local desks; repeating it is a cheap no-op and
+    // keeps this entry point self-sufficient.
+    await acquireLocalDeskAccess(state);
     await pullAllDeskMeta(state);
     await reconcileAllLocalDesks(state);
     await armIOSLiveUpdates(state);

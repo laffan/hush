@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "npm run check:line-limits && vite build",
+    "dev": "npm run build:info && vite",
+    "build": "npm run check:line-limits && npm run build:info && vite build",
+    "build:info": "node scripts/gen-build-info.mjs",
     "check:line-limits": "bash scripts/check-line-limits.sh",
     "tauri": "tauri",
     "build:macos": "tauri build",

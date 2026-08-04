@@ -18,6 +18,10 @@
   /* Settings window runs in its own WebviewWindow and doesn't import
      base.css, so the z-index scale is duplicated here. Keep in sync. */
   --z-modal-top: 9999;
+  /* Debug tab log levels — tuned per theme so warnings stay legible on
+     both the near-black and near-white panel backgrounds. */
+  --debug-warn: #d8a13a;
+  --debug-error: #e86c6c;
 }
 
 [data-theme="light"] {
@@ -28,6 +32,8 @@
   --tab-bg: #f0f0f0;
   --tab-hover: rgba(128, 128, 128, 0.1);
   --tab-active: rgba(128, 128, 128, 0.2);
+  --debug-warn: #9a6a00;
+  --debug-error: #c0392b;
 }
 
 html, body {
@@ -937,3 +943,154 @@ html.phone .settings-content {
 html.phone .settings-panel {
   max-width: none;
 }
+
+/* ===== Debug tab ===== */
+
+/* Build Info / Desk Storage read-outs — label left, value right, the
+   same shape the Sync tab uses for its status block. */
+.debug-info-grid {
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 4px 12px;
+  background: rgba(128, 128, 128, 0.04);
+}
+.debug-info-row {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.08);
+}
+.debug-info-row:last-child { border-bottom: none; }
+.debug-info-label {
+  color: var(--sidebar-fg);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.debug-info-value {
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  text-align: right;
+  /* Long commit subjects and data-dir paths wrap rather than widening
+     the panel. `anywhere` so a path with no spaces still breaks. */
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.debug-warn { color: var(--debug-error); }
+
+.debug-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.debug-button {
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  color: var(--fg);
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+}
+.debug-button:hover { background: var(--tab-hover); }
+.debug-button:disabled { opacity: 0.4; cursor: default; }
+.debug-button-danger { color: var(--debug-error); }
+
+.debug-repair-result {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: rgba(128, 128, 128, 0.04);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+/* Activity log — a console, so: monospace, dense, newest first, and
+   every part of it selectable. */
+.debug-log-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.debug-log-filter {
+  flex: 1 1 140px;
+  min-width: 120px;
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 5px 10px;
+}
+.debug-log-level {
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 5px 8px;
+}
+.debug-log-count {
+  color: var(--sidebar-fg);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.debug-log {
+  max-height: 340px;
+  overflow-y: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: rgba(128, 128, 128, 0.04);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.debug-log-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 4px 12px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.08);
+}
+.debug-log-row:last-child { border-bottom: none; }
+.debug-log-time {
+  color: var(--sidebar-fg);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.debug-log-source {
+  color: var(--sidebar-fg);
+  white-space: nowrap;
+  /* Fixed column so messages line up the way a console's do, but it
+     yields rather than truncating an unusually long subsystem name. */
+  min-width: 62px;
+}
+.debug-log-message {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.debug-log-where,
+.debug-log-detail {
+  display: block;
+  color: var(--sidebar-fg);
+  font-size: 11px;
+}
+.debug-log-detail { opacity: 0.8; }
+.debug-log-warn .debug-log-source,
+.debug-log-warn .debug-log-message { color: var(--debug-warn); }
+.debug-log-error .debug-log-source,
+.debug-log-error .debug-log-message { color: var(--debug-error); }

@@ -219,6 +219,17 @@ impl DeskStore {
     /// reconciliation, order.json with stragglers, and retirement of desk
     /// folders whose desk node vanished (moved to `.deleted/`, never wiped).
     pub fn save_forest(&self, tree: &[TreeNode]) -> Result<(), BoxError> {
+        let old_global = self.global_index();
+
+        // A file may belong to exactly one desk. A forest that says
+        // otherwise is corrupt (see `dedupe_cross_desk`), and writing it
+        // verbatim splits the file's identity across two desks — the
+        // failure that made a project show up in two desks at once and
+        // then go unopenable when one of them was deleted. Repair the
+        // forest before anything is written.
+        let owned = crate::desk_dedupe::repair_forest(tree, &old_global);
+        let tree: &[TreeNode] = owned.as_deref().unwrap_or(tree);
+
         let desks: Vec<&TreeNode> = tree.iter().filter(|n| n.node_type == "desk").collect();
         let stragglers: Vec<TreeNode> = tree
             .iter()
@@ -226,7 +237,6 @@ impl DeskStore {
             .cloned()
             .collect();
 
-        let old_global = self.global_index();
         let roots = crate::desk_roots::load_roots(&self.desks_dir);
 
         // Expected placement for every file-backed node, per desk.
@@ -392,30 +402,17 @@ impl DeskStore {
             self.prune_empty_dirs(&desk.id, &expected_dirs[&desk.id], managed.as_ref());
         }
 
-        // Retire desk folders whose node vanished. Guarded on the tree
-        // actually carrying desks so a transient empty save can't retire
-        // the whole library. Local desks are never retired *or*
-        // unregistered here: a desk node missing from one save is
-        // indistinguishable from a stale tree (a second window, an
-        // interleaved save), and silently disconnecting the user's
-        // folder over that lost real desks. Explicit deletion goes
-        // through the `desk_unregister_root` command; until that runs,
+        // A desk folder is NEVER retired from a tree save. The reasoning
+        // that already exempted local desks applies to internal ones just
+        // as much: a desk node missing from one saved forest is
+        // indistinguishable from a stale tree (a second window that never
+        // saw the desk, an iPad scene resumed with a months-old snapshot,
+        // a boot that read the tree before iOS re-granted folder access).
+        // Retiring on that signal is how a whole desk's files could
+        // disappear behind the user's back. Deletion is explicit now:
+        // `deleteDesk` calls `desk_retire` (and `desk_unregister_root` for
+        // local desks) *before* saving the tree. Until one of those runs,
         // `load_forest` keeps resurrecting the desk from its folder.
-        if !desks.is_empty() {
-            let live: HashSet<&str> = desks.iter().map(|d| d.id.as_str()).collect();
-            for desk_id in self.desk_ids_on_disk() {
-                if live.contains(desk_id.as_str()) {
-                    continue;
-                }
-                if roots.contains_key(&desk_id) {
-                    continue;
-                }
-                let trash = self.desks_dir.join(".deleted");
-                fs::create_dir_all(&trash).ok();
-                let dst = trash.join(format!("{}-{}", desk_id, now_secs()));
-                let _ = fs::rename(self.desk_dir(&desk_id), &dst);
-            }
-        }
 
         let order = OrderFile {
             order: desks.iter().map(|d| d.id.clone()).collect(),

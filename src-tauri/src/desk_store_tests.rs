@@ -126,8 +126,13 @@ fn cross_desk_move_and_desk_retirement() {
     )];
     store.save_forest(&tree2).unwrap();
     assert!(dir.path().join("desks/d2/Doc.md").exists());
+    // A desk merely *missing* from a saved forest is not a deleted desk —
+    // it's indistinguishable from a stale tree, so its folder stays put.
+    assert!(dir.path().join("desks/d1/.hush/tree.json").exists());
+
+    // Deletion is explicit, and retires rather than wipes.
+    store.retire_desk("d1").unwrap();
     assert!(!dir.path().join("desks/d1").exists());
-    // Retired, not deleted.
     let deleted: Vec<_> = fs::read_dir(dir.path().join("desks/.deleted"))
         .unwrap()
         .flatten()

@@ -406,14 +406,7 @@ export class AppState {
 
   // ===== File Tree Operations =====
 
-  async saveFileTree() {
-    if (IS_TAURI) {
-      try { await tauriInvoke("save_file_tree", { tree: this.fileTree }); }
-      catch (e) { console.error("Save tree failed:", e); }
-    } else { this._saveTreeLocal(); }
-    this._broadcastCrossWindow("files");
-    this.emit("files-changed");
-  }
+  async saveFileTree() { return _files.saveFileTree(this); }
 
   // ===== Tree Operations (delegated to state-tree.js) =====
   _activeDeskParent(parentId) { return parentId || _desks.getActiveDesk(this)?.id || null; }
