@@ -1,5 +1,5 @@
 import { EditorView, keymap, drawSelection, placeholder, ViewPlugin } from "@codemirror/view";
-import { EditorState, Prec, Compartment, Annotation } from "@codemirror/state";
+import { EditorState, Compartment } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting } from "@codemirror/language";
 import { Strikethrough, Table } from "@lezer/markdown";
@@ -50,6 +50,10 @@ import {
   programmaticAnnotations, isProgrammaticUpdate,
 } from "./base-extensions.js";
 import { applyBlockCursor } from "./block-cursor.js";
+import {
+  bypassRatchet, createRatchetExtensions, setRatchetAnchor,
+  deskRatchetActive, deskOnlyRatchet,
+} from "./ratchet.js";
 import { bindLineIndicatorToContainer, createLineIndicatorPlugin } from "./line-indicator.js";
 import { buildFoldingExtension } from "./folding.js";
 import { createFoldArrowPlugin } from "./fold-arrow.js";
@@ -66,7 +70,6 @@ const themeCompartment = new Compartment();
 const highlightCompartment = new Compartment();
 const shortcutCompartment = new Compartment();
 const readOnlyCompartment = new Compartment();
-const bypassRatchet = Annotation.define();
 
 /**
  * Creates the CodeMirror 6 editor instance.
@@ -201,54 +204,15 @@ export function createEditor(container, state) {
     },
   });
 
-  // Ratchet mode: block deletion, navigation, selection, undo
-  const ratchetBlockedKeys = "Delete ArrowLeft ArrowRight ArrowUp ArrowDown Home End PageUp PageDown Mod-ArrowLeft Mod-ArrowRight Mod-ArrowUp Mod-ArrowDown Shift-ArrowLeft Shift-ArrowRight Shift-ArrowUp Shift-ArrowDown Shift-Home Shift-End Mod-Shift-ArrowLeft Mod-Shift-ArrowRight Mod-Shift-ArrowUp Mod-Shift-ArrowDown Mod-a Mod-z Mod-Shift-z Mod-x".split(" ");
-  const ratchetKeymap = Prec.highest(
-    keymap.of(ratchetBlockedKeys.map(key => ({ key, run: () => state.ratchetMode })))
-  );
+  // Ratchet — the timed session's keymap / transaction filter / mouse
+  // block, plus the per-desk Ratchet mode that runs the same rules with
+  // no clock. Lives in `editor/ratchet.js` so pane, stack, and Zen
+  // surfaces enforce the desk mode from the same source.
+  const ratchetExtensions = createRatchetExtensions(state, { enforceSelection: true });
 
   // Global keyboard shortcuts — built from `state.settings` so the settings
   // panel can change bindings at runtime via the shortcut compartment.
   const initialShortcuts = buildShortcutExtension(state);
-
-  // Ratchet captures the cursor position when the session starts.
-  // Edits before this anchor are forbidden — earlier content is locked.
-  // After the anchor, we still honour the "edit the in-progress word"
-  // relaxation: the user can backspace within the most recent word
-  // they've typed, but not into committed text. Both conditions
-  // collapse to one lock point per transaction.
-  let ratchetAnchor = 0;
-
-  const ratchetFilter = EditorState.transactionFilter.of((tr) => {
-    if (!state.ratchetMode || tr.annotation(bypassRatchet)) return tr;
-    if (tr.docChanged) {
-      const doc = tr.startState.doc.toString();
-      // Look for the most recent whitespace at or after `ratchetAnchor`
-      // and before the cursor — this is the boundary of the user's
-      // current in-progress word. Searching globally (the previous
-      // implementation) broke mid-document ratchet sessions because
-      // the last whitespace in the *whole* doc is usually past where
-      // the user is editing, locking out their cursor entirely.
-      const cursor = tr.startState.selection.main.head;
-      let wordStart = ratchetAnchor;
-      for (let i = cursor - 1; i >= ratchetAnchor; i--) {
-        const c = doc.charCodeAt(i);
-        if (c === 32 /* space */ || c === 10 /* \n */) { wordStart = i + 1; break; }
-      }
-      const lockPoint = Math.max(ratchetAnchor, wordStart);
-
-      let reject = false;
-      tr.changes.iterChanges((fromA) => {
-        if (fromA < lockPoint) reject = true;
-      });
-      if (reject) return [];
-    }
-    return tr;
-  });
-
-  const ratchetMouseFilter = EditorView.domEventHandlers({
-    mousedown: () => state.ratchetMode,
-  });
 
   const activeTheme = getActiveTheme(state.settings);
   const initialCmTheme = activeTheme ? activeTheme.extension : [];
@@ -312,9 +276,7 @@ export function createEditor(container, state) {
       blurListener,
       shortcutCompartment.of(initialShortcuts),
       readOnlyCompartment.of([]),
-      ratchetKeymap,
-      ratchetFilter,
-      ratchetMouseFilter,
+      ratchetExtensions,
       privateModePlugin,
       dryHighlightPlugin,
       focusModePlugin,
@@ -394,6 +356,20 @@ export function createEditor(container, state) {
     if (effects.length) view.dispatch({ effects });
   }
 
+  /** Every doc a ratcheted desk opens starts fully locked: whatever it
+   *  already holds is committed text, and only what the user writes
+   *  from here (plus line 1, the filename) is theirs to change. Runs
+   *  after the content load so the end position is the real one — a
+   *  restored EditorState carries its own stale anchor otherwise. */
+  function relockForDeskRatchet() {
+    if (!deskOnlyRatchet(state)) return;
+    // Typewriter mode parks a runway of blank lines past the real end;
+    // anchoring on those would lock the cursor out of the document.
+    const text = view.state.doc.toString();
+    const end = state.typewriterMode ? stripTypewriterRunwayText(text).length : text.length;
+    setRatchetAnchor(view, end);
+  }
+
   /** Bring the buffer to `text` as a minimal-splice diff, excluded from
    *  the undo history (`programmaticAnnotations`). Loading, mirroring,
    *  and restoring content are app actions, not user edits — existing
@@ -417,7 +393,26 @@ export function createEditor(container, state) {
     });
   }
 
+  // Desk Ratchet is a persisted per-desk setting rather than a session,
+  // so it flips on a `mode-changed` (the palette toggle) *and* on a desk
+  // switch. Re-anchoring is gated on an actual transition: `mode-changed`
+  // fires for every other mode too, and re-anchoring on each of those
+  // would cut off the word the user is in the middle of typing.
+  let deskRatchetOn = deskRatchetActive(state);
+  let timedRatchetOn = !!state.ratchetMode;
+  function syncDeskRatchet() {
+    const next = deskRatchetActive(state);
+    if (next === deskRatchetOn) return;
+    deskRatchetOn = next;
+    // Turning it on locks everything already written; turning it off
+    // hands the whole document back.
+    if (next) relockForDeskRatchet();
+    else if (!state.ratchetMode) setRatchetAnchor(view, 0);
+  }
+  state.on("active-desk-changed", syncDeskRatchet);
+
   state.on("mode-changed", () => {
+    syncDeskRatchet();
     // Capture the resting scroll offset up front. The typewriter-off branch
     // below clears the scroller padding and then re-applies it via a path
     // that reads offsetHeight (forcing a reflow while the scroll range is
@@ -430,16 +425,24 @@ export function createEditor(container, state) {
     updateRatchetTimer(state);
     updateWordCountDisplay(state);
     view.dispatch({ effects: [] });
+    const wasTimedRatchet = timedRatchetOn;
+    timedRatchetOn = !!state.ratchetMode;
     if (state.ratchetMode) {
       // Anchor at the user's current cursor position so they can
       // continue writing from wherever they were. The previous
       // behaviour shoved the cursor to the end of the document — fine
       // for an empty doc, hostile when starting mid-thought.
-      ratchetAnchor = view.state.selection.main.head;
+      setRatchetAnchor(view, view.state.selection.main.head);
       view.focus();
       initEncourageTyping(view, state, bypassRatchet);
     } else {
-      ratchetAnchor = 0;
+      // Only the *end of a session* releases the lock, and only as far
+      // as the desk allows: a ratcheted desk keeps everything written
+      // so far locked. Other mode toggles leave the anchor alone so
+      // they can't cut off the word being typed.
+      if (wasTimedRatchet) {
+        if (deskRatchetOn) relockForDeskRatchet(); else setRatchetAnchor(view, 0);
+      }
       clearEncourageTyping();
     }
     if (state.typewriterMode) {
@@ -584,6 +587,7 @@ export function createEditor(container, state) {
       // file-switch while typewriter is on would land short docs back
       // in the broken state until the user's next keystroke.
       if (state.typewriterMode) ensureTypewriterRunway(view, state);
+      relockForDeskRatchet();
     },
     /** Apply externally-produced content (sync pull, watcher reload,
      *  sibling-window broadcast) as a minimal diff so the cursor and
@@ -620,6 +624,7 @@ export function createEditor(container, state) {
       swapEditorState(cached || EditorState.create({ doc: "", extensions: baseExtensions }));
       applyContentDiff(text);
       if (state.typewriterMode) ensureTypewriterRunway(view, state);
+      relockForDeskRatchet();
       requestAnimationFrame(() => applyEditorScrollerPadding(state));
       scheduleWordCountRecompute(state);
     },

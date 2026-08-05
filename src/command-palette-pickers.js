@@ -19,7 +19,7 @@ import { paneIndicatorsFor } from "./sidebar/files-panel-pane-indicators.js";
 import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "./pane/pane-state.js";
 import { sendSelectedToFile } from "./selection-extract.js";
 import { addNotebookAsGutter } from "./project/gutter-commands.js";
-import { typeIcons } from "./sidebar/files-panel-shared.js";
+import { typeIcons, deskRatchetGlyph } from "./sidebar/files-panel-shared.js";
 import { collectFileLeaves, activeDeskSubtree } from "./command-palette-helpers.js";
 import { getDeskRecentFileIds } from "./state/recent-files.js";
 import deskRaw from "./sidebar/sidebar_icons/desk.svg?raw";
@@ -144,6 +144,9 @@ export function enterDeskPicker(palette, state) {
     id: "desk-pick-" + d.id,
     label: (d.name || "Untitled desk") + (d.id === activeId ? "  (current)" : ""),
     icon: deskRaw,
+    // Desks in Ratchet mode are marked here too — switching desks is
+    // exactly when you want to know which ones are forward-only.
+    labelSuffix: deskRatchetGlyph(state, d.id),
     shortcutKey: null,
     action: async () => {
       if (d.id === activeId || typeof state.setActiveDesk !== "function") return;

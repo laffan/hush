@@ -886,15 +886,42 @@
   font-family: inherit;
 }
 
+/* Name + ratchet badge travel together on the left; the caret keeps the
+   right edge. The flex-grow lives on the pair so the badge sits against
+   the name rather than being pushed out beside the caret. */
+.desk-switcher-title {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
 .desk-switcher-name {
   font-size: 18px;
   font-weight: 700;
-  flex: 1;
+  flex: 0 1 auto;
   text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Ratchet-mode badge after a desk name — switcher header and rows. */
+.desk-switcher-ratchet:not(:empty) {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+}
+
+.desk-ratchet-glyph {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  margin-left: 6px;
+  opacity: 0.55;
+}
+
+.desk-switcher-ratchet .desk-ratchet-glyph { margin-left: 0; }
 
 .desk-switcher-caret {
   display: inline-flex;

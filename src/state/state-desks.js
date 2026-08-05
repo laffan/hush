@@ -420,6 +420,27 @@ export async function recordLocalSyncOpen(state, folderId, relPath, name) {
   if (patch.desksMeta && desk) mirrorDeskMeta(state, desk.id);
 }
 
+/** True when a desk is in Ratchet mode — every Doc in it is forward-only
+ *  writing until the user turns it back off. Lives in `desksMeta`
+ *  beside the style choice so it persists between sessions and rides
+ *  along in the desk's `.hushdesk`. Defaults to the active desk. */
+export function getDeskRatchet(state, deskId) {
+  const id = deskId || getActiveDesk(state)?.id;
+  if (!id) return false;
+  return !!state.settings?.desksMeta?.[id]?.ratchet;
+}
+
+/** Flip a desk's Ratchet setting. Pushes desks.json so the choice rides
+ *  cross-device, same as the per-desk style. */
+export async function setDeskRatchet(state, on, deskId) {
+  const id = deskId || getActiveDesk(state)?.id;
+  if (!id) return;
+  const meta = { ...(state.settings?.desksMeta || {}) };
+  meta[id] = { ...(meta[id] || {}), ratchet: !!on };
+  await state.updateSettings({ desksMeta: meta });
+  mirrorDeskMeta(state, id);
+}
+
 /** Read the active desk's saved global style id. Falls back to the
  *  legacy top-level `settings.globalStyleId` when no per-desk choice
  *  exists yet (first run after the per-desk migration). */

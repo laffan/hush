@@ -13,7 +13,7 @@
  * to refresh in place; outside clicks dismiss the popover.
  */
 
-import { escHtml, showDeleteConfirmModal, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
+import { escHtml, showDeleteConfirmModal, DRAG_HANDLE_SVG, deskRatchetGlyph } from "./files-panel-shared.js";
 
 let _state = null;
 let _container = null;
@@ -91,12 +91,17 @@ function render() {
     header = document.createElement("button");
     header.className = "desk-switcher-header";
     header.type = "button";
-    header.innerHTML = `<span class="desk-switcher-name"></span><span class="desk-switcher-caret">${CHEVRON}</span>`;
+    header.innerHTML = `<span class="desk-switcher-title"><span class="desk-switcher-name"></span><span class="desk-switcher-ratchet"></span></span><span class="desk-switcher-caret">${CHEVRON}</span>`;
     header.addEventListener("click", togglePopover);
     _container.insertBefore(header, _container.firstChild);
   }
   const nameSpan = header.querySelector(".desk-switcher-name");
   if (nameSpan && nameSpan.textContent !== label) nameSpan.textContent = label;
+  // Ratchet badge for the desk the header is showing — the mode is
+  // persistent, so the closed switcher has to carry it too.
+  const ratchetSpan = header.querySelector(".desk-switcher-ratchet");
+  const ratchetMark = active ? deskRatchetGlyph(_state, active.id) : "";
+  if (ratchetSpan && ratchetSpan.innerHTML !== ratchetMark) ratchetSpan.innerHTML = ratchetMark;
   // Refresh the popover body too, but only when one is open AND no
   // rename input is active. The active-rename case is left alone so
   // typing isn't interrupted; the user's commit (Enter / blur / Esc)
@@ -152,6 +157,8 @@ function buildPopoverBody(state) {
 function deskRowHtml(d, activeId, canDelete, isLocal = false) {
   const isActive = d.id === activeId;
   const mark = isActive ? CHECK : "";
+  // Desks in Ratchet mode wear the ratchet glyph after their name.
+  const ratchetGlyph = deskRatchetGlyph(_state, d.id);
   // Local desks (operating from a user-picked folder) wear a small
   // outline-square glyph after the name — the same shape Local Folder
   // mounts use in the files tree.
@@ -170,7 +177,7 @@ function deskRowHtml(d, activeId, canDelete, isLocal = false) {
   return `<div class="desk-switcher-row${isActive ? " active" : ""}" data-desk-id="${d.id}">
     <button class="desk-switcher-row-pick" type="button" data-action="pick">
       <span class="desk-switcher-row-mark">${mark}</span>
-      <span class="desk-switcher-row-name">${escHtml(d.name || "Untitled desk")}</span>${localGlyph}
+      <span class="desk-switcher-row-name">${escHtml(d.name || "Untitled desk")}</span>${ratchetGlyph}${localGlyph}
     </button>
     <span class="desk-switcher-row-actions">${handle}${pencilBtn}${trashBtn}</span>
   </div>`;

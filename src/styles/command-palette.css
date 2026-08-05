@@ -96,6 +96,16 @@
   text-overflow: ellipsis;
 }
 
+/* Badge markup riding after a row's label — the desk picker's ratchet
+   glyph. The label eats the free space, so this parks against the
+   row's right edge alongside the shortcut keycaps. */
+.cmd-palette-label-suffix {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg);
+}
+
 .cmd-palette-shortcut {
   flex-shrink: 0;
   display: flex;

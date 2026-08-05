@@ -93,8 +93,10 @@ export function createDefaultSettings() {
     // `{ id, name, createdAt }`. Always at least one entry.
     desks: [],
     // Per-desk synced metadata, keyed by desk id. Carries the slot of
-    // settings that diverge per desk: active style, desktop slot,
-    // persisted panes (panes are owned by their host desk per spec).
+    // settings that diverge per desk: active style, Ratchet mode
+    // (`ratchet: true` puts every Doc in the desk in forward-only
+    // writing), desktop slot, persisted panes (panes are owned by their
+    // host desk per spec).
     // Local-only fields like lastFileId / scrollPosition stay on the
     // top-level `settings` so they per-device-per-window restore.
     desksMeta: {},

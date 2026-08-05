@@ -17,7 +17,7 @@
  * with an image node is a no-op.
  */
 
-import { escHtml, typeIcons } from "./files-panel-shared.js";
+import { escHtml, typeIcons, deskRatchetGlyph } from "./files-panel-shared.js";
 import { findNode, removeNode } from "../state/tree-helpers.js";
 import deskRaw from "./sidebar_icons/desk.svg?raw";
 
@@ -60,7 +60,7 @@ export function openSendToDeskModal(state, nodeId, mode) {
   const rows = targets.map((d) => `
     <button class="send-to-desk-row" type="button" data-desk-id="${d.id}">
       <span class="send-to-desk-row-icon">${deskRaw}</span>
-      <span class="send-to-desk-row-label">${escHtml(d.name || "Untitled desk")}</span>
+      <span class="send-to-desk-row-label">${escHtml(d.name || "Untitled desk")}</span>${deskRatchetGlyph(state, d.id)}
     </button>
   `).join("");
   overlay.innerHTML = `

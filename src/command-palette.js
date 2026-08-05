@@ -244,6 +244,15 @@ function renderList(listEl, state) {
     labelEl.className = "cmd-palette-label";
     labelEl.textContent = cmd.label;
     row.appendChild(labelEl);
+    // Small badge markup that rides directly after the label (the desk
+    // picker's ratchet glyph). Kept out of `label` so filtering still
+    // matches on the plain text.
+    if (cmd.labelSuffix) {
+      const suffixEl = document.createElement("span");
+      suffixEl.className = "cmd-palette-label-suffix";
+      suffixEl.innerHTML = cmd.labelSuffix;
+      row.appendChild(suffixEl);
+    }
     const shortcutRaw = cmd.shortcutKey ? state.settings[cmd.shortcutKey] : null;
     if (shortcutRaw) {
       const shortcutEl = document.createElement("span");

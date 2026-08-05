@@ -76,6 +76,18 @@ export const typeIcons = {
 // the all-desks file-panel rows so desks can be grabbed for reordering.
 export const DRAG_HANDLE_SVG = `<svg viewBox="0 0 16 16" class="drag-handle-icon" width="12" height="12" aria-hidden="true"><circle cx="6" cy="4" r="1.2"/><circle cx="10" cy="4" r="1.2"/><circle cx="6" cy="8" r="1.2"/><circle cx="10" cy="8" r="1.2"/><circle cx="6" cy="12" r="1.2"/><circle cx="10" cy="12" r="1.2"/></svg>`;
 
+// The sidebar ratchet glyph (sidebar_icons/ratchet.svg) shrunk to badge
+// size. Rides after a desk's name everywhere a desk is listed for
+// picking — switcher popover, palette picker, send-to-desk modal — so
+// "this desk is forward-only" is visible from wherever you switch.
+export const DESK_RATCHET_GLYPH = `<svg viewBox="0 0 24 24" class="desk-ratchet-glyph" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>Ratchet mode</title><path d="M5.1,22.9l6.3-6.3c2.9,1.4,6.5.9,8.9-1.5,2.2-2.2,2.8-5.6,1.8-8.3h0c0-.2-.5-.4-.6-.1l-4.2,4.2c-.5.5-1.2.5-1.6,0l-1.9-1.9c-.5-.5-.5-1.2,0-1.6l4.2-4.2c.2-.2.1-.6-.1-.6-2.8-1.1-6.1-.6-8.3,1.8-2.3,2.3-2.9,6-1.5,8.9l-6.3,6.3"/></svg>`;
+
+/** The ratchet glyph for `deskId`, or "" when that desk isn't in
+ *  Ratchet mode. Reads the same `desksMeta` slot the mode is stored in. */
+export function deskRatchetGlyph(state, deskId) {
+  return state?.settings?.desksMeta?.[deskId]?.ratchet ? DESK_RATCHET_GLYPH : "";
+}
+
 export function escHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;

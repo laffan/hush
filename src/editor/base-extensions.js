@@ -36,6 +36,7 @@ import { buildFoldingExtension } from "./folding.js";
 import { createFoldArrowPlugin } from "./fold-arrow.js";
 import { createPropertiesPlugin } from "./plugins/properties.js";
 import { createTableRendererPlugin } from "./plugins/table-renderer.js";
+import { createRatchetExtensions } from "./ratchet.js";
 
 /**
  * Marks a transaction as app-driven rather than user-typed: file loads,
@@ -175,6 +176,12 @@ export function createBaseExtensions(state, onChange, opts) {
     wrapOnSelection,
     updateListener,
     strikethroughFallback,
+    // Forward-only writing reaches every doc surface, not just the main
+    // editor — a pane or stack column would otherwise be a way around a
+    // ratcheted desk. The pointer handling stays off here so a
+    // programmatic jump (shelf search hit, scrollToPosition) can still
+    // move a reference surface's cursor.
+    createRatchetExtensions(state),
     _shortcutComp.of(buildShortcutExtension(state)),
     createCalloutPlugin(),
     createFootnotePlugin(state),

@@ -600,7 +600,7 @@ function buildCommands(state) {
     { id: "project-headings-hide", label: "Hide Project Headings", icon: null, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.settings?.showProjectHeadings,
       action: (s) => s.updateSettings({ showProjectHeadings: false }) },
-    ...buildDeskCommands({ icons, typeIcons, desktop, ipad, enterDeskPicker, currentFileTreeNodeId }),
+    ...buildDeskCommands({ state, icons, typeIcons, desktop, ipad, enterDeskPicker, currentFileTreeNodeId }),
   ];
 
   return all.filter(cmd => {

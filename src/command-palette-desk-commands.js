@@ -9,9 +9,20 @@
  * desk picker, and the "which node is open right now" resolver.
  */
 
-export function buildDeskCommands({ icons, typeIcons, desktop, ipad, enterDeskPicker, currentFileTreeNodeId }) {
+import { getDeskRatchet } from "./state/state-desks.js";
+import { toggleDeskRatchet } from "./state/state-modes.js";
+
+export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, enterDeskPicker, currentFileTreeNodeId }) {
   const multiDesk = (s) => (s.settings?.desks || []).length >= 2;
   return [
+    // Desk Ratchet — the timed Ratchet session's rules with no clock,
+    // applied to every Doc in the desk and remembered between sessions.
+    // One row whose label reads the current state rather than a pair of
+    // start / stop entries, and `shared` context so it can be turned
+    // off from a notebook (which the mode never touched anyway).
+    { id: "desk-ratchet", icon: icons.ratchet, shortcutKey: null, ctx: "shared",
+      label: getDeskRatchet(state) ? "Stop Desk ratchet mode" : "Start Desk ratchet mode",
+      action: (s) => toggleDeskRatchet(s) },
     { id: "desk-switch", label: "Switch Desks", icon: icons.desk, shortcutKey: "shortcutSwitchDesks", ctx: "shared",
       hiddenIf: (s) => !multiDesk(s),
       keepOpen: true,

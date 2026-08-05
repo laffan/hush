@@ -3,6 +3,22 @@
  * — extracted from state.js. Each fn takes the AppState instance.
  */
 
+import { getDeskRatchet, setDeskRatchet } from "./state-desks.js";
+
+/** Toggle the active desk's persistent Ratchet mode — every Doc in the
+ *  desk goes forward-only until this is turned back off, across
+ *  sessions. Unlike `startRatchet` there's no clock: the setting lives
+ *  in `desksMeta` beside the desk's style. Notebooks are untouched.
+ *  `desks-changed` refreshes the desk name's ratchet glyph in the
+ *  switcher; `mode-changed` re-anchors the editor. */
+export async function toggleDeskRatchet(state) {
+  const next = !getDeskRatchet(state);
+  await setDeskRatchet(state, next);
+  state.emit("mode-changed");
+  state.emit("desks-changed");
+  return next;
+}
+
 export function startRatchet(state, minutes) {
   const endTime = Date.now() + minutes * 60 * 1000;
   state.ratchetEndTime = endTime;
