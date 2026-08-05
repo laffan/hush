@@ -24,6 +24,12 @@
  *     dragged into the column returns to the margin.
  *   • Closing offers the original beside the recombined version.
  *
+ * Under a **Desk Ratchet** the session narrows to what that mode allows:
+ * sentences can be reordered and marked, but not reworded, merged, or
+ * added to — and nothing is discarded on the way out. A struck sentence,
+ * or one left in the margin, comes back struck through rather than
+ * dropped, so the passage keeps every word it started with.
+ *
  * Sentence mode only for now; word / paragraph modes are planned. State is
  * transient (payload on `state._shuffleEditorPayload`) so a saved-state
  * layer can be added later without reworking capture / write-back.
@@ -38,6 +44,8 @@ import {
   captureAnyShufflePayload, shuffleSelectionAvailable, writeBackShuffle,
 } from "./shuffle-editor-source.js";
 import { renderShuffleMarkdown } from "./shuffle-editor-markdown.js";
+import { buildShuffleResult } from "./shuffle-editor-result.js";
+import { deskOnlyRatchet } from "./ratchet.js";
 import { installShuffleKeyboard } from "./shuffle-editor-keys.js";
 import { createShuffleHistory } from "./shuffle-editor-history.js";
 
@@ -111,6 +119,10 @@ function enterShuffleEditor(state) {
     hoverNode: null,    // node under the pointer (drives a/d/s/c shortcuts)
     focusNode: null,    // focused column node (drives cmd/shift arrow nav)
     editingNode: null,  // node currently being text-edited
+    // A ratcheted desk forbids new material: no typing into a node,
+    // no fresh nodes, no lossy merges — and nothing is dropped on
+    // the way out (see shuffle-editor-result.js).
+    ratcheted: deskOnlyRatchet(state),
   };
   const ctrl = buildController(active);
   active.ctrl = ctrl;
@@ -240,7 +252,8 @@ function buildController(a) {
       b.addEventListener("click", (e) => { e.stopPropagation(); toggleFlag(node, flag); });
       return b;
     };
-    tools.appendChild(mk("~~", "strike", "Strike out — removed on close"));
+    tools.appendChild(mk("~~", "strike",
+      a.ratcheted ? "Strike out — struck through on close" : "Strike out — removed on close"));
     tools.appendChild(mk("%%", "comment", "Comment — moved beneath the text on close"));
     return tools;
   }
@@ -306,8 +319,10 @@ function buildController(a) {
     node.el.addEventListener("mouseleave", () => { if (a.hoverNode === node) a.hoverNode = null; });
   }
 
-  /** Enter edit mode: swap rendered markdown back to raw text, then focus. */
+  /** Enter edit mode: swap rendered markdown back to raw text, then focus.
+   *  Refused under a ratchet — rewording is exactly what it forbids. */
   function beginEdit(node) {
+    if (a.ratcheted) return;
     node.editing = true;
     a.editingNode = node;
     // Remember the text as it stood before this edit so commitEdit can
@@ -395,7 +410,7 @@ function buildController(a) {
     const overMargin = hit?.closest?.(".shuffle-node.in-margin");
     if (overMargin && !pointInColumn(cx, cy)) {
       const target = findNodeByEl(overMargin);
-      if (target && target !== node) { target.text = combineInto(target.text, node.text); render(); return; }
+      if (target && target !== node && !a.ratcheted) { target.text = combineInto(target.text, node.text); render(); return; }
     }
     if (pointInColumn(cx, cy)) {
       node.where = "editor";
@@ -429,6 +444,7 @@ function buildController(a) {
   }
 
   function createEditorNodeAt(index) {
+    if (a.ratcheted) return;
     pushSnapshot(serialize());
     const node = makeNode("", "editor");
     a.editorNodes.splice(index, 0, node);
@@ -437,6 +453,7 @@ function buildController(a) {
   }
 
   function createMarginNodeAt(cx, cy) {
+    if (a.ratcheted) return;
     pushSnapshot(serialize());
     const p = clientToCanvas(cx, cy);
     const node = makeNode("", "margin", snapMarginX(p.x - CHIP_WIDTH / 2), Math.max(8, p.y - 16));
@@ -541,22 +558,6 @@ function buildController(a) {
   const { serialize, serializeWithNodeText, pushSnapshot, undo, redo } =
     createShuffleHistory(a, { makeNode, render });
 
-  /** Text written back on accept: struck nodes dropped, surviving column
-   *  nodes joined into prose, commented nodes appended in a `%%…%%` block. */
-  function buildResult() {
-    const main = a.editorNodes
-      .filter((n) => !n.strike && !n.comment)
-      .map((n) => n.text.trim()).filter(Boolean).join(" ");
-    const commented = [...a.editorNodes, ...a.marginNodes]
-      .filter((n) => !n.strike && n.comment)
-      .map((n) => n.text.trim()).filter(Boolean);
-    let out = main;
-    if (commented.length) {
-      out = (out ? `${out}\n\n` : "") + `%%\n${commented.join("\n")}\n%%`;
-    }
-    return out;
-  }
-
   /* ----- keyboard-driven ops ----- */
 
   /** `a` over a hovered node — move it into the column (appended at end). */
@@ -652,7 +653,7 @@ function buildController(a) {
 
   const ctrl = {
     render, layoutMargins, reflowOnResize, shuffleMargins, undo, redo,
-    createEditorNodeAt, createMarginNodeAt, buildResult,
+    createEditorNodeAt, createMarginNodeAt, buildResult: () => buildShuffleResult(a),
     moveNodeToEditor, moveNodeToMargin, toggleNodeFlag: toggleFlag, arrowNav,
   };
   return ctrl;

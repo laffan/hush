@@ -151,8 +151,20 @@ function resolveWriteBackRange(editorState, payload) {
   const to = Math.max(from, Math.min(payload.to, docLen));
   const original = payload.text;
   if (typeof original === "string" && original.length) {
-    if (editorState.sliceDoc(from, to) === original) {
+    const here = editorState.sliceDoc(from, to);
+    if (here === original) {
       return { mode: "replace", from, to };
+    }
+    // Trailing whitespace alone is not the buffer moving under us. Opening
+    // the session emits `mode-changed`, whose typewriter-off branch strips
+    // every trailing whitespace character from the doc — so a selection
+    // that reached the end of the file never matched itself on the way
+    // back out, and the result was appended as a duplicate instead of
+    // replacing what it came from. Splice the range that still holds the
+    // captured text and leave the whitespace beyond it alone.
+    const trimmed = original.replace(/\s+$/u, "");
+    if (trimmed && here.replace(/\s+$/u, "") === trimmed) {
+      return { mode: "replace", from, to: from + trimmed.length };
     }
     // The doc moved under us — look for the captured text elsewhere.
     const doc = editorState.doc.toString();

@@ -104,6 +104,11 @@ export function buildShortcutExtension(state) {
  *   `state.currentLocalSync` (fits the main editor; pane editors pass
  *   their own resolver since they may render a different doc than the
  *   main view).
+ * @param {boolean} [opts.fragment] This surface holds a slice of a
+ *   document rather than the whole thing (the Selection Focus overlay).
+ *   Ratchet reads a buffer's edges as the document's — line 1 as the
+ *   filename, the end as the writing edge — and neither is true of a
+ *   fragment, so it locks the slice whole instead.
  * @returns {{ extensions: Extension[], themeComp, highlightComp, shortcutComp }}
  */
 export function createBaseExtensions(state, onChange, opts) {
@@ -181,7 +186,7 @@ export function createBaseExtensions(state, onChange, opts) {
     // ratcheted desk. The pointer handling stays off here so a
     // programmatic jump (shelf search hit, scrollToPosition) can still
     // move a reference surface's cursor.
-    createRatchetExtensions(state),
+    createRatchetExtensions(state, { fragment: !!opts?.fragment }),
     _shortcutComp.of(buildShortcutExtension(state)),
     createCalloutPlugin(),
     createFootnotePlugin(state),

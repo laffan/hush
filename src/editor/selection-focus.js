@@ -90,7 +90,9 @@ function enterSelectionFocus(state) {
   // refs, etc., so the focused editor behaves identically to a pane
   // editor on the same content. The selection starts at the head end
   // of the captured range so the cursor lands at the end of the block.
-  const { extensions } = createBaseExtensions(state, () => { /* no per-keystroke sync */ });
+  // `fragment`: this editor holds the selected range, not the document,
+  // so a ratchet mustn't treat its first line as the doc's filename.
+  const { extensions } = createBaseExtensions(state, () => { /* no per-keystroke sync */ }, { fragment: true });
   const len = payload.text.length;
   const editorState = EditorState.create({
     doc: payload.text,

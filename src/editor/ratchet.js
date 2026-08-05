@@ -10,7 +10,7 @@
  *     user turns it off, across sessions. Notebooks are a canvas, not a
  *     CodeMirror surface, so they never see any of this.
  *
- * Because the desk variant has no end time it relaxes two things the
+ * Because the desk variant has no end time it relaxes three things the
  * timed session doesn't:
  *
  *   1. **Line 1 stays editable.** A doc's name follows its first line
@@ -21,17 +21,25 @@
  *      dispatch with `bypassRatchet` (see `editor/formatting.js`).
  *      Every other key collapses the selection back to the end of the
  *      document, where writing continues.
+ *   3. **Committed text can be rearranged.** The rule the mode actually
+ *      enforces is *your words don't change* — not *nothing moves*. A
+ *      transaction that puts the same material back in a different
+ *      order is a move, and moves are allowed: the sentence-shift
+ *      shortcuts, a Shuffle Editor reorder, a Selection Focus reorder.
+ *      Add a word or drop one and the same check refuses it.
  *
  * The lock point is per-surface state (`anchorField`): the position the
  * ratchet started from, mapped through every subsequent change. Edits
  * at or after it are the user writing forward; edits before it are the
- * ones this module exists to refuse.
+ * ones this module exists to refuse — visibly, via a brief notice, so
+ * an operation that can't land never just evaporates.
  */
 
 import { EditorState, StateField, StateEffect, Annotation, Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { programmaticChange } from "./base-extensions.js";
 import { typewriterRunwayAnnotation } from "./plugins/typewriter.js";
+import { showImportToast } from "./import-toast.js";
 import { getDeskRatchet } from "../state/state-desks.js";
 
 /** Marks a dispatch as exempt from the ratchet filter. Used by content
@@ -67,6 +75,71 @@ export function deskOnlyRatchet(state) {
 /** Either mode — the editor is forward-only. */
 export function ratchetLockActive(state) {
   return timedRatchetActive(state) || deskRatchetActive(state);
+}
+
+/**
+ * The material in a stretch of text: every character that isn't
+ * whitespace or a strike / comment marker, sorted. Two stretches with
+ * the same material hold the same words — in some order, wrapped or
+ * spaced differently, but with nothing added and nothing lost.
+ *
+ * Whitespace is excluded because every rearranging tool renormalises it
+ * (the Shuffle Editor rejoins sentences with a single space); `~` and
+ * `%` because striking a sentence through or commenting it out keeps
+ * its words in the file, which is the point.
+ */
+function material(text) {
+  return [...text.replace(/[\s~%]+/g, "")].sort().join("");
+}
+
+/**
+ * True when a transaction only moves material around: everything it
+ * removes turns up again in what it inserts. Measured across the whole
+ * transaction, since a move is a delete here plus an insert there.
+ *
+ * Empty material means the edit is pure whitespace or bare markers —
+ * an insertion of nothing rather than a rearrangement of something, so
+ * it doesn't earn the exemption (otherwise a stray space could be typed
+ * into the middle of a committed word).
+ */
+function isRearrangement(tr) {
+  let removed = "";
+  let inserted = "";
+  tr.changes.iterChanges((fromA, toA, _fromB, _toB, insert) => {
+    removed += tr.startState.doc.sliceString(fromA, toA);
+    inserted += insert.toString();
+  });
+  const before = material(removed);
+  return before.length > 0 && before === material(inserted);
+}
+
+/** The strikethrough binding as the user would read it — the refusal
+ *  notice names it, since it's the way out of the refusal. */
+function strikeShortcutLabel(state) {
+  const raw = state?.settings?.shortcutStrikethrough || "Mod+`";
+  const isMac = navigator.platform?.includes("Mac") || navigator.userAgent?.includes("Mac");
+  const parts = raw.split("+").map((p) => (
+    /^(CmdOrCtrl|Mod|Cmd|Meta)$/i.test(p) ? (isMac ? "⌘" : "Ctrl") : p
+  ));
+  return parts.join(isMac ? "" : "+");
+}
+
+// A refused edit says so, once — hammering Backspace shouldn't stack up
+// notices. Only the desk mode speaks: a timed session's silence is the
+// whole feel of it, and the user started it seconds ago.
+let lastNoticeAt = -Infinity;
+const NOTICE_GAP_MS = 4000;
+
+function noticeRefusal(state) {
+  if (!deskOnlyRatchet(state)) return;
+  const now = typeof performance !== "undefined" ? performance.now() : 0;
+  if (now - lastNoticeAt < NOTICE_GAP_MS) return;
+  lastNoticeAt = now;
+  // Deferred: this runs inside a transaction filter, and mounting DOM
+  // mid-dispatch is asking for trouble.
+  setTimeout(() => showImportToast(
+    `Ratchet: committed text can't be changed. Move it, or strike it through with ${strikeShortcutLabel(state)}.`,
+  ), 0);
 }
 
 /** Park the cursor at the end of the document (where writing
@@ -119,8 +192,18 @@ const SELECTION_KEYS = ("Shift-ArrowLeft Shift-ArrowRight Shift-ArrowUp Shift-Ar
  * cursor to the end) — the main editor opts in, reference surfaces
  * (panes, stack columns, Zen) take the keymap + filter only so a
  * programmatic jump can still move their cursor.
+ *
+ * `fragment` marks a surface holding a slice of a document rather than
+ * the whole thing — the Selection Focus overlay. Two things change,
+ * both because the buffer's edges aren't the document's:
+ *
+ *   - Its line 1 is wherever the selection happened to start, not the
+ *     doc's filename line, so the title exception doesn't apply.
+ *   - Its *end* is the middle of committed text, not the writing edge.
+ *     Everything in a fragment is committed, so nothing can be appended
+ *     — only moved around, or struck through.
  */
-export function createRatchetExtensions(state, { enforceSelection = false } = {}) {
+export function createRatchetExtensions(state, { enforceSelection = false, fragment = false } = {}) {
   const anchorField = StateField.define({
     create: (editorState) => editorState.doc.length,
     update(value, tr) {
@@ -158,10 +241,13 @@ export function createRatchetExtensions(state, { enforceSelection = false } = {}
       const c = chunk.charCodeAt(i);
       if (c === 32 /* space */ || c === 10 /* \n */) { wordStart = anchor + i + 1; break; }
     }
-    const lockPoint = Math.max(anchor, wordStart);
+    // A fragment has no writing edge — its end is the middle of the
+    // document it was cut from — so the lock covers all of it.
+    const lockPoint = fragment ? startDoc.length + 1 : Math.max(anchor, wordStart);
     // Desk ratchet keeps line 1 open — it's the filename until the user
-    // moves off it. `-1` disables the exception during a timed session.
-    const titleEnd = deskOnlyRatchet(state) ? startDoc.line(1).to : -1;
+    // moves off it. `-1` disables the exception during a timed session,
+    // and on a fragment, whose first line names nothing.
+    const titleEnd = deskOnlyRatchet(state) && !fragment ? startDoc.line(1).to : -1;
 
     let reject = false;
     tr.changes.iterChanges((fromA, toA) => {
@@ -169,7 +255,13 @@ export function createRatchetExtensions(state, { enforceSelection = false } = {}
       if (toA <= titleEnd) return;      // editing the title
       reject = true;
     });
-    return reject ? [] : tr;
+    if (!reject) return tr;
+    // Committed text can still be reordered — the mode keeps your words,
+    // not their arrangement. Anything that adds or drops material falls
+    // through to the refusal.
+    if (deskOnlyRatchet(state) && isRearrangement(tr)) return tr;
+    noticeRefusal(state);
+    return [];
   });
 
   const blockedEntry = (key, isActive) => ({
@@ -180,6 +272,12 @@ export function createRatchetExtensions(state, { enforceSelection = false } = {}
       return true;
     },
   });
+
+  // A fragment is governed by the filter alone. The keymap exists to keep
+  // the cursor at the writing edge, and a fragment has no writing edge —
+  // blocking its arrows would just make the block unnavigable, when
+  // moving around inside it is the whole reason to be there.
+  if (fragment) return [anchorField, filter];
 
   const keys = Prec.highest(keymap.of([
     ...BLOCKED_KEYS.map((k) => blockedEntry(k, ratchetLockActive)),
