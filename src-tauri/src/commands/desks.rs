@@ -181,3 +181,51 @@ pub fn desk_meta_set(desk_id: String, patch: serde_json::Value) -> Result<(), St
         .merge_desk_meta(&desk_id, &patch)
         .map_err(|e| e.to_string())
 }
+
+// ===== Desk archives =====
+// Archiving replaces deletion (see desk_archive.rs). The frontend drives
+// the order deliberately: zip first, verify, *then* take the desk out of
+// the app — so a failed archive can never cost the user a desk.
+
+/// Zip a desk's folder into the internal archive. Leaves the desk alone.
+#[tauri::command]
+pub fn desk_archive(
+    desk_id: String,
+    desk_name: String,
+) -> Result<crate::desk_archive::ArchiveInfo, String> {
+    store()
+        .archive_desk(&desk_id, &desk_name)
+        .map_err(|e| e.to_string())
+}
+
+/// Remove an archived desk's live folder. A no-op for a local desk — the
+/// archive copied that folder and it belongs to the user.
+#[tauri::command]
+pub fn desk_discard_archived(desk_id: String) -> Result<(), String> {
+    store().discard_archived_desk(&desk_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn desk_archives_list() -> Vec<crate::desk_archive::ArchiveInfo> {
+    store().list_archives()
+}
+
+/// Build a brand-new desk from an archive. The restored desk gets fresh
+/// ids throughout, so this is safe to run repeatedly and safe to run
+/// beside the desk the archive was made from.
+#[tauri::command]
+pub fn desk_archive_restore(file: String) -> Result<String, String> {
+    store().restore_archive(&file).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn desk_archive_delete(file: String) -> Result<(), String> {
+    store().delete_archive(&file).map_err(|e| e.to_string())
+}
+
+/// The archive's bytes — the iPad share sheet needs them in hand.
+/// Desktop shares by path through a save dialog and never calls this.
+#[tauri::command]
+pub fn desk_archive_bytes(file: String) -> Result<Vec<u8>, String> {
+    store().read_archive(&file).map_err(|e| e.to_string())
+}

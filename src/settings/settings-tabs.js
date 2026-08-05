@@ -6,6 +6,7 @@
  *   - settings-tabs-shortcuts.js   (Shortcuts tab + categories)
  *   - settings-tabs-sync.js        (Google Sync / iCloud / Log tab)
  *   - settings-tabs-zotero.js      (Zotero tab)
+ *   - settings-tabs-debug.js       (Build Info / Desk Storage / Activity Log)
  */
 import { DEFAULT_STOPWORDS } from "../editor/plugins/dry-highlight.js";
 import { renderFlagsTab } from "../longview/longview-settings.js";
@@ -272,19 +273,9 @@ export function renderFlagsSettingsTab(settings) {
 }
 
 // ===== Debug Tab =====
-export function renderDebugTab(settings) {
-  const s = settings;
-  return `
-    <div class="settings-section">
-      <h2>Notebook</h2>
-      <div class="settings-row">
-        <label>Performance HUD</label>
-        <input type="checkbox" id="setting-debug-perf-hud" ${s.debugPerfHud ? "checked" : ""} />
-      </div>
-      <p class="settings-help">Overlays live frame-rate, stall-attribution, and save-pipeline diagnostics on the notebook canvas. The HUD's <em>copy</em> button puts a plain-text report on the clipboard for sharing; <em>probe</em> and <em>tiles</em> run canvas micro-benchmarks. Applies to notebooks opened after toggling, and to the currently open notebook immediately.</p>
-    </div>
-  `;
-}
+// Lives in settings-tabs-debug.js (Build Info, Desk Storage, Activity
+// Log); re-exported here so settings-window.js keeps one import site.
+export { renderDebugTab, bindDebugTab } from "./settings-tabs-debug.js";
 
 // ===== Privacy Tab =====
 export function renderPrivacyTab(settings) {

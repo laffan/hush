@@ -11,14 +11,18 @@ use tauri::{
     tray::TrayIconEvent,
 };
 
+mod activity_log;
 mod atomic;
 mod commands;
+mod desk_archive;
 mod desk_conflicts;
+mod desk_dedupe;
 mod desk_hashes;
 mod desk_meta;
 mod desk_migrate;
 mod desk_paths;
 mod desk_place;
+mod desk_rescue;
 mod desk_roots;
 mod desk_scan;
 mod desk_store;
@@ -498,6 +502,21 @@ pub fn run() {
             commands::desks::desk_open_folder_as_desk,
             commands::desks::desk_unregister_root,
             commands::desks::desk_reconcile,
+            commands::desks::desk_archive,
+            commands::desks::desk_discard_archived,
+            commands::desks::desk_archives_list,
+            commands::desks::desk_archive_restore,
+            commands::desks::desk_archive_delete,
+            commands::desks::desk_archive_bytes,
+            commands::diagnostics::activity_log_append,
+            commands::diagnostics::activity_log_read,
+            commands::diagnostics::activity_log_clear,
+            commands::diagnostics::desk_store_diagnostics,
+            commands::diagnostics::desk_repair_files,
+            commands::diagnostics::desk_retire,
+            commands::diagnostics::desk_list_retired,
+            commands::diagnostics::desk_restore_retired,
+            commands::diagnostics::build_info,
             commands::local_sync::local_sync_add,
             commands::local_sync::local_sync_remove,
             commands::local_sync::local_sync_list,

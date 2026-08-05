@@ -1374,3 +1374,109 @@ button.desk-switcher-row.desk-switcher-add {
   opacity: 0.6;
   font-variant-numeric: tabular-nums;
 }
+
+/* ===== Archived desks modal =====
+   Archiving replaces deleting a desk (see sidebar/desk-archive.js), so
+   this is where archived desks are found and brought back. Rows are
+   wider than the send-to-desk list: each carries three actions and a
+   line of provenance (when, how many files, how big). */
+.desk-archive-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.desk-archive-modal {
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  width: min(520px, 92vw);
+  max-height: 80vh;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.4));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  padding: 14px 14px 10px;
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.desk-archive-title {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.7;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.desk-archive-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.desk-archive-empty {
+  opacity: 0.6;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 12px 2px;
+}
+
+.desk-archive-row {
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.3));
+  border-radius: 6px;
+  padding: 9px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.desk-archive-row-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.desk-archive-name {
+  font-size: 14px;
+  font-weight: 500;
+  word-break: break-word;
+}
+.desk-archive-meta {
+  font-size: 11.5px;
+  opacity: 0.6;
+}
+
+.desk-archive-row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.desk-archive-btn,
+.desk-archive-close {
+  background: none;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.4));
+  border-radius: 5px;
+  color: var(--fg);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 5px 10px;
+}
+.desk-archive-btn:hover,
+.desk-archive-close:hover { background: rgba(128, 128, 128, 0.12); }
+.desk-archive-btn:disabled { opacity: 0.45; cursor: default; }
+.desk-archive-btn-danger { color: #c0392b; }
+
+.desk-archive-actions {
+  display: flex;
+  justify-content: flex-end;
+}

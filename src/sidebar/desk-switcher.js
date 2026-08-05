@@ -13,7 +13,7 @@
  * to refresh in place; outside clicks dismiss the popover.
  */
 
-import { escHtml, showDeleteConfirmModal, DRAG_HANDLE_SVG, deskRatchetGlyph } from "./files-panel-shared.js";
+import { escHtml, DRAG_HANDLE_SVG, deskRatchetGlyph } from "./files-panel-shared.js";
 
 let _state = null;
 let _container = null;
@@ -24,7 +24,8 @@ const CHEVRON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" str
 const PLUS = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
 const CHECK = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 const PENCIL = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
-const TRASH = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`;
+// Archive box, not a trash can — a desk is put away here, not destroyed.
+const ARCHIVE_BOX = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="4" rx="1"/><path d="M4 8v11a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8"/><line x1="10" y1="13" x2="14" y2="13"/></svg>`;
 
 export function mountDeskSwitcher(parent, state) {
   unmountDeskSwitcher();
@@ -146,15 +147,16 @@ function openPopover() {
 function buildPopoverBody(state) {
   const desks = state.settings.desks || [];
   const activeId = state.settings.activeDeskId;
-  const canDelete = desks.length > 1;
+  // The last desk stays: the tree must always carry at least one.
+  const canArchive = desks.length > 1;
   const wrap = document.createElement("div");
   wrap.className = "desk-switcher-popover-body";
   const roots = _state?.deskRoots || {};
-  wrap.innerHTML = desks.map((d) => deskRowHtml(d, activeId, canDelete, !!roots[d.id])).join("") + addRowHtml();
+  wrap.innerHTML = desks.map((d) => deskRowHtml(d, activeId, canArchive, !!roots[d.id])).join("") + addRowHtml();
   return wrap;
 }
 
-function deskRowHtml(d, activeId, canDelete, isLocal = false) {
+function deskRowHtml(d, activeId, canArchive, isLocal = false) {
   const isActive = d.id === activeId;
   const mark = isActive ? CHECK : "";
   // Desks in Ratchet mode wear the ratchet glyph after their name.
@@ -170,8 +172,8 @@ function deskRowHtml(d, activeId, canDelete, isLocal = false) {
   const pencilBtn = isLocal
     ? ""
     : `<button class="desk-switcher-action" type="button" data-action="rename" data-tooltip="Rename">${PENCIL}</button>`;
-  const trashBtn = canDelete
-    ? `<button class="desk-switcher-action" type="button" data-action="delete" data-tooltip="Delete">${TRASH}</button>`
+  const archiveBtn = canArchive
+    ? `<button class="desk-switcher-action" type="button" data-action="archive" data-tooltip="Archive">${ARCHIVE_BOX}</button>`
     : "";
   const handle = `<span class="desk-switcher-drag-handle" data-action="drag" data-tooltip="Drag to reorder">${DRAG_HANDLE_SVG}</span>`;
   return `<div class="desk-switcher-row${isActive ? " active" : ""}" data-desk-id="${d.id}">
@@ -179,7 +181,7 @@ function deskRowHtml(d, activeId, canDelete, isLocal = false) {
       <span class="desk-switcher-row-mark">${mark}</span>
       <span class="desk-switcher-row-name">${escHtml(d.name || "Untitled desk")}</span>${ratchetGlyph}${localGlyph}
     </button>
-    <span class="desk-switcher-row-actions">${handle}${pencilBtn}${trashBtn}</span>
+    <span class="desk-switcher-row-actions">${handle}${pencilBtn}${archiveBtn}</span>
   </div>`;
 }
 
@@ -230,9 +232,9 @@ async function onPopoverClick(ev, popover) {
     closePopover();
   } else if (action === "rename") {
     beginInlineRename(deskId);
-  } else if (action === "delete") {
+  } else if (action === "archive") {
     closePopover();
-    runDeleteDesk(deskId);
+    import("./desk-archive.js").then((m) => m.confirmArchiveDesk(_state, deskId));
   }
 }
 
@@ -321,22 +323,6 @@ function beginInlineRename(deskId) {
     else if (e.key === "Escape") { e.preventDefault(); commit(false); }
   });
   input.addEventListener("blur", () => commit(true));
-}
-
-function runDeleteDesk(deskId) {
-  const desk = (_state.settings.desks || []).find(d => d.id === deskId);
-  const name = desk?.name || "this desk";
-  // The WebView's native `window.confirm` doesn't reliably block here,
-  // so the desk was being deleted before the user could answer. Use the
-  // app's own confirm modal (the same one the file tree's delete flow
-  // uses) and only delete from its onConfirm callback.
-  showDeleteConfirmModal(
-    `Delete "${name}"`,
-    `Delete "${name}" and everything inside it?\n\nThis cannot be undone.`,
-    async () => {
-      try { await _state.deleteDesk(deskId); } catch (e) { console.warn("delete desk failed:", e); }
-    },
-  );
 }
 
 function closePopover() {

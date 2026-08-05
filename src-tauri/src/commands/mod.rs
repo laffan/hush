@@ -1,5 +1,6 @@
 pub mod backup;
 pub mod desks;
+pub mod diagnostics;
 pub mod files;
 pub mod google_docs;
 #[cfg(any(target_os = "macos", target_os = "ios"))]

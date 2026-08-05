@@ -432,7 +432,7 @@ function dispatchRowAction(action, nodeId, opts) {
     handleRestore(nodeId, storedState, refresh);
   } else if (action === "permanent-delete") {
     handlePermanentDelete(nodeId, storedState, refresh);
-  } else if (action === "set-active-desk" || action === "rename-desk" || action === "delete-desk") {
+  } else if (action === "set-active-desk" || action === "rename-desk" || action === "archive-desk") {
     handleDeskAction(action, nodeId, storedState);
   } else if (action === "make-desk-local") {
     import("../sync/desk-roots.js").then((m) => m.makeDeskLocal(storedState, nodeId).then(refresh));

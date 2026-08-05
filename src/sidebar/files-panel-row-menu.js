@@ -115,7 +115,10 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
     return [
       { action: "set-active-desk", label: "Set as Active" },
       { action: "rename-desk", label: "Rename" },
-      { action: "delete-desk", label: "Delete" },
+      // Archive, not Delete: the desk is zipped into an internal archive
+      // and can be brought back as a new desk at any time (see
+      // sidebar/desk-archive.js).
+      { action: "archive-desk", label: "Archive" },
     ];
   }
   if (isTrashId(nodeId)) return [{ action: "empty-trash", label: "Empty Trash" }];
@@ -247,7 +250,7 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
       // No Finder to reveal into on iOS.
       const canReveal = !/iPad|iPhone|iPod/.test(navigator.userAgent || "")
         && !(/Mac/i.test(navigator.platform || "") && (navigator.maxTouchPoints || 0) > 0);
-      const insertAt = entries.findIndex((e) => e.action === "delete-desk");
+      const insertAt = entries.findIndex((e) => e.action === "archive-desk");
       const extra = isLocal
         ? [
             ...(canReveal ? [{ action: "reveal-desk-folder", label: "Reveal Folder" }] : []),

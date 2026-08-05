@@ -21,6 +21,7 @@
  */
 
 import { pushDeskRecentFile } from "./recent-files.js";
+import { logActivity } from "../activity-log.js";
 
 const SPECIAL_KINDS = ["__inbox__", "__images__", "__pdfs__", "__archive__", "__trash__"];
 
@@ -230,34 +231,93 @@ export async function renameDesk(state, deskId, newName, { force = false } = {})
   state.emit("desks-changed");
 }
 
-/** Delete a desk and all of its content. The very last desk can't be
- *  deleted — the file tree must always carry at least one desk. A local
- *  desk's folder is never touched: deletion just unregisters the root
- *  (explicitly, before the tree save — `save_forest` refuses to infer
- *  desk deletion from a tree that merely lacks the desk). */
-export async function deleteDesk(state, deskId) {
+/** Take a desk out of the app. The very last desk can't be removed — the
+ *  file tree must always carry at least one desk. A local desk's folder
+ *  is never touched: this just unregisters the root (explicitly, before
+ *  the tree save — `save_forest` refuses to infer desk removal from a
+ *  tree that merely lacks the desk).
+ *
+ *  The user-facing path is **Archive** (sidebar/desk-archive.js), which
+ *  zips the desk first and passes `{ archived: true }` so this skips the
+ *  retire step — the archive already holds the folder, and the caller
+ *  removes it afterwards. Without that flag the folder is retired into
+ *  `desks/.deleted/` rather than wiped, so nothing here is ever the last
+ *  copy of anything. */
+export async function deleteDesk(state, deskId, { archived = false } = {}) {
   const tree = state.fileTree || [];
   const desks = tree.filter((n) => n.type === "desk");
   if (desks.length <= 1) throw new Error("cannot delete the last desk");
   const idx = tree.findIndex((n) => n.type === "desk" && n.id === deskId);
   if (idx < 0) return;
+  const doomed = tree[idx];
+  logActivity("desks", "warn", `Removing desk "${doomed?.name || deskId}"`, {
+    deskId,
+    archived,
+    local: !!state.deskRoots?.[deskId],
+    topLevelChildren: (doomed?.children || []).map((c) => c?.name),
+  });
   if (state.deskRoots?.[deskId]) {
     const { unregisterDeskRoot } = await import("../sync/desk-roots.js");
     await unregisterDeskRoot(state, deskId);
+  } else if (!archived) {
+    // Say the removal out loud. `save_forest` no longer infers it from a
+    // tree that merely lacks the desk — that signal is indistinguishable
+    // from a stale tree, and inferring it is how a live desk's folder
+    // could be swept aside by another window's out-of-date save. The
+    // folder is retired (moved under `desks/.deleted/`), never wiped.
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("desk_retire", { deskId });
+    } catch (e) {
+      logActivity("desks", "error", "desk_retire failed", { deskId, error: String(e) });
+    }
   }
+  // Close what the desk had on screen *before* it leaves the tree, while
+  // its subtree is still there to tell us which files were its. Panes and
+  // takeover views outlive the sidebar rows that spawned them, so nothing
+  // else would ever close them.
+  const { tearDownDeskSurfaces } = await import("./desk-teardown.js");
+  const { ownedActiveSurface } = await tearDownDeskSurfaces(state, doomed);
+
   tree.splice(idx, 1);
 
   const remaining = (state.settings.desks || []).filter((d) => d.id !== deskId);
   const meta = { ...(state.settings.desksMeta || {}) };
   delete meta[deskId];
+  // The per-desk Local Folder slot is keyed by desk id too, and a stale
+  // one would restore a departed desk's file on the next switch.
+  const deskLocal = { ...(state.settings.deskLastLocalSync || {}) };
+  delete deskLocal[deskId];
 
-  let activeDeskId = state.settings.activeDeskId;
-  if (activeDeskId === deskId) activeDeskId = remaining[0]?.id || null;
+  const previousActiveDeskId = state.settings.activeDeskId;
+  const activeDeskId = previousActiveDeskId === deskId
+    ? (remaining[0]?.id || null)
+    : previousActiveDeskId;
 
-  await state.updateSettings({ desks: remaining, desksMeta: meta, activeDeskId });
+  await state.updateSettings({
+    desks: remaining, desksMeta: meta, deskLastLocalSync: deskLocal, activeDeskId,
+  });
   await state.saveFileTree();
   state.emit("desks-changed");
-  if (activeDeskId !== state.settings.activeDeskId) state.emit("active-desk-changed", activeDeskId);
+
+  // `updateSettings` assigns into `state.settings` synchronously, so the
+  // old guard here compared `activeDeskId` against the value it had just
+  // written — always equal, so this never fired. That's why archiving the
+  // desk you were working in left its document open in the editor while
+  // the sidebar had already moved on: the one listener that lands the
+  // editor on the new desk (main.js → `openLastFileForDesk`) was never
+  // told the desk had changed. Compare against the value from *before*
+  // the write.
+  if (activeDeskId !== previousActiveDeskId) {
+    state.emit("active-desk-changed", activeDeskId);
+  } else if (ownedActiveSurface) {
+    // Same desk still active, but the file on screen belonged to the one
+    // that just left (the all-desks view can open across desks). Re-land
+    // on the active desk's own content, or its empty pane.
+    const { openLastFileForDesk } = await import("./state-desks-ops.js");
+    if (activeDeskId) await openLastFileForDesk(state, activeDeskId);
+    else await state.clearActiveFile();
+  }
 }
 
 /** Every special-node id of `kind` currently in the tree (one per desk).
@@ -294,7 +354,14 @@ export function seedNewArchivesCollapsed(state, createdIds) {
  *  boot and produces the desk to fold into. */
 export function ensureDesksTreeSpecials(state, tree) {
   const desks = tree.filter((n) => n.type === "desk");
-  const target = desks.find((d) => d.id === state.settings?.activeDeskId) || desks[0];
+  // Stragglers land in the **first** desk, not the active one. The active
+  // desk is per-window: two windows running side by side (Stage Manager
+  // on iPad, two windows on desktop) would each fold the same homeless
+  // node into a different desk and then each save the whole forest,
+  // leaving the node recorded in two desks at once — the state that made
+  // a project show up under two desks and go unopenable when one of them
+  // was deleted. The first desk is the same answer in every window.
+  const target = desks[0];
   if (target) {
     // A top-level non-desk node whose name matches a known desk is an
     // unfinished desk absorption (left behind by an interrupted import
@@ -340,6 +407,8 @@ export async function setActiveDesk(state, deskId) {
   const desks = state.settings?.desks || [];
   if (!desks.some((d) => d.id === deskId)) return;
   if (state.settings?.activeDeskId === deskId) return;
+  logActivity("desks", "info",
+    `Switched to desk "${desks.find((d) => d.id === deskId)?.name || deskId}"`, { deskId });
   await state.updateSettings({ activeDeskId: deskId });
   state.emit("active-desk-changed", deskId);
 }
