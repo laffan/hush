@@ -1547,3 +1547,31 @@ Drawing tools (Lasso, Erase, Slice, brush slots) are reached through the always-
 - `tauri-plugin-pencil` (custom, `src-tauri/tauri-plugin-pencil/`, iOS only) — Apple Pencil double-tap events + iPad system-chrome hiding
 - `tauri-plugin-icloud-folder` (custom, `src-tauri/tauri-plugin-icloud-folder/`, iOS only) — folder picker + persistent security-scoped bookmarks so Local Sync can mount an arbitrary iCloud Drive folder (see the Local Sync section)
 - `objc2` (macOS only — `[target.'cfg(target_os = "macos")'.dependencies]`) — Objective-C runtime bindings for `set_traffic_lights_visible` to call `NSWindow.standardWindowButton:` / `setHidden:`
+
+## Companion-App Deep Links (`hushwriter://`)
+
+The `hushwriter://` scheme (registered on desktop in `tauri.conf.json` and
+on iOS in `Info.ios.plist`) is the inbound channel for companion apps.
+Handling lives in the deep-link handler in `src/main.js`, which routes
+non-`file://` URLs to `src/links/zotero-helper-import.js`.
+
+Current actions:
+
+- `hushwriter://zotero-import?desk=<id|name>&project=<id|name>&items=<json>`
+  — sent by the **zotero-helper** app ("Send to Hush"). `items` is a
+  URI-encoded JSON array of `{ itemKey, attKey, title, authors,
+  firstAuthor, year, citekey }`. For each entry a placeholder PDF node is
+  registered in the target desk's PDFs folder (active desk when `desk` is
+  absent/unknown), aliased into the named project when given, and the
+  binary is fetched through the normal background pipeline
+  (`startBatchDownload` → `download_zotero_pdf`) using Hush's own Zotero
+  credentials — the link never carries secrets. Desk/project match by id
+  first, then case-insensitive name, so senders that cannot read our data
+  dir (iPadOS sandboxing) can pass names.
+
+Notes for future actions: keep parsing in `zotero-helper-import.js` (or a
+sibling module per feature), return `true` from the handler when the URL
+was recognized, and remember the window boots hidden — surface it with
+`getCurrentWindow().show()` before long-running work. Known gap: without
+`tauri-plugin-single-instance`, a deep link on Windows/Linux may launch a
+second instance (macOS/iOS route to the running app natively).

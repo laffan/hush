@@ -555,6 +555,15 @@ async function init() {
               showImportToast(`Couldn't open ${url.split("/").pop()}: ${e?.message || e}`, "error");
             } catch (_) {}
           }
+        } else if (url.startsWith("hushwriter://")) {
+          // Companion-app requests — e.g. zotero-helper's "Send to
+          // Hush" (see src/links/zotero-helper-import.js).
+          try {
+            const { handleHushwriterUrl } = await import("./links/zotero-helper-import.js");
+            await handleHushwriterUrl(state, url);
+          } catch (e) {
+            console.warn("hushwriter:// deep link failed:", e);
+          }
         }
       };
       // Cold launch: the OS hands the URL to the process before any JS
