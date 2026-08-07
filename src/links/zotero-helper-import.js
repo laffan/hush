@@ -12,7 +12,11 @@
  * URL contract (kept in sync with zotero-helper's src/lib/hush.ts):
  *   hushwriter://zotero-import
  *     ?desk=<desk id or name>          optional — active desk when absent
- *     &project=<project id or name>    optional
+ *     &project=<project id or name>    optional; "__active__" targets the
+ *                                      project open in the main window
+ *     &nonce=<unique per request>      optional but recommended — dedupes
+ *                                      the multiple deliveries deep links
+ *                                      get on multi-window/iPad setups
  *     &items=<encodeURIComponent(JSON.stringify([{
  *        itemKey, attKey, title, authors, firstAuthor, year, citekey }]))>
  *
@@ -25,6 +29,24 @@ import { findNode, insertNode, isRealProjectNode, uniqueChildName } from "../sta
 import { addPdfAliasToProject, ensureDeskPdfsFolder } from "../state/state-pdf-aliases.js";
 import { getActiveDesk } from "../state/state-desks.js";
 import { showImportToast } from "../editor/import-toast.js";
+
+/** Same-request dedupe: deep links are delivered more than once (every
+ *  open window gets the event, getCurrent() replays on webview reload).
+ *  Keyed by the sender's per-request nonce; falls back to the full URL
+ *  for senders that predate the nonce. */
+const DEDUPE_KEY = "hushwriter-handled-requests";
+function alreadyHandled(requestKey) {
+  if (!requestKey) return false;
+  try {
+    const seen = JSON.parse(localStorage.getItem(DEDUPE_KEY) || "[]");
+    if (seen.includes(requestKey)) return true;
+    localStorage.setItem(
+      DEDUPE_KEY,
+      JSON.stringify([...seen, requestKey].slice(-40)),
+    );
+  } catch (_) { /* storage unavailable — proceed unguarded */ }
+  return false;
+}
 
 export function isHushwriterUrl(url) {
   return typeof url === "string" && url.startsWith("hushwriter://");
@@ -44,6 +66,7 @@ function parsePayload(rawUrl) {
     action,
     desk: (u.searchParams.get("desk") || "").trim(),
     project: (u.searchParams.get("project") || "").trim(),
+    nonce: (u.searchParams.get("nonce") || "").trim(),
     items,
   };
 }
@@ -64,6 +87,14 @@ function resolveDesk(state, deskParam) {
 
 function resolveProject(desk, state, projectParam) {
   if (!projectParam) return null;
+  // "__active__" — the project currently open in this (main) window, so
+  // senders that can't read our data dir (iPadOS) can still target it.
+  if (projectParam === "__active__") {
+    const id = state.currentProjectId;
+    if (!id) return null;
+    const node = findNode(desk ? [desk] : state.fileTree || [], id);
+    return node && isRealProjectNode(node) ? node : null;
+  }
   const roots = desk ? desk.children || [] : state.fileTree || [];
   const lower = projectParam.toLowerCase();
   let byId = null;
@@ -126,6 +157,7 @@ export async function handleHushwriterUrl(state, rawUrl) {
     console.warn("Unknown hushwriter:// action:", payload.action);
     return false;
   }
+  if (alreadyHandled(payload.nonce || rawUrl)) return true;
 
   // Surface the (tray-hidden) window so the import is visible.
   try {

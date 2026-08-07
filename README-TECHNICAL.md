@@ -1552,12 +1552,21 @@ Drawing tools (Lasso, Erase, Slice, brush slots) are reached through the always-
 
 The `hushwriter://` scheme (registered on desktop in `tauri.conf.json` and
 on iOS in `Info.ios.plist`) is the inbound channel for companion apps.
-Handling lives in the deep-link handler in `src/main.js`, which routes
-non-`file://` URLs to `src/links/zotero-helper-import.js`.
+Routing lives in `src/links/deep-link-router.js` (registered from
+`src/main.js` during init), which sends non-`file://` URLs to
+`src/links/zotero-helper-import.js`.
+
+Deep links are delivered **more than once**: `onOpenUrl` fires in every
+open window, its implementation replays `getCurrent()` on top of the
+router's own cold-launch call, and iPad webview reloads replay it again.
+Two defenses keep handling exactly-once — the router only acts on
+companion URLs in the `main` window, and the import module dedupes by the
+request's `nonce` (falling back to the full URL) via a shared
+`localStorage` ring buffer.
 
 Current actions:
 
-- `hushwriter://zotero-import?desk=<id|name>&project=<id|name>&items=<json>`
+- `hushwriter://zotero-import?desk=<id|name>&project=<id|name>&items=<json>&nonce=<unique>`
   — sent by the **zotero-helper** app ("Send to Hush"). `items` is a
   URI-encoded JSON array of `{ itemKey, attKey, title, authors,
   firstAuthor, year, citekey }`. For each entry a placeholder PDF node is
@@ -1567,7 +1576,9 @@ Current actions:
   (`startBatchDownload` → `download_zotero_pdf`) using Hush's own Zotero
   credentials — the link never carries secrets. Desk/project match by id
   first, then case-insensitive name, so senders that cannot read our data
-  dir (iPadOS sandboxing) can pass names.
+  dir (iPadOS sandboxing) can pass names; `project=__active__` targets
+  whatever project is open in the main window. Senders should attach a
+  unique `nonce` per request (see dedupe note above).
 
 Notes for future actions: keep parsing in `zotero-helper-import.js` (or a
 sibling module per feature), return `true` from the handler when the URL

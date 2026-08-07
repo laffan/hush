@@ -534,51 +534,11 @@ async function init() {
       updatePrivateBoxColor(state);
     });
 
-    // Deep-link handler. Google OAuth uses a loopback HTTP listener
-    // (see commands/google_docs.rs) — its code arrives via the
-    // `oauth-callback` event below, no deep-link needed.
-    try {
-      const { onOpenUrl, getCurrent } = await import("@tauri-apps/plugin-deep-link");
-      const handleUrl = async (url) => {
-        // iPadOS hands externally-opened .hushnote / .hushstack /
-        // .hushproject / .md files to the app as file:// URLs (cold launch surfaces
-        // through getCurrent(); already-running launches through
-        // onOpenUrl).
-        if (url.startsWith("file://") || url.startsWith("/")) {
-          try {
-            const { importExternalFile } = await import("./editor/external-open.js");
-            await importExternalFile(state, url);
-          } catch (e) {
-            console.warn("External file open failed:", e);
-            try {
-              const { showImportToast } = await import("./editor/import-toast.js");
-              showImportToast(`Couldn't open ${url.split("/").pop()}: ${e?.message || e}`, "error");
-            } catch (_) {}
-          }
-        } else if (url.startsWith("hushwriter://")) {
-          // Companion-app requests — e.g. zotero-helper's "Send to
-          // Hush" (see src/links/zotero-helper-import.js).
-          try {
-            const { handleHushwriterUrl } = await import("./links/zotero-helper-import.js");
-            await handleHushwriterUrl(state, url);
-          } catch (e) {
-            console.warn("hushwriter:// deep link failed:", e);
-          }
-        }
-      };
-      // Cold launch: the OS hands the URL to the process before any JS
-      // listener exists; getCurrent() returns those pending URLs so we
-      // don't drop the open-with payload that woke the app.
-      try {
-        const launchUrls = await getCurrent();
-        if (Array.isArray(launchUrls)) {
-          for (const url of launchUrls) await handleUrl(url);
-        }
-      } catch (e) { console.warn("Deep-link getCurrent failed:", e); }
-      await onOpenUrl(async (urls) => {
-        for (const url of urls) await handleUrl(url);
-      });
-    } catch (e) { console.error("Deep-link setup failed:", e); }
+    // Deep-link routing (file open-with + hushwriter:// companion
+    // requests) lives in links/deep-link-router.js. Google OAuth uses a
+    // loopback HTTP listener instead — see `oauth-callback` below.
+    const { setupDeepLinks } = await import("./links/deep-link-router.js");
+    await setupDeepLinks(state);
 
     // OAuth callback event (from the Rust loopback listener).
     await listen("oauth-callback", async (event) => {
