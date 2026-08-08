@@ -70,35 +70,61 @@ export function hexLuminance(hex) {
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
 }
 
-export function updatePrivateBoxColor(state, overrideBg, overrideFg) {
-  let bg = overrideBg || null;
-  // Resolve the active style/theme's foreground in parallel with the bg
-  // so the UI chrome can match the editor text colour. `overrideFg` lets
-  // a caller (e.g. a style hover-preview) force a specific value.
-  let fg = overrideFg || null;
+/** Resolve the effective editor colours for the current settings — the
+ *  ONE implementation of the chain every surface must agree on:
+ *  style override → style's resolved theme → global appearance theme.
+ *  The Default style's per-appearance colour maps (defaultLightColors /
+ *  defaultDarkColors) stand in for a named style's overrides when no
+ *  style is active — that branch is what the sidebar was historically
+ *  missing, which let it fall back to the raw theme bg while the editor
+ *  honoured the Default style's override. Never reads computed styles:
+ *  a getComputedStyle("--bg") read here resolves to the OUTGOING
+ *  style's value mid-switch, which is how the sidebar used to lag one
+ *  style behind the editor. */
+export function resolveEffectiveColors(settings) {
+  let appearance = settings.appearance || "dark";
+  if (appearance === "auto") {
+    appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  const globalThemeId = appearance === "dark" ? settings.darkTheme : settings.lightTheme;
 
-  if (!bg || !fg) {
-    if (state.settings.activeStyleId && state.settings.styles) {
-      const style = state.settings.styles.find(s => s.id === state.settings.activeStyleId);
-      if (style) {
-        const { themeId, colors } = resolveStyleForAppearance(style, state.settings.appearance);
-        if (!bg) bg = (colors && colors.bg) || themeBackgrounds[themeId] || (style.colorOverrides && style.colorOverrides.bg) || themeBackgrounds[style.themeId];
-        if (!fg) fg = (colors && colors.fg) || themeForegrounds[themeId] || (style.colorOverrides && style.colorOverrides.fg) || themeForegrounds[style.themeId];
-      }
-    }
+  const style = settings.activeStyleId
+    ? (settings.styles || []).find(s => s.id === settings.activeStyleId)
+    : null;
 
-    if (!bg || !fg) {
-      let appearance = state.settings.appearance || "dark";
-      if (appearance === "auto") {
-        appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-      }
-      const themeId = appearance === "dark" ? state.settings.darkTheme : state.settings.lightTheme;
-      if (!bg) bg = themeBackgrounds[themeId];
-      if (!fg) fg = themeForegrounds[themeId];
-    }
+  let themeId, overrides;
+  if (style) {
+    const { themeId: styleThemeId, colors } = resolveStyleForAppearance(style, settings.appearance);
+    themeId = styleThemeId || style.themeId;
+    overrides = colors || style.colorOverrides || {};
+  } else {
+    themeId = globalThemeId;
+    overrides = (appearance === "dark"
+      ? settings.defaultDarkColors
+      : settings.defaultLightColors) || {};
   }
 
+  return {
+    appearance,
+    themeId,
+    overrides,
+    bg: overrides.bg || themeBackgrounds[themeId] || themeBackgrounds[globalThemeId] || null,
+    fg: overrides.fg || themeForegrounds[themeId] || themeForegrounds[globalThemeId] || null,
+  };
+}
+
+export function updatePrivateBoxColor(state, overrideBg, overrideFg) {
+  // `overrideBg` / `overrideFg` exist for the style hover-preview,
+  // which paints a style that isn't active yet. Every other caller
+  // passes nothing and gets the shared resolver — the same chain
+  // applyActiveStyle paints the editor with, so the sidebar cannot
+  // resolve a different colour than the editor did.
+  const resolved = (overrideBg && overrideFg) ? null : resolveEffectiveColors(state.settings);
+  let bg = overrideBg || (resolved && resolved.bg);
+  let fg = overrideFg || (resolved && resolved.fg);
+
   if (!bg) {
+    // Unknown theme id (theme tables out of date) — true last resort.
     bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
   }
 
@@ -117,7 +143,14 @@ export function updatePrivateBoxColor(state, overrideBg, overrideFg) {
     root.setProperty("--private-box", (fg && fg.startsWith("#")) ? fg : (isDark ? "#ffffff" : "#000000"));
     root.setProperty("--theme-bg", bg);
     root.setProperty("--fg", uiFg);
-    root.setProperty("--cursor", isDark ? "#e0e0e0" : "#1a1a1a");
+    // Cursor mirrors applyActiveStyle's precedence (explicit cursor
+    // override → fg override → luminance grey). This function runs
+    // AFTER the style writes now, so it must agree with them rather
+    // than blanket-writing the grey over a style's cursor.
+    const styleCursor = resolved
+      ? (resolved.overrides.cursor || resolved.overrides.fg || null)
+      : null;
+    root.setProperty("--cursor", styleCursor || (isDark ? "#e0e0e0" : "#1a1a1a"));
     root.setProperty("--sidebar-icon-color", isDark ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.45)");
     root.setProperty("--sidebar-icon-hover", isDark ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.85)");
     root.setProperty("--sidebar-fg", isDark ? "#888" : "#888");
