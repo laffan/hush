@@ -221,31 +221,6 @@
   margin-right: 1px;
 }
 
-/* Per-window numeral badge — surfaces only when more than one Hush
-   window is open. Background = current style's text colour, text =
-   theme background, so the chip inverts cleanly across every theme. */
-.tree-window-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  margin-left: 4px;
-  border-radius: 3px;
-  background: var(--fg);
-  color: var(--bg);
-  font-size: 9px;
-  font-weight: bold;
-  line-height: 1;
-  flex-shrink: 0;
-  user-select: none;
-  -webkit-user-select: none;
-}
-.tree-window-badge + .tree-window-badge {
-  margin-left: 2px;
-}
-
 .tree-actions {
   position: absolute;
   right: 0;

@@ -69,17 +69,10 @@ export class AppState {
     // empty-area click in the sidebar.
     this.selectedDocIds = [];
 
-    // Multi-window — populated by main.js after registering with the
-    // Rust-side WindowRegistry. `windowList` is the full list of open
-    // Hush windows (each entry: `{ label, number, fileId, fileType }`)
-    // and refreshes whenever any window opens, closes, or switches file.
-    // `currentWindowNumber` is this window's slot (1-indexed) — used by
-    // the sidebar to pick the right "self" badge style.
-    // `isSecondaryWindow` flips on for any non-"main" window so per-
-    // window settings (lastFileId, scrollPosition, mode toggles) skip
-    // the disk write that would clobber the main window's session.
-    this.windowList = [];
-    this.currentWindowNumber = 1;
+    // Multi-window — `isSecondaryWindow` flips on for any non-"main"
+    // window so per-window settings (lastFileId, scrollPosition, mode
+    // toggles) skip the disk write that would clobber the main window's
+    // session.
     this.isSecondaryWindow = false;
 
     // Project view state

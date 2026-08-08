@@ -11,7 +11,7 @@ import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pan
 import { escHtml, showPromptModal, googleLinkBadgeHtml, computeNumberLabels, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
 import {
   isInboxId, isImagesId, isPdfsId, isTrashId, isAnySpecialId, allSpecialIds,
-  visibleTopLevel, renderedDeskIdFor, commitRenderedChildren, isAllDesksMode, numberSkip, hasPairedGutter, getIcon, windowBadgesHtml,
+  visibleTopLevel, renderedDeskIdFor, commitRenderedChildren, isAllDesksMode, numberSkip, hasPairedGutter, getIcon,
   actionButtons, getPdfSync, buildPdfRowHtml, sortFlaggedItems,
   isItemActive,
 } from "./files-panel-rows.js";
@@ -175,7 +175,7 @@ export function createFilesPanel(container, state, hidePanel) {
         + (isDesk ? " desk-row" : "") + (isActiveDesk ? " active-desk" : "");
 
       if (item.type === "pdf" && item.fileId && !isPdfsId(item.id)) {
-        const pdfHtml = buildPdfRowHtml(item, icon, state, inTrash, inProject);
+        const pdfHtml = buildPdfRowHtml(item, icon, inTrash, inProject);
         row.innerHTML = pdfHtml;
       } else {
         const numLabel = numberLabels.get(item.id);
@@ -186,7 +186,7 @@ export function createFilesPanel(container, state, hidePanel) {
         // desk: an inverted pill wrapping icon + name (icon strokes follow
         // currentColor, so they recolor to the pill text).
         const deskHandle = isDesk ? `<span class="desk-drag-handle" data-tooltip="Drag to reorder">${DRAG_HANDLE_SVG}</span>` : "";
-        const trailing = `${windowBadgesHtml(item, state)}${deskHandle}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
+        const trailing = `${deskHandle}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
         if (isActiveDesk) {
           row.innerHTML = `<span class="desk-active-pill">${icon}<span class="desk-active-name">${escHtml(displayName)}</span></span>${trailing}`;
         } else {
