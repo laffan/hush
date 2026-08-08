@@ -485,6 +485,7 @@ impl DeskStore {
             if !is_image_rel(&rel) {
                 self.record_hash(&desk_id, id, &hash, crate::desk_hashes::mtime_ms(&abs));
             }
+            crate::desk_recovery::note_desk_edit(&desk_id);
             return Ok(());
         }
         // Not placed yet — keep (or put) it in staging; the next tree save
@@ -506,6 +507,7 @@ impl DeskStore {
             let mut index = self.load_index(&desk_id);
             index.remove(id);
             self.save_index(&desk_id, &index)?;
+            crate::desk_recovery::note_desk_edit(&desk_id);
             return Ok(());
         }
         let staged = self.staging_path(id);
@@ -549,6 +551,7 @@ impl DeskStore {
         let mut index = self.load_index(&desk_id);
         index.insert(id.to_string(), new_rel);
         self.save_index(&desk_id, &index)?;
+        crate::desk_recovery::note_desk_edit(&desk_id);
         Ok(())
     }
 

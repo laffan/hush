@@ -22,6 +22,7 @@ mod desk_meta;
 mod desk_migrate;
 mod desk_paths;
 mod desk_place;
+mod desk_recovery;
 mod desk_rescue;
 mod desk_roots;
 mod desk_scan;
@@ -305,6 +306,10 @@ pub fn run() {
                 // settings cache (and migrate settings-only entries down
                 // into their desks) so links ride desk handoffs.
                 commands::google_docs::refresh_gdoc_link_cache(&app_state);
+                // Rolling recovery snapshots for local desks: a
+                // background thread zips any local desk with pending
+                // edits every 30 minutes (see desk_recovery.rs).
+                desk_recovery::start_scheduler(crate::get_data_dir());
             }
 
             #[cfg(desktop)]
@@ -512,6 +517,9 @@ pub fn run() {
             commands::desks::desk_archive_restore,
             commands::desks::desk_archive_delete,
             commands::desks::desk_archive_bytes,
+            commands::desks::desk_recovery_list,
+            commands::desks::desk_recovery_delete,
+            commands::desks::desk_recovery_restore,
             commands::diagnostics::activity_log_append,
             commands::diagnostics::activity_log_read,
             commands::diagnostics::activity_log_clear,

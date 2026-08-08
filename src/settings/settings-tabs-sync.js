@@ -1,8 +1,9 @@
 /**
- * Sync settings tab — sub-tabs: Google Sync, iCloud (debug), and the
- * sync Log. Dropbox sync was removed (see LOCAL-DESKS-PLANNING.md) —
- * folder-based desks over the user's own file provider replace it.
- * Local Folder mounts live in the sidebar's Add (+) menu, not here.
+ * Sync settings tab — sub-tabs: Google Sync, iCloud (debug), Recovery
+ * (local-desk snapshots), and the sync Log. Dropbox sync was removed
+ * (see LOCAL-DESKS-PLANNING.md) — folder-based desks over the user's
+ * own file provider replace it. Local Folder mounts live in the
+ * sidebar's Add (+) menu, not here.
  *
  * Active sub-tab is module-local — the binding side calls
  * `setSyncSubTab(id)` followed by the parent `render()` to switch.
@@ -11,6 +12,7 @@
 import { escHtml, escAttr } from "./settings-tabs.js";
 import { SYNC_LOG_ERROR_PREFIX } from "../sync/sync-feedback.js";
 import { renderICloudSubTab } from "./settings-tabs-icloud.js";
+import { renderRecoverySubTab } from "./settings-tabs-recovery.js";
 
 /** Render a single sync log row. Entries tagged with the error prefix
  *  (see {@link SYNC_LOG_ERROR_PREFIX}) paint red and strip the prefix
@@ -27,11 +29,11 @@ function renderSyncLogEntry(entry) {
   return `<div class="sync-log-entry">${escHtml(raw)}</div>`;
 }
 
-let _activeSubTab = "google"; // "google" | "icloud" | "log"
+let _activeSubTab = "google"; // "google" | "icloud" | "recovery" | "log"
 
 export function getSyncSubTab() { return _activeSubTab; }
 export function setSyncSubTab(id) {
-  if (id === "google" || id === "icloud" || id === "log") _activeSubTab = id;
+  if (id === "google" || id === "icloud" || id === "recovery" || id === "log") _activeSubTab = id;
 }
 
 function subTabNav() {
@@ -39,6 +41,7 @@ function subTabNav() {
   return `<div class="sync-subtab-nav">
     ${tab("google", "Google Sync")}
     ${tab("icloud", "iCloud")}
+    ${tab("recovery", "Recovery")}
     ${tab("log", "Log")}
   </div>`;
 }
@@ -46,6 +49,7 @@ function subTabNav() {
 export function renderSyncTab(settings) {
   let body = "";
   if (_activeSubTab === "icloud") body = renderICloudSubTab();
+  else if (_activeSubTab === "recovery") body = renderRecoverySubTab();
   else if (_activeSubTab === "log") body = renderLogSubTab(settings);
   else body = renderGoogleSubTab(settings);
   return subTabNav() + `<div class="sync-subtab-body">${body}</div>`;

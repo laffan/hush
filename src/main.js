@@ -534,6 +534,27 @@ async function init() {
       updatePrivateBoxColor(state);
     });
 
+    // A desk recovered from a snapshot (Settings > Sync > Recovery).
+    // The settings window already built it on disk; the main window owns
+    // the live tree, so it pulls the new desk into the registry and
+    // switches to it — the same finish the archive-restore modal does.
+    await listen("desk-recovery-restored", async (event) => {
+      if (state.isSecondaryWindow) return;
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        state.fileTree = await invoke("get_file_tree");
+        state.files = await invoke("list_files");
+        const { syncDesksRegistryWithTree } = await import("./state/state-desks.js");
+        await syncDesksRegistryWithTree(state);
+        state.emit("desks-changed");
+        state.emit("files-changed");
+        const deskId = event.payload?.deskId;
+        if (deskId) await state.setActiveDesk(deskId);
+      } catch (e) {
+        console.warn("recovered-desk refresh failed:", e);
+      }
+    });
+
     // Deep-link routing (file open-with + hushwriter:// companion
     // requests) lives in links/deep-link-router.js. Google OAuth uses a
     // loopback HTTP listener instead — see `oauth-callback` below.

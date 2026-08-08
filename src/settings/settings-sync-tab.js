@@ -1,8 +1,9 @@
 /**
  * Settings Sync tab bindings — extracted from settings-window.js.
  * Sub-tabs: Google Sync (OAuth connect / credentials / disconnect),
- * iCloud (debug), and the sync Log. Dropbox sync was removed — see
- * LOCAL-DESKS-PLANNING.md; folder-based desks replace it.
+ * iCloud (debug), Recovery (local-desk snapshots), and the sync Log.
+ * Dropbox sync was removed — see LOCAL-DESKS-PLANNING.md; folder-based
+ * desks replace it.
  */
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
@@ -30,6 +31,9 @@ export function bindSyncTab(saveSetting, settings, render) {
 
   // ===== iCloud (debug) sub-tab =====
   import("./settings-tabs-icloud.js").then((m) => m.bindICloudSubTab()).catch(() => {});
+
+  // ===== Recovery (local-desk snapshots) sub-tab =====
+  import("./settings-tabs-recovery.js").then((m) => m.bindRecoverySubTab()).catch(() => {});
 
   // ===== Log sub-tab =====
   const clearSyncLogBtn = document.getElementById("sync-clear-log");

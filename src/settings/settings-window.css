@@ -653,6 +653,39 @@ html, body {
 .local-sync-remove-btn:hover { background: rgba(229,57,53,0.12); color: #e53935; }
 .local-sync-empty { font-size: 12px; opacity: 0.6; padding: 4px 0; }
 
+/* Sync > Recovery — the local-desk snapshot list */
+.recovery-list { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.recovery-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center; gap: 12px; padding: 8px 12px;
+  border: 1px solid var(--panel-border); border-radius: 6px;
+  background: rgba(128,128,128,0.04);
+}
+.recovery-row.recovery-head {
+  border: none; background: transparent; padding: 0 12px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+  opacity: 0.55;
+}
+.recovery-name {
+  font-size: 13px; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.recovery-time { font-size: 12px; opacity: 0.7; white-space: nowrap; }
+.recovery-actions { display: flex; gap: 6px; }
+.recovery-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0;
+  border: 1px solid var(--panel-border); background: transparent;
+  color: var(--fg); border-radius: 4px; cursor: pointer;
+}
+.recovery-icon-btn:hover { background: rgba(128,128,128,0.15); }
+.recovery-icon-btn:disabled { opacity: 0.4; cursor: default; }
+.recovery-icon-btn.recovery-icon-danger:hover {
+  background: rgba(229,57,53,0.12); color: #e53935;
+  border-color: rgba(229,57,53,0.4);
+}
+.recovery-empty { font-size: 12px; opacity: 0.6; padding: 4px 0; }
+
 /* Primary action button (Connect, etc.) */
 .sync-action-btn {
   margin-top: 8px; padding: 8px 18px;

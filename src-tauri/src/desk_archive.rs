@@ -71,7 +71,7 @@ fn slug(name: &str) -> String {
 /// desk reconciler's walk this deliberately keeps dotfiles: `.hushdesk`
 /// and `.hush/` *are* the desk's identity and history, and an archive
 /// without them would restore as a folder of loose files.
-fn walk_all(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
+pub(crate) fn walk_all(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
     let Ok(rd) = fs::read_dir(dir) else { return };
     for entry in rd.flatten() {
         let path = entry.path();
@@ -116,47 +116,14 @@ impl DeskStore {
         let file_name = format!("{}-{}.{}", slug(desk_name), stamp, ARCHIVE_EXT);
         let path = dir.join(&file_name);
 
-        let mut entries = Vec::new();
-        walk_all(&root, &root, &mut entries);
-
-        // Build in memory, then write once: a half-written archive that
-        // the caller then treats as a successful archive would be the
-        // worst possible outcome here.
-        let mut buf = Vec::new();
-        {
-            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
-            let opts = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-            zip.add_directory("desk/", opts)?;
-            for (rel, abs) in &entries {
-                let mut bytes = Vec::new();
-                File::open(abs)?.read_to_end(&mut bytes)?;
-                zip.start_file(format!("desk/{}", rel), opts)?;
-                zip.write_all(&bytes)?;
-            }
-            // A manifest at the root so listing doesn't have to reason
-            // about the desk's own sidecars.
-            zip.start_file("archive.json", opts)?;
-            zip.write_all(
-                serde_json::to_string_pretty(&serde_json::json!({
-                    "format": "hush-desk-archive",
-                    "version": 1,
-                    "name": desk_name,
-                    "deskId": desk_id,
-                    "archivedAt": stamp,
-                    "files": entries.len(),
-                    "wasLocal": was_local,
-                }))?
-                .as_bytes(),
-            )?;
-            zip.finish()?;
-        }
+        let (buf, files) = build_desk_zip(&root, desk_name, desk_id, was_local, stamp)?;
         let bytes = buf.len() as u64;
         fs::write(&path, &buf)?;
 
         crate::activity_log::note(
             "desks",
             "info",
-            format!("Archived desk \"{}\" ({} files) to {}", desk_name, entries.len(), file_name),
+            format!("Archived desk \"{}\" ({} files) to {}", desk_name, files, file_name),
         );
 
         Ok(ArchiveInfo {
@@ -166,7 +133,7 @@ impl DeskStore {
             desk_id: desk_id.to_string(),
             archived_at: stamp,
             bytes,
-            files: entries.len(),
+            files,
             was_local,
         })
     }
@@ -190,7 +157,20 @@ impl DeskStore {
     /// desk id.
     pub fn restore_archive(&self, file: &str) -> Result<String, BoxError> {
         let src = self.archives_dir().join(sanitize_handle(file)?);
-        let bytes = fs::read(&src)?;
+        let new_id = self.restore_desk_zip(&src)?;
+        crate::activity_log::note(
+            "desks",
+            "info",
+            format!("Created desk {} from archive {}", new_id, file),
+        );
+        Ok(new_id)
+    }
+
+    /// Unpack any desk zip — an archive or a recovery snapshot (see
+    /// desk_recovery.rs) — into a brand-new internal desk with a fresh
+    /// identity throughout. Returns the new desk id.
+    pub(crate) fn restore_desk_zip(&self, src: &Path) -> Result<String, BoxError> {
+        let bytes = fs::read(src)?;
         let mut zip = zip::ZipArchive::new(Cursor::new(bytes))?;
 
         let new_id = uuid::Uuid::new_v4().to_string();
@@ -224,13 +204,57 @@ impl DeskStore {
 
         reidentify_desk(&dst, &new_id)?;
         self.append_to_order(&new_id)?;
-        crate::activity_log::note(
-            "desks",
-            "info",
-            format!("Created desk {} from archive {}", new_id, file),
-        );
         Ok(new_id)
     }
+}
+
+/// Build the zip envelope for a desk folder — every file under `desk/`
+/// plus an `archive.json` manifest at the root — entirely in memory, then
+/// hand back the bytes and the file count. In memory on purpose: a
+/// half-written archive that a caller then treats as successful would be
+/// the worst possible outcome, so callers write the finished buffer once.
+/// Shared by desk archives (above) and the recovery snapshots
+/// (desk_recovery.rs), which differ only in where the bytes land and how
+/// they're pruned.
+pub(crate) fn build_desk_zip(
+    root: &Path,
+    desk_name: &str,
+    desk_id: &str,
+    was_local: bool,
+    stamp: u64,
+) -> Result<(Vec<u8>, usize), BoxError> {
+    let mut entries = Vec::new();
+    walk_all(root, root, &mut entries);
+    let mut buf = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+        let opts = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        zip.add_directory("desk/", opts)?;
+        for (rel, abs) in &entries {
+            let mut bytes = Vec::new();
+            File::open(abs)?.read_to_end(&mut bytes)?;
+            zip.start_file(format!("desk/{}", rel), opts)?;
+            zip.write_all(&bytes)?;
+        }
+        // A manifest at the root so listing doesn't have to reason
+        // about the desk's own sidecars.
+        zip.start_file("archive.json", opts)?;
+        zip.write_all(
+            serde_json::to_string_pretty(&serde_json::json!({
+                "format": "hush-desk-archive",
+                "version": 1,
+                "name": desk_name,
+                "deskId": desk_id,
+                "archivedAt": stamp,
+                "files": entries.len(),
+                "wasLocal": was_local,
+            }))?
+            .as_bytes(),
+        )?;
+        zip.finish()?;
+    }
+    let files = entries.len();
+    Ok((buf, files))
 }
 
 /// Give a just-unpacked desk folder a fresh identity: new desk id on the
@@ -410,7 +434,7 @@ pub fn read_archive(&self, file: &str) -> Result<Vec<u8>, BoxError> {
 }
 }
 
-fn read_manifest(path: &Path) -> Option<serde_json::Value> {
+pub(crate) fn read_manifest(path: &Path) -> Option<serde_json::Value> {
     let bytes = fs::read(path).ok()?;
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
     let mut raw = String::new();

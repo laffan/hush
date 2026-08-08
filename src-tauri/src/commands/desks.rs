@@ -229,3 +229,35 @@ pub fn desk_archive_delete(file: String) -> Result<(), String> {
 pub fn desk_archive_bytes(file: String) -> Result<Vec<u8>, String> {
     store().read_archive(&file).map_err(|e| e.to_string())
 }
+
+// ===== Desk recovery snapshots =====
+// Rolling automatic snapshots of local desks (see desk_recovery.rs). The
+// scheduler runs in Rust; these commands are the surface for the
+// Settings > Sync > Recovery tab.
+
+/// Every recovery snapshot across every desk, newest first.
+#[tauri::command]
+pub fn desk_recovery_list() -> Vec<crate::desk_archive::ArchiveInfo> {
+    store().list_recovery_snapshots()
+}
+
+#[tauri::command]
+pub fn desk_recovery_delete(desk_id: String, file: String) -> Result<(), String> {
+    store()
+        .delete_recovery_snapshot(&desk_id, &file)
+        .map_err(|e| e.to_string())
+}
+
+/// Build a brand-new internal desk named `new_name` from a snapshot —
+/// fresh ids throughout, so it can sit beside the desk it came from and
+/// the user's own folder is never written to. Returns the new desk id.
+#[tauri::command]
+pub fn desk_recovery_restore(
+    desk_id: String,
+    file: String,
+    new_name: String,
+) -> Result<String, String> {
+    store()
+        .restore_recovery_snapshot(&desk_id, &file, &new_name)
+        .map_err(|e| e.to_string())
+}

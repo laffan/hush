@@ -4012,6 +4012,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-pencil",
  "tauri-plugin-positioner",
+ "tauri-plugin-scene-reuse",
  "tauri-plugin-shell",
  "tempfile",
  "typst",
@@ -8482,6 +8483,16 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "tauri-plugin-scene-reuse"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
 ]
 
 [[package]]

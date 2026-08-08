@@ -13,9 +13,13 @@ fn active_desk_id(state: &State<AppState>) -> Option<String> {
 #[tauri::command]
 pub fn save_image(state: State<AppState>, filename: String, data_url: String) -> Result<ImageSaved, String> {
     let desk = active_desk_id(&state);
-    state.image_manager.lock().unwrap()
+    let saved = state.image_manager.lock().unwrap()
         .save_from_data_url(&filename, &data_url, desk.as_deref())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if let Some(id) = desk.as_deref() {
+        crate::desk_recovery::note_desk_edit(id);
+    }
+    Ok(saved)
 }
 
 /// Save raw image bytes — used to land externally-sourced image
@@ -24,9 +28,13 @@ pub fn save_image(state: State<AppState>, filename: String, data_url: String) ->
 #[tauri::command]
 pub fn save_image_bytes(state: State<AppState>, filename: String, bytes: Vec<u8>) -> Result<ImageSaved, String> {
     let desk = active_desk_id(&state);
-    state.image_manager.lock().unwrap()
+    let saved = state.image_manager.lock().unwrap()
         .save_from_bytes(&filename, &bytes, desk.as_deref())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if let Some(id) = desk.as_deref() {
+        crate::desk_recovery::note_desk_edit(id);
+    }
+    Ok(saved)
 }
 
 /// Read an image's raw bytes — used to hand an image
