@@ -65,6 +65,7 @@
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
     "pencil:default",
-    "icloud-folder:default"
+    "icloud-folder:default",
+    "scene-reuse:default"
   ]
 }

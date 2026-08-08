@@ -1,0 +1,15 @@
+[package]
+name = "tauri-plugin-scene-reuse"
+version = "0.1.0"
+description = "Route incoming iPadOS URL opens to an existing window instead of spawning a new scene"
+edition = "2021"
+rust-version = "1.77"
+links = "tauri-plugin-scene-reuse"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }
+
+[dependencies]
+tauri = { version = "2" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

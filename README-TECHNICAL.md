@@ -1559,10 +1559,21 @@ Routing lives in `src/links/deep-link-router.js` (registered from
 Deep links are delivered **more than once**: `onOpenUrl` fires in every
 open window, its implementation replays `getCurrent()` on top of the
 router's own cold-launch call, and iPad webview reloads replay it again.
-Two defenses keep handling exactly-once — the router only acts on
-companion URLs in the `main` window, and the import module dedupes by the
-request's `nonce` (falling back to the full URL) via a shared
-`localStorage` ring buffer.
+Two defenses keep handling exactly-once — companion URLs are imported in
+the `main` window only, and the import module dedupes by the request's
+`nonce` (falling back to the full URL) via a shared `localStorage` ring
+buffer. A secondary window that receives one relays it to main over the
+`hushwriter-url` event rather than dropping it, so the request survives
+whichever window iPadOS picks.
+
+Because Hush opts into multi-window, iPadOS was also free to **spawn a
+new scene** for each incoming URL — an empty window per "Send to Hush".
+`src-tauri/tauri-plugin-scene-reuse/` marks every `UIScene` as able to
+(and preferring to) activate for any target content identifier, which
+tells the system an on-screen window can take the event instead. As a
+fallback, a secondary window that was booted holding a companion URL
+(the URL arrived through `getCurrent()`, not `onOpenUrl`) closes itself
+after relaying. Neither affects windows the user opens from inside Hush.
 
 Current actions:
 

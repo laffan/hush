@@ -253,6 +253,10 @@ pub fn run() {
         // Folder on iOS). Same cfg-gating as pencil: a no-op shell on
         // every non-iOS target, so registering it here is safe.
         .plugin(tauri_plugin_icloud_folder::init())
+        // iOS-only: lets an already-open window take incoming URL opens
+        // (e.g. zotero-helper's "Send to Hush") instead of iPadOS
+        // spawning a new scene for each one. No-op elsewhere.
+        .plugin(tauri_plugin_scene_reuse::init())
         .manage(AppState {
             settings: Mutex::new(settings),
             file_manager: Mutex::new(file_manager),

@@ -36,6 +36,7 @@ harper-core = { version = "2", default-features = false }
 spellbook = "0.4"
 tauri-plugin-pencil = { path = "tauri-plugin-pencil" }
 tauri-plugin-icloud-folder = { path = "tauri-plugin-icloud-folder" }
+tauri-plugin-scene-reuse = { path = "tauri-plugin-scene-reuse" }
 
 # Typst-backed PDF export pipeline (docs + projects). The compiler runs
 # in-process so the same code path serves desktop builds and the iOS
