@@ -2,13 +2,15 @@
 //!
 //! A local desk operates from a folder a sync provider (iCloud Drive,
 //! Dropbox, Syncthing) mutates underneath Hush, and the disk-wins
-//! reconciler deliberately follows that folder. When the provider
-//! misrepresents it — files not yet downloaded, `.icloud` placeholders,
-//! a half-propagated adoption — following it can cost real content.
-//! Until that is robustly fixed, this module keeps a rolling set of
-//! whole-desk snapshots on *this* device so any such event is
-//! recoverable wholesale, independent of (but containing) the per-file
-//! Versions history, which rides inside each snapshot's `.hush/`.
+//! reconciler deliberately follows that folder. The reconciler guards
+//! against the known ways a provider misrepresents one — absences sit
+//! out a grace window before they count as deletions, `.icloud`
+//! placeholders pin their files in place (see desk_scan.rs) — but a
+//! synced folder is still a surface Hush doesn't control, so this
+//! module keeps a rolling set of whole-desk snapshots on *this* device
+//! as defense in depth: any provider-side event stays recoverable
+//! wholesale, independent of (but containing) the per-file Versions
+//! history, which rides inside each snapshot's `.hush/`.
 //!
 //! Mechanics: every content mutation that flows through the desk store
 //! (`write_by_id`, `rename_by_id`, `delete_by_id`, image saves) stamps

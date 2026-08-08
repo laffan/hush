@@ -255,9 +255,25 @@ fn reconcile_from_disk_follows_external_adds_and_removes() {
     // ...and deletes the original doc.
     fs::remove_file(target.join("Doc.md")).unwrap();
 
+    // Additions land immediately; the deletion only starts the grace
+    // clock — inside a synced folder, "absent" routinely means "not
+    // delivered yet", so a single scan can never remove anything.
     let report = store.reconcile_desk_from_disk("d1").unwrap();
     assert_eq!(report.added, 2);
+    assert_eq!(report.removed, 0);
+    assert_eq!(report.pending, 1);
+    let forest = store.load_forest().unwrap();
+    assert!(forest[0].children.iter().any(|n| n.name == "Doc"),
+        "a just-missed file is held, not dropped");
+
+    // Once the absence has outlasted the grace window, a later scan
+    // treats it as the real deletion it is.
+    crate::desk_scan::backdate_missing_for_tests(
+        &target, "f1", crate::desk_scan::REMOVAL_GRACE_SECS + 1,
+    );
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
     assert_eq!(report.removed, 1);
+    assert_eq!(report.pending, 0);
 
     let forest = store.load_forest().unwrap();
     let desk = &forest[0];
@@ -348,8 +364,16 @@ fn rename_with_changed_content_falls_back_to_remove_plus_add() {
 
     fs::remove_file(target.join("Doc.md")).unwrap();
     fs::write(target.join("Different.md"), "not the same bytes").unwrap();
+    // Different bytes can't pair as a rename, so the add lands and the
+    // vanish waits out the grace window like any other absence.
     let report = store.reconcile_desk_from_disk("d1").unwrap();
-    assert_eq!((report.renamed, report.added, report.removed), (0, 1, 1));
+    assert_eq!((report.renamed, report.added, report.removed), (0, 1, 0));
+    assert_eq!(report.pending, 1);
+    crate::desk_scan::backdate_missing_for_tests(
+        &target, "f1", crate::desk_scan::REMOVAL_GRACE_SECS + 1,
+    );
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!((report.renamed, report.added, report.removed), (0, 0, 1));
     assert!(store.read_by_id("f1").is_err());
 }
 
@@ -453,4 +477,98 @@ fn conflicted_copy_replaces_a_vanished_original() {
     assert_eq!(report.conflicts, 1);
     assert_eq!((report.added, report.removed), (0, 0));
     assert_eq!(store.read_by_id("f1").unwrap().0, "survivor");
+}
+
+#[test]
+fn an_icloud_placeholder_holds_the_file_indefinitely() {
+    let dir = tmp();
+    let external = tmp();
+    let target = external.path().join("Desk");
+    let store = seed_simple_desk(dir.path());
+    store.make_desk_local("d1", &target, None).unwrap();
+
+    // iCloud evicts the local copy: the file becomes a `.Doc.md.icloud`
+    // placeholder — the provider saying "exists, just not local".
+    fs::remove_file(target.join("Doc.md")).unwrap();
+    fs::write(target.join(".Doc.md.icloud"), "plist stub").unwrap();
+
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert!(!report.changed(), "nothing to rewrite — the file is merely not local");
+    assert_eq!(report.pending, 1);
+    assert_eq!(
+        report.pending_downloads,
+        vec![target.join("Doc.md").to_string_lossy().into_owned()],
+        "the logical path is surfaced so the frontend can trigger the download"
+    );
+
+    // Even far past the grace window a placeholder-backed file is never
+    // treated as deleted — there is no clock to run out.
+    crate::desk_scan::backdate_missing_for_tests(
+        &target, "f1", crate::desk_scan::REMOVAL_GRACE_SECS * 10,
+    );
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!(report.removed, 0);
+    assert!(store.load_desk_tree("d1").unwrap().children.iter().any(|n| n.name == "Doc"));
+
+    // The download lands: the placeholder becomes the real file again.
+    fs::remove_file(target.join(".Doc.md.icloud")).unwrap();
+    fs::write(target.join("Doc.md"), "body").unwrap();
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!((report.added, report.removed, report.pending), (0, 0, 0));
+    assert_eq!(store.read_by_id("f1").unwrap().0, "body");
+}
+
+#[test]
+fn a_reappearing_file_resets_the_removal_clock() {
+    let dir = tmp();
+    let external = tmp();
+    let target = external.path().join("Desk");
+    let store = seed_simple_desk(dir.path());
+    store.make_desk_local("d1", &target, None).unwrap();
+
+    // Miss once — the clock starts.
+    fs::remove_file(target.join("Doc.md")).unwrap();
+    assert_eq!(store.reconcile_desk_from_disk("d1").unwrap().pending, 1);
+
+    // The file comes back (a slow provider finished delivering it).
+    fs::write(target.join("Doc.md"), "body").unwrap();
+    assert_eq!(store.reconcile_desk_from_disk("d1").unwrap().pending, 0);
+
+    // A later miss starts a *fresh* clock: backdating would only have
+    // bitten if the first miss's stamp had survived the reappearance.
+    fs::remove_file(target.join("Doc.md")).unwrap();
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!((report.removed, report.pending), (0, 1));
+    assert!(store.load_desk_tree("d1").unwrap().children.iter().any(|n| n.name == "Doc"));
+}
+
+#[test]
+fn post_adopt_reconcile_cannot_shed_undelivered_files() {
+    // The iPad → Mac disaster: a desk folder whose sidecars synced ahead
+    // of its content. tree.json/index.json list the docs; the docs
+    // themselves haven't been delivered yet. Adopting the folder must
+    // not rewrite the sidecars minus the "missing" files.
+    let dir = tmp();
+    let external = tmp();
+    let target = external.path().join("Desk");
+    let store = seed_simple_desk(dir.path());
+    store.make_desk_local("d1", &target, None).unwrap();
+    crate::desk_roots::unregister(&store.desks_dir, "d1");
+
+    // Simulate the half-delivered folder: sidecars intact, content gone.
+    fs::remove_file(target.join("Doc.md")).unwrap();
+
+    // A second install adopts it (fresh data dir = fresh store).
+    let dir_b = tmp();
+    let store_b = DeskStore::new(dir_b.path());
+    let desk_id = store_b.open_folder_as_desk(&target, None).unwrap();
+    assert_eq!(desk_id, "d1", "adopted by its .hushdesk identity");
+    let report = store_b.reconcile_desk_from_disk(&desk_id).unwrap();
+    assert_eq!(report.removed, 0, "the post-adopt scan never removes");
+
+    let index = store_b.load_index(&desk_id);
+    assert_eq!(index.get("f1").map(String::as_str), Some("Doc.md"),
+        "the shared index still carries the undelivered file");
+    assert!(store_b.load_desk_tree(&desk_id).unwrap().children.iter().any(|n| n.name == "Doc"),
+        "the shared tree still carries the undelivered file");
 }

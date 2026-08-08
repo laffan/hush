@@ -8,9 +8,32 @@
 //!   inserted along a container chain mirroring its directory path
 //!   (matching existing folders/projects/specials by name, creating
 //!   plain folders for the rest);
-//! - an index entry whose file vanished ⇒ node + entry dropped (the
-//!   file's snapshots in `.hush/versions/` remain the recovery path);
+//! - an index entry whose file vanished ⇒ node + entry dropped, but
+//!   **only once the absence has persisted** — see below (the file's
+//!   snapshots in `.hush/versions/` remain the recovery path);
 //! - everything else is left exactly as the tree says.
+//!
+//! **Absent is not deleted.** Inside a provider-synced folder, "not in
+//! the directory listing" routinely means *not delivered yet*: a desk
+//! adopted on a second device before iCloud has propagated its files,
+//! or an iOS install where an evicted file is only a `.Name.icloud`
+//! placeholder dotfile. Treating that as deletion — and writing the
+//! shrunken `tree.json`/`index.json` back into the synced folder — is
+//! how a freshly-filled desk could open empty on the next device and
+//! propagate the amnesia back to the first. Two guards close it:
+//!
+//! - a **placeholder** (`.Name.icloud` beside where `Name` belongs) is
+//!   "present, just not local": the entry is never dropped, and the
+//!   logical path is reported in `ScanReport::pending_downloads` so the
+//!   frontend can ask the provider to materialise it (iOS routes these
+//!   through the icloud-folder plugin's coordinated reads);
+//! - any other absence starts a **grace clock** (`MISSING_SINCE`,
+//!   process-wide): the entry is dropped only when a later scan — at
+//!   least `REMOVAL_GRACE_SECS` after the first miss — still can't see
+//!   the file. A single scan can never remove anything, so the
+//!   post-adopt reconcile is additions-only by construction. The ledger
+//!   is in-memory on purpose: a restart merely restarts the clock,
+//!   which errs toward keeping files.
 //!
 //! A provider-level *rename* also arrives as remove + add — the
 //! filesystem offers no identity but the path. The reconciler pairs a
@@ -19,16 +42,55 @@
 //! treats the pair as a rename: same fileId, so version history, panes,
 //! and recents survive. Images are excluded (their fileId *is* the
 //! filename); an unpairable vanish/add falls back to remove + add.
+//! Pairing consults every absent entry regardless of its grace clock,
+//! so a rename never has to wait out the window.
 
 use crate::desk_hashes::{fnv1a_hex, mtime_ms, HashEntry};
 use crate::desk_store::DeskStore;
 use crate::TreeNode;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 type BoxError = Box<dyn std::error::Error>;
+
+/// How long an index entry's file must stay missing before the
+/// reconciler treats the absence as a real deletion. Long enough for a
+/// provider to finish propagating a freshly-created desk; short enough
+/// that a genuine Finder delete still clears out within a session. A
+/// ghost row is the cost of guessing wrong in one direction; lost work
+/// is the cost in the other.
+pub(crate) const REMOVAL_GRACE_SECS: u64 = 10 * 60;
+
+/// (desk root path, fileId) → epoch secs the file was first seen
+/// missing. Keyed by root path rather than desk id so parallel stores
+/// over different data dirs (tests) can't cross-talk.
+static MISSING_SINCE: OnceLock<Mutex<HashMap<(String, String), u64>>> = OnceLock::new();
+
+fn missing_ledger() -> &'static Mutex<HashMap<(String, String), u64>> {
+    MISSING_SINCE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Backdate a file's first-missing stamp so tests can cross the grace
+/// window without sleeping.
+#[cfg(test)]
+pub(crate) fn backdate_missing_for_tests(root: &Path, file_id: &str, secs: u64) {
+    let key = (root.to_string_lossy().into_owned(), file_id.to_string());
+    let mut ledger = missing_ledger().lock().unwrap();
+    if let Some(t) = ledger.get_mut(&key) {
+        *t = t.saturating_sub(secs);
+    }
+}
 
 #[derive(serde::Serialize, Debug, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -37,6 +99,14 @@ pub struct ScanReport {
     pub removed: usize,
     pub renamed: usize,
     pub conflicts: usize,
+    /// Index entries whose file is absent but deliberately *kept*: an
+    /// iCloud placeholder stands in for it, or the absence hasn't
+    /// outlasted the removal grace window yet.
+    pub pending: usize,
+    /// Logical absolute paths of every `.icloud` placeholder seen
+    /// (indexed or not) — the frontend asks the provider to download
+    /// these on iOS, where nothing else ever would.
+    pub pending_downloads: Vec<String>,
 }
 
 impl ScanReport {
@@ -61,6 +131,18 @@ impl DeskStore {
         // Fold provider conflict siblings back into their mapped files
         // first, so they never surface as new files below.
         report.conflicts = self.adopt_conflicted_copies(desk_id, &index);
+
+        // Every `.icloud` placeholder in the folder, as the logical
+        // path it stands for. Indexed ones are held out of the vanish
+        // scan below; all of them are surfaced so the frontend can ask
+        // the provider to download the real bytes.
+        let mut placeholder_rels = Vec::new();
+        walk_placeholders(&root, &root, &mut placeholder_rels);
+        let placeholders: HashSet<String> = placeholder_rels.iter().cloned().collect();
+        report.pending_downloads = placeholder_rels
+            .iter()
+            .map(|rel| root.join(rel).to_string_lossy().into_owned())
+            .collect();
 
         let mut hashes = self.load_hashes(desk_id);
         let mut hashes_dirty = false;
@@ -87,12 +169,26 @@ impl DeskStore {
         }
 
         // ----- Vanished: index entries whose file is gone. Held back
-        // from removal until additions had a chance to pair with them.
-        let missing: Vec<(String, String)> = index
-            .iter()
-            .filter(|(_, rel)| !root.join(rel).exists())
-            .map(|(id, rel)| (id.clone(), rel.clone()))
-            .collect();
+        // from removal until additions had a chance to pair with them —
+        // and, past that, until the absence outlasts the grace window.
+        // A placeholder-backed entry is not vanished at all: the
+        // provider is telling us the file exists and simply isn't local.
+        let root_key = root.to_string_lossy().into_owned();
+        let now = now_secs();
+        let mut missing: Vec<(String, String)> = Vec::new();
+        {
+            let mut ledger = missing_ledger().lock().unwrap();
+            for (id, rel) in &index {
+                if root.join(rel).exists() {
+                    ledger.remove(&(root_key.clone(), id.clone()));
+                } else if placeholders.contains(rel) {
+                    ledger.remove(&(root_key.clone(), id.clone()));
+                    report.pending += 1;
+                } else {
+                    missing.push((id.clone(), rel.clone()));
+                }
+            }
+        }
         let mut paired: HashSet<String> = HashSet::new();
 
         // ----- Additions: recognised files with no index entry -----
@@ -177,8 +273,30 @@ impl DeskStore {
             report.added += 1;
         }
 
-        // ----- Removals: vanished entries nothing paired with -----
-        for (id, _) in missing.iter().filter(|(id, _)| !paired.contains(id)) {
+        // ----- Removals: vanished entries nothing paired with — and
+        // only once a *later* scan finds the absence has persisted for
+        // the whole grace window. The first scan to miss a file can
+        // never remove it, which is what makes the post-adopt reconcile
+        // safe against a folder the provider hasn't fully delivered.
+        let mut to_remove: Vec<String> = Vec::new();
+        {
+            let mut ledger = missing_ledger().lock().unwrap();
+            for (id, _) in &missing {
+                let key = (root_key.clone(), id.clone());
+                if paired.contains(id) {
+                    ledger.remove(&key); // renamed — not missing after all
+                    continue;
+                }
+                let first = *ledger.entry(key.clone()).or_insert(now);
+                if now.saturating_sub(first) >= REMOVAL_GRACE_SECS {
+                    ledger.remove(&key);
+                    to_remove.push(id.clone());
+                } else {
+                    report.pending += 1;
+                }
+            }
+        }
+        for id in &to_remove {
             index.remove(id);
             if hashes.remove(id).is_some() {
                 hashes_dirty = true;
@@ -280,6 +398,42 @@ pub(crate) fn walk_files(root: &Path, dir: &Path, out: &mut Vec<String>) {
             if let Ok(rel) = path.strip_prefix(root) {
                 out.push(rel.to_string_lossy().replace('\\', "/"));
             }
+        }
+    }
+}
+
+/// Logical desk-relative paths of every iCloud placeholder under `dir`.
+/// A file iCloud knows about but hasn't delivered locally is a plist
+/// dotfile named `.<Name>.icloud` beside where `<Name>` belongs — the
+/// normal on-disk state for evicted/undownloaded files on iOS, where
+/// plain `std::fs` never triggers a download. `walk_files` skips them
+/// as dotfiles, so this walk is how the reconciler learns the file
+/// exists at all. Dot-directories (`.hush`) are skipped, and a
+/// placeholder whose logical name is itself a dotfile is ignored.
+pub(crate) fn walk_placeholders(root: &Path, dir: &Path, out: &mut Vec<String>) {
+    let Ok(rd) = fs::read_dir(dir) else { return };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if path.is_dir() {
+            if !name.starts_with('.') {
+                walk_placeholders(root, &path, out);
+            }
+            continue;
+        }
+        let Some(stem) = name.strip_prefix('.').and_then(|s| s.strip_suffix(".icloud")) else {
+            continue;
+        };
+        if stem.is_empty() || stem.starts_with('.') {
+            continue;
+        }
+        if let Ok(rel_dir) = dir.strip_prefix(root) {
+            let rel = if rel_dir.as_os_str().is_empty() {
+                stem.to_string()
+            } else {
+                format!("{}/{}", rel_dir.to_string_lossy().replace('\\', "/"), stem)
+            };
+            out.push(rel);
         }
     }
 }

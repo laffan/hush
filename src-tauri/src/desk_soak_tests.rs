@@ -120,8 +120,21 @@ fn two_installs_share_one_desk_folder() {
     assert!(contents.iter().any(|c| c == "edited on A"));
     assert!(contents.iter().any(|c| c == "fork from the other device"));
 
-    // --- A deletion on disk propagates to both trees.
+    // --- A deletion on disk propagates to both trees — after the
+    // absence outlasts the removal grace window (a single scan can't
+    // remove, so a half-synced folder can't shed files).
     fs::remove_file(desk_root.join("From B.md")).unwrap();
+    let from_b_id = store_a
+        .load_index("d1")
+        .into_iter()
+        .find(|(_, rel)| rel == "From B.md")
+        .map(|(id, _)| id)
+        .expect("From B.md is indexed");
+    let first = store_a.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!((first.removed, first.pending), (0, 1));
+    crate::desk_scan::backdate_missing_for_tests(
+        &desk_root, &from_b_id, crate::desk_scan::REMOVAL_GRACE_SECS + 1,
+    );
     assert_eq!(store_a.reconcile_desk_from_disk("d1").unwrap().removed, 1);
     assert_eq!(store_b.reconcile_desk_from_disk("d1").unwrap().removed, 0);
     let forest_b = store_b.load_forest().unwrap();

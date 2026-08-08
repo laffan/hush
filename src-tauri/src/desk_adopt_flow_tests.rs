@@ -219,7 +219,15 @@ fn unknown_ids_never_blank_fill_a_local_desk() {
 
     assert!(!folder.join("Ghost.md").exists(), "no blank file in the user's folder");
     assert_eq!(fs::read_to_string(folder.join("Real.md")).unwrap(), "real");
-    // Disk wins on the next pass: the dangling node is dropped.
+    // Disk wins once the absence outlasts the removal grace window —
+    // from the reconciler's seat a dangling id and a file the provider
+    // hasn't delivered yet look identical, so the ghost gets the same
+    // clock before its node is dropped.
+    let report = store.reconcile_desk_from_disk(&desk_id).unwrap();
+    assert_eq!((report.removed, report.pending), (0, 1));
+    crate::desk_scan::backdate_missing_for_tests(
+        &folder, "ghost-id", crate::desk_scan::REMOVAL_GRACE_SECS + 1,
+    );
     let report = store.reconcile_desk_from_disk(&desk_id).unwrap();
     assert_eq!(report.removed, 1);
     let desk = store.load_forest().unwrap().remove(0);

@@ -174,6 +174,12 @@ export async function adoptDeskFolder(state, title = "Open a folder as a desk") 
   }
   state.emit("desks-changed");
   if (deskId) await state.setActiveDesk(deskId);
+  // One JS-side reconcile so the adoption surfaces what the Rust-side
+  // post-adopt scan saw: files the provider hasn't delivered yet get
+  // their downloads kicked (iOS) and a sync-log line, instead of the
+  // desk quietly opening short. Removals are grace-gated in Rust, so
+  // this can only add.
+  if (deskId) await reconcileDesk(state, deskId);
   return deskId;
 }
 
@@ -228,6 +234,48 @@ export async function revealDeskRoot(state, deskId) {
   } catch (e) { console.error("reveal desk folder failed:", e); }
 }
 
+/** How many placeholder downloads one reconcile pass will ask iCloud
+ *  for. The next reconcile (watcher / foreground / boot) picks up where
+ *  this one left off, so a huge desk drains in slices instead of
+ *  queueing hundreds of coordinated reads at once. */
+const MAX_DOWNLOAD_KICKS = 25;
+
+/** iOS: ask iCloud to materialise files the reconciler saw only as
+ *  `.icloud` placeholders. Plain `std::fs` (the desk I/O path) never
+ *  triggers a download, so without this an evicted file would stay
+ *  invisible forever. The plugin's coordinated `read_file` runs
+ *  `startDownloadingUbiquitousItem` and blocks until the bytes land —
+ *  run detached and sequential so reconciles aren't held up and the
+ *  daemon isn't hammered; the NSMetadataQuery watch reconciles each
+ *  file in as it arrives. Desktop is a no-op: post-12.3 macOS shows
+ *  dataless files under their real names and materialises them on read. */
+function kickPendingDownloads(report) {
+  if (!isIOSTauri()) return;
+  const paths = (report?.pendingDownloads || []).slice(0, MAX_DOWNLOAD_KICKS);
+  if (paths.length === 0) return;
+  void (async () => {
+    for (const path of paths) {
+      try { await plugin("read_file", { path }); } catch (_) { /* offline / gone — next pass retries */ }
+    }
+  })();
+}
+
+// Last "N files awaiting download / in removal grace" count logged per
+// desk, so the sync log records changes rather than every scan.
+const _lastPendingLogged = new Map();
+
+async function notePendingFiles(state, deskId, report) {
+  const pending = report?.pending || 0;
+  if (pending === (_lastPendingLogged.get(deskId) || 0)) return;
+  _lastPendingLogged.set(deskId, pending);
+  if (pending === 0) return;
+  try {
+    const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
+    const { appendSyncLog } = await import("./sync-feedback.js");
+    appendSyncLog(`${pending} file${pending === 1 ? "" : "s"} in "${desk?.name || deskId}" not downloaded yet — kept in place`);
+  } catch (_) {}
+}
+
 /** Run the disk-wins reconcile for one desk and refresh the UI when it
  *  changed anything. Also reloads the open doc's buffer when its on-disk
  *  content moved (identical-content and dirty-buffer cases are both
@@ -241,6 +289,8 @@ export async function reconcileDesk(state, deskId) {
     console.warn("desk_reconcile failed:", e);
     return;
   }
+  kickPendingDownloads(report);
+  await notePendingFiles(state, deskId, report);
   if (report && (report.added > 0 || report.removed > 0 || report.renamed > 0)) {
     const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
     logActivity("desks", report.removed > 0 ? "warn" : "info",
@@ -422,6 +472,12 @@ export async function installDeskRootsLifecycle(state) {
   }
   await refreshDeskRoots(state);
   await pullAllDeskMeta(state);
+  // Boot reconcile: the watcher below only covers the running session,
+  // so files that landed (or vanished) while Hush was closed would
+  // otherwise stay invisible until some unrelated folder event fired.
+  // Safe now that removals sit out a grace window — a folder the
+  // provider hasn't fully delivered can't shed files on first sight.
+  await reconcileAllLocalDesks(state);
   const { listen } = await import("@tauri-apps/api/event");
   const timers = new Map();
   await listen("desk-changed", (event) => {
