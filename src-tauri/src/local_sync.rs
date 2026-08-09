@@ -166,6 +166,13 @@ impl LocalSyncManager {
         let mut map = self.watchers.lock().unwrap();
         map.clear();
     }
+
+    /// Ids currently armed. A desk watcher's id rides into every event
+    /// it emits, so the caller needs this to spot one whose desk has
+    /// been re-keyed out from under it.
+    pub fn watched_ids(&self) -> Vec<String> {
+        self.watchers.lock().unwrap().keys().cloned().collect()
+    }
 }
 
 /// Return a sorted directory listing for `folder` at `rel_path`.

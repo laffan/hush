@@ -290,6 +290,15 @@ pub fn run() {
                 // edits reach the UI while the app runs. Bookmarked
                 // (iOS) roots get no watcher — the JS layer re-resolves
                 // the bookmark and reconciles on foreground instead.
+                //
+                // Settle the registrations *first*. A watcher is keyed by
+                // desk id and that key rides into every `desk-changed`
+                // event, so arming before the identity repair pinned the
+                // watcher to the id the repair was about to retire: every
+                // change in the folder then reconciled a desk that no
+                // longer existed ("no tree for desk …" on repeat) while
+                // the desk that did exist was watched by nobody.
+                desk_store::DeskStore::new(&crate::get_data_dir()).reconcile_desk_registrations();
                 for (desk_id, entry) in
                     desk_roots::load_entries(&crate::get_data_dir().join("desks"))
                 {
@@ -511,6 +520,7 @@ pub fn run() {
             commands::desks::desk_make_internal,
             commands::desks::desk_open_folder_as_desk,
             commands::desks::desk_unregister_root,
+            commands::desks::desk_rearm_watchers,
             commands::desks::desk_reconcile,
             commands::desks::desk_archive,
             commands::desks::desk_discard_archived,

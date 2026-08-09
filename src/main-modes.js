@@ -11,7 +11,7 @@
  * first surface mounts.
  */
 
-import { mountNotebook, unmountNotebook, saveNotebook, getCanvasInstance, reloadNotebookShapes } from "./notebook/notebook-bridge.js";
+import { mountNotebook, unmountNotebook, saveNotebook, getCanvasInstance, reloadNotebookShapes, isNotebookDirty } from "./notebook/notebook-bridge.js";
 import { applyActiveStyle } from "./style-application.js";
 import { mountEmptyState } from "./editor/empty-state.js";
 
@@ -125,6 +125,16 @@ export async function setupModeSwitching(state) {
   });
   state.on("notebook-sync-reload", (content) => {
     reloadNotebookShapes(content).catch((e) => console.warn("notebook-sync-reload failed:", e));
+  });
+  // Same thing from a *folder* pull (a far device's strokes arriving
+  // through iCloud/Dropbox), with the guard the doc path has always had:
+  // never mirror over an unsaved canvas. Notebook autosave runs on a
+  // couple of seconds, so "dirty" is a short window — the far change
+  // lands on the next reconcile pass instead of taking the strokes
+  // in progress with it.
+  state.on("notebook-external-reload", (content) => {
+    if (isNotebookDirty()) return;
+    reloadNotebookShapes(content).catch((e) => console.warn("notebook-external-reload failed:", e));
   });
   state.on("file-opened", () => {
     emptyPaneActive = false;

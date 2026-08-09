@@ -187,6 +187,50 @@ fn a_desk_folder_awaiting_download_is_not_initialised_as_new() {
     assert!(!folder.join(".hush/tree.json").exists());
 }
 
+/// A file and the sidecar that names it arrive **separately**, and in
+/// whatever order the provider feels like. When the file lands first,
+/// the reconciler used to mint a brand-new fileId for it and add a
+/// second node beside the one the synced `tree.json` already carried —
+/// so the far device's row was left pointing at an id this install had
+/// just orphaned. Its writes then went to `.staging/<id>`, a per-device
+/// file that never syncs: the notebook appeared on both machines and
+/// then quietly stopped carrying anything drawn into it.
+///
+/// The tree is an identity record too. If it already claims the path,
+/// that claim wins over minting.
+#[test]
+fn a_file_that_arrives_before_the_index_keeps_the_tree_s_id() {
+    let dir = tmp();
+    let store = seed_simple_desk(dir.path());
+    let external = tmp();
+    let folder = external.path().join("Shared");
+    store.make_desk_local("d1", &folder, None).unwrap();
+
+    // The far side's tree.json arrived (it names the notebook) and so
+    // did the notebook, but its index.json hasn't.
+    let mut desk = store.load_desk_tree("d1").unwrap();
+    desk.children.push(node("n2", "notebook", "Sketch", Some("far-file-id"), Vec::new()));
+    fs::write(
+        folder.join(".hush/tree.json"),
+        serde_json::to_string_pretty(&desk).unwrap(),
+    )
+    .unwrap();
+    fs::write(folder.join("Sketch.hushnote"), b"PK\x03\x04 pretend zip").unwrap();
+
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!(report.added, 0, "the tree already had the row");
+    assert_eq!(report.matched, 1);
+
+    // The path resolves to the id the far side is still writing under.
+    let index = store.load_index("d1");
+    assert_eq!(index.get("far-file-id").map(String::as_str), Some("Sketch.hushnote"));
+    // ...and no second row was invented for it.
+    let desk = store.load_desk_tree("d1").unwrap();
+    let sketches: Vec<&TreeNode> = desk.children.iter().filter(|n| n.name == "Sketch").collect();
+    assert_eq!(sketches.len(), 1);
+    assert_eq!(sketches[0].file_id.as_deref(), Some("far-file-id"));
+}
+
 /// `.hush/index.json` present but unreadable (a half-synced sidecar) is
 /// not "this desk has no files" — reconciling on that reading re-mints a
 /// fileId for every file in the folder and strands every node the tree

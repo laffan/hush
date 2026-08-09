@@ -93,14 +93,24 @@ async function adoptFolderName(state, deskId, path) {
   }
 }
 
-/** Refresh `state.deskRoots` from Rust and notify listeners. */
+/** Refresh `state.deskRoots` from Rust and notify listeners.
+ *
+ *  A change in the *key set* means the identity repair re-keyed a folder
+ *  (or a desk came or went), and desk watchers are keyed by desk id — so
+ *  re-arm them, or the folder ends up watched under an id nothing
+ *  resolves while the live desk is watched by nobody. */
 export async function refreshDeskRoots(state) {
   if (!IS_TAURI) { state.deskRoots = {}; return {}; }
+  const before = Object.keys(state.deskRoots || {}).sort().join("|");
   try {
     state.deskRoots = await invoke("desk_list_roots") || {};
   } catch (e) {
     console.warn("desk_list_roots failed:", e);
     state.deskRoots = state.deskRoots || {};
+  }
+  if (Object.keys(state.deskRoots).sort().join("|") !== before) {
+    try { await invoke("desk_rearm_watchers"); }
+    catch (e) { console.warn("desk_rearm_watchers failed:", e); }
   }
   state.emit("desk-roots-changed");
   return state.deskRoots;
@@ -110,12 +120,16 @@ export function isLocalDesk(state, deskId) {
   return !!(deskId && state.deskRoots && state.deskRoots[deskId]);
 }
 
-/** Reload the tree from disk after Rust mutated it (reconcile/adopt). */
+/** Reload the tree from disk after Rust mutated it (reconcile/adopt).
+ *  The load is also where a desk's registration is repaired against the
+ *  id its folder carries, so re-read the roots afterwards — that's what
+ *  notices a re-key and re-arms the watchers. */
 async function reloadTree(state) {
   try {
     state.fileTree = await invoke("get_file_tree");
     state.emit("files-changed");
   } catch (e) { console.warn("tree reload failed:", e); }
+  await refreshDeskRoots(state);
 }
 
 /** Pick a folder and move the desk there. */
@@ -376,7 +390,10 @@ export async function reconcileDesk(state, deskId) {
   }
   kickPendingDownloads(state, deskId, report);
   await notePendingFiles(state, deskId, report);
-  if (report && (report.added > 0 || report.removed > 0 || report.renamed > 0)) {
+  // `matched` is in here too: it doesn't change the tree, but re-pairing
+  // a row with the fileId the far device is writing under is exactly the
+  // event worth having on the record when sync goes wrong.
+  if (report && (report.added > 0 || report.removed > 0 || report.renamed > 0 || report.matched > 0)) {
     const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
     logActivity("desks", report.removed > 0 ? "warn" : "info",
       `Desk folder reconciled: "${desk?.name || deskId}"`, report);
@@ -387,6 +404,7 @@ export async function reconcileDesk(state, deskId) {
       if (report.added) bits.push(`${report.added} added`);
       if (report.removed) bits.push(`${report.removed} removed`);
       if (report.renamed) bits.push(`${report.renamed} renamed`);
+      if (report.matched) bits.push(`${report.matched} re-paired`);
       appendSyncLog(`Desk folder reconciled: ${bits.join(", ")}`);
     } catch (_) {}
   }
@@ -414,6 +432,7 @@ export async function reconcileDesk(state, deskId) {
     await pullDeskMeta(state, deskId);
   } catch (_) {}
   await maybeReloadOpenDoc(state, deskId);
+  await maybeReloadOpenNotebook(state, deskId);
 }
 
 /** If the open doc lives in `deskId`, re-read it from disk and apply the
@@ -431,6 +450,37 @@ async function maybeReloadOpenDoc(state, deskId) {
       skipWhenDirty: true,
     });
   } catch (_) { /* file may have just been removed by the reconcile */ }
+}
+
+/** The same thing for an open notebook — which the reconcile never did,
+ *  so a canvas open on this device simply never saw the far device's
+ *  strokes. The reconciler reports *structure* (added / removed /
+ *  renamed); a `.hushnote` whose bytes changed under it is no event at
+ *  all, exactly as with a doc, so the open surface has to re-read on
+ *  every pass or it goes stale until it's closed and re-opened.
+ *
+ *  Routed through the `notebook-external-reload` event rather than an
+ *  import, so this module stays clear of the lazily-loaded notebook
+ *  bundle. The handler skips an unsaved canvas (the doc path's
+ *  `skipWhenDirty` policy) and then `mirror`s the incoming content:
+ *  local undo history survives, the remote edit lands as one
+ *  checkpoint, content byte-identical to our own last write is a no-op,
+ *  and the incoming camera is deliberately ignored — viewports are
+ *  per-device. The pull lock keeps the mirror from looping back out
+ *  through autosave.
+ *
+ *  Stacks (`.hushstack`) have no equivalent reload path and still need
+ *  a re-open to pick up a far-side edit. */
+async function maybeReloadOpenNotebook(state, deskId) {
+  const fileId = state.currentNotebookFileId;
+  if (!fileId || !fileInDesk(state, deskId, fileId)) return;
+  state.acquirePullLock(fileId);
+  try {
+    const file = await invoke("load_file", { id: fileId });
+    if (!file || state.currentNotebookFileId !== fileId) return;
+    state.emit("notebook-external-reload", file.content);
+  } catch (_) { /* file may have just been removed by the reconcile */ }
+  finally { state.releasePullLock(); }
 }
 
 function fileInDesk(state, deskId, fileId) {

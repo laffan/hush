@@ -139,6 +139,44 @@ pub fn desk_open_folder_as_desk(
     Ok(outcome)
 }
 
+/// Re-arm the local-desk filesystem watchers against the roots as they
+/// stand now.
+///
+/// A watcher is keyed by desk id, and that key rides into every
+/// `desk-changed` event it emits. When the identity repair re-keys a
+/// folder (see desk_identity.rs) the watcher armed under the old id
+/// keeps firing under an id nothing resolves — "no tree for desk …" on
+/// every file event — while the desk that does exist is watched by
+/// nobody, so nothing from the far device lands until the next launch.
+/// Boot orders the repair before the arming; this covers a re-key that
+/// happens mid-session. Idempotent and cheap: already-armed roots are
+/// left alone.
+#[tauri::command]
+pub fn desk_rearm_watchers(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    let entries = crate::desk_roots::load_entries(&crate::get_data_dir().join("desks"));
+    let watched = state.desk_watch_manager.watched_ids();
+    for id in &watched {
+        if !entries.contains_key(id) {
+            state.desk_watch_manager.unwatch(id);
+        }
+    }
+    for (desk_id, entry) in entries {
+        // Bookmarked (iOS) roots never get a notify watcher.
+        if entry.bookmark().is_some() || watched.contains(&desk_id) {
+            continue;
+        }
+        if let Err(e) = state.desk_watch_manager.watch_path(
+            app.clone(),
+            &desk_id,
+            Path::new(entry.path()),
+            "desk-changed",
+        ) {
+            eprintln!("desk watcher failed for {}: {}", desk_id, e);
+        }
+    }
+    Ok(())
+}
+
 /// Explicitly disconnect a local desk's folder — the delete-desk path.
 /// `save_forest` deliberately never unregisters a root on its own (a
 /// desk missing from one saved tree is indistinguishable from a stale

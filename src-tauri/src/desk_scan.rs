@@ -98,6 +98,10 @@ pub struct ScanReport {
     pub added: usize,
     pub removed: usize,
     pub renamed: usize,
+    /// Files on disk that the tree already had a row for, re-paired with
+    /// that row's fileId instead of being minted as new — the sidecar
+    /// hadn't arrived yet. Structure didn't change; the index did.
+    pub matched: usize,
     pub conflicts: usize,
     /// Index entries whose file is absent but deliberately *kept*: an
     /// iCloud placeholder stands in for it, or the absence hasn't
@@ -113,6 +117,12 @@ impl ScanReport {
     /// Whether the tree/index changed (conflict adoption rewrites file
     /// *content* but leaves structure alone, so it isn't counted here).
     pub fn changed(&self) -> bool {
+        self.added > 0 || self.removed > 0 || self.renamed > 0 || self.matched > 0
+    }
+
+    /// Whether the *tree* changed — what the frontend needs to reload
+    /// for. A match only rewrites the index.
+    pub fn structural(&self) -> bool {
         self.added > 0 || self.removed > 0 || self.renamed > 0
     }
 }
@@ -194,12 +204,57 @@ impl DeskStore {
         }
         let mut paired: HashSet<String> = HashSet::new();
 
+        // Paths the *tree* already claims for a fileId the index doesn't
+        // place yet. A desk folder's sidecars sync as separate files, in
+        // whatever order the provider likes, so a file routinely lands
+        // before the `index.json` naming it — while `tree.json`, which
+        // names it too, may well have arrived already. Minting a fresh
+        // id on that reading orphans the id the *other* device is still
+        // writing under, and its saves fall through to `.staging/<id>`,
+        // a per-device file that never syncs: the file appears on both
+        // machines and then silently stops carrying anything. The tree
+        // is an identity record; consult it before inventing one.
+        let mut tree_claims: HashMap<String, String> = HashMap::new();
+        {
+            let mut expected = HashMap::new();
+            let mut dirs = HashSet::new();
+            crate::desk_paths::collect_expected(
+                &desk.children,
+                &mut Vec::new(),
+                &mut expected,
+                &mut dirs,
+            );
+            for (id, rel) in expected {
+                if !index.contains_key(&id) {
+                    tree_claims.insert(rel, id);
+                }
+            }
+        }
+
         // ----- Additions: recognised files with no index entry -----
         let known: HashSet<String> = index.values().cloned().collect();
         let mut on_disk = Vec::new();
         walk_files(&root, &root, &mut on_disk);
         for rel in on_disk {
             if known.contains(&rel) {
+                continue;
+            }
+            // The tree's own claim on this path wins over minting.
+            if let Some(id) = tree_claims.remove(&rel) {
+                if kind_for_rel(&rel).as_deref() != Some("image") {
+                    if let Ok(bytes) = fs::read(root.join(&rel)) {
+                        hashes.insert(
+                            id.clone(),
+                            HashEntry {
+                                hash: fnv1a_hex(&bytes),
+                                mtime: mtime_ms(&root.join(&rel)),
+                            },
+                        );
+                        hashes_dirty = true;
+                    }
+                }
+                index.insert(id, rel);
+                report.matched += 1;
                 continue;
             }
             let Some(node_type) = kind_for_rel(&rel) else { continue };
@@ -311,6 +366,12 @@ impl DeskStore {
 
         if report.changed() {
             self.save_index(desk_id, &index)?;
+        }
+        // The tree is only rewritten when the *tree* changed. A re-paired
+        // file leaves it byte-identical, and rewriting it anyway bumps
+        // the mtime of a file sitting in a synced folder — which the far
+        // device's watcher then reports as a change, for nothing.
+        if report.structural() {
             crate::atomic::write_atomic_str(
                 &self.tree_path(desk_id),
                 &serde_json::to_string_pretty(&desk)?,
