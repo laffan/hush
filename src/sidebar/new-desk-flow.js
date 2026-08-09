@@ -14,6 +14,13 @@
  *     for — the picker is the whole flow, and the desk can't be renamed
  *     afterwards (rename the folder instead).
  *
+ * The local branch is named for what people actually come here to do —
+ * **Use Local Folder as Desk…** — because the two jobs it does are one
+ * gesture: make a plain folder into a desk, *and* pick up the folder
+ * another device already keeps a desk in. Labelling it "Local folder…"
+ * left the second job with no visible door, and people went looking for
+ * one (see README-SYNC § desk identity).
+ *
  * Outside Tauri there is no folder picker, so the fork is skipped and
  * the internal prompt opens directly.
  */
@@ -61,9 +68,10 @@ export function startNewDeskFlow(state, { onCreated } = {}) {
         },
         {
           id: "local",
-          label: "Local folder…",
-          detail: "The folder you pick becomes the desk — it takes that folder's name, and any "
-            + "files already inside come with it. A sync provider can then carry it between devices.",
+          label: "Use Local Folder as Desk…",
+          detail: "The folder you pick becomes the desk — it takes that folder's name, and any files "
+            + "already inside come with it. Pick a folder your other device already keeps a desk in "
+            + "(iCloud Drive, Dropbox, Syncthing) and you join that desk, files and history intact.",
         },
       ],
       onPick: async (choice) => {

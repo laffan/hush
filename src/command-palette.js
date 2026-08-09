@@ -173,9 +173,15 @@ function open(state) {
   // keyboardNav clears in the row pointerenter handler (mouse only);
   // an overlay-wide pointermove would fire per touch frame on iPad.
 
+  // Matches the visible label plus an optional `keywords` string — the
+  // hidden half of a command's name. A command that got renamed keeps
+  // its old wording searchable there, so muscle memory still lands.
+  const matches = (c, q) =>
+    c.label.toLowerCase().includes(q) || (c.keywords || "").toLowerCase().includes(q);
+
   input.addEventListener("input", () => {
     const q = input.value.trim().toLowerCase();
-    filteredCommands = !q ? [...allCommands] : allCommands.filter(c => c.label.toLowerCase().includes(q));
+    filteredCommands = !q ? [...allCommands] : allCommands.filter(c => matches(c, q));
     activeIndex = 0;
     renderList(list, state);
   });

@@ -80,9 +80,14 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
         const desk = s.getActiveDesk();
         if (desk) await (await import("./sync/desk-roots.js")).revealDeskRoot(s, desk.id);
       } },
-    // Any folder, not just one that already holds a desk — a plain
-    // directory is initialised in place and its files absorbed.
-    { id: "desk-adopt", label: "Open Folder as Desk…", icon: icons.desk, shortcutKey: null, ctx: "shared",
+    // Any folder, not just one that already holds a desk: a plain
+    // directory is initialised in place and its files absorbed, and a
+    // folder another device already keeps a desk in is *joined* — same
+    // desk, same identity, files and history intact. Named for that
+    // second job as well as the first, since it's the one people go
+    // looking for; `keywords` keeps the old wording finding it.
+    { id: "desk-adopt", label: "Use Local Folder as Desk…", icon: icons.desk, shortcutKey: null, ctx: "shared",
+      keywords: "open folder as desk adopt existing icloud dropbox syncthing sync between devices local",
       hiddenIf: () => !desktop && !ipad,
       action: async (s) => (await import("./sync/desk-roots.js")).adoptDeskFolder(s) },
     { id: "desk-convert-folder", label: "Convert folder to desk", icon: icons.desk, shortcutKey: null, ctx: "shared",

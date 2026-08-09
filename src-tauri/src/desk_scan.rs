@@ -124,7 +124,10 @@ impl DeskStore {
         let mut desk = self
             .load_desk_tree(desk_id)
             .ok_or_else(|| format!("no tree for desk {}", desk_id))?;
-        let mut index = self.load_index(desk_id);
+        // Strict: an index we can't read is not an empty one. Rebuilding
+        // the desk from that reading re-mints a fileId for every file in
+        // the folder and strands every node the tree already had.
+        let mut index = self.try_load_index(desk_id)?;
         let root = self.desk_dir(desk_id);
         let mut report = ScanReport::default();
 

@@ -47,6 +47,34 @@ async function pickFolder(title) {
   return picked ? { path: picked, bookmark: null } : null;
 }
 
+/** The sidecars that say *which desk* a folder is. Order matters only in
+ *  that `.hushdesk` is the one the identity is read from first. */
+const DESK_SIDECARS = [".hushdesk", ".hush/tree.json", ".hush/index.json"];
+
+/** iOS: get a folder's desk sidecars onto the device before anything
+ *  asks what desk it is.
+ *
+ *  This is the difference between the two platforms that made the same
+ *  gesture safe on a Mac and destructive on an iPad. macOS materialises
+ *  a dataless file on `open()`; iOS does not — an evicted file is a
+ *  `.<name>.icloud` placeholder and plain `std::fs` (which is the entire
+ *  desk store) never triggers a download. So an undelivered `.hushdesk`
+ *  read as "not a desk folder", and the answer to that used to be "then
+ *  it's a blank folder — mint a new desk here": two devices, two ids,
+ *  one folder, and the identity flip-flopping between them on every
+ *  save. Rust now refuses to guess (`desk_identity::inspect_folder`),
+ *  and this makes sure it usually doesn't have to. The plugin's
+ *  coordinated read runs `startDownloadingUbiquitousItem` and waits for
+ *  the bytes. */
+export async function materialiseDeskSidecars(root) {
+  if (!isIOSTauri() || !root) return;
+  const base = String(root).replace(/\/+$/, "");
+  for (const rel of DESK_SIDECARS) {
+    try { await plugin("read_file", { path: `${base}/${rel}` }); }
+    catch (_) { /* absent, offline, or genuinely not a desk — the caller decides */ }
+  }
+}
+
 /** Last path segment of a picked folder — a local desk's name. Handles
  *  both separators and tolerates a trailing slash. */
 export function folderName(path) {
@@ -128,25 +156,41 @@ export async function makeDeskInternal(state, deskId) {
 }
 
 /** Pick a folder and open it **as** a desk — the folder itself becomes
- *  the desk root. A folder another install already made into a desk is
- *  adopted whole (identity, ordering, version history); any other folder
- *  is initialised in place, and whatever docs, notebooks and images are
- *  already sitting in it are absorbed as the desk's contents. Nothing is
- *  moved or nested. Returns the desk id, or null.
+ *  the desk root. A folder that is already a Hush desk is adopted whole
+ *  (identity, ordering, version history) — including the case that
+ *  matters most: the folder your *other* device already keeps a desk in,
+ *  which joins that desk rather than starting a rival one beside it. A
+ *  folder with no trace of a desk is initialised in place, and whatever
+ *  docs, notebooks and images are already sitting in it are absorbed as
+ *  the desk's contents. Nothing is moved or nested. Returns the desk id,
+ *  or null.
  *
- *  Both the **New desk → Local folder…** branch and **Open Folder as
- *  Desk…** land here; they differ only in the picker's prompt. */
-export async function adoptDeskFolder(state, title = "Open a folder as a desk") {
+ *  Both the **New desk → Use Local Folder as Desk…** branch and the
+ *  command palette entry land here; they differ only in the prompt. */
+export async function adoptDeskFolder(state, title = "Choose a folder to use as a desk") {
   if (!IS_TAURI) return null;
   const picked = await pickFolder(title);
   if (!picked) return null;
-  let deskId = null;
+  // Ask iCloud for the folder's identity sidecars first — see
+  // materialiseDeskSidecars. Rust refuses to initialise over a desk it
+  // can't read, so without this an undelivered folder is a dead end
+  // rather than a wrong answer; with it, it usually just works.
+  await materialiseDeskSidecars(picked.path);
+  let outcome = null;
   try {
-    deskId = await invoke("desk_open_folder_as_desk", { path: picked.path, bookmark: picked.bookmark });
+    outcome = await invoke("desk_open_folder_as_desk", { path: picked.path, bookmark: picked.bookmark });
   } catch (e) {
+    logActivity("desks", "error", "Couldn't open a folder as a desk", { path: picked.path, error: String(e) });
     window.alert(`Couldn't open that folder as a desk:\n${e}`);
     return null;
   }
+  // Older builds of the command answered with a bare id string.
+  const deskId = typeof outcome === "string" ? outcome : outcome?.deskId || null;
+  logActivity("desks", "info",
+    outcome?.adopted
+      ? `Joined the desk already in "${folderName(picked.path)}"`
+      : `Made "${folderName(picked.path)}" a desk in place`,
+    { deskId, files: outcome?.absorbed ?? null, path: picked.path });
   await refreshDeskRoots(state);
   await reloadTree(state);
   // Mirror the desk into the settings registry so the switcher, pickers,
@@ -180,14 +224,39 @@ export async function adoptDeskFolder(state, title = "Open a folder as a desk") 
   // desk quietly opening short. Removals are grace-gated in Rust, so
   // this can only add.
   if (deskId) await reconcileDesk(state, deskId);
+  // Say what happened out loud. "I picked my other machine's folder and
+  // the desk came up empty" is the report this whole path exists to
+  // prevent, so the answer to "did it take my files?" shouldn't be
+  // "count the rows in the sidebar".
+  try {
+    const deskNode = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
+    const count = deskNode ? countFiles(deskNode.children) : 0;
+    const { showImportToast } = await import("../editor/import-toast.js");
+    showImportToast(
+      outcome?.adopted
+        ? `Joined the desk already in "${name}" — ${count} file${count === 1 ? "" : "s"}`
+        : `"${name}" is now a desk — ${count} existing file${count === 1 ? "" : "s"} absorbed`,
+      "info",
+    );
+  } catch (_) {}
   return deskId;
 }
 
+/** File-backed rows under a desk, for the "what did I just get?" toast. */
+function countFiles(nodes) {
+  let n = 0;
+  for (const node of nodes || []) {
+    if (node?.fileId) n++;
+    if (node?.children) n += countFiles(node.children);
+  }
+  return n;
+}
+
 /** Create a desk out of a folder the user picks — the New-desk fork's
- *  Local branch. Same operation as adopting a desk folder; only the
- *  picker's prompt differs. */
+ *  **Use Local Folder as Desk…** branch. Same operation as the command
+ *  palette entry; only the picker's prompt differs. */
 export function createLocalDesk(state) {
-  return adoptDeskFolder(state, "Choose a folder for the new desk");
+  return adoptDeskFolder(state, "Choose a folder to use as this desk");
 }
 
 /** Safety net for the desk's Inbox / Images / Archive / Trash. Rust
@@ -246,17 +315,28 @@ const MAX_DOWNLOAD_KICKS = 25;
  *  invisible forever. The plugin's coordinated `read_file` runs
  *  `startDownloadingUbiquitousItem` and blocks until the bytes land —
  *  run detached and sequential so reconciles aren't held up and the
- *  daemon isn't hammered; the NSMetadataQuery watch reconciles each
- *  file in as it arrives. Desktop is a no-op: post-12.3 macOS shows
- *  dataless files under their real names and materialises them on read. */
-function kickPendingDownloads(report) {
+ *  daemon isn't hammered. Desktop is a no-op: post-12.3 macOS shows
+ *  dataless files under their real names and materialises them on read.
+ *
+ *  A file only becomes a *tree row* on the next reconcile, so this
+ *  re-runs one itself once anything actually landed. The
+ *  NSMetadataQuery watch would normally do that — but it is iCloud-only
+ *  (a Dropbox or Syncthing folder emits nothing) and it can be
+ *  unavailable, in which case the freshly-downloaded file would sit
+ *  there unseen until the next time the app came to the foreground.
+ *  Gated on a read having *succeeded*, so a file that can't download
+ *  can't spin this in a loop. */
+function kickPendingDownloads(state, deskId, report) {
   if (!isIOSTauri()) return;
   const paths = (report?.pendingDownloads || []).slice(0, MAX_DOWNLOAD_KICKS);
   if (paths.length === 0) return;
   void (async () => {
+    let landed = 0;
     for (const path of paths) {
-      try { await plugin("read_file", { path }); } catch (_) { /* offline / gone — next pass retries */ }
+      try { await plugin("read_file", { path }); landed++; }
+      catch (_) { /* offline / gone — next pass retries */ }
     }
+    if (landed > 0) await reconcileDesk(state, deskId).catch(() => {});
   })();
 }
 
@@ -287,9 +367,14 @@ export async function reconcileDesk(state, deskId) {
     report = await invoke("desk_reconcile", { deskId });
   } catch (e) {
     console.warn("desk_reconcile failed:", e);
+    // "no tree for desk" / "index.json hasn't downloaded yet" on iOS
+    // means the folder's own sidecars aren't on the device — nothing
+    // else ever asks iCloud for them, so the desk would stay stuck.
+    // Detached: the next watcher event or foreground pass picks it up.
+    void materialiseDeskSidecars(state.deskRoots?.[deskId]);
     return;
   }
-  kickPendingDownloads(report);
+  kickPendingDownloads(state, deskId, report);
   await notePendingFiles(state, deskId, report);
   if (report && (report.added > 0 || report.removed > 0 || report.renamed > 0)) {
     const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
@@ -436,7 +521,17 @@ async function armIOSLiveUpdates(state) {
       }, 400));
     });
   } catch (e) {
+    // Without the listener there are no live updates at all on iPad —
+    // only the foreground reconcile — so this is worth more than a
+    // console line. (It went unnoticed for a while as exactly that: the
+    // plugin's `registerListener` command wasn't in its permission set,
+    // so every launch logged "not allowed" and quietly fell back.)
     console.warn("desk live-update listener failed:", e);
+    logActivity("desks", "error", "iCloud live updates unavailable — falling back to foreground reconcile", { error: String(e) });
+    try {
+      const { appendSyncLog } = await import("./sync-feedback.js");
+      appendSyncLog("[!] Live iCloud updates unavailable — desks refresh when the app returns to the foreground");
+    } catch (_) {}
     return;
   }
   for (const path of Object.values(state.deskRoots || {})) {
@@ -457,6 +552,11 @@ export async function installDeskRootsLifecycle(state) {
     // load could see the local desks; repeating it is a cheap no-op and
     // keeps this entry point self-sufficient.
     await acquireLocalDeskAccess(state);
+    // Nudge every local desk's identity sidecars onto the device.
+    // Detached on purpose: a coordinated read blocks until iCloud
+    // delivers, and boot must not wait on the network. The watcher and
+    // the foreground pass below are what act on the result.
+    for (const path of Object.values(state.deskRoots || {})) void materialiseDeskSidecars(path);
     await pullAllDeskMeta(state);
     await reconcileAllLocalDesks(state);
     await armIOSLiveUpdates(state);

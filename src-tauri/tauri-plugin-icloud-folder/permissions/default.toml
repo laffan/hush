@@ -1,6 +1,16 @@
 "$schema" = "schemas/schema.json"
 
 [[permission]]
+identifier = "allow-register-listener"
+description = "Allow JS to register a listener for plugin events via addPluginListener() — how `watch-changed` reaches the frontend."
+commands.allow = ["registerListener"]
+
+[[permission]]
+identifier = "allow-remove-listener"
+description = "Allow JS to remove a previously registered plugin-event listener."
+commands.allow = ["removeListener"]
+
+[[permission]]
 identifier = "allow-pick-folder"
 description = "Allow JS to present the iOS folder picker and mint a security-scoped bookmark."
 commands.allow = ["pick_folder"]
@@ -86,8 +96,16 @@ description = "Allow JS to disarm a folder's NSMetadataQuery live-update watch."
 commands.allow = ["stop_watch"]
 
 [default]
-description = "Default permissions: allow the full folder-bookmark demo flow (pick, resolve, list, read, write, stop)."
+description = "Default permissions: allow the full folder-bookmark flow (pick, resolve, list, read, write, stop) plus the event subscription that carries live iCloud updates."
 permissions = [
+  # `start_watch` arms the NSMetadataQuery, but its `watch-changed` event
+  # only reaches JS through addPluginListener — which is itself a
+  # command, and needs allowing. Without these two the iPad armed every
+  # watch and then threw "icloud-folder.registerListener not allowed" at
+  # boot, leaving synced-in changes invisible until the next foreground
+  # reconcile.
+  "allow-register-listener",
+  "allow-remove-listener",
   "allow-pick-folder",
   "allow-resolve-bookmark",
   "allow-stop-access",

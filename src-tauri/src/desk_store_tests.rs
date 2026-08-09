@@ -398,3 +398,8 @@ mod roots_tests;
 // sequence). Same child-module pattern as roots_tests above.
 #[path = "desk_adopt_flow_tests.rs"]
 mod adopt_flow_tests;
+
+// Desk identity across two installs sharing one folder — the id in the
+// folder vs. the id this device registered it under.
+#[path = "desk_identity_tests.rs"]
+mod identity_tests;

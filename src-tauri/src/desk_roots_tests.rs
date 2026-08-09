@@ -69,8 +69,10 @@ fn adopt_registers_a_foreign_desk_folder() {
     assert_eq!(forest[0].name, "Personal");
     let (content, _, _) = store_b.read_by_id("f1").unwrap();
     assert_eq!(content, "body");
-    // Double-adopt refuses.
-    assert!(store_b.adopt_desk_folder(&target, None).is_err());
+    // Double-adopt is a no-op, not an error — one folder, one desk,
+    // however many times it's picked.
+    assert_eq!(store_b.adopt_desk_folder(&target, None).unwrap(), "d1");
+    assert_eq!(store_b.list_roots().len(), 1);
 }
 
 #[test]
@@ -169,7 +171,7 @@ fn absorbed_docs_keep_their_own_extension_across_tree_saves() {
 }
 
 #[test]
-fn opening_an_existing_desk_folder_adopts_it_and_refuses_twice() {
+fn opening_an_existing_desk_folder_adopts_it_and_is_idempotent() {
     // A desk produced by one install...
     let install_a = tmp();
     let store_a = seed_simple_desk(install_a.path());
@@ -183,7 +185,12 @@ fn opening_an_existing_desk_folder_adopts_it_and_refuses_twice() {
     assert_eq!(store_b.open_folder_as_desk(&target, None).unwrap(), "d1");
     let (content, _, _) = store_b.read_by_id("f1").unwrap();
     assert_eq!(content, "body");
-    assert!(store_b.open_folder_as_desk(&target, None).is_err(), "already registered");
+    // Re-picking the same folder lands back on the same desk instead of
+    // erroring: refusing is what pushed a user to keep re-picking, and
+    // each retry that arrived while the folder's id had flipped minted a
+    // second registration for the one folder.
+    assert_eq!(store_b.open_folder_as_desk(&target, None).unwrap(), "d1");
+    assert_eq!(store_b.list_roots().len(), 1);
 }
 
 #[test]

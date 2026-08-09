@@ -134,9 +134,15 @@ export async function syncDesksRegistryWithTree(state) {
   const treeDesks = tree.filter((n) => n?.type === "desk");
   const treeIds = new Set(treeDesks.map((n) => n.id));
   const list = state.settings?.desks || [];
-  const pruned = list.filter((d) => treeIds.has(d.id));
-  const known = new Set(pruned.map((d) => d.id));
-  const missing = treeDesks.filter((n) => !known.has(n.id));
+  // Prune *and* de-duplicate. A registry row is a desk id, so two rows
+  // carrying one id are one desk shown twice — the switcher listing
+  // "Letters, Letters, Letters" after a forest picked the same folder up
+  // under several registrations. The forest can't do that any more (see
+  // desk_identity.rs), but the rows it already wrote are still in
+  // settings and nothing else would ever clear them.
+  const known = new Set();
+  const pruned = list.filter((d) => treeIds.has(d.id) && !known.has(d.id) && known.add(d.id));
+  const missing = treeDesks.filter((n) => !known.has(n.id) && known.add(n.id));
   const activeId = state.settings?.activeDeskId;
   const activeOk = !!activeId && treeIds.has(activeId);
   if (pruned.length === list.length && !missing.length && (activeOk || !treeDesks.length)) return false;
@@ -161,8 +167,9 @@ export async function syncDesksRegistryWithTree(state) {
   for (const n of missing) if (!meta[n.id]) meta[n.id] = { globalStyleId: null };
   const activeDeskId = activeOk ? activeId : (treeDesks[0]?.id || null);
   if (pruned.length !== list.length) {
+    const kept = new Set(pruned); // same row objects, so identity is the test
     logActivity("desks", "warn", "Desk registry pruned", {
-      dropped: list.filter((d) => !treeIds.has(d.id)).map((d) => `${d.name} (${d.id})`),
+      dropped: list.filter((d) => !kept.has(d)).map((d) => `${d.name} (${d.id})`),
       treeDesks: treeDesks.map((d) => d.name),
     });
   }

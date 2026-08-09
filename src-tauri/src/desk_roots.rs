@@ -113,7 +113,7 @@ pub fn load_roots(desks_dir: &Path) -> HashMap<String, String> {
         .collect()
 }
 
-fn save_entries(desks_dir: &Path, map: &HashMap<String, RootEntry>) -> Result<(), BoxError> {
+pub(crate) fn save_entries(desks_dir: &Path, map: &HashMap<String, RootEntry>) -> Result<(), BoxError> {
     let payload = serde_json::json!({ "format": "hush-desk-roots", "version": 2, "roots": map });
     crate::atomic::write_atomic_str(
         &roots_path(desks_dir),
@@ -231,8 +231,15 @@ impl DeskStore {
     }
 
     /// Register an existing desk folder produced by any Hush install.
-    /// Returns the adopted desk's id. `bookmark` is the iOS
-    /// security-scoped bookmark for the folder, when there is one.
+    /// Returns the adopted desk's id — **the id the folder carries**,
+    /// never a fresh one. `bookmark` is the iOS security-scoped bookmark
+    /// for the folder, when there is one.
+    ///
+    /// Idempotent by design: re-picking a folder that is already open as
+    /// a desk lands you back on that desk. Refusing instead is what
+    /// pushed a confused user to keep re-picking, and every re-pick that
+    /// arrived while the folder's id had flipped underneath them minted
+    /// a *second* registration for the same folder (see desk_identity).
     pub fn adopt_desk_folder(
         &self,
         path: &Path,
@@ -241,23 +248,47 @@ impl DeskStore {
         if !path.is_absolute() {
             return Err("path must be absolute".into());
         }
-        let meta_raw = fs::read_to_string(path.join(".hushdesk"))
-            .map_err(|_| "not a desk folder (missing .hushdesk)")?;
-        let meta: serde_json::Value = serde_json::from_str(&meta_raw)?;
-        let desk_id = meta
-            .get("id")
-            .and_then(|v| v.as_str())
-            .ok_or("malformed .hushdesk (no id)")?
-            .to_string();
-        if !path.join(".hush").join("tree.json").exists() {
-            return Err("not a desk folder (missing .hush/tree.json)".into());
-        }
+        let desk_id = match crate::desk_identity::inspect_folder(path) {
+            crate::desk_identity::FolderDesk::Desk(id) => id,
+            crate::desk_identity::FolderDesk::Pending(why) => return Err(why.into()),
+            crate::desk_identity::FolderDesk::Plain => {
+                return Err("not a desk folder (no .hushdesk)".into())
+            }
+        };
+        // Bring roots.json in line with the folders first, so a stale
+        // registration for this path is already re-keyed to the id we
+        // just read rather than sitting beside the one we're about to
+        // write.
+        self.reconcile_desk_registrations();
         let mut roots = load_entries(&self.desks_dir);
-        if roots.contains_key(&desk_id)
-            || self.desks_dir.join(&desk_id).join(".hush").join("tree.json").exists()
-        {
+        if let Some(existing) = roots.get(&desk_id) {
+            if Path::new(existing.path()) != path {
+                return Err(format!(
+                    "desk {} is already registered at another folder",
+                    desk_id
+                )
+                .into());
+            }
+            // Already ours. Refresh the bookmark (iOS mints a new one per
+            // pick and the old one may have gone stale) and re-assert the
+            // order slot; otherwise nothing to do.
+            if bookmark.is_some() {
+                roots.insert(
+                    desk_id.clone(),
+                    RootEntry::new(path.to_string_lossy().into_owned(), bookmark),
+                );
+                save_entries(&self.desks_dir, &roots)?;
+            }
+            self.append_to_order(&desk_id)?;
+            return Ok(desk_id);
+        }
+        if self.desks_dir.join(&desk_id).join(".hush").join("tree.json").exists() {
             return Err(format!("desk {} is already registered", desk_id).into());
         }
+        // Belt and braces: one folder is one desk, so any other id still
+        // pointing here loses its claim (the repair above normally has
+        // this already, but it can only act on folders it could read).
+        roots.retain(|_, e| Path::new(e.path()) != path);
         roots.insert(
             desk_id.clone(),
             RootEntry::new(path.to_string_lossy().into_owned(), bookmark),
@@ -267,35 +298,60 @@ impl DeskStore {
         Ok(desk_id)
     }
 
-    /// Open **any** folder as a desk, in place.
-    ///
-    /// A folder that already carries `.hushdesk` + `.hush/tree.json` is
-    /// adopted as-is (the handoff case). Anything else is *initialised*:
-    /// whatever docs, notebooks and images are already inside are
-    /// absorbed into the desk tree **first** — the sidecar written into
-    /// the folder the user picked already carries them, so at no point
-    /// does the folder look like an empty desk (a window a concurrent
-    /// tree save once mistook for "this desk has no files", which is how
-    /// a populated folder could be wiped to a bare skeleton). The folder
-    /// itself becomes the desk root; nothing is moved or nested. A
-    /// failure mid-initialise removes the partial sidecars so the folder
-    /// is left exactly as picked.
-    ///
-    /// Returns the desk id either way.
+    /// Open **any** folder as a desk, in place. Thin wrapper over
+    /// `open_folder_as_desk_detailed` for callers that only want the id
+    /// (the tests, which is most of what exercises this path).
+    #[allow(dead_code)]
     pub fn open_folder_as_desk(
         &self,
         path: &Path,
         bookmark: Option<String>,
     ) -> Result<String, BoxError> {
+        self.open_folder_as_desk_detailed(path, bookmark)
+            .map(|o| o.desk_id)
+    }
+
+    /// Open **any** folder as a desk, in place.
+    ///
+    /// A folder that is already a desk is *adopted* — identity, ordering
+    /// and history intact (the handoff case, and the second-device case:
+    /// picking the folder your other machine already writes into joins
+    /// that desk rather than starting a rival one). A folder with no
+    /// trace of a desk is *initialised*: whatever docs, notebooks and
+    /// images are already inside are absorbed into the desk tree
+    /// **first** — the sidecar written into the folder the user picked
+    /// already carries them, so at no point does the folder look like an
+    /// empty desk (a window a concurrent tree save once mistook for
+    /// "this desk has no files", which is how a populated folder could be
+    /// wiped to a bare skeleton). The folder itself becomes the desk
+    /// root; nothing is moved or nested. A failure mid-initialise removes
+    /// the partial sidecars so the folder is left exactly as picked.
+    ///
+    /// A folder whose desk sidecars are present but unreadable is
+    /// **neither**: it is a desk the provider hasn't delivered yet, and
+    /// initialising a fresh desk over it is precisely how two devices end
+    /// up disagreeing about one folder's identity. Say so and stop —
+    /// `desk_identity::inspect_folder` draws that line.
+    pub fn open_folder_as_desk_detailed(
+        &self,
+        path: &Path,
+        bookmark: Option<String>,
+    ) -> Result<OpenOutcome, BoxError> {
         if !path.is_absolute() {
             return Err("path must be absolute".into());
         }
         if !path.is_dir() {
             return Err("that isn't a folder".into());
         }
-        // Already a desk — the adopt path owns identity and registration.
-        if path.join(".hushdesk").exists() && path.join(".hush").join("tree.json").exists() {
-            return self.adopt_desk_folder(path, bookmark);
+        match crate::desk_identity::inspect_folder(path) {
+            // Already a desk — the adopt path owns identity and registration.
+            crate::desk_identity::FolderDesk::Desk(_) => {
+                let desk_id = self.adopt_desk_folder(path, bookmark)?;
+                let absorbed = self.load_index(&desk_id).len();
+                return Ok(OpenOutcome { desk_id, adopted: true, absorbed });
+            }
+            crate::desk_identity::FolderDesk::Pending(why) => return Err(why.into()),
+            crate::desk_identity::FolderDesk::Plain => {}
         }
         let data_dir = self.desks_dir.parent().unwrap_or(&self.desks_dir);
         if path.starts_with(data_dir) {
@@ -304,11 +360,6 @@ impl DeskStore {
         let mut roots = load_entries(&self.desks_dir);
         if roots.values().any(|e| Path::new(e.path()) == path) {
             return Err("that folder is already open as a desk".into());
-        }
-        // A half-initialised folder (one sidecar but not the other) is
-        // not something to guess at — say so rather than overwrite.
-        if path.join(".hushdesk").exists() || path.join(".hush").exists() {
-            return Err("that folder holds a damaged desk (.hushdesk / .hush mismatch)".into());
         }
 
         let desk_id = uuid::Uuid::new_v4().to_string();
@@ -375,8 +426,22 @@ impl DeskStore {
         );
         save_entries(&self.desks_dir, &roots)?;
         self.append_to_order(&desk_id)?;
-        Ok(desk_id)
+        Ok(OpenOutcome { desk_id, adopted: false, absorbed: index.len() })
     }
+}
+
+/// What `open_folder_as_desk` did — the frontend reports it, and the
+/// activity log records it, because "was this folder already a desk?"
+/// is the first question any later sync forensics asks.
+#[derive(serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenOutcome {
+    pub desk_id: String,
+    /// True when the folder was already a Hush desk and kept its id.
+    pub adopted: bool,
+    /// Files the desk holds as a result — absorbed from the folder, or
+    /// carried in by the desk it already was.
+    pub absorbed: usize,
 }
 
 /// The four per-desk specials, ids namespaced exactly the way

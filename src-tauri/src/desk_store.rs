@@ -28,6 +28,7 @@
 //! binaries stay a per-device cache (`files/pdfs/`).
 
 use crate::atomic::{write_atomic, write_atomic_str};
+use crate::desk_identity::OrderFile;
 use crate::desk_paths::{collect_expected, sanitize_segment};
 use crate::hushnote;
 use crate::TreeNode;
@@ -40,14 +41,6 @@ type BoxError = Box<dyn std::error::Error>;
 
 pub struct DeskStore {
     pub desks_dir: PathBuf,
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Default)]
-struct OrderFile {
-    #[serde(default)]
-    order: Vec<String>,
-    #[serde(default)]
-    stragglers: Vec<TreeNode>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
@@ -79,7 +72,7 @@ impl DeskStore {
     pub(crate) fn tree_path(&self, desk_id: &str) -> PathBuf {
         self.desk_dir(desk_id).join(".hush").join("tree.json")
     }
-    fn order_path(&self) -> PathBuf {
+    pub(crate) fn order_path(&self) -> PathBuf {
         self.desks_dir.join("order.json")
     }
     pub(crate) fn staging_path(&self, id: &str) -> PathBuf {
@@ -100,6 +93,34 @@ impl DeskStore {
             .unwrap_or_default()
     }
 
+    /// Like `load_index`, but tells "this desk has no index yet" apart
+    /// from "the index is right there and we can't read it".
+    ///
+    /// The lenient read answers both with an empty map, and the
+    /// disk-wins reconciler took that at face value: every file in the
+    /// folder looked new (a fresh fileId minted for a file that already
+    /// had one) while every node the tree already carried became
+    /// untraceable, to be dropped once its grace window expired. Inside
+    /// a provider-synced folder an unreadable sidecar is routine — a
+    /// half-written file, or an iCloud placeholder standing in for one
+    /// that hasn't downloaded — so the reconciler must stand down
+    /// instead of rebuilding the desk from a reading it can't trust.
+    pub(crate) fn try_load_index(&self, desk_id: &str) -> Result<HashMap<String, String>, BoxError> {
+        let path = self.index_path(desk_id);
+        match fs::read_to_string(&path) {
+            Ok(s) => serde_json::from_str::<IndexFile>(&s)
+                .map(|f| f.files)
+                .map_err(|e| format!("desk {}: index.json is unreadable ({})", desk_id, e).into()),
+            Err(_) if crate::desk_identity::awaiting_download(&path) => {
+                Err(format!("desk {}: index.json hasn't downloaded yet", desk_id).into())
+            }
+            Err(e) if path.exists() => {
+                Err(format!("desk {}: index.json could not be read ({})", desk_id, e).into())
+            }
+            Err(_) => Ok(HashMap::new()),
+        }
+    }
+
     pub(crate) fn save_index(&self, desk_id: &str, files: &HashMap<String, String>) -> Result<(), BoxError> {
         let path = self.index_path(desk_id);
         if let Some(parent) = path.parent() {
@@ -109,47 +130,6 @@ impl DeskStore {
             "format": "hush-index", "version": 1, "files": files,
         });
         write_atomic_str(&path, &serde_json::to_string_pretty(&payload)?)?;
-        Ok(())
-    }
-
-    /// Every desk id with a resolvable folder: internal subdirectories
-    /// plus registered local roots (both validated by their tree.json).
-    pub(crate) fn desk_ids_on_disk(&self) -> Vec<String> {
-        let mut out = Vec::new();
-        if let Ok(rd) = fs::read_dir(&self.desks_dir) {
-            for entry in rd.flatten() {
-                let name = entry.file_name().to_string_lossy().into_owned();
-                if name.starts_with('.') || !entry.path().is_dir() {
-                    continue;
-                }
-                if entry.path().join(".hush").join("tree.json").exists() {
-                    out.push(name);
-                }
-            }
-        }
-        for (desk_id, root) in crate::desk_roots::load_roots(&self.desks_dir) {
-            if out.contains(&desk_id) {
-                continue;
-            }
-            if Path::new(&root).join(".hush").join("tree.json").exists() {
-                out.push(desk_id);
-            }
-        }
-        out
-    }
-
-    /// Append a desk id to order.json (used by the adopt flow so a newly
-    /// registered desk lands at a stable position instead of re-sorting
-    /// on every load).
-    pub(crate) fn append_to_order(&self, desk_id: &str) -> Result<(), BoxError> {
-        let mut order: OrderFile = fs::read_to_string(self.order_path())
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
-        if !order.order.iter().any(|d| d == desk_id) {
-            order.order.push(desk_id.to_string());
-            write_atomic_str(&self.order_path(), &serde_json::to_string_pretty(&order)?)?;
-        }
         Ok(())
     }
 
@@ -183,37 +163,10 @@ impl DeskStore {
         self.order_path().exists()
     }
 
-    pub fn load_forest(&self) -> Result<Vec<TreeNode>, BoxError> {
-        let order: OrderFile = fs::read_to_string(self.order_path())
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
-
-        let mut seen = HashSet::new();
-        let mut forest = Vec::new();
-        for desk_id in &order.order {
-            if let Some(node) = self.load_desk_tree(desk_id) {
-                seen.insert(desk_id.clone());
-                forest.push(node);
-            }
-        }
-        // Desk folders present on disk but missing from order.json (e.g. a
-        // folder dropped in by hand) append at the end — the adopt seam.
-        for desk_id in self.desk_ids_on_disk() {
-            if !seen.contains(&desk_id) {
-                if let Some(node) = self.load_desk_tree(&desk_id) {
-                    forest.push(node);
-                }
-            }
-        }
-        forest.extend(order.stragglers);
-        Ok(forest)
-    }
-
-    pub(crate) fn load_desk_tree(&self, desk_id: &str) -> Option<TreeNode> {
-        let s = fs::read_to_string(self.tree_path(desk_id)).ok()?;
-        serde_json::from_str::<TreeNode>(&s).ok()
-    }
+    // `load_forest` / `load_desk_tree` / `desk_ids_on_disk` /
+    // `append_to_order` live in desk_identity.rs — the load is where a
+    // desk's registered id and the id its folder carries have to be
+    // reconciled, and that repair belongs beside the rules it enforces.
 
     /// Persist the full forest: per-desk tree.json + .hushdesk + path
     /// reconciliation, order.json with stragglers, and retirement of desk
@@ -260,11 +213,23 @@ impl DeskStore {
         // extension — see desk_paths::preserve_doc_extensions.
         crate::desk_paths::preserve_doc_extensions(&mut new_indexes, &old_global);
 
-        // A desk node whose folder doesn't exist and whose file-backed
-        // nodes resolve to nothing we know (not indexed anywhere, not
-        // staged) can only be a stale or foreign tree — materialising it
-        // would fabricate a desk full of blank files. Skip it wholesale;
-        // it costs one order.json slot and heals on the next load.
+        // A desk node with no folder of its own is one of two things, and
+        // only one of them is real. A *new* desk's files come from
+        // staging (or from another internal desk that handed them over)
+        // and its folder is created below. Anything else is a stale or
+        // foreign identity for a desk that already exists:
+        //
+        // - no resolvable files at all — a stale or foreign tree;
+        //   materialising it fabricates a desk full of blank files;
+        // - files that currently live in a **local** desk's folder — a
+        //   second identity for that same folder (see desk_identity.rs).
+        //   Placement would rename the user's own documents out of their
+        //   iCloud/Dropbox folder into `{data_dir}/desks/<id>/`, one by
+        //   one, and the far device would then watch the folder empty.
+        //
+        // Either way: skip the desk wholesale. It costs one order.json
+        // slot and heals on the next load, when the registration repair
+        // has re-keyed the folder.
         let staged: HashSet<String> = self.staged_ids().into_iter().collect();
         let mut fabricated: HashSet<String> = HashSet::new();
         for desk in &desks {
@@ -278,10 +243,23 @@ impl DeskStore {
             let any_known = files
                 .keys()
                 .any(|id| old_global.contains_key(id) || staged.contains(id));
-            if !any_known {
-                eprintln!(
-                    "save_forest: desk {} has no folder and no resolvable files — skipping instead of fabricating it",
-                    desk.id
+            let poaches_local = files.keys().any(|id| {
+                old_global
+                    .get(id)
+                    .map(|(home, _)| home != &desk.id && roots.contains_key(home))
+                    .unwrap_or(false)
+            });
+            if !any_known || poaches_local {
+                let why = if poaches_local {
+                    "its files live in a local desk's folder"
+                } else {
+                    "no resolvable files"
+                };
+                eprintln!("save_forest: desk {} has no folder and {} — skipping", desk.id, why);
+                crate::activity_log::note(
+                    "desks",
+                    "error",
+                    format!("Skipped saving desk {} — it has no folder and {}", desk.id, why),
                 );
                 fabricated.insert(desk.id.clone());
             }

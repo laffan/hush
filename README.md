@@ -57,7 +57,7 @@ Pasting from Google Docs converts rich formatting to Markdown automatically, and
 
 ## Sync
 
-There is no sync service. Every desk is a self-contained folder of ordinary files (`.md`, `.hushnote`, `.hushstack`), and a desk can operate from **any folder on disk** — point Hush at an iCloud Drive, Dropbox, or Syncthing folder and let your provider move the bytes. Outside changes fold back into the sidebar live; conflicted copies resolve automatically into version history; files a provider hasn't delivered yet are held, never dropped. **Local Folder** mounts give you the same direct-folder access without desk semantics, and archived desks zip into single shareable files. Automatic recovery snapshots protect synced desks, and **Backup App Data** zips everything.
+There is no sync service. Every desk is a self-contained folder of ordinary files (`.md`, `.hushnote`, `.hushstack`), and a desk can operate from **any folder on disk** — point Hush at an iCloud Drive, Dropbox, or Syncthing folder and let your provider move the bytes. **Use Local Folder as Desk** (`⌘P`, or the New Desk popup) is both halves of that: pick a plain folder and it becomes a desk with whatever was already inside it, or pick the folder your other device already keeps a desk in and you join that desk — same files, same history. Outside changes fold back into the sidebar live; conflicted copies resolve automatically into version history; files a provider hasn't delivered yet are held, never dropped. **Local Folder** mounts give you the same direct-folder access without desk semantics, and archived desks zip into single shareable files. Automatic recovery snapshots protect synced desks, and **Backup App Data** zips everything.
 
 ## Everywhere you are
 

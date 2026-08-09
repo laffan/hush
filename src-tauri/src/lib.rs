@@ -18,6 +18,7 @@ mod desk_archive;
 mod desk_conflicts;
 mod desk_dedupe;
 mod desk_hashes;
+mod desk_identity;
 mod desk_meta;
 mod desk_migrate;
 mod desk_paths;

@@ -84,24 +84,38 @@ pub fn desk_make_internal(state: State<AppState>, desk_id: String) -> Result<Str
         .map_err(|e| e.to_string())
 }
 
-/// Open a folder as a desk and start watching it. A folder that already
-/// carries `.hushdesk` + `.hush/tree.json` is adopted (the handoff case:
-/// another install, or a synced copy); any other folder is initialised
-/// as a desk in place, absorbing the files already inside it. Either way
-/// a disk reconcile runs so the folder's current contents surface
-/// immediately. Returns the desk id.
+/// Open a folder as a desk and start watching it. A folder that is
+/// already a desk is adopted, id and all (the handoff case: another
+/// install, or the same folder seen from a second device through a sync
+/// provider); a folder with no trace of a desk is initialised in place,
+/// absorbing the files already inside it; a folder whose desk sidecars
+/// haven't downloaded yet is neither — it errors, rather than starting a
+/// rival desk over one that already exists. Either way a disk reconcile
+/// runs so the folder's current contents surface immediately.
 #[tauri::command]
 pub fn desk_open_folder_as_desk(
     app: AppHandle,
     state: State<AppState>,
     path: String,
     bookmark: Option<String>,
-) -> Result<String, String> {
+) -> Result<crate::desk_roots::OpenOutcome, String> {
     let s = store();
     let watch = bookmark.is_none();
-    let desk_id = s
-        .open_folder_as_desk(Path::new(&path), bookmark)
+    let outcome = s
+        .open_folder_as_desk_detailed(Path::new(&path), bookmark)
         .map_err(|e| e.to_string())?;
+    let desk_id = outcome.desk_id.clone();
+    crate::activity_log::note(
+        "desks",
+        "info",
+        format!(
+            "{} folder as desk {} ({} file(s)): {}",
+            if outcome.adopted { "Adopted" } else { "Initialised" },
+            desk_id,
+            outcome.absorbed,
+            path
+        ),
+    );
     // Initialising a plain folder already absorbed its files; this pass
     // covers the adopt branch (refresh a handed-off desk against its
     // current folder contents) and seeds the rename-pairing hash cache.
@@ -122,7 +136,7 @@ pub fn desk_open_folder_as_desk(
             eprintln!("desk watcher failed for {}: {}", desk_id, e);
         }
     }
-    Ok(desk_id)
+    Ok(outcome)
 }
 
 /// Explicitly disconnect a local desk's folder — the delete-desk path.
