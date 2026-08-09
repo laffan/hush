@@ -2,12 +2,15 @@
  * Tauri-specific integration: global shortcuts, tray events
  */
 
-import { openSettingsWindow } from "./settings/settings-ui.js";
+import { openSettingsWindow, isIOS } from "./settings/settings-ui.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 // Track registered shortcuts so we can unregister them on re-registration
 let registeredShortcuts = [];
+// The registration failure is worth one line, not one per settings save
+// (registerAllShortcuts re-runs on every settings-changed event).
+let warnedShortcutFailure = null;
 
 export async function setupTauriIntegration(state) {
   if (!IS_TAURI) return;
@@ -22,6 +25,11 @@ export async function setupTauriIntegration(state) {
     });
 
     async function registerAllShortcuts() {
+      // The global-shortcut plugin is desktop-only (registered behind
+      // cfg(desktop) in lib.rs) — there is no system-wide "summon the
+      // app" shortcut on iOS/iPadOS. Registering anyway failed with
+      // "plugin global-shortcut not found" on every settings save.
+      if (isIOS()) return;
       try {
         const { register, unregister, isRegistered } = await import("@tauri-apps/plugin-global-shortcut");
 
@@ -63,7 +71,11 @@ export async function setupTauriIntegration(state) {
         // handled via in-window keydown listeners so they don't capture keys
         // when the app is in the background.
       } catch (e) {
-        console.warn("Global shortcut registration failed:", e);
+        const msg = String(e?.message || e);
+        if (msg !== warnedShortcutFailure) {
+          warnedShortcutFailure = msg;
+          console.warn("Global shortcut registration failed:", e);
+        }
       }
     }
 

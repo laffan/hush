@@ -20,15 +20,25 @@
  *     &items=<encodeURIComponent(JSON.stringify([{
  *        itemKey, attKey, title, authors, firstAuthor, year, citekey }]))>
  *
- * Desk/project resolution is by id first, then case-insensitive name, so
- * senders that can't read our data dir (e.g. iPadOS sandboxing) can pass
- * plain names. Unknown desk → active desk; unknown project → desk only.
+ * Desk resolution is by id first, then case-insensitive name. A desk
+ * that doesn't resolve is *waited for* (a local desk's folder can load
+ * seconds after a cold launch) and, failing that, the import errors out
+ * — importing into whichever desk happened to be active is how PDFs
+ * ended up in the wrong desk. Only a request that names no desk at all
+ * targets the active desk.
+ *
+ * Ordering note: every awaited call here is a seam where another window
+ * can replace `state.fileTree` (the cross-window "files" reload). All
+ * registry writes happen first; the tree is then resolved fresh and
+ * mutated in one synchronous pass, so a swap can never strand half the
+ * placeholders in a detached tree.
  */
 
-import { findNode, insertNode, isRealProjectNode, uniqueChildName } from "../state/tree-helpers.js";
+import { findNode, isRealProjectNode, uniqueChildName } from "../state/tree-helpers.js";
 import { addPdfAliasToProject, ensureDeskPdfsFolder } from "../state/state-pdf-aliases.js";
 import { getActiveDesk } from "../state/state-desks.js";
 import { showImportToast } from "../editor/import-toast.js";
+import { logActivity } from "../activity-log.js";
 
 /** Same-request dedupe: deep links are delivered more than once (every
  *  open window gets the event, getCurrent() replays on webview reload).
@@ -71,17 +81,21 @@ function parsePayload(rawUrl) {
   };
 }
 
-function resolveDesk(state, deskParam) {
+/** The desk `deskParam` names, or null. No active-desk fallback here —
+ *  the caller decides what an unresolved desk means. */
+function resolveNamedDesk(state, deskParam) {
   const desks = (state.fileTree || []).filter((n) => n?.type === "desk");
-  if (deskParam) {
-    const byId = desks.find((d) => d.id === deskParam);
-    if (byId) return byId;
-    const lower = deskParam.toLowerCase();
-    const byName = desks.find((d) => (d.name || "").toLowerCase() === lower);
-    if (byName) return byName;
-  }
-  // Fall back to the active desk; null on a pre-migration flat tree,
-  // which ensureDeskPdfsFolder handles (legacy root __pdfs__).
+  const byId = desks.find((d) => d.id === deskParam);
+  if (byId) return byId;
+  const lower = deskParam.toLowerCase();
+  return desks.find((d) => (d.name || "").toLowerCase() === lower) || null;
+}
+
+/** Target desk for this request: the named desk when one was given, the
+ *  active desk otherwise (null only on a pre-migration flat tree, which
+ *  ensureDeskPdfsFolder handles via the legacy root __pdfs__). */
+function resolveDesk(state, deskParam) {
+  if (deskParam) return resolveNamedDesk(state, deskParam);
   return getActiveDesk(state) || null;
 }
 
@@ -122,30 +136,68 @@ async function waitForTree(state, timeoutMs = 6000) {
   return Array.isArray(state.fileTree);
 }
 
-/** Register one placeholder PDF node in `desk`'s PDFs folder — the
- *  desk-targeted twin of state.registerPdfPlaceholder (which always
- *  writes to the *active* desk). Pure tree/registry work; the caller
- *  batches saveFileTree + downloads. */
-async function registerPlaceholderInDesk(state, desk, item) {
-  const { addPdfEntry } = await import("../sync/pdf-sync.js");
-  const fileId = crypto.randomUUID();
-  await addPdfEntry(fileId, {
-    title: item.title || "Untitled",
-    authors: item.authors || "",
-    firstAuthor: item.firstAuthor || "",
-    year: item.year || "",
-    citekey: item.citekey || "",
-    zoteroItemKey: item.itemKey || "",
-    zoteroAttKey: item.attKey,
-  });
-  const pdfsFolder = ensureDeskPdfsFolder(state.fileTree, desk);
-  const finalName = uniqueChildName(pdfsFolder, item.title || "Untitled", "pdf");
-  const treeNode = {
-    id: crypto.randomUUID(), type: "pdf", name: finalName, fileId,
-    children: [], flagged: false, zoteroAttKey: item.attKey,
+/** Wait for the *named* desk to appear. A local (folder-backed) desk is
+ *  routinely missing from the forest just after a cold launch —
+ *  `load_forest` skips a desk whose `.hush/tree.json` isn't readable
+ *  yet, and the desk-roots lifecycle folds it back in seconds later.
+ *  Returns the desk node, or null after the timeout. */
+async function waitForNamedDesk(state, deskParam, timeoutMs = 15000) {
+  const start = Date.now();
+  let desk = resolveNamedDesk(state, deskParam);
+  while (!desk && Date.now() - start < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 300));
+    desk = resolveNamedDesk(state, deskParam);
+  }
+  return desk;
+}
+
+/** Phase 1 — registry writes, no tree access: mint a fileId + registry
+ *  entry per item so the metadata and downloader have something to key
+ *  on. Async is fine here; the tree isn't touched. */
+async function registerRegistryEntries(items) {
+  const { addPdfEntry, removePdfEntry } = await import("../sync/pdf-sync.js");
+  const entries = [];
+  for (const item of items) {
+    const fileId = crypto.randomUUID();
+    await addPdfEntry(fileId, {
+      title: item.title || "Untitled",
+      authors: item.authors || "",
+      firstAuthor: item.firstAuthor || "",
+      year: item.year || "",
+      citekey: item.citekey || "",
+      zoteroItemKey: item.itemKey || "",
+      zoteroAttKey: item.attKey,
+    });
+    entries.push({ fileId, item });
+  }
+  const rollback = async () => {
+    for (const { fileId } of entries) {
+      try { await removePdfEntry(fileId); } catch (_) { /* best effort */ }
+    }
   };
-  insertNode(state.fileTree, treeNode, pdfsFolder.id, findNode);
-  return { fileId, treeNode };
+  return { entries, rollback };
+}
+
+/** Phase 2 — tree writes, one synchronous pass: resolve the desk and
+ *  project fresh from the *current* tree and insert every placeholder
+ *  node. No awaits in here, so a cross-window tree reload can't swap
+ *  `state.fileTree` between resolution and insertion. Returns the
+ *  resolved `{ desk, project }`, or null when a named desk is gone. */
+function insertPlaceholderNodes(state, payload, entries) {
+  const desk = resolveDesk(state, payload.desk);
+  if (payload.desk && !desk) return null;
+  const project = resolveProject(desk, state, payload.project);
+  const pdfsFolder = ensureDeskPdfsFolder(state.fileTree, desk);
+  for (const { fileId, item } of entries) {
+    const treeNode = {
+      id: crypto.randomUUID(), type: "pdf",
+      name: uniqueChildName(pdfsFolder, item.title || "Untitled", "pdf"),
+      fileId, children: [], flagged: false, zoteroAttKey: item.attKey,
+    };
+    pdfsFolder.children.push(treeNode);
+    if (project) addPdfAliasToProject(project, treeNode);
+  }
+  return { desk, project };
 }
 
 /** Entry point — called from main.js's deep-link handler for any
@@ -179,20 +231,43 @@ export async function handleHushwriterUrl(state, rawUrl) {
     showImportToast("Send to Hush: app not ready yet — try again", "error");
     return true;
   }
-
-  const desk = resolveDesk(state, payload.desk);
-  const project = resolveProject(desk, state, payload.project);
-  if (payload.project && !project) {
-    showImportToast(`Project “${payload.project}” not found — importing to desk only`, "error");
+  // A named desk must actually resolve before anything is written. The
+  // old behaviour — quietly falling back to the active desk — is how a
+  // cold-launch import (local desk folder not re-mounted yet) or a sender
+  // holding a renamed desk's old name filed PDFs into the wrong desk.
+  if (payload.desk && !(await waitForNamedDesk(state, payload.desk))) {
+    logActivity("zotero", "error", "Send to Hush: target desk not found — import refused", {
+      desk: payload.desk, items: payload.items.length,
+    });
+    showImportToast(`Send to Hush: desk “${payload.desk}” not found — nothing imported`, "error");
+    return true;
   }
 
-  const fileIds = [];
+  let where;
+  let fileIds;
   try {
-    for (const item of payload.items) {
-      const { fileId, treeNode } = await registerPlaceholderInDesk(state, desk, item);
-      fileIds.push(fileId);
-      if (project) addPdfAliasToProject(project, treeNode);
+    const { entries, rollback } = await registerRegistryEntries(payload.items);
+    // Resolve + insert against the tree as it stands *now* (the awaits
+    // above may have replaced it). Synchronous, so it can't be swapped
+    // out from under the insertion itself.
+    const resolved = insertPlaceholderNodes(state, payload, entries);
+    if (!resolved) {
+      await rollback();
+      showImportToast(`Send to Hush: desk “${payload.desk}” disappeared — nothing imported`, "error");
+      return true;
     }
+    if (payload.project && !resolved.project) {
+      showImportToast(`Project “${payload.project}” not found — importing to desk only`, "error");
+    }
+    fileIds = entries.map((e) => e.fileId);
+    where = [
+      resolved.desk?.name || "this desk",
+      resolved.project ? `→ ${resolved.project.name}` : "",
+    ].filter(Boolean).join(" ");
+    logActivity("zotero", "info", "Send to Hush import", {
+      desk: resolved.desk?.name || null, deskId: resolved.desk?.id || null,
+      project: resolved.project?.name || null, items: fileIds.length,
+    });
     await state.saveFileTree();
     state.emit("files-changed");
   } catch (e) {
@@ -204,10 +279,6 @@ export async function handleHushwriterUrl(state, rawUrl) {
   const pdfSync = await import("../sync/pdf-sync.js");
   pdfSync.startBatchDownload(fileIds, state);
 
-  const where = [
-    desk?.name || "this desk",
-    project ? `→ ${project.name}` : "",
-  ].filter(Boolean).join(" ");
   showImportToast(
     `Downloading ${fileIds.length} PDF${fileIds.length === 1 ? "" : "s"} from Zotero into ${where}`,
     "success",

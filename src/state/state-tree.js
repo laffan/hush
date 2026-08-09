@@ -67,21 +67,37 @@ export async function deleteTreeNode(state, nodeId) {
     const { removeImageRefs } = await import("./state-images.js");
     await removeImageRefs(state, removedImageIds);
   }
+  // The node's own desk, resolved before removal — deletes route to the
+  // *containing* desk's Trash so a delete never rewrites another desk's
+  // subtree (cross-desk writes are what a torn multi-desk save tears in
+  // half). Falls back to the active trash for nodes outside any desk.
+  const owningDesk = (state.fileTree || []).find(
+    (d) => d?.type === "desk" && findNode([d], nodeId),
+  );
   const removed = removeNode(state.fileTree, nodeId);
   if (removed) {
     clearFlaggedRecursive(removed);
-    // Send to the active desk's Trash (or the global Trash when desks
-    // are off). For nodes that already lived inside a specific desk's
-    // trash branch, we still route to the active trash — easier to
-    // empty in one place.
-    const trash = findNode(state.fileTree, state.getTrashId());
+    const trash = (owningDesk && findNode(state.fileTree, `__trash__:${owningDesk.id}`))
+      || findNode(state.fileTree, state.getTrashId());
     if (trash) (trash.children || (trash.children = [])).push(removed);
   }
   const { docFileIds, pdfFileIds, stackFileIds } = collectTypedFileIds(node);
-  // A PDF removed from the desk takes its project aliases with it.
+  // A PDF removed from the desk takes its project aliases with it — and
+  // any duplicate real nodes for the same fileId (corruption from stale
+  // multi-window saves; the desk-store dedupe used to exempt PDFs), so a
+  // delete heals a duplicated PDF instead of leaving a ghost row behind.
   if (pdfFileIds.length) {
-    const { removeAliasesForFileIds } = await import("./state-pdf-aliases.js");
+    const { removeAliasesForFileIds, removeRealPdfNodesForFileIds } = await import("./state-pdf-aliases.js");
     removeAliasesForFileIds(state.fileTree, pdfFileIds);
+    const keep = new Set();
+    if (removed) {
+      (function collectKeep(n) {
+        if (!n) return;
+        if (n.type === "pdf" && !n.pdfAlias && n.fileId) keep.add(n);
+        (n.children || []).forEach(collectKeep);
+      })(removed);
+    }
+    removeRealPdfNodesForFileIds(state.fileTree, pdfFileIds, keep);
   }
   await state.saveFileTree();
   // Close any open panes backed by a file we just removed so they don't
@@ -133,20 +149,76 @@ async function permanentDeleteNode(state, nodeId) {
   await deleteStackFilesByIds(state, stackFileIds);
   removeNode(state.fileTree, nodeId);
   if (pdfFileIds.length) {
-    const { removeAliasesForFileIds } = await import("./state-pdf-aliases.js");
+    // The binary and registry entry are gone — take *every* node that
+    // referenced them: aliases, and any duplicate real nodes a torn
+    // save left in another desk (removeNode above only took the first).
+    const { removeAliasesForFileIds, removeRealPdfNodesForFileIds } = await import("./state-pdf-aliases.js");
     removeAliasesForFileIds(state.fileTree, pdfFileIds);
+    removeRealPdfNodesForFileIds(state.fileTree, pdfFileIds);
   }
   await finalizeFileDeletion(state, docFileIds);
 }
 
 export async function restoreFromTrash(state, nodeId) {
   if (!state.isInTrash(nodeId)) return;
-  const node = removeNode(state.fileTree, nodeId);
+  // Take the copy that's actually inside a Trash folder. A whole-tree
+  // removeNode grabs the first id match, which — when a PDF got
+  // duplicated across desks — could be the live PDFs-folder row, leaving
+  // the trash twin behind and "restoring" a node that was never trashed.
+  const node = removeNodeFromAnyTrash(state.fileTree, nodeId)
+    || removeNode(state.fileTree, nodeId);
   if (!node) return;
+  // A restored PDF whose real node still exists outside the Trash is a
+  // duplicate of a live row — dropping the twin IS the restore.
+  if (node.type === "pdf" && !node.pdfAlias && node.fileId
+      && pdfExistsOutsideTrash(state.fileTree, node.fileId)) {
+    await state.saveFileTree();
+    state.emit("files-changed");
+    return;
+  }
   const inbox = findNode(state.fileTree, state.getInboxId());
   if (inbox) (inbox.children || (inbox.children = [])).push(node);
   await state.saveFileTree();
   state.emit("files-changed");
+}
+
+const isTrashNodeId = (id) => id === "__trash__" || String(id || "").startsWith("__trash__:");
+
+/** Remove `nodeId` from whichever Trash folder holds it (any desk's).
+ *  Returns the removed node, or null when no trash holds that id. */
+function removeNodeFromAnyTrash(tree, nodeId) {
+  let out = null;
+  const scan = (nodes) => {
+    for (const n of nodes || []) {
+      if (!n || out) return;
+      if (isTrashNodeId(n.id)) {
+        if (Array.isArray(n.children)) {
+          const hit = removeNode(n.children, nodeId);
+          if (hit) { out = hit; return; }
+        }
+      } else if (Array.isArray(n.children)) {
+        scan(n.children);
+      }
+    }
+  };
+  scan(tree);
+  return out;
+}
+
+/** True when a real (non-alias) pdf node with `fileId` exists anywhere
+ *  outside the Trash folders. */
+function pdfExistsOutsideTrash(tree, fileId) {
+  let found = false;
+  const walk = (nodes) => {
+    for (const n of nodes || []) {
+      if (!n || found) return;
+      if (isTrashNodeId(n.id)) continue;
+      if (n.type === "pdf" && !n.pdfAlias && n.fileId === fileId) { found = true; return; }
+      if (Array.isArray(n.children)) walk(n.children);
+    }
+  };
+  walk(tree);
+  return found;
 }
 
 export async function permanentDelete(state, nodeId) {
@@ -182,8 +254,11 @@ export async function emptyTrash(state, deskId) {
   await deleteStackFilesByIds(state, stackFileIds);
   trash.children = [];
   if (pdfFileIds.length) {
-    const { removeAliasesForFileIds } = await import("./state-pdf-aliases.js");
+    // Binaries are gone — sweep aliases and any duplicate real nodes
+    // (see permanentDeleteNode) so no row survives pointing at nothing.
+    const { removeAliasesForFileIds, removeRealPdfNodesForFileIds } = await import("./state-pdf-aliases.js");
     removeAliasesForFileIds(state.fileTree, pdfFileIds);
+    removeRealPdfNodesForFileIds(state.fileTree, pdfFileIds);
   }
   await finalizeFileDeletion(state, docFileIds);
 }

@@ -36,6 +36,49 @@ fn tmp() -> tempfile::TempDir {
     tempfile::tempdir().expect("tempdir")
 }
 
+fn named_desk(id: &str, name: &str, children: Vec<TreeNode>) -> TreeNode {
+    let mut kids = vec![node(&format!("__inbox__:{}", id), "project", "Inbox", None, Vec::new())];
+    kids.extend(children);
+    kids.push(node(&format!("__images__:{}", id), "folder", "Images", None, Vec::new()));
+    kids.push(node(&format!("__trash__:{}", id), "folder", "Trash", None, Vec::new()));
+    node(id, "desk", name, None, kids)
+}
+
+/// One desk's unreachable folder must not take the desks *after* it in
+/// iteration order down with it. An aborted multi-desk save left the
+/// on-disk forest mixed-generation — some desks' tree.json new, the
+/// rest stale — and the next load stitched the halves together, which
+/// is how a node moved between desks ended up recorded under both.
+#[test]
+fn one_desks_save_failure_does_not_abort_the_rest() {
+    let dir = tmp();
+    let store = DeskStore::new(dir.path());
+    // "broken" resolves to desks/broken — occupied by a *file*, so every
+    // directory create under it fails (the local-desk-folder-unreachable
+    // class of error, minus the provider).
+    fs::write(dir.path().join("desks/broken"), "not a directory").unwrap();
+    store.write_by_id("f-stuck", "stuck doc").unwrap();
+    store.write_by_id("f-cities", "cities essay").unwrap();
+    let broken = named_desk(
+        "broken",
+        "Broken",
+        vec![node("n-stuck", "document", "Stuck", Some("f-stuck"), Vec::new())],
+    );
+    let school = named_desk(
+        "school",
+        "School",
+        vec![node("n-cities", "document", "Cities", Some("f-cities"), Vec::new())],
+    );
+
+    let err = store
+        .save_forest(&[broken, school])
+        .expect_err("the failing desk must still be reported");
+    assert!(err.to_string().contains("broken"), "unexpected error: {}", err);
+    // School — after the failing desk in iteration order — was written.
+    assert!(dir.path().join("desks/school/.hush/tree.json").exists());
+    assert_eq!(store.read_by_id("f-cities").unwrap().0, "cities essay");
+}
+
 #[test]
 fn places_staged_files_at_computed_paths() {
     let dir = tmp();

@@ -110,6 +110,63 @@ fn another_desks_inbox_sitting_in_this_one_is_folded_into_its_own() {
     assert_eq!(ids_under(personal), vec!["f-todo".to_string()]);
 }
 
+#[test]
+fn a_pdf_recorded_under_two_desks_is_deduped_to_the_live_row() {
+    // The ghost shape: the live row in School's PDFs folder and a twin of
+    // the same node in Personal's Trash — the halves of a cross-desk
+    // delete a torn multi-desk save leaves behind. PDFs used to be exempt
+    // from the invariant, so this never healed: the row stayed visible
+    // while `isInTrash(id)` matched the twin, wearing trash menu entries
+    // that operated on the wrong copy.
+    let pdfs = node(
+        "__pdfs__:school",
+        "folder",
+        "PDFs",
+        None,
+        vec![node("n-paper", "pdf", "Paper", Some("f-paper"), Vec::new())],
+    );
+    let school = desk("school", "School", vec![pdfs]);
+    let mut personal = desk("personal", "Personal", vec![]);
+    personal
+        .children
+        .iter_mut()
+        .find(|c| c.id == "__trash__:personal")
+        .unwrap()
+        .children
+        .push(node("n-paper", "pdf", "Paper", Some("f-paper"), Vec::new()));
+
+    // Personal sits first in forest order — the live row must still win.
+    let repaired = repair_forest(&[personal, school], &HashMap::new())
+        .expect("a pdf claimed by two desks must be repaired");
+    let school = repaired.iter().find(|d| d.id == "school").unwrap();
+    let personal = repaired.iter().find(|d| d.id == "personal").unwrap();
+    assert_eq!(ids_under(school), vec!["f-paper".to_string()]);
+    assert!(ids_under(personal).is_empty(), "the trash twin must be gone");
+}
+
+#[test]
+fn a_project_pdf_alias_sharing_the_original_id_is_not_contested() {
+    // Aliases share the desk copy's fileId by design — only the real
+    // node claims ownership, so this forest is sound as-is.
+    let pdfs = node(
+        "__pdfs__:school",
+        "folder",
+        "PDFs",
+        None,
+        vec![node("n-paper", "pdf", "Paper", Some("f-paper"), Vec::new())],
+    );
+    let mut alias = node("a-paper", "pdf", "Paper", Some("f-paper"), Vec::new());
+    alias.pdf_alias = true;
+    let mut proj_pdfs = node("pf-thesis", "folder", "PDFs", None, vec![alias]);
+    proj_pdfs.pdf_folder = true;
+    let project = node("p-thesis", "project", "Thesis", None, vec![proj_pdfs]);
+    let forest = vec![
+        desk("school", "School", vec![pdfs, project]),
+        desk("personal", "Personal", vec![]),
+    ];
+    assert!(repair_forest(&forest, &HashMap::new()).is_none());
+}
+
 /// Mint the project's doc the way the app does: content is staged first,
 /// and the tree save that follows gives it a real path.
 fn stage_cities(store: &DeskStore) {

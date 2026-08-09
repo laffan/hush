@@ -209,6 +209,35 @@ export function enforceFlaggedPdfOrder(tree) {
   return changed;
 }
 
+/** Remove every *real* (non-alias) pdf node whose fileId is in
+ *  `fileIds`, everywhere in the tree, Trash included — except nodes in
+ *  `keep` (object identity). A fileId should only ever have one real
+ *  node; extras are corruption left by torn multi-desk saves or stale
+ *  multi-window writes, and they're what made a deleted PDF's row stick
+ *  around wearing trash menu entries (`isInTrash` matches the twin by
+ *  id while the sidebar still renders the survivor). Delete paths call
+ *  this so the ghosts heal on the next user action. Returns true when
+ *  anything was removed. */
+export function removeRealPdfNodesForFileIds(tree, fileIds, keep = null) {
+  const targets = new Set(fileIds || []);
+  if (!targets.size) return false;
+  let changed = false;
+  const scan = (nodes) => {
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const n = nodes[i];
+      if (!n) continue;
+      if (n.type === "pdf" && !n.pdfAlias && targets.has(n.fileId) && !(keep && keep.has(n))) {
+        nodes.splice(i, 1);
+        changed = true;
+        continue;
+      }
+      if (Array.isArray(n.children)) scan(n.children);
+    }
+  };
+  scan(tree);
+  return changed;
+}
+
 /** Remove every alias referencing one of `fileIds`, everywhere in the
  *  tree (Trash included — a purged original leaves no references
  *  behind). Returns true when anything was removed. */

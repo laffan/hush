@@ -281,18 +281,36 @@ impl DeskStore {
             }
         }
 
-        // Move / create / adopt every expected file.
+        // Move / create / adopt every expected file. Errors are contained
+        // per desk: one unreachable folder (a local desk on a provider
+        // that hasn't mounted it yet — routinely ENOENT) must not abort
+        // the desks after it in iteration order. A save that bailed
+        // midway left the on-disk forest mixed-generation, and the next
+        // load stitched the halves back together — which is how a node
+        // moved between desks ended up recorded in both. A desk that
+        // fails here is skipped wholesale below (its index and tree.json
+        // keep their previous generation together) and the whole save
+        // still reports the failure at the end.
+        let mut desk_errors: Vec<String> = Vec::new();
+        let mut failed: HashSet<String> = HashSet::new();
         for desk in &desks {
             if fabricated.contains(&desk.id) {
                 continue;
             }
-            fs::create_dir_all(self.desk_dir(&desk.id).join(".hush"))?;
-            for dir in expected_dirs.get(&desk.id).into_iter().flatten() {
-                fs::create_dir_all(self.desk_dir(&desk.id).join(dir))?;
-            }
-            let files = &new_indexes[&desk.id];
-            for (id, rel) in files {
-                self.place_file(id, &desk.id, rel, &old_global)?;
+            let res = (|| -> Result<(), BoxError> {
+                fs::create_dir_all(self.desk_dir(&desk.id).join(".hush"))?;
+                for dir in expected_dirs.get(&desk.id).into_iter().flatten() {
+                    fs::create_dir_all(self.desk_dir(&desk.id).join(dir))?;
+                }
+                let files = &new_indexes[&desk.id];
+                for (id, rel) in files {
+                    self.place_file(id, &desk.id, rel, &old_global)?;
+                }
+                Ok(())
+            })();
+            if let Err(e) = res {
+                desk_errors.push(format!("desk {}: {}", desk.id, e));
+                failed.insert(desk.id.clone());
             }
         }
 
@@ -338,10 +356,17 @@ impl DeskStore {
             if roots.contains_key(desk_id) {
                 continue;
             }
+            // A desk whose placement failed keeps its previous generation
+            // untouched — don't park its files either.
+            if failed.contains(desk_id) {
+                continue;
+            }
             let src = self.abs_path(desk_id, rel);
             if src.exists() {
                 let orphan_dir = self.desk_dir(desk_id).join(".hush").join("orphans");
-                fs::create_dir_all(&orphan_dir)?;
+                if fs::create_dir_all(&orphan_dir).is_err() {
+                    continue;
+                }
                 let base = src.file_name().unwrap_or_default().to_string_lossy().into_owned();
                 let mut dst = orphan_dir.join(&base);
                 let mut i = 2;
@@ -353,32 +378,43 @@ impl DeskStore {
             }
         }
 
-        // Persist per-desk metadata + indexes.
+        // Persist per-desk metadata + indexes. A desk that failed
+        // placement above is skipped so its index and tree stay one
+        // consistent (previous) generation; other desks' failures are
+        // collected the same way instead of aborting the rest.
         for desk in &desks {
-            if fabricated.contains(&desk.id) {
+            if fabricated.contains(&desk.id) || failed.contains(&desk.id) {
                 continue;
             }
-            self.save_index(&desk.id, &new_indexes[&desk.id])?;
-            write_atomic_str(
-                &self.tree_path(&desk.id),
-                &serde_json::to_string_pretty(desk)?,
-            )?;
-            let meta_path = self.desk_dir(&desk.id).join(".hushdesk");
-            // Start from the existing file so createdAt and any fields
-            // other writers own (the per-desk "meta" object — style,
-            // last file, stickies) survive the rewrite.
-            let mut meta: serde_json::Value = fs::read_to_string(&meta_path)
-                .ok()
-                .and_then(|s| serde_json::from_str(&s).ok())
-                .unwrap_or_else(|| serde_json::json!({}));
-            meta["format"] = "hush-desk".into();
-            meta["version"] = 1.into();
-            meta["id"] = desk.id.clone().into();
-            meta["name"] = desk.name.clone().into();
-            if meta.get("createdAt").is_none() {
-                meta["createdAt"] = now_secs().into();
+            let res = (|| -> Result<(), BoxError> {
+                self.save_index(&desk.id, &new_indexes[&desk.id])?;
+                write_atomic_str(
+                    &self.tree_path(&desk.id),
+                    &serde_json::to_string_pretty(desk)?,
+                )?;
+                let meta_path = self.desk_dir(&desk.id).join(".hushdesk");
+                // Start from the existing file so createdAt and any fields
+                // other writers own (the per-desk "meta" object — style,
+                // last file, stickies) survive the rewrite.
+                let mut meta: serde_json::Value = fs::read_to_string(&meta_path)
+                    .ok()
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .unwrap_or_else(|| serde_json::json!({}));
+                meta["format"] = "hush-desk".into();
+                meta["version"] = 1.into();
+                meta["id"] = desk.id.clone().into();
+                meta["name"] = desk.name.clone().into();
+                if meta.get("createdAt").is_none() {
+                    meta["createdAt"] = now_secs().into();
+                }
+                write_atomic_str(&meta_path, &serde_json::to_string_pretty(&meta)?)?;
+                Ok(())
+            })();
+            if let Err(e) = res {
+                desk_errors.push(format!("desk {}: {}", desk.id, e));
+                failed.insert(desk.id.clone());
+                continue;
             }
-            write_atomic_str(&meta_path, &serde_json::to_string_pretty(&meta)?)?;
             // Inside a local desk only directories Hush itself emptied
             // (they used to hold indexed files) may be pruned — an empty
             // directory the user made in their own folder is theirs.
@@ -419,6 +455,14 @@ impl DeskStore {
             stragglers,
         };
         write_atomic_str(&self.order_path(), &serde_json::to_string_pretty(&order)?)?;
+        if !desk_errors.is_empty() {
+            return Err(format!(
+                "save_forest: {} desk(s) failed (others saved): {}",
+                desk_errors.len(),
+                desk_errors.join("; ")
+            )
+            .into());
+        }
         Ok(())
     }
 

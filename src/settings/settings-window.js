@@ -65,11 +65,16 @@ function readTabFromLocation() {
 export async function initSettingsInto(rootEl, saveCallback) {
   settingsRootEl = rootEl;
   onSaveCallback = saveCallback || null;
-  // The settings window is its own webview with its own console. Route
-  // its warnings and errors into the shared activity log so the Debug
-  // tab shows one trail rather than a partial one.
-  configureActivityLog({ windowLabel: "settings" });
-  installActivityCapture();
+  // The *standalone* settings window is its own webview with its own
+  // console — route its warnings and errors into the shared activity log
+  // so the Debug tab shows one trail rather than a partial one. The iOS
+  // modal mounts inside the main app's webview (`.settings-modal-root`),
+  // where the label is already configured by main.js: re-configuring it
+  // here relabelled every later main-window log line as "settings".
+  if (rootEl?.id === "settings-root") {
+    configureActivityLog({ windowLabel: "settings" });
+    installActivityCapture();
+  }
   // Honour a `#sync/google`-style deep link. The iOS modal path passes the tab in
   // via setActiveTab() before this runs, so the hash check there is a
   // no-op (the page URL never carries one).

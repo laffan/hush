@@ -1585,15 +1585,23 @@ Current actions:
   — sent by the **zotero-helper** app ("Send to Hush"). `items` is a
   URI-encoded JSON array of `{ itemKey, attKey, title, authors,
   firstAuthor, year, citekey }`. For each entry a placeholder PDF node is
-  registered in the target desk's PDFs folder (active desk when `desk` is
-  absent/unknown), aliased into the named project when given, and the
-  binary is fetched through the normal background pipeline
-  (`startBatchDownload` → `download_zotero_pdf`) using Hush's own Zotero
-  credentials — the link never carries secrets. Desk/project match by id
-  first, then case-insensitive name, so senders that cannot read our data
-  dir (iPadOS sandboxing) can pass names; `project=__active__` targets
-  whatever project is open in the main window. Senders should attach a
-  unique `nonce` per request (see dedupe note above).
+  registered in the target desk's PDFs folder, aliased into the named
+  project when given, and the binary is fetched through the normal
+  background pipeline (`startBatchDownload` → `download_zotero_pdf`)
+  using Hush's own Zotero credentials — the link never carries secrets.
+  Desk/project match by id first, then case-insensitive name, so senders
+  that cannot read our data dir (iPadOS sandboxing) can pass names;
+  `project=__active__` targets whatever project is open in the main
+  window. Only a request with **no** `desk` parameter targets the active
+  desk. A `desk` that names nothing is *waited for* (a local desk's
+  folder routinely loads seconds after a cold launch) and, failing that,
+  the import is **refused with an error toast** — the old silent
+  active-desk fallback is how a cold-launch send (or a sender holding a
+  renamed desk's old name) filed PDFs into the wrong desk. Registry
+  writes happen before any tree access, and the tree is then resolved
+  and mutated in one synchronous pass, so a cross-window tree reload
+  mid-import can't strand placeholders. Senders should attach a unique
+  `nonce` per request (see dedupe note above).
 
 Notes for future actions: keep parsing in `zotero-helper-import.js` (or a
 sibling module per feature), return `true` from the handler when the URL

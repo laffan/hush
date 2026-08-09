@@ -32,6 +32,20 @@ impl FileManager {
         self.store.save_forest(tree)
     }
 
+    /// Disk-wins reconcile for one desk, run through this manager so the
+    /// caller holds the same mutex `save_file_tree` / `get_file_tree`
+    /// serialize on. The reconciler and a forest save both rewrite
+    /// per-desk `tree.json`; unsynchronized (the old command built its
+    /// own `DeskStore`), a reconcile could load a desk's tree, have
+    /// `save_forest` rewrite it, then write its stale copy back —
+    /// resurrecting nodes the save had just moved to another desk.
+    pub fn reconcile_desk(
+        &self,
+        desk_id: &str,
+    ) -> Result<crate::desk_scan::ScanReport, Box<dyn std::error::Error>> {
+        self.store.reconcile_desk_from_disk(desk_id)
+    }
+
     pub fn create_folder(
         &self,
         name: &str,

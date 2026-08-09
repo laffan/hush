@@ -383,9 +383,26 @@ export function ensureDesksTreeSpecials(state, tree) {
       if (!Array.isArray(target.children)) target.children = [];
       target.children.push(s);
     }
-    for (const id of ["__inbox__", "__images__", "__pdfs__", "__archive__", "__trash__"]) {
-      const i = tree.findIndex((n) => n.id === id);
-      if (i >= 0) tree.splice(i, 1);
+    // Legacy bare specials at the top level are dropped — but never with
+    // their contents. A bare `__pdfs__` can turn up holding real nodes
+    // (an import that ran against a not-yet-populated tree files
+    // placeholders into the legacy root folder), and splicing the shell
+    // used to delete the children with it. Fold them into the first
+    // desk's matching special instead, mirroring absorbMatchingFolder.
+    for (const kind of ["__inbox__", "__images__", "__pdfs__", "__archive__", "__trash__"]) {
+      const i = tree.findIndex((n) => n.id === kind);
+      if (i < 0) continue;
+      const [shell] = tree.splice(i, 1);
+      const kids = shell?.children || [];
+      if (!kids.length) continue;
+      const ownId = specialNodeId(kind, target.id);
+      if (!Array.isArray(target.children)) target.children = [];
+      const own = target.children.find((n) => n.id === ownId);
+      if (own) (own.children || (own.children = [])).push(...kids);
+      else { shell.id = ownId; target.children.push(shell); }
+      logActivity("desks", "warn", `Rescued ${kids.length} node(s) from a legacy ${kind} shell into "${target.name}"`, {
+        deskId: target.id,
+      });
     }
   }
   const created = [];

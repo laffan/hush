@@ -101,11 +101,17 @@ fn contested_owners(
     tree: &[TreeNode],
     old_global: &HashMap<String, (String, String)>,
 ) -> HashMap<String, String> {
-    let mut claims: Vec<(String, HashSet<String>)> = Vec::new();
+    // Per desk: every owned id, plus the subset claimed *outside* its
+    // Trash. A contested id whose copies are one live row and one trash
+    // twin (the half-finished cross-desk delete a torn save leaves)
+    // should resolve to the live row's desk.
+    let mut claims: Vec<(String, HashSet<String>, HashSet<String>)> = Vec::new();
     for node in tree.iter().filter(|n| n.node_type == "desk") {
         let mut ids = HashSet::new();
         collect_ids(&node.children, &mut ids);
-        claims.push((node.id.clone(), ids));
+        let mut live = HashSet::new();
+        collect_ids_outside_trash(&node.children, &mut live);
+        claims.push((node.id.clone(), ids, live));
     }
     let mut owner = HashMap::new();
     if claims.len() < 2 {
@@ -113,7 +119,7 @@ fn contested_owners(
     }
 
     let mut counts: HashMap<&str, usize> = HashMap::new();
-    for (_, ids) in &claims {
+    for (_, ids, _) in &claims {
         for id in ids {
             *counts.entry(id.as_str()).or_insert(0) += 1;
         }
@@ -125,37 +131,65 @@ fn contested_owners(
         .collect();
 
     // Owner per contested id: the desk whose folder already holds the
-    // bytes, else the first desk in forest order that claims it. Picking
-    // the on-disk holder means the repair is pure bookkeeping — no file
-    // moves, so nothing can go missing while it runs.
+    // bytes, else a desk claiming it outside its Trash, else the first
+    // desk in forest order. Picking the on-disk holder means the repair
+    // is pure bookkeeping — no file moves, so nothing can go missing
+    // while it runs. (PDFs are never in `old_global` — binaries live in
+    // the app-global cache — so they resolve by the live-row rule.)
     for id in contested {
         let on_disk = old_global.get(id).map(|(desk, _)| desk.as_str());
         let pick = claims
             .iter()
-            .find(|(desk_id, ids)| ids.contains(id) && Some(desk_id.as_str()) == on_disk)
-            .or_else(|| claims.iter().find(|(_, ids)| ids.contains(id)));
-        if let Some((desk_id, _)) = pick {
+            .find(|(desk_id, ids, _)| ids.contains(id) && Some(desk_id.as_str()) == on_disk)
+            .or_else(|| claims.iter().find(|(_, _, live)| live.contains(id)))
+            .or_else(|| claims.iter().find(|(_, ids, _)| ids.contains(id)));
+        if let Some((desk_id, _, _)) = pick {
             owner.insert(id.to_string(), desk_id.clone());
         }
     }
     owner
 }
 
-/// Every fileId reachable under `nodes`. PDF nodes are skipped: their
-/// binaries are a per-device cache keyed by the registry id and a project
-/// alias legitimately shares one desk-wide id, so they were never part of
-/// the per-desk index in the first place (see `collect_expected`).
+/// True when this node *owns* its fileId — the shape the one-desk
+/// invariant applies to. Project pdf **aliases** are excluded: an alias
+/// legitimately shares the desk copy's fileId, so only the real
+/// (non-alias) pdf node claims ownership. Real pdf nodes are included
+/// even though they're absent from the per-desk index (binaries are a
+/// per-device cache): exempting them entirely meant a PDF recorded under
+/// two desks — a torn multi-desk save, a stale window's write — never
+/// healed, which is exactly the ghost-row corruption every other type
+/// self-repairs out of.
+fn claims_file_id(n: &TreeNode) -> bool {
+    matches!(
+        n.node_type.as_str(),
+        "document" | "notebook" | "stack" | "image"
+    ) || (n.node_type == "pdf" && !n.pdf_alias)
+}
+
+/// Every owned fileId reachable under `nodes` (see `claims_file_id`).
 fn collect_ids(nodes: &[TreeNode], out: &mut HashSet<String>) {
     for n in nodes {
-        if matches!(
-            n.node_type.as_str(),
-            "document" | "notebook" | "stack" | "image"
-        ) {
+        if claims_file_id(n) {
             if let Some(ref id) = n.file_id {
                 out.insert(id.clone());
             }
         }
         collect_ids(&n.children, out);
+    }
+}
+
+/// Like `collect_ids`, but Trash subtrees don't count as claims.
+fn collect_ids_outside_trash(nodes: &[TreeNode], out: &mut HashSet<String>) {
+    for n in nodes {
+        if n.id == "__trash__" || n.id.starts_with("__trash__:") {
+            continue;
+        }
+        if claims_file_id(n) {
+            if let Some(ref id) = n.file_id {
+                out.insert(id.clone());
+            }
+        }
+        collect_ids_outside_trash(&n.children, out);
     }
 }
 
@@ -165,10 +199,7 @@ fn collect_ids(nodes: &[TreeNode], out: &mut HashSet<String>) {
 /// container the user deliberately left empty stays.
 fn prune_foreign(nodes: &mut Vec<TreeNode>, desk_id: &str, owner: &HashMap<String, String>) {
     nodes.retain_mut(|n| {
-        let is_file = matches!(
-            n.node_type.as_str(),
-            "document" | "notebook" | "stack" | "image"
-        );
+        let is_file = claims_file_id(n);
         if is_file {
             if let Some(ref id) = n.file_id {
                 if owner.get(id).map(|o| o != desk_id).unwrap_or(false) {

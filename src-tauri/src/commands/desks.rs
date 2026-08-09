@@ -105,7 +105,9 @@ pub fn desk_open_folder_as_desk(
     // Initialising a plain folder already absorbed its files; this pass
     // covers the adopt branch (refresh a handed-off desk against its
     // current folder contents) and seeds the rename-pairing hash cache.
-    if let Err(e) = s.reconcile_desk_from_disk(&desk_id) {
+    // Through the FileManager mutex like desk_reconcile, so it can't
+    // interleave with a concurrent forest save.
+    if let Err(e) = state.file_manager.lock().unwrap().reconcile_desk(&desk_id) {
         eprintln!("post-adopt reconcile failed for {}: {}", desk_id, e);
     }
     // The adopted desk may carry Google Doc links — fold them into the
@@ -159,8 +161,16 @@ pub fn desk_update_root_path(
 /// have changed with the rest of the folder.
 #[tauri::command]
 pub fn desk_reconcile(state: State<AppState>, desk_id: String) -> Result<ScanReport, String> {
-    let report = store()
-        .reconcile_desk_from_disk(&desk_id)
+    // Through the FileManager mutex, NOT a free-standing store: the
+    // reconciler rewrites the desk's tree.json, and racing a concurrent
+    // save_file_tree (which rewrites every desk's) could re-apply a
+    // pre-save snapshot — the seam that recorded one node under two
+    // desks at once.
+    let report = state
+        .file_manager
+        .lock()
+        .unwrap()
+        .reconcile_desk(&desk_id)
         .map_err(|e| e.to_string())?;
     crate::commands::google_docs::refresh_gdoc_link_cache(&state);
     Ok(report)
