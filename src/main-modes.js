@@ -41,12 +41,22 @@ export async function setupModeSwitching(state) {
   const showStack = () => activateMode("stack-mode");
   const showEmpty = () => activateMode("empty-mode");
 
+  // Latched while the "no file selected" pane is the intended surface.
+  // The unmount handlers below resume *after* an await, so when
+  // clearActiveFile tears down a notebook/PDF/stack (switching to an
+  // empty desk, deleting the open file) their trailing showEditor()
+  // used to land after showEmpty() and replace the create-buttons pane
+  // with a bare, fileless editor — the "Start writing…" ghost that
+  // swallowed typing. Every real open clears the latch.
+  let emptyPaneActive = false;
+
   // Editor was cleared (last file deleted, desk has nothing to restore,
   // or no files at all) — surface the create-a-file pane instead of
   // silently leaving a stale buffer or jumping to an unrelated file.
-  state.on("no-file-state", () => showEmpty());
+  state.on("no-file-state", () => { emptyPaneActive = true; showEmpty(); });
 
   state.on("notebook-open", async (fileId) => {
+    emptyPaneActive = false;
     // Switch to notebook mode *before* the (async) mount so a large
     // notebook shows its own loading overlay instead of leaving the doc
     // editor's "Start writing…" placeholder visible while shapes decode.
@@ -62,9 +72,10 @@ export async function setupModeSwitching(state) {
     // freshly opened notebook back to the editor. Every non-notebook
     // open path nulls the id before this handler resumes, so the
     // editor still comes back for docs / stacks / PDFs / deletes.
-    if (!state.currentNotebookFileId) showEditor();
+    if (!state.currentNotebookFileId && !emptyPaneActive) showEditor();
   });
   state.on("pdf-open", async (fileId) => {
+    emptyPaneActive = false;
     const { mountPdf } = await import("./pdf/pdf-bridge.js");
     await mountPdf(pdfContainer, fileId, state);
     showPdf();
@@ -78,9 +89,10 @@ export async function setupModeSwitching(state) {
   state.on("pdf-unmount", async () => {
     const { unmountPdf } = await import("./pdf/pdf-bridge.js");
     await unmountPdf();
-    showEditor();
+    if (!emptyPaneActive) showEditor();
   });
   state.on("stack-open", async (fileId) => {
+    emptyPaneActive = false;
     const { mountStack } = await import("./stack/stack-bridge.js");
     await mountStack(stackContainer, fileId, state);
     showStack();
@@ -89,7 +101,7 @@ export async function setupModeSwitching(state) {
     const { unmountStack } = await import("./stack/stack-bridge.js");
     const result = await unmountStack();
     if (result) state.syncFileToExternal(result.fileId, result.content);
-    showEditor();
+    if (!emptyPaneActive) showEditor();
   });
   state.on("project-demoted", async (projectId) => {
     const { getStackInstance } = await import("./stack/stack-bridge.js");
@@ -114,7 +126,10 @@ export async function setupModeSwitching(state) {
   state.on("notebook-sync-reload", (content) => {
     reloadNotebookShapes(content).catch((e) => console.warn("notebook-sync-reload failed:", e));
   });
-  state.on("file-opened", () => { if (!state.currentNotebookFileId && !state.currentPdfFileId && !state.currentStackFileId) showEditor(); });
+  state.on("file-opened", () => {
+    emptyPaneActive = false;
+    if (!state.currentNotebookFileId && !state.currentPdfFileId && !state.currentStackFileId) showEditor();
+  });
 
   // Notebook commands from the command palette
   state.on("notebook-toggle-shelf", () => {
@@ -175,11 +190,13 @@ export async function setupModeSwitching(state) {
       await m.openLocalEntry(state, folderId, relPath, name);
     } catch (e) {
       console.warn("restore local-sync file failed:", e);
+      emptyPaneActive = true;
       showEmpty();
     }
   } else {
     // Nothing to restore — show the "no file selected" pane rather than
     // spawning a throwaway Untitled doc.
+    emptyPaneActive = true;
     showEmpty();
   }
 }

@@ -38,7 +38,20 @@ export async function saveFileTree(state) {
     strays: tree.filter((n) => n.type !== "desk").length,
   });
   if (IS_TAURI) {
-    try { await tauriInvoke("save_file_tree", { tree: state.fileTree }); }
+    try {
+      const repaired = await tauriInvoke("save_file_tree", { tree: state.fileTree });
+      if (repaired) {
+        // The store's cross-desk repair rewrote the forest (a contested
+        // fileId, a foreign special) before persisting. Adopt it: a
+        // window that kept its unrepaired tree re-saved the broken shape
+        // on its next write, flapping the on-disk forest between two
+        // states — visible in the log as a desk's child count bouncing.
+        state.fileTree = repaired;
+        logActivity("tree", "warn", "Adopted store-repaired tree", {
+          desks: repaired.filter((n) => n.type === "desk").map((n) => `${n.name}:${(n.children || []).length}`),
+        });
+      }
+    }
     catch (e) { logActivity("tree", "error", "Save tree failed", { error: String(e) }); }
   } else { state._saveTreeLocal(); }
   state._broadcastCrossWindow("files");

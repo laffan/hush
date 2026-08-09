@@ -29,7 +29,12 @@ export class SortableList {
       enableKeyboard: options.enableKeyboard ?? true,
       onChange: options.onChange || (() => {}),
       onDragStart: options.onDragStart || (() => {}),
-      onDragEnd: options.onDragEnd || (() => {}),
+      // Wrapped so the list can settle deferred setData calls (see
+      // setData) before the host reacts to the drag ending.
+      onDragEnd: (moved, didDrop) => {
+        this._dragSettled(didDrop);
+        (options.onDragEnd || (() => {}))(moved, didDrop);
+      },
       onDragOutside: options.onDragOutside || null,
       // Called on drop when the release point is over an element outside
       // this list (e.g. a Local Sync folder row). Return true to claim the
@@ -73,8 +78,31 @@ export class SortableList {
   // ===== Public API =====
 
   setData(data) {
+    // A live drag references the current row DOM — rebuilding the list
+    // under it kills the drop silently. Cross-window `files-changed`
+    // refreshes routinely land mid-drag (sibling windows saving), which
+    // is how "drag a PDF onto a project" could visibly do nothing. Park
+    // the data instead: a cancelled drag applies it on settle, a
+    // completed drop discards it (the drop's own onChange makes the
+    // host re-render from the committed tree, which is fresher).
+    if (this.dragSession) {
+      this._deferredData = data;
+      return;
+    }
+    this._deferredData = null;
     this.state.items = deepClone(data, this.config.getChildren, this.config.setChildren);
     this.render();
+  }
+
+  /** Called (via the wrapped onDragEnd) when a drag ends. Applies data
+   *  parked by setData during the drag — unless the drag dropped, in
+   *  which case onChange already committed and the host's refresh
+   *  supplies fresher data than the parked snapshot. */
+  _dragSettled(didDrop) {
+    if (!this._deferredData) return;
+    const data = this._deferredData;
+    this._deferredData = null;
+    if (!didDrop) this.setData(data);
   }
 
   getData() {

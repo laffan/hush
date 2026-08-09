@@ -218,7 +218,13 @@ impl DeskStore {
     /// Persist the full forest: per-desk tree.json + .hushdesk + path
     /// reconciliation, order.json with stragglers, and retirement of desk
     /// folders whose desk node vanished (moved to `.deleted/`, never wiped).
-    pub fn save_forest(&self, tree: &[TreeNode]) -> Result<(), BoxError> {
+    ///
+    /// Returns `Some(repaired)` when the cross-desk repair rewrote the
+    /// forest before writing — the caller should adopt it as its live
+    /// tree. A window that kept its unrepaired copy re-saved the broken
+    /// shape on its next write, flapping the on-disk forest between the
+    /// two states indefinitely.
+    pub fn save_forest(&self, tree: &[TreeNode]) -> Result<Option<Vec<TreeNode>>, BoxError> {
         let old_global = self.global_index();
 
         // A file may belong to exactly one desk. A forest that says
@@ -463,7 +469,7 @@ impl DeskStore {
             )
             .into());
         }
-        Ok(())
+        Ok(owned)
     }
 
     // `place_file` and `prune_empty_dirs` live in desk_place.rs (split

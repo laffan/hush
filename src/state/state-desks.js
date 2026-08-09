@@ -354,6 +354,7 @@ export function seedNewArchivesCollapsed(state, createdIds) {
  *  boot and produces the desk to fold into. */
 export function ensureDesksTreeSpecials(state, tree) {
   const desks = tree.filter((n) => n.type === "desk");
+  let changed = false;
   // Stragglers land in the **first** desk, not the active one. The active
   // desk is per-window: two windows running side by side (Stage Manager
   // on iPad, two windows on desktop) would each fold the same homeless
@@ -382,6 +383,7 @@ export function ensureDesksTreeSpecials(state, tree) {
       if (idx >= 0) tree.splice(idx, 1);
       if (!Array.isArray(target.children)) target.children = [];
       target.children.push(s);
+      changed = true;
     }
     // Legacy bare specials at the top level are dropped — but never with
     // their contents. A bare `__pdfs__` can turn up holding real nodes
@@ -393,6 +395,7 @@ export function ensureDesksTreeSpecials(state, tree) {
       const i = tree.findIndex((n) => n.id === kind);
       if (i < 0) continue;
       const [shell] = tree.splice(i, 1);
+      changed = true;
       const kids = shell?.children || [];
       if (!kids.length) continue;
       const ownId = specialNodeId(kind, target.id);
@@ -407,7 +410,11 @@ export function ensureDesksTreeSpecials(state, tree) {
   }
   const created = [];
   for (const d of desks) created.push(...ensureDeskSpecials(d));
-  return created;
+  // `changed` lets boot save the tree only when this pass actually
+  // repaired something — an unconditional boot save made every window
+  // launch (deep-link carrier scenes included) stomp the forest with
+  // whatever it had just loaded, racing concurrent windows.
+  return { created, changed: changed || created.length > 0 };
 }
 
 // Boot-time repair cluster (migrateLegacyTreeIfNeeded and friends)

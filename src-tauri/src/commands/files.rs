@@ -102,7 +102,12 @@ pub fn get_file_tree(state: State<AppState>) -> Result<Vec<TreeNode>, String> {
 // Async: a tree save reconciles every desk folder (placements, index +
 // tree + meta writes, empty-dir pruning) — main-thread IO of that size
 // stalled the webview on every create/move/rename, worst on iPad.
-pub async fn save_file_tree(state: State<'_, AppState>, tree: Vec<TreeNode>) -> Result<(), String> {
+// Returns the repaired forest (or null) — the frontend adopts it so a
+// window never keeps re-saving a shape the store had to fix.
+pub async fn save_file_tree(
+    state: State<'_, AppState>,
+    tree: Vec<TreeNode>,
+) -> Result<Option<Vec<TreeNode>>, String> {
     state.file_manager.lock().unwrap().save_file_tree(&tree).map_err(|e| e.to_string())
 }
 

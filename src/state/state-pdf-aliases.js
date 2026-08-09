@@ -209,6 +209,21 @@ export function enforceFlaggedPdfOrder(tree) {
   return changed;
 }
 
+/** Boot-time PDF layout cleanup: real PDFs stranded outside their desk's
+ *  PDFs folder are tucked back in and orphaned project aliases pruned —
+ *  but only when every registered desk actually loaded. A short read (a
+ *  local desk's folder not re-granted yet) would make the alias pruning
+ *  see "original gone" and drop references that are fine. Returns true
+ *  when the tree changed (caller persists). */
+export function normalizePdfLayoutAtBoot(state) {
+  const treeDeskIds = new Set(
+    (state.fileTree || []).filter((n) => n?.type === "desk").map((n) => n.id),
+  );
+  const allDesksLoaded = (state.settings?.desks || []).every((d) => treeDeskIds.has(d.id));
+  if (!allDesksLoaded) return false;
+  return normalizePdfProjectAliases(state.fileTree);
+}
+
 /** Remove every *real* (non-alias) pdf node whose fileId is in
  *  `fileIds`, everywhere in the tree, Trash included — except nodes in
  *  `keep` (object identity). A fileId should only ever have one real

@@ -28,7 +28,13 @@ impl FileManager {
         self.store.load_forest()
     }
 
-    pub fn save_file_tree(&self, tree: &[TreeNode]) -> Result<(), Box<dyn std::error::Error>> {
+    /// Returns `Some(repaired)` when the store's cross-desk repair
+    /// rewrote the forest before persisting — the frontend adopts it so
+    /// it doesn't keep re-saving the unrepaired shape.
+    pub fn save_file_tree(
+        &self,
+        tree: &[TreeNode],
+    ) -> Result<Option<Vec<TreeNode>>, Box<dyn std::error::Error>> {
         self.store.save_forest(tree)
     }
 

@@ -468,6 +468,13 @@ function positionLocalSync(state) { positionLocalSyncImpl(state, treeListEl, pan
 function refreshList(state) {
   if (sortableInstance) {
     reapplyGutterMarkers(state.fileTree);
+    // Track the desk these rows come from on EVERY refresh, not just the
+    // initial build. A desk switch reaches the panel through here, and a
+    // stale renderedDeskId made the next drag commit the new desk's rows
+    // into the *old* desk's children — transplanting a desk's entire
+    // contents (project, PDFs, Inbox) into whichever desk the panel was
+    // first built on. That is how content "moved desks" overnight.
+    renderedDeskId = renderedDeskIdFor(state);
     const sorted = augmentTreeWithHeadings(state, augmentTreeWithTabs(state, sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state)))));
     numberLabels = computeNumberLabels(sorted, numberSkip, isInboxId);
     sortableInstance.setData(sorted);

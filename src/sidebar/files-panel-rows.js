@@ -68,6 +68,18 @@ export function commitRenderedChildren(state, renderedDeskId, cleaned) {
     : null;
   if (hasDesks && !rendered) return false;
   if (rendered) {
+    // The rows must actually belong to this desk. Per-desk specials
+    // carry their desk's id (`__inbox__:<deskId>`), so a row set whose
+    // specials name a *different* desk means the panel's rendered rows
+    // and its recorded desk drifted apart — committing would transplant
+    // one desk's entire contents into another (the bug where a desk
+    // switch refreshed the rows but not the recorded id). Refuse; the
+    // caller re-renders from the real tree.
+    const foreign = cleaned.some((n) => {
+      const owner = specialIdDeskOf(n?.id);
+      return owner && owner !== renderedDeskId;
+    });
+    if (foreign) return false;
     // Re-add specials the render filtered out (empty Images / PDFs).
     const present = new Set(cleaned.map((n) => n.id));
     for (const orig of (rendered.children || [])) {
@@ -78,6 +90,12 @@ export function commitRenderedChildren(state, renderedDeskId, cleaned) {
   if (rendered) rendered.children = cleaned;
   else state.fileTree = cleaned;
   return true;
+}
+
+/** The desk id a namespaced special id belongs to, or null. */
+function specialIdDeskOf(id) {
+  const m = typeof id === "string" && id.match(/^__[a-z]+__:(.+)$/);
+  return m ? m[1] : null;
 }
 
 // Skip predicate for outline-number labels (specials + synthetic rows).

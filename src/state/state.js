@@ -181,13 +181,25 @@ export class AppState {
         this.files = await tauriInvoke("list_files");
         this.fileTree = await tauriInvoke("get_file_tree");
         await _desks.migrateLegacyTreeIfNeeded(this);
-        this.ensureSpecialNodes();
+        const specialsChanged = this.ensureSpecialNodes();
+        // Boot-time PDF layout cleanup (strays + orphaned aliases) —
+        // guarded inside the helper against a short tree read.
+        let pdfLayoutChanged = false;
+        try {
+          const { normalizePdfLayoutAtBoot } = await import("./state-pdf-aliases.js");
+          pdfLayoutChanged = normalizePdfLayoutAtBoot(this);
+        } catch (_) { /* best-effort */ }
         await this.initPdfRegistry();
         // Drop any empty Untitled docs that survived the last session
         // (created by `newFile` but never typed into). Runs before the
         // "restore last file" branch so we don't land on a ghost.
         await _files.pruneEmptyUntitled(this);
-        await this.saveFileTree();
+        // Persist only when a boot repair actually changed the tree.
+        // The old unconditional save made every window boot write the
+        // whole forest — so a deep-link carrier scene (or a relaunch)
+        // stomped desks that a sibling window had just changed, which is
+        // how content "moved" between desks across a restart.
+        if (specialsChanged || pdfLayoutChanged) await this.saveFileTree();
 
         // Restore session state from settings
         this.typewriterMode = !!this.settings.typewriterMode;
@@ -383,9 +395,12 @@ export class AppState {
   getTrashId() { return _desks.activeSpecialId(this, AppState.TRASH_ID); }
   isSpecialNodeId(id) { return _desks.isSpecialNodeId(id); }
 
+  /** Ensure per-desk specials + fold stragglers. Returns true when the
+   *  pass changed the tree (callers persist only then — see init). */
   ensureSpecialNodes() {
-    const created = _desks.ensureDesksTreeSpecials(this, this.fileTree);
+    const { created, changed } = _desks.ensureDesksTreeSpecials(this, this.fileTree);
     _desks.seedNewArchivesCollapsed(this, created);
+    return changed;
   }
 
   /** True if `nodeId` lives inside any Trash folder. */
