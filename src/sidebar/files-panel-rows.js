@@ -1,7 +1,7 @@
 /**
  * Files panel — per-row rendering helpers extracted from files-panel.js.
  * Special-id predicates, the active-desk top-level filter, the row icon
- * picker, multi-window badges, and the PDF row HTML. Everything here is pure
+ * picker, and the PDF row HTML. Everything here is pure
  * or import-driven (no files-panel module state), so both the main tree and
  * the Flagged section can import from it without coupling back.
  */
@@ -120,19 +120,6 @@ export function getIcon(item) {
   return typeIcons[item.type] || typeIcons.document;
 }
 
-/** Multi-window numeral badges for a tree row: one chip per window
- *  currently displaying this file. Documents/notebooks key off `fileId`,
- *  projects off the tree-node `id`. Returns "" when fewer than two
- *  Hush windows are open or no window matches. */
-export function windowBadgesHtml(item, state) {
-  const list = state.windowList || [];
-  if (list.length < 2) return "";
-  const key = item.type === "project" ? item.id : item.fileId;
-  if (!key) return "";
-  const matches = list.filter(w => w.fileType === item.type && w.fileId === key);
-  return matches.map(w => `<span class="tree-window-badge">${w.number}</span>`).join("");
-}
-
 export const actionButtons = renderRowMenuButton;
 export const flagOnlyButton = renderFlagOnlyMenuButton;
 
@@ -177,7 +164,7 @@ export async function getPdfSync() {
   return _pdfSyncModule;
 }
 
-export function buildPdfRowHtml(item, icon, state, inTrash, inProject) {
+export function buildPdfRowHtml(item, icon, inTrash, inProject) {
   let title = item.name;
   let subtitle = "";
   let progressHtml = "";
@@ -204,5 +191,5 @@ export function buildPdfRowHtml(item, icon, state, inTrash, inProject) {
     }
   } catch {}
   const buttons = actionButtons(item.id, item.type, inTrash, item, inProject);
-  return `${icon}<span class="tree-item-pdf${extraClass}"><span class="tree-item-pdf-title">${escHtml(title)}</span>${subtitle ? `<span class="tree-item-pdf-subtitle">${escHtml(subtitle)}</span>` : ""}${progressHtml}</span>${windowBadgesHtml(item, state)}${buttons}`;
+  return `${icon}<span class="tree-item-pdf${extraClass}"><span class="tree-item-pdf-title">${escHtml(title)}</span>${subtitle ? `<span class="tree-item-pdf-subtitle">${escHtml(subtitle)}</span>` : ""}${progressHtml}</span>${buttons}`;
 }

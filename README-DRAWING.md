@@ -1,43 +1,37 @@
 # Notebook Drawing — Technical Overview
 
-The drawing layer adds freehand ink, erase, slice, and lasso-select tools on top of the notebook's shape-based canvas. Its toolbar (Undo, three brush slots, Slice, Erase, Lasso) is anchored to the right edge of the bottom toolbar with a 10 px gap, so the two pills read as one combined toolbar. There's no separate "drawing mode" to enter — clicking any drawing tool implicitly flips `state.tool = "pen"` and routes pointer events into the stroke engine. The layer lives in `src/notebook/drawing/` and is ported from a reference demo (`temp-drawing-hush-demo/`) that was a standalone [Perfect Freehand](https://github.com/steveruizok/perfect-freehand) + offscreen-bake stroke engine.
-
-The port's core goal is keeping the engine fast (bake-to-canvas with tile indexing, GPU-composited preview transforms) while making every stroke a first-class Hush shape (undo, groups, layers, shelf, pocket, floating panes).
+Extension of [README-NOTEBOOK.md](README-NOTEBOOK.md). The drawing layer adds freehand ink, erase, slice, and lasso-select on top of the notebook's shape canvas. It lives in `src/notebook/drawing/` and is ported from a standalone [Perfect Freehand](https://github.com/steveruizok/perfect-freehand) + offscreen-bake stroke engine; the port's goal is keeping the engine fast (bake-to-canvas with tile indexing, GPU-composited preview transforms) while making every stroke a first-class Hush shape (undo, groups, layers, shelf, pocket, panes). There is no "drawing mode" — picking any drawing tool flips `state.tool = "pen"` and routes pointer input to the engine.
 
 ```
 src/notebook/drawing/
-  drawing-layer.ts       Factory + public API (camera sync, tool switch, brush slot apply, selection-drag hooks, style patches, lasso hold-ms, touch pan)
-  drawing-layer-types.ts DrawingLayer interface + EngineTool / SelectionStyleEntry / SelectionStylePatch types
-  drawing-layer-dom.ts   DOM scaffolding (transform wrapper, three stacked canvases, pocket-stash canvas, SVG overlay, eraser cursor, "Selecting" hint pill)
-  selection-style.ts     Retroactive selection styling session (snapshot → apply → commit one undo entry)
-  selection-bridge.ts    Mirrors Hush's state.selectedIds into the engine selection so resize / rotate handles also appear under the regular Select tool, not only the pen-mode lasso
-  sync-shim.ts           state.shapes[] ↔ engine.strokes bridge (identity diff, no-op fast path)
-  brush-urls.ts          Resolves brush-N PNG atlases via Vite asset imports
-  brush-runtime.ts       Helpers used by drawing-layer (slot colour resolution, applySlot, renderSwatch, theme retint) — extracted to keep drawing-layer.ts under the 700-line cap
-  brush-slots.ts         Toolbar slot row + the brush-edit flyout (size / stream / spacing / brush / color / mode)
-  tool-panel.ts          Drawing-tools controller: appends divider + brush slots + Slice / Erase / Lasso directly to the bottom toolbar (no separate pill), then mounts three gray-pill end-caps — drag + rotate on the left, Background settings on the right
-  pocket-blit.ts         Pocket / done-canvas blit helpers extracted from drawing-layer.ts
-  re-anchor.ts           Camera-following controller: shifts wrapper world-origin (and grows worldSize at low zoom) so the canvas backing always covers the visible viewport
-  selection-drag.ts      Hush↔engine select-drag controller (pause-shim, hide-chrome, commit-on-release)
-  mini-palette.ts        15-px-thick A/H/Red + size shortcut strip pinned to the active brush;
-                         re-tapping the selected color square opens a secondary circle-swatch
-                         palette, and dragging the size number floats a live true-size preview
-  flyout-styles.ts       Shared flyout stylesheets: the 15-px chunky-thumb slider chrome (dark-aware track) + the brush panel's component classes (labels, dividers, cells, swatches, mode segments), themed via --nbf-* vars
-  layers-panel.ts        Layers dropdown hung off the bottom toolbar — notebook-level, used by every shape type
-  vite-assets.d.ts       `*.png?url` and `*.js` module declarations
-  engine/
-    stroke.js            Stroke engine entry: pointerdown/move/up → active stroke → done canvas; configurable long-press-ms
-    stroke-render.js     Draws stamps into the done canvas via the brush atlas
-    stroke-geometry.js   Perfect-freehand integration, bbox, tile hashing, culling
+  drawing-layer.ts       Factory + public API (camera sync, tool switch, brush apply,
+                         selection-drag hooks, style patches, touch pan)
+  drawing-layer-types.ts DrawingLayer interface + tool/style types
+  drawing-layer-dom.ts   DOM scaffolding: transform wrapper, three stacked canvases,
+                         pocket-stash canvas, SVG overlay, helper blit canvas
+  selection-style.ts     Retroactive styling session (snapshot → apply → one undo entry)
+  selection-bridge.ts    Mirrors state.selectedIds ↔ engine selection (Select tool parity)
+  sync-shim.ts           state.shapes[] ↔ engine.strokes bridge (identity diff)
+  re-anchor.ts           Camera-following origin shifts — the "infinite canvas"
+  selection-drag.ts      Hush↔engine select-drag controller (pause-shim, commit-on-release)
+  brush-slots.ts / brush-runtime.ts / brush-urls.ts / mini-palette.ts / flyout-styles.ts
+                         Brush slot row, edit flyout, quick-palette strip, shared flyout CSS
+  tool-panel.ts (+ tool-panel-snap.ts)  Appends divider + drawing tools to the bottom
+                         toolbar; drag handle, snap zones, minimize
+  bg-settings-fixed-button.ts  Fixed bottom-right row: rotation readout/toggle + bg settings
+  pocket-blit.ts         Pocket / done-canvas blit helpers
+  layers-panel.ts        Layers dropdown (notebook-level)
+  engine/                The stroke engine (ported; every Hush modification is tagged —
+                         `grep -rn "Hush delta #" src/notebook/drawing/engine/`)
+    stroke.js            pointerdown/move/up → active stroke → done canvas
+    stroke-render.js     Stamps strokes into the done canvas via the brush atlas
+    stroke-geometry.js   perfect-freehand integration, bbox, tile hashing, culling
     stroke-atlas.js      PNG atlas loader, per-brush tint cache
-    stroke-erase.js      Pixel-test erase (full) + slice (split at cut)
-    selection.js         Polygon lasso, move / delete, proportional resize handles, rotation handle, previewTransform
-    gestures.js          Multi-touch recogniser: 2-/3-finger tap → undo/redo (routed through Hush's snapshot stack), 2-finger drag → pan (engages even mid-stroke), pinch → zoom
-    history.js           Legacy engine command stack — no longer wired; left in place pending removal
-    layers.js            Engine-local layer record (id, locked, hidden). Mirrored from notebook state.
-    brushes/             brush-1.png ... brush-5.png — the atlases the renderer samples from
-
-src/notebook/pencil-bridge.js  Flips `setPencilOnly(true)` on iOS Tauri at startup so iPad finger contacts can't seed strokes
+    stroke-erase.js      Pixel-test erase (whole stroke) + slice (split at cut)
+    selection.js         Polygon lasso, move/delete, proportional resize, rotation
+    gestures.js          Multi-touch: 2-/3-finger tap undo/redo, 2-finger pan, pinch
+    layers.js            Engine-local layer records (mirrored from notebook state)
+    brushes/             brush-N.png atlases
 ```
 
 ## Architecture
@@ -51,203 +45,86 @@ src/notebook/pencil-bridge.js  Flips `setPencilOnly(true)` on iOS Tauri at start
                │  (O(N))    │ ◀─────────────── │ strokes[]  │
                └────────────┘   engine-origin  └────────────┘
                       ▲            push-back          │
-                      │                               ▼
-                      │                       done canvas (baked)
-                      │                       + active stroke overlay
-                      │                       + preview transform
-                      │
-                 renderer.ts (notebook) blits grouped-drawing thumbs via blitWorldRegion
+                      ▼
+                              done canvas (baked) + active-stroke overlay + preview transform
 ```
 
 ### The sync shim
 
-`state.shapes[]` is canonical. The engine holds a parallel `state.strokes[]` array, and the shim makes the two look like one data source without duplicating storage or rebaking on every unrelated mutation.
+`state.shapes[]` is canonical; the engine holds a parallel `strokes[]`. The shim's invariants are load-bearing (documented in the file header — required reading before changing it):
 
-Invariants (documented in the file header and required on every change):
+1. **Identity diff only.** One O(N) ref-compare pass per `"shapes"` notify; never deep-compares points.
+2. **Zero engine work on unrelated mutations.** Editing a TextShape must stay sub-millisecond on multi-thousand-shape notebooks.
+3. **Engine-originated mutations bypass the diff** — the engine pushes into `state.shapes` and refreshes the shim's snapshot in one go, so the resulting notify sees no deltas.
+4. **Mutations route through engine methods** (`setStrokesStyleMap`, `setStrokePoints`, `insertStrokeAt`, `removeStrokes`) — never poke `strokes[]`; the engine maintains bbox + tile indexes.
+5. **Bulk loads pause per-stroke rebakes** (`insertStrokeAt(..., { skipRebake: true })` + one `fullRebake()`).
+6. **Large diffs go bulk** — ≥50 changed strokes AND ≥25 % of the notebook abandons per-stroke updates (each triggers its own tile rebake; O(N²) in aggregate) for a wholesale rebuild + one rebake.
 
-1. **Identity diff only.** A single O(N) ref-compare pass per `"shapes"` notify. Same reference → skipped. The shim never deep-compares points.
-2. **Zero engine work on unrelated mutations.** Editing a TextShape fires a shapes notify; the diff finds no DrawShape deltas and returns. This must stay under a millisecond on multi-thousand-shape notebooks.
-3. **Engine-originated mutations bypass the diff.** When the engine commits a stroke, it pushes into `state.shapes` *and* refreshes the shim's last-seen snapshot in one go, so the resulting notify sees no deltas.
-4. **Mutations route through engine methods.** Style patches go through `setStrokesStyleMap`; point edits through `setStrokePoints`; inserts/removes through `insertStrokeAt` / `removeStrokes`. Never poke `strokes[]` directly — the engine maintains bbox + tile indexes that need to stay in sync.
-5. **Bulk loads pause per-stroke rebakes.** File-open inserts N strokes with rebakes suppressed (engine delta #22, `insertStrokeAt(..., { skipRebake: true })`) and calls `fullRebake()` once at the end.
-6. **Large diffs go bulk.** When a single notify changes the identity of most DrawShapes at once (file load, pane mirror, undo/redo across a big action), the diff abandons per-stroke engine updates — each of which triggers its own tile rebake, O(N²) in aggregate — and rebuilds the engine stroke list wholesale with one `fullRebake()` plus a pocket-stash repaint. Threshold: ≥50 changed strokes AND ≥25% of the notebook's strokes. Steady-state pen-ups stay incremental.
-
-World-coord translation is also at the shim boundary: `DrawShape.points` are stored in world coords; the engine's stage is a CSS-transformed wrapper and expects local coords. The shim applies `worldToLocal` on ingest and `localToWorld` on emit. The wrapper's world-space anchor (`originX`, `originY`) is mutable and shifts at runtime — see "Re-anchoring" below.
+World↔local translation also lives at the shim boundary: `DrawShape.points` are world coords; the engine's stage is a CSS-transformed wrapper with a mutable world-space origin (below).
 
 ### Re-anchoring (infinite canvas)
 
-The drawing engine renders into a fixed-pixel canvas wrapped in a CSS-transformed div. The wrapper is GPU-composited as the camera pans and zooms — fast — but the canvas backing covers a finite world rect `[origin, origin + worldSize]`. To make the surface effectively infinite without giving up the GPU pan, `re-anchor.ts` slides the origin (and grows `worldSize` at low zoom) so the visible viewport always lands inside the backing.
+The engine renders into a fixed-pixel canvas inside a CSS-transformed wrapper — pans/zooms are one GPU-composited transform, but the backing only covers `[origin, origin + worldSize]`. `re-anchor.ts` slides the origin (and grows `worldSize` at low zoom) so the viewport always lands inside the backing. `ensureCoverage(camera)` runs on every `setCamera`: a cheap predicate returns immediately with 10 % slack; otherwise a **same-size re-anchor** (the common case — pan at fixed zoom) translates stroke coords, slides the done canvas's pixels by the same delta, and repaints only the newly exposed edge strips (exact rects, not 512-px tiles, which would repaint most of the backing); origin deltas snap to the device-pixel grid so the blit never resamples. Size changes are hysteresis-gated so pinch drift can't force reallocation. Anchor state is one shared mutable record so a re-anchor propagates to every closure without re-binding.
 
-`ensureCoverage(camera)` runs on every `setCamera` call. The fast path is a cheap predicate: if the camera viewport sits well inside the canvas with `REANCHOR_MARGIN_FRAC × worldSize` (10%) of slack on every side, and `worldSize` is within `RESIZE_RATIO_THRESHOLD` (1.4×) of what the current zoom wants, return immediately — the existing wrapper transform handles the motion. Otherwise:
+Before the blit-forward path (delta #25), every re-anchor repainted all visible ink — a periodic main-thread hitch every couple hundred px of pan on stroke-heavy notebooks. The remaining full rebake is zoom-crossing resizes only.
 
-1. Pick a new `worldSize` from `wantWorldSize(zoom)` — `max(WORLD_SIZE_MIN, longest visible side / zoom × 1.5)`. At zoom=1 this stays at 2048 (DPR=2 against `MAX_BACKING_PIXELS = 4096²`); at zoom=0.25 it grows to ~9600 with DPR auto-degrading to ~0.4 — fine because zoomed-out strokes are subpixel anyway.
-2. Pick a new `originX, originY` centered on the camera's current world viewport. On the same-size path the origin delta is snapped to the device-pixel grid so the blit below is a pixel-exact copy.
-3. **Same-size re-anchor** (pan at fixed zoom — the overwhelmingly common case): one `engine.reAnchorTranslate(dx, dy)` call (delta #25) translates every stroke's local coords (delta #20 internally, which also shifts the delta-#26 streamline caches), rebuilds the tile index, slides the done canvas's pixels by the same delta (`renderer.shiftDoneCanvas`, routed through the renderer's scratch canvas), and clears + repaints only the newly exposed edge strips (`renderer.rebakeRects` — exact rects, not tile-snapped, since 512-px tile granularity would inflate a ~200-400 px strip to most of the backing). Cost is O(edge-strip ink). If a preview transform is in flight (the done canvas has holes where the previewed strokes' tiles were held out), the engine falls back to a full repaint for that re-anchor.
-4. **Size-changed re-anchor**: `translateAllStrokePoints` as before, resize the three stage canvases + pocket stash + wrapper + svg, and let the engine's `resize()` rebake repaint everything — still O(visible ink). Size changes are hysteresis-gated (`MIN_KEEP_COVERAGE`): a re-anchor keeps the current `worldSize` — staying on the blit path — unless coverage is genuinely inadequate (< 1.35× the viewport side) or oversized past `RESIZE_RATIO_THRESHOLD`, so ordinary pinch drift between re-anchors can't force resizes. When a resize does run, the canvas backing-store is only reallocated if the pixel size actually changed (delta #27 + the same guard in `sizeCanvases`) — with DPR capped against `MAX_BACKING_PIXELS` the pixel size is usually constant, so most resizes cost a rebake, not an IOSurface reallocation.
-5. Walk pocketed strokes (hidden from done via delta #8) and re-render them into the pocket stash via `renderStrokeTo` (delta #20) — the stash bitmap was at old origin/dpr.
-6. `selectionEngine.refreshBBox()` so any visible bbox lands at the new local coords.
+### Engine deltas from the reference demo
 
-Before delta #25, every re-anchor repainted all visible ink (`fullRebake`), which read as a periodic main-thread hitch when panning a stroke-heavy notebook — distance-based, every couple hundred CSS px of travel. Steady-state pan/zoom is unchanged: same single CSS transform on the wrapper, no engine work.
+Every modification to `engine/` is tagged at the call site (`grep -rn "Hush delta #"`) and listed here so a diff against the reference demo has a known shape. Deltas #1–#9 are integration plumbing (host-supplied `pointToLocal` / DPR / atlas URLs, exposed `fullRebake`, square handles, `pocketed` → hidden, delete badge suppressed). The rest are behavioural or perf, and several document non-obvious WebKit cost models:
 
-`originX`, `originY`, and `worldSize` are held in a single mutable `AnchorState` record shared across `pointToLocal`, `applyWrapperTransform`, the pocket-blit getters, and the sync-shim's `localToWorld` / `worldToLocal` closures so a re-anchor's mutation propagates without re-binding callbacks.
+- **#10–#13 touch**: two-finger pan + pinch recognized in `gestures.js` (the SVG overlay owns touches in pen mode), promotion works mid-stroke (the active stroke is cancelled; palm contacts rejected by size; stale contacts swept after 5 s).
+- **#14 theme-tracking colors**: strokes carry `colorIsAuto` / `colorIsHeading` flags so theme switches retint them en masse.
+- **#15 `setEventActive(false)`** — disable engine event capture without clearing the selection (brush-slot taps must not wipe a retroactive selection).
+- **#16 `setChromeInteractive(false)`** — keep the selection bbox painted but `pointer-events: none` during draw/erase/slice so an invisible handle can't intercept the next stroke.
+- **#17/#19 finger hold-to-select** in pencil-only mode (arms the lasso timer without seeding a stroke).
+- **#18 `setPencilOnly`** — reject non-pen, non-mouse pointerdowns for the stroke path (iOS; flipped by `pencil-bridge.js`).
+- **#20 `translateAllStrokePoints` + `renderStrokeTo`** — bulk origin shifts and single-stroke rendering for re-anchor + pocket stash + selection raster.
+- **#21 per-point timestamps** (`t: e.timeStamp`, optional everywhere) — feeds ML Kit's pen-velocity model; only intra-stroke deltas are meaningful.
+- **#22 skip-rebake inserts** for bulk loads.
+- **#23 `hasActiveStroke()`** — the bridge defers autosaves until pen-up (a save's IPC marshal drops pointer samples → straight-line gaps in ink).
+- **#24 rAF-coalesced gesture evaluation** — per-event evaluation paired one finger's fresh sample with the other's stale one, wobbling the pair spread and spuriously engaging pinch during parallel pans. Pinch rebaselines at engage; pair-angle rides along for canvas rotation.
+- **#25 blit-forward re-anchor** (`reAnchorTranslate`) — see above; falls back to full repaint while a preview transform holds tiles out.
+- **#26 per-stroke streamline cache** keyed by points-array **identity** (sound because geometry mutations replace the array — the same immutability the undo manager relies on). The active stroke is never cached; caches shift with re-anchors.
+- **#27 no-op-safe `resize()`** — assigning `canvas.width` always clears and can reallocate the backing store; with DPR capped, worldSize changes usually keep the same pixel size, and the pointless reallocation measured **0.8–1.5 s of IOSurface churn per resize** on iPad.
+- **#28 empty-aware overlay clears** — skip full-surface clears of the live/preview overlays when they can't hold pixels.
+- **#29 readback-free done-canvas shift** — using a canvas as its own `drawImage` source forces WebKit to snapshot the whole surface (~230 ms GPU→CPU readback even for a 1×1 dirty rect); a *detached* scratch is CPU-backed and pays the same on its first leg. The blit routes through an **attached, near-invisible (1 % opacity) helper canvas** — composited, so GPU-backed, but its writes skip the display upload.
+- **#30 ImageBitmap tinted atlases** — a canvas used as a `drawImage` *source* is mutable, so WebKit re-uploads it per draw; immutable bitmaps keep repeated stamps on the GPU (the edge-strip rebake was a ~220 ms commit stall without this).
+- **#31 opacity-swap double buffer** — the governing cost model: WebKit rasterizes Canvas2D CPU-side and uploads the **dirty region** of *visible* canvases at ~280 MB/s (fully dirtying a visible 4096² canvas ≈ 235 ms however cheap the JS), while ~1 %-opacity canvases skip the upload. So shifts/repaints draw into the near-invisible helper and **swap the two canvases' roles** (opacity + class flips + ctx rebind — compositor-cheap); consumers resolve the current target via `getDoneCtx()` / `getDoneCanvas()` instead of capturing references.
 
-### The engine (deltas from the reference demo)
+### Apple Pencil (iOS)
 
-Targeted deltas have been applied to `engine/` so the port stays as close as possible to the upstream code. Each is documented at the call site (`grep -rn "Hush delta #" src/notebook/drawing/engine/` finds every modification) and listed here so a diff-check against the reference demo has a known shape:
+Finger touches never draw — `setPencilOnly(true)` is flipped at startup by `pencil-bridge.js` (`PointerEvent.pointerType` is reliable on this WKWebView). Fingers still pan/pinch/tap-undo and can hold-to-lasso. The Pencil squeeze/double-tap has no PointerEvent equivalent, so `src-tauri/tauri-plugin-pencil/` attaches a `UIPencilInteraction` to the WKWebView and emits a `double-tap` plugin event → `toggleNotebookEraser()`. An earlier version of the plugin also attached a gesture recognizer to the scrollView for finger-vs-pencil detection — it broke touch delivery entirely and was removed; the plugin's sole job is the double-tap event.
 
-1. **`pointToLocal`** — engine receives Hush's screen→local transform instead of computing its own; keeps pointer events aligned with the CSS wrapper transform we drive the engine inside.
-2. **`getDpr`** — DPR is read from a Hush-owned callback (we cap at 2 and factor in `MAX_BACKING_PIXELS`).
-3. **`brushUrl`** — atlas URLs come from `brush-urls.ts` (Vite `?url` import) rather than a hard-coded relative path.
-4. **selection `pointToLocal`** — mirror of #1 for the lasso engine.
-5. **gestures `pointToLocal`** — mirror of #1 for the pinch/pan gesture engine.
-6. **public `fullRebake`** — exposed on the engine adapter so the shim can trigger it after bulk loads and layer mutations.
-7. **Square handles** — `selection.js` renders 10 px `<rect>` resize handles in place of the reference demo's circles, matching Hush's TextShape / ImageShape selection UI.
-8. **Pocketed → hidden** — `isStrokeHidden` treats `pocketed` as a reason to skip the done-canvas render; the pocket tray shows those strokes via the separate pocket stash canvas (see "Pocket stash" below).
-9. **Delete badge hidden** — the red-X bbox badge from the reference demo is created but never appended to the DOM. Delete for strokes flows through Hush's shared selection toolbar trash icon, so an engine-owned badge was redundant.
-10. **Two-finger pan** — `gestures.js` watches for two-finger drift past `PAN_START_2` and promotes the burst from tap-candidate to pan. Midpoint deltas (client space) are forwarded via `onPanStart / onPanMove / onPanEnd` so the notebook camera can track. Without this, iPad users couldn't pan while any drawing tool was active (the SVG overlay swallowed the touches).
-11. **Configurable long-press** — `stroke.js` reads its lasso hold duration from `state.longPressMs` instead of a module constant, and exposes `setLongPressMs()`. Hush drives this from the Lasso flyout's 500–2000 ms slider (`state.lassoHoldMs`).
-12. **Pinch-zoom** — `gestures.js` also fires `onPinchStart / onPinchMove / onPinchEnd` with client-space midpoint + finger-spread distance once the spread has drifted past `PINCH_START`. Runs alongside pan in the same burst — typical iPad zoom is "spread + drift" simultaneously.
-13. **Pan-during-draw** — gesture-mode promotion fires on any small second contact landing while a stroke is in flight, rather than gating on the first finger being still. The active stroke is cancelled (`strokeEngine.cancelActiveStroke()`) on landing so the user can pan with two fingers mid-stroke; palm contacts are still rejected via `MAX_CONTACT_SIZE` so a brushing palm doesn't kill the stroke. A stale-entry sweep on every pointerdown drops any contact older than `STALE_ENTRY_MS` (5 s) as a backstop against missed pointerup / pointercancel events under iPad palm rejection. `SIMULTANEITY_MS` covers the evaluation window only (600 ms) — the pre-gate doesn't enforce it.
-14. **Theme-tracking color flags** — `stroke.js` carries two boolean flags on every active stroke (`colorIsAuto`, `colorIsHeading`) plus a `setColorAutoSource(source)` method. Hush calls it from `applySlot` whenever a brush slot uses an `"auto"` or `"heading"` sentinel, so freshly-drawn strokes inherit the matching flag and `drawing-layer.setTheme` can retint them en masse on theme switches.
-15. **Soft selection deactivate** — `selection.js` exposes `setEventActive(bool)` alongside the existing `activate / deactivate` pair. The hard `deactivate()` clears `selectedIds` (it has to, to keep the lasso-end semantics). `setEventActive(false)` only flips `state.active = false` and clears any in-flight lasso, so `drawing-layer.setTool` can disable engine event capture for non-select sub-tools without dropping the user's retroactive selection. Without this, brush-slot taps would wipe the engine selection right after the bridge re-populated it on the same tool change.
-16. **Chrome interactivity toggle** — `selection.js` exposes `setChromeInteractive(bool)` which toggles `pointerEvents` on the entire bbox `<g>`. Used by the bridge during pen+draw/erase/slice with a live retroactive selection: the chrome stays painted (the user can see what's selected while the brush flyout retints it) but every pointerdown falls through to the stroke engine, so the user's next stroke isn't intercepted by an invisible-to-them resize handle.
-17. **Finger hold-to-select (pencil-only mode)** — In pencil-only mode, finger contacts now arm the long-press timer at the touch position without seeding an active stroke (`state.fingerHoldPointer` tracks the candidate). Drift past `LONG_PRESS_MOVE_THRESHOLD` or release before the timer cancels the gesture quietly; on timeout the existing `onLongPress` handoff promotes the finger pointer into a lasso. A second finger landing during a hold cancels the candidate so the gesture recogniser can claim the burst.
-18. **`translateAllStrokePoints` + `renderStrokeTo`** (source-side delta #20) — `stroke.js` exposes a bulk point-shift method and a single-stroke render helper so the host's re-anchor controller can slide the wrapper origin (and re-render pocketed strokes into the stash at new pixel positions) without poking the engine's internals. See "Re-anchoring" above for the full lifecycle.
-19. **Per-point timestamps** (source-side delta #21) — `getPoint` stamps `t: e.timeStamp` onto every captured point (`commitTransform` carries it through move / resize). The field is optional everywhere (`DrawPoint.t?`), rides the sync shim into `DrawShape.points`, persists as whole ms in the notebook envelope, and feeds the ML Kit ink recognizer's pen-velocity model — only deltas *within* a stroke are meaningful since `timeStamp` is page-relative. The renderer ignores it.
-20. **Skip-rebake inserts** (source-side delta #22) — `insertStrokeAt(stroke, index, opts)` accepts `opts.skipRebake` so bulk loads can insert N strokes without N per-insert tile rebakes (quadratic in N) and issue one `fullRebake()` at the end. Used by the sync shim's bulk-replace path.
-21. **`hasActiveStroke()`** (source-side delta #23) — true while a stroke is in flight. Surfaced through `DrawingLayer.hasActiveStroke()` and `NotesCanvas.isStrokeInFlight()` so the notebook bridge's autosave can defer file writes until pen-up — a save's IPC marshal blocks the JS thread long enough to drop pointer samples, which read as straight-line gaps in whatever stroke was being drawn.
-22. **rAF-coalesced pan/pinch + pair angle** (source-side delta #24) — `gestures.js` evaluates pan/pinch promotion and fires the move callbacks once per animation frame instead of per pointermove. Each finger's moves arrive as separate pointer events, so per-event evaluation paired one finger's fresh sample with the other's stale one — the finger-pair spread wobbled by up to a frame of finger travel, spuriously engaging pinch during a parallel two-finger pan and yanking the zoom around (the "two-finger pan doesn't work in pen mode" bug; the notebook canvas's own touch handler never had this problem because `e.targetTouches` snapshots both fingers coherently). `onPinchStart` also rebaselines to the engage-frame spread (callers ratio from ~1, killing the engage-time jump), pinch engagement additionally triggers on pair-angle twist past `PINCH_ANGLE_START`, and both pinch callbacks now carry the finger-pair angle so the notebook can drive opt-in canvas rotation. The matching notebook-side fix (`notes-canvas.ts`) rebaselines the gesture's camera reference at pinch engage — previously the camera snapped back to its pre-pan position the moment the spread drifted 12 px.
-23. **Blit-forward re-anchor** (source-side delta #25) — `reAnchorTranslate(dx, dy)` on the engine, used by `re-anchor.ts` for same-size re-anchors (pan at fixed zoom). Translates stroke points, rebuilds the tile index, slides the done canvas's pixels by the same delta (`renderer.shiftDoneCanvas`, blitted through the renderer's shared scratch canvas — spec-defined self-`drawImage` is avoided for old-WebKit safety, and the scratch already exists for the highlighter flatten path), then clears + repaints only the newly exposed edge strips via `renderer.rebakeRects` (exact rects — tile-snapping a ~200-400 px strip to 512-px tiles would repaint most of the backing). The re-anchor origin delta is snapped to the device-pixel grid so the blit never resamples (a fractional shift would progressively blur ink across re-anchors) and strip seams land on pixel boundaries. Falls back to a full repaint when a preview transform is in flight, since the done canvas then has holes where the previewed strokes' tiles are held out. This turns the re-anchor from O(visible ink) — the periodic freeze when panning a stroke-heavy notebook — into O(edge-strip ink); only zoom-driven resize re-anchors still pay a full rebake.
-24. **Per-stroke streamline cache** (source-side delta #26, in `stroke-render.js`) — `renderStroke` used to recompute `getStrokePoints` from scratch on every render of every stroke, allocating two objects per point (measured ~7 ms per full rebake at 5k×26-pt strokes on desktop V8, with the GC pressure the real tax on iPad JSC). The output is now cached on the engine stroke keyed by points-array **identity** + the streamline value in effect — sound because geometry mutations replace the points array (`setStrokePoints`, `commitTransform`, slice), the same immutability discipline the undo manager's shared checkpoints rely on. The active stroke is never cached (its points array grows and mutates in place), and `translateAllStrokePoints` shifts cached streamline points alongside the raw points (streamlining is translation-invariant) so re-anchors keep the cache warm. `_streamCache` lives only on engine-private strokes — the sync shim builds fresh objects at both boundaries, so it can't leak into `DrawShape`s or serialization.
-25. **No-op-safe `resize()`** (source-side delta #27) — `resize()` skips the canvas backing-store write when the pixel size is unchanged. Assigning `canvas.width` always clears and can reallocate the backing; with the host capping DPR against `MAX_BACKING_PIXELS`, the pixel size is constant across worldSize changes on high-DPR devices (e.g. always 4096 on a DPR-2 iPad), so re-anchor resizes were paying multi-hundred-MB IOSurface reallocation churn — measured 0.8-1.5 s per resize on-device — for a no-op dimension change. The drawing layer's `sizeCanvases` carries the same guard. Pairs with the `MIN_KEEP_COVERAGE` size hysteresis in `re-anchor.ts`, which keeps zoom-drifted re-anchors on the delta-#25 blit path in the first place.
-26. **Empty-aware live/preview clears** (source-side delta #28) — `translateAllStrokePoints` and `resize()` skip the full-surface clears of the live / preview overlays when they can't hold pixels (no active stroke, no live preview transform). During plain pans both overlays are always empty, and on iPad-class WebKit each needless full-surface clear was main-thread commit cost stacked onto the re-anchor stall.
-27. **Readback-free done-canvas shift** (source-side delta #29) — `createStrokeEngine({ blitCanvas })` accepts an ATTACHED (composited → GPU-backed) helper canvas that `shiftDoneCanvas` prefers over a self-`drawImage`. On-device probing isolated the real cost of the re-anchor blit: using a canvas as its own `drawImage` source forces WebKit to snapshot the entire surface — a ~230 ms GPU→CPU readback even for a 1×1 dirty rect — while a full-surface fill on an equally-sized fresh composited canvas takes ~one frame; a DETACHED scratch is CPU-backed and pays the same readback on its first leg. The blit is now two cross-canvas `'copy'` draws through the helper (created by `drawing-layer-dom.ts` under the done canvas at 1% opacity, so it stays composited but imperceptible; near-zero rather than zero because WebKit demotes fully-hidden canvases off the GPU). Self-blit and scratch remain as runtime fallbacks when no helper is provided.
-28. **ImageBitmap tinted atlases** (source-side delta #30, in `stroke-atlas.js`) — each tinted brush atlas is asynchronously promoted to an `ImageBitmap` and handed to the stamper once resolved (canvas fallback until then and on engines without `createImageBitmap`; bitmaps are closed on invalidation). A canvas used as a `drawImage` SOURCE is mutable, so WebKit re-converts/re-uploads it per draw — the re-anchor's edge-strip rebake (hundreds of stamps) stayed a ~220 ms commit stall even after the delta-#29 readback-free blit. Immutable bitmaps let the texture be cached, keeping repeated stamps on the GPU.
-29. **Opacity-swap double buffer** (source-side delta #31, in `stroke-render.js`) — the final on-device cost model: WebKit rasterizes Canvas2D CPU-side and, at commit, uploads the canvas's **dirty region** to the display surface at ~280 MB/s — so any operation that fully dirties a VISIBLE 4096² canvas costs ~235 ms no matter how cheap the JS was, while writes to a ~1%-opacity canvas skip the upload entirely. `shiftDoneCanvas` therefore draws the shifted frame into the near-invisible delta-#29 helper with one cross-canvas `'copy'`, then **swaps the two canvases' roles** — opacity + class flips and a ctx rebind, all compositor-cheap — so the visible canvas is never fully dirtied. `repaintAll` (resize re-anchors at zoom crossings, theme retints, bulk loads) paints into the spare and swaps the same way. `doneCtx` became a reassignable binding inside the renderer, and every external consumer resolves the current target via `getDoneCtx()` / `getDoneCanvas()` instead of capturing a reference (the engine's `resize`, `endStroke`, `clear`, the pocket-blit's source resolver, the perf tooling). Class names follow the role so class-based queries keep working. Self-blit `'copy'` and the detached-scratch round trip remain as fallbacks when no helper canvas is provided.
+### Tools, toolbar, brushes
 
-### Apple Pencil gating (iOS)
+The drawing tools sit past a divider on the single notebook toolbar (see README-NOTEBOOK.md for the bar's drag handle / snap zones / minimize). Sub-tools: `draw` (append strokes; the active brush slot indicates it — clicking any brush exits Erase/Slice back to Draw), `erase` (pixel-test, consumes whole strokes), `slice` (splits a stroke at the cut), `select` (polygon lasso). A hold without drift during draw/erase (duration from the Lasso flyout, 500–2000 ms) cancels the in-flight stroke and promotes the gesture into a lasso; tapping empty canvas afterwards restores the previous sub-tool. Canvas rotation and background settings live in the fixed bottom-right button row (`bg-settings-fixed-button.ts`).
 
-On iOS Tauri builds, finger touches don't *draw* — only Apple Pencil and mouse can seed strokes. The gate lives at the engine level: `engine/stroke.js` carries a `setPencilOnly(bool)` flag (delta #18) that rejects every non-pen, non-mouse `pointerdown` for the stroke path. `src/notebook/pencil-bridge.js` flips that flag on once at startup if the runtime is iOS — no native code involved for the gate itself, since `PointerEvent.pointerType` reliably reports `"pen"` for Apple Pencil and `"touch"` for finger on this iPad WKWebView build.
+**Brush slots** (`state.brushSlots[0..3]`): `{ brushId, color, size, mode, streamline, spacing }`. Colors `"auto"` and `"heading"` are theme sentinels resolving at paint time (tagged on strokes for retint). Clicking the already-active slot opens its edit flyout; edits also retroactively restyle a live selection, with slider drags wrapped in one style session per gesture so a sweep is a single undo entry (`snapshotSelectedStyle` → `applyStyleToSelection` → `commitStyleHistory`).
 
-Fingers can still trigger **hold-to-select** even with pencil-only on (delta #19). A finger contact in pencil-only mode arms the long-press timer at the touch position *without* seeding an active stroke; drift past `LONG_PRESS_MOVE_THRESHOLD` or release before the timer cancels the gesture. On timeout the existing `onLongPress` handoff promotes the finger pointer into a lasso pointer (the selection engine takes over capture from there). A second finger landing during a hold kills the candidate so the gesture recogniser can claim the burst (pan / pinch / 2-3 finger tap).
+### Selection bridging + drag performance
 
-### Apple Pencil double-tap (iOS)
+The engine owns pen-mode lasso selection and pushes hits into `state.selectedIds`; `selection-bridge.ts` mirrors the reverse so the engine's bbox + handles also appear under Hush's regular Select tool. Three orthogonal toggles control chrome exposure per mode (`setBboxClickable`, `setChromeHidden`, `setChromeInteractive` — see deltas #15/#16). Resize is always proportional; the rotation handle tethers off the left edge (the selection toolbar kept covering a top handle); rotation bakes points on commit.
 
-The Apple Pencil 2nd-gen / Pencil Pro squeeze gesture has no `PointerEvent` equivalent, so it goes through a native plugin: `src-tauri/tauri-plugin-pencil/` (Swift `PencilPlugin` + Rust shell). The plugin attaches a `UIPencilInteraction` directly to the WKWebView and triggers a `double-tap` plugin event each time the sensor fires; `pencil-bridge.js` registers a listener on that event and calls `toggleNotebookEraser()` from `notes-canvas.ts`, which flips the active notebook between the eraser and whatever non-erase sub-tool the user was last on (typically `draw`, which preserves their active brush slot).
+**Select-drag routes through `engine.previewTransform`** instead of per-frame point mutation: begin excludes the dragged strokes from the done canvas and pauses the shim, update is a single CSS/matrix shift on the preview overlay (one composited frame, independent of N), end commits the total offset and resumes. A 500-stroke drag runs at single-stroke frame rate. Double-clicking a stroke selects just that stroke (the one way to pick a member out of a group).
 
-An earlier iteration of the Swift plugin also attached a passive `UIGestureRecognizer` to the WKWebView's `scrollView` for finger-vs-pencil detection. That gesture chain interfered with how the page received touches and broke iPad drawing entirely, so it has been removed; the plugin's only responsibility now is the double-tap event. `UIPencilInteraction` is attached to the webview itself, not the scrollView, and does not affect touch delivery.
+**Pocket stash**: pocketed strokes are hidden from the done canvas (delta #8) and blitted into a separate offscreen stash canvas that the pocket tray renders from.
 
-The plugin is registered unconditionally from `src-tauri/src/lib.rs` (`tauri_plugin_pencil::init()`); on every non-iOS target the plugin's iOS hook is gated behind `cfg(target_os = "ios")` so the macOS build stays a no-op. Listener registration is permitted via the `pencil:default` capability in `src-tauri/capabilities/default.json`.
+### Undo/redo
 
-### Drawing tools (the bottom pill)
-
-Drawing is always on-deck: the drawing buttons live in the right half of the unified bar (past the divider that separates main canvas tools from drawing tools), and picking any of them flips `state.tool = "pen"` implicitly with the matching sub-tool. Leaving drawing happens when the user picks a non-drawing tool to the left of the divider (Select / Text / Drag Area / Brainstorm) — which flips `state.tool` back and the drawing buttons visually dim (opacity 0.6).
-
-The bar is one DOM element so there's no inter-pill shadow seam, and three gray-pill end-caps anchor to the canvas container as siblings of the bar:
-- **Drag** (leftmost) — press-and-drag updates `state.drawingToolbarOffset`, which `toolbar.ts` and `tool-panel.ts` both consume so the bar and every end-cap move as one unit.
-- **Rotate** (next to drag) — flips `state.drawingToolbarVertical`. The handler captures the bar's pre-toggle screen center and queues a microtask that, after the orientation listeners apply new styles, sets a fresh offset preserving the saved center (clamped). Two microtasks land before paint, so the user sees the bar move from old position straight to preserved position with no intermediate flash.
-- **Background settings** (right end-cap) — opens the canvas pattern / spacing / opacity popup. Like the brush + lasso flyouts, it follows the proximity rule (away from the nearest screen edge).
-
-Each end-cap's perpendicular dimension matches the bar's: 38 px tall in horizontal mode, 52 px wide in vertical, so the assembly reads as one continuous strip. A `ResizeObserver` on the bottom toolbar drives a `relayout()` callback that re-anchors every end-cap whenever sidebar / theme / leftInset shifts change the bar's dimensions. `clampOffset` folds all three end-caps + the bar into one bbox so neither edge can be dragged off-screen.
-
-| Sub-tool | Engine behavior |
-|----------|-----------------|
-| `draw` | New strokes are appended. Current brush slot feeds size / color / brushId / mode. |
-| `erase` | Pixel-test erase on the done canvas; consumes strokes wholesale. |
-| `slice` | Pixel-test slice at the cut; splits a stroke into two. |
-| `select` | Polygon lasso; hits are bridged to `state.selectedIds` (see below). |
-
-Draw has no dedicated button — the active brush slot indicates it. Clicking any brush returns the user to Draw (that's how they exit Erase/Slice). Lasso is the first button in the pill; clicking it activates select, clicking the already-active Lasso toggles a flyout with a single slider (500–2000 ms) for the hold-to-lasso duration.
-
-`enterDrawingMode()` / `exitDrawingMode()` still exist on `DrawingState` as stable entry points for external callers, but the UI never surfaces them as a toggle.
-
-**Long-press → lasso handoff.** While the user is drawing, a 0.5-s hold (or whatever `state.lassoHoldMs` currently is) without drift cancels the in-flight stroke and promotes the gesture into a lasso. The drawing layer saves the previous sub-tool, flips to `select` for the duration of the selection (so the stroke engine stops accepting new draws), and flashes a small "Selecting" pill to the left of the anchor for acknowledgement. Tapping empty canvas while a selection exists (a `onLassoComplete({ selected: false })` from the engine) restores the previous sub-tool so the user drops straight back into drawing.
-
-### Brush slots
-
-Four user-owned presets (`state.brushSlots[0..3]`; the slot row derives its button count from the array). Each slot carries `{ brushId, color, size, mode, streamline, spacing }`. The factory defaults are `auto` (theme text colour, brush-1, 3 px), `heading` (theme heading colour, brush-2, 6 px), `#3b82f6` (blue, brush-3, 25 px), and a yellow highlighter (`#fde047`, brush-highlighter chisel-tip atlas, 20 px, `mode: "highlighter"` — the multiply + 0.5-alpha composite). Two of the slot colours are theme sentinels: `"auto"` resolves to `theme.foreground` at paint time (tagged `colorIsAuto` on the stroke) and `"heading"` resolves to `theme.headingColor` (tagged `colorIsHeading`) — the same hue markdown headings paint in the editor. Both flags ride through the engine's stroke metadata so theme changes retint matching strokes; the engine's `setColorAutoSource(source)` carries the choice forward to freshly-drawn strokes. Picking a `heading` swatch lets users mark up text-shape annotations in the same accent the editor uses for headers, which is handy for sketchy diagrammatic emphasis on top of typed notes.
-
-**Flyout behavior.** Clicking the already-active slot toggles a flyout that edits that slot in place. Clicking a different slot just switches — it does **not** open the flyout. Inside the flyout, edits also retroactively restyle any live selection; slider drags are wrapped in one style-session-per-drag so a single undo reverts the whole gesture.
-
-The slot buttons match the main toolbar icon size (36×36, transparent) and use opacity — not a tint background — to indicate which slot is active. Active state is only shown when the sub-tool is `draw`.
-
-### Layers
-
-Layers are notebook-level — not drawing-specific — because shape membership applies to every shape type (text, image, drag-area, draw). `state.layers` is an ordered array (top-first). Every shape carries an optional `layerId`; legacy shapes default to the bottom layer on load. The notebook renderer iterates bottom-to-top and skips hidden layers, producing the expected paint order.
-
-The dropdown is mounted on the bottom notebook toolbar and exposes per-row: radio (make active), rename (double-click), reorder arrows, visibility eye, lock, trash. The drawing engine mirrors the layer list via its own `layers.js` module; the shim keeps the two in sync.
-
-### Selection bridge
-
-The engine owns drawing-mode selection via `selection.js`. When it commits a lasso pick, `bridgeEngineSelectionToState` writes the hit stroke ids back to `state.selectedIds` so downstream hush UI (selection toolbar, Cmd+G, shelf highlight) treats the strokes like any other shape selection.
-
-The reverse direction is also bridged via `selection-bridge.ts`: every `selectedIds` / `tool` / `drawingSubTool` change resolves matching engine stroke ids and pushes them into `selectionEngine.setSelectedIds(...)` so the bbox + handles appear when strokes are selected via Hush's regular Select tool, not just the pen-mode lasso. Three orthogonal toggles control how the chrome is exposed in each mode:
-
-- **`setBboxClickable(bool)`** — pen+lasso turns it on so the dashed body acts as a grab-to-move target; everywhere else it's off so click-on-stroke routes through Hush's drag handler.
-- **`setChromeHidden(bool)`** — only flipped to `true` for transient cases (none currently in active use); `false` keeps the bbox visible whenever `selectedIds.size > 0`.
-- **`setChromeInteractive(bool)`** (delta #16) — pen+draw/erase/slice with a live selection sets this to `false`, leaving the bbox painted as a passive visual cue but pinning `pointer-events: none` on the `<g>` so the user's next stroke isn't intercepted by a handle.
-
-Drawing-layer's `setTool` calls `setEventActive(false)` (delta #15) for non-select sub-tools, which disables the engine's pointer-event listeners without touching the selection set — that's what keeps the user's selection alive across brush-slot taps so the flyout can keep retinting it.
-
-### Drag performance
-
-Naive drag: update N `DrawShape.points` per frame, fire a shapes notify, diff, call `setStrokePoints(...)` N times, rebake N tiles. Unusable above ~20 strokes.
-
-Instead, hush's select-drag routes DrawShape moves through `engine.previewTransform`:
-
-1. `beginSelectionDrag(hushIds)` — strokes with those ids are excluded from the done canvas and drawn on the preview overlay. The shim pauses so per-frame state.shapes point mutations don't re-enter the engine.
-2. `updateSelectionDrag(totalDx, totalDy)` — a CSS/matrix shift on the preview overlay. One GPU-composited frame, independent of N.
-3. `endSelectionDrag()` — mutate engine points by the final total offset, rebridge, resume the shim.
-
-A drag of 500 strokes runs at the same frame rate as a single-stroke drag.
-
-### Double-click on a stroke
-
-Double-clicking a `DrawShape` (including a stroke that lives inside a group) selects only that single stroke — the click reaches `DrawingState.handleDoubleClick`, which sets `selectedIds = { hit.id }` without changing the stroke's `groupId`. That's the only path for picking one member out of a group; single-click promotes to whole-group selection. The double-click path replaces Hush's default double-click behaviour (which would create a new text shape) for the drawing case specifically.
-
-### Pocket stash
-
-Pocketed strokes are hidden from the done canvas (engine delta #8). To still render them inside the pocket tray, the layer keeps a separate offscreen canvas called the pocket stash. On pocket, the drawing layer blits the stroke's world-region into the stash. On unpocket, it restores. The notebook's pocket tray renderer reads from the stash via `blitWorldRegion` with a pocket-space destination ctx.
-
-### Retroactive styling
-
-When the drawing selection is live, flyout edits restyle the selection in place rather than just updating the slot config. The lifecycle:
-
-1. `snapshotSelectedStyle()` — capture the pre-edit styles.
-2. `applyStyleToSelection(patch)` — live preview. No history entry yet.
-3. `commitStyleHistory(before)` — record one snapshot via `state.recordHistory()` if anything actually changed. No-op otherwise.
-
-Slider inputs open a session on their first `input` event of a drag and commit on `change` (fired on pointer release) so a slider sweep produces one undo entry, not one per frame.
-
-### Selection bbox: resize, rotate, undo
-
-`selection.js` paints a dashed bbox with **eight square resize handles** (corners + edge mid-points) and a **rotation handle** as a small circle on a tether off the **left edge** (it used to float above the top edge, where the hovering selection toolbar kept hiding it). Resize is always **proportional** — corner handles project the cursor onto the diagonal anchor→handle vector; edge mid-handles propagate their single-axis scale to the locked axis. The engine's `commitTransform(ids, fn, sizeScale)` accepts an optional uniform size scale so the brush stamp itself widens or narrows with the bbox, not just the underlying point positions. Rotation rotates the chrome via an SVG `transform="rotate(angle, cx, cy)"` for live feedback and bakes the rotated points on commit; the bbox is then recomputed axis-aligned from the new points.
-
-The bbox + handles also appear when strokes are selected via Hush's regular Select tool — `selection-bridge.ts` listens for `selectedIds` / `tool` / `drawingSubTool` change events and pushes the matching engine stroke ids into `selectionEngine.setSelectedIds()`. CSS pins `pointer-events: auto` on `.bbox` and `.handle` so the handles stay interactive even when the SVG root has `pointer-events: none` outside pen mode (which lets empty-canvas clicks fall through to Hush's input layer). The pen-mode lasso path skips the bridge so it owns its own selection set.
-
-### Undo / redo
-
-Drawing-mode actions (add stroke, erase, slice, transform, restyle) flow into Hush's snapshot-based `UndoManager` — the same stack that backs `⌘Z` for every other notebook action. Engine callbacks bridge their mutations into `state.shapes` via the sync shim and then call `state.recordHistory()` to capture a checkpoint. The shim exposes `isDiffing()` so engine callbacks fired as a consequence of a state→engine reflection (e.g. an undo restoring `state.shapes` triggers `engine.removeStrokes` which fires `onStrokesRemoved`) skip recording; otherwise an undo would clobber the redo stack. The 2- and 3-finger touch taps in `engine/gestures.js` call `state.undo()` / `state.redo()` directly. The legacy engine-local command stack (`engine/history.js`) is no longer wired.
+Drawing actions flow into Hush's snapshot-based `UndoManager` — the same `⌘Z` stack as every other notebook action. Engine callbacks bridge mutations into `state.shapes` and call `state.recordHistory()`; the shim's `isDiffing()` lets callbacks fired *by* a state→engine reflection (undo restoring shapes → `removeStrokes` → `onStrokesRemoved`) skip recording, or an undo would clobber the redo stack. The 2-/3-finger taps call `state.undo()`/`redo()` directly. `engine/history.js` (the reference demo's command stack) is unwired, pending removal.
 
 ## Development rules
 
-Same as the notebook and main Hush codebase:
+Same as the notebook: 700-line cap, no frameworks, mutations through `DrawingState` or engine methods, **don't add work inside the shim's diff loop** — if a shape mutation needs extra processing, do it in the caller.
 
-- No file may exceed 700 lines.
-- No framework dependencies.
-- State mutations go through `DrawingState` (notebook-level state) or the engine's public methods (never poke `strokes[]`).
-- The sync shim's invariants are load-bearing — don't add work inside the diff loop. If a shape mutation needs extra processing, do it in the caller.
+### Adding a new sub-tool
 
-## Adding a new sub-tool
+1. Add to the `DrawingSubTool` union in `types.ts`.
+2. Pointer handling in `engine/stroke.js` (or a new `engine/*.js`).
+3. Button in `SUB_TOOLS` in `tool-panel.ts` (or beside Lasso for custom click behaviour).
+4. Route through `DrawingLayer.setTool()`; have the click handler call `activateDrawingSubTool()` (flips `state.tool = "pen"`, clears pans, sets the sub-tool).
 
-1. Add the tool to the `DrawingSubTool` union in `types.ts`.
-2. Implement the pointer handling in `engine/stroke.js` (or a new `engine/*.js` if it's distinct enough).
-3. Add the button to `SUB_TOOLS` in `drawing/tool-panel.ts`, or mount it alongside Lasso if it needs custom click behavior (e.g. its own flyout).
-4. Route the sub-tool through `DrawingLayer.setTool()` so the engine gets the update.
-5. Have the button's click handler call `activateDrawingSubTool()` from `tool-panel.ts` — that's what flips `state.tool = "pen"`, clears an active pan, and sets the sub-tool in one shot.
+### Adding a new brush
 
-## Adding a new brush
-
-1. Drop a `brush-N.png` atlas into `engine/brushes/`.
-2. Register it in `brush-urls.ts` and the `BRUSH_IDS` list in `brush-slots.ts`.
-3. The engine's atlas loader and tint cache pick it up automatically.
+1. Drop `brush-N.png` into `engine/brushes/`.
+2. Register in `brush-urls.ts` and `BRUSH_IDS` in `brush-slots.ts` — the atlas loader and tint cache pick it up.

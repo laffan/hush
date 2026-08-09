@@ -107,7 +107,6 @@ export function applyActiveStyle(state) {
     applyFontFamily(state.settings.fontFamily);
     document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
     document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
-    state.emit("theme-changed");
 
     // Background override — fall back to the resolved theme's bg.
     if (defaultColors.bg) {
@@ -152,16 +151,6 @@ export function applyActiveStyle(state) {
       document.documentElement.style.removeProperty("--link");
     }
 
-    // Pass the resolved bg (override or theme) through so the sidebar
-    // and other --theme-bg consumers track the default style's bg
-    // override. Without this, updatePrivateBoxColor falls back to the
-    // raw theme bg when no activeStyleId is set, leaving the sidebar
-    // mismatched with the editor.
-    {
-      const themeId = appearance === "dark" ? state.settings.darkTheme : state.settings.lightTheme;
-      const resolvedBg = defaultColors.bg || themeBackgrounds[themeId];
-      updatePrivateBoxColor(state, resolvedBg, defaultColors.fg || null);
-    }
     // Default style pulls its line-indicator override from the same
     // per-appearance colour map as cursor / selection / etc.
     if (defaultColors.lineIndicator) {
@@ -169,9 +158,16 @@ export function applyActiveStyle(state) {
     } else {
       document.documentElement.style.removeProperty("--line-indicator-color");
     }
+    // Sidebar / chrome colours (--theme-bg and friends) resolve through
+    // the same shared chain that painted the editor above, so they
+    // land in the same synchronous pass — the sidebar can't disagree.
+    updatePrivateBoxColor(state);
     // Default style's shader lives at the top level of AppSettings.
     syncShaderLayerForStyle({ shaderLayer: state.settings.shaderLayer });
     applyStyleBackgroundImage(null);
+    // Emit last so theme-changed listeners (CodeMirror reconfigure,
+    // notebook sync) read fully-written CSS vars.
+    state.emit("theme-changed");
     return;
   }
 
@@ -203,14 +199,10 @@ export function applyActiveStyle(state) {
     style.lineHeight || state.settings.lineHeight,
   );
 
-  // Apply the style's theme first, then color overrides on top
-  state.emit("theme-changed");
-
   // Resolve the correct color set for current appearance (light vs dark)
   const { colors: resolvedColors } = resolveStyleForAppearance(style, state.settings.appearance);
   // Also support legacy single-mode colorOverrides
   const overrides = resolvedColors || style.colorOverrides || {};
-  updatePrivateBoxColor(state);
 
   const cmEditorEl = document.querySelector('.cm-editor');
   // Always update --bg to match the actual background (override or theme)
@@ -277,6 +269,15 @@ export function applyActiveStyle(state) {
   } else {
     document.documentElement.style.removeProperty("--line-indicator-color");
   }
+  // Sidebar / chrome colours (--theme-bg and friends) — same shared
+  // resolver, same synchronous pass as the editor writes above. This
+  // used to run BEFORE the --bg writes, where its stale-computed-style
+  // fallback painted the sidebar with the outgoing style's background
+  // for a beat on every style switch.
+  updatePrivateBoxColor(state);
+  // Emit last so theme-changed listeners (CodeMirror reconfigure,
+  // notebook sync) read fully-written CSS vars.
+  state.emit("theme-changed");
 }
 
 /** Handle a Google OAuth authorization code from the loopback callback. */

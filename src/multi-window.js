@@ -2,11 +2,10 @@
  * Multi-window support — desktop only.
  *
  * Each Hush window registers itself with the Rust-side WindowRegistry
- * (`commands/multi_window.rs`) on startup, claims a sequential number,
- * and tells the registry whenever its active doc/notebook changes.
- * Sibling windows listen for `windows-updated` and `cross-window-state-
- * changed` so the sidebar can paint per-window numeral badges and
- * settings / file-tree mutations propagate.
+ * (`commands/multi_window.rs`) on startup and tells the registry
+ * whenever its active doc/notebook changes. Sibling windows listen for
+ * `cross-window-state-changed` so settings / file-tree mutations
+ * propagate.
  *
  * The "Open in new window" command palette action calls
  * `openInNewWindow()` here, which spawns a `WebviewWindow` whose URL
@@ -17,6 +16,7 @@
 import { isIOSTauri } from "./command-palette-helpers.js";
 import { applyExternalDocContent } from "./sync/apply-external.js";
 import { findNode, findNodeByFileId } from "./state/tree-helpers.js";
+import { updatePrivateBoxColor } from "./theme-colors.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -85,9 +85,8 @@ export async function registerThisWindow() {
   return invoke("register_window", { label });
 }
 
-/** Push the current window's open file to the registry so other windows
- *  can render the right numeral badge. Pass `null` for both fields when
- *  no file is open. */
+/** Push the current window's open file to the registry. Pass `null` for
+ *  both fields when no file is open. */
 export async function pushCurrentFile(fileId, fileType) {
   if (!IS_TAURI) return;
   try {
@@ -220,7 +219,6 @@ export async function broadcastNotebookChanged(fileId) {
 /** Subscribe to cross-window events. Returns an unsubscribe function
  *  that detaches every listener. */
 export async function subscribeCrossWindow({
-  onWindowsUpdated,
   onStateChanged,
   onDocChanged,
   onNotebookChanged,
@@ -229,9 +227,6 @@ export async function subscribeCrossWindow({
   const { listen } = await import("@tauri-apps/api/event");
   const myLabel = await getLabel();
   const us = [];
-  us.push(await listen("windows-updated", (event) => {
-    if (typeof onWindowsUpdated === "function") onWindowsUpdated(event.payload || []);
-  }));
   us.push(await listen("cross-window-state-changed", (event) => {
     const { kind, originator } = event.payload || {};
     if (originator === myLabel) return; // our own echo
@@ -299,9 +294,8 @@ export async function updateWindowTitle(state) {
 
 /** End-to-end multi-window wiring for `main.js`. Subscribes to every
  *  cross-window event first (so the upcoming register/push echoes feed
- *  back through the same pipe and `state.windowList` populates without
- *  a separate fetchWindowList round-trip), then claims this window's
- *  number from the Rust registry and pushes the currently-open file.
+ *  back through the same pipe), then registers with the Rust registry
+ *  and pushes the currently-open file.
  *
  *  Beyond registry maintenance, this helper also drives live content
  *  sync: doc keystrokes broadcast (debounced 250 ms) so siblings can
@@ -315,16 +309,8 @@ export async function setupMultiWindow(state) {
   const myLabel = await getLabel();
 
   // Subscribe BEFORE register/push so the broadcasts that those calls
-  // emit are picked up as our own initial windowList population.
+  // emit feed back through the same pipe.
   await subscribeCrossWindow({
-    onWindowsUpdated: (list) => {
-      state.windowList = list || [];
-      // Numbers are derived ordinals now (renumbered 1..N on every
-      // membership change), so our own can shift when a sibling closes.
-      const mine = state.windowList.find((w) => w.label === myLabel);
-      if (mine?.number) state.currentWindowNumber = mine.number;
-      state.emit("windows-changed");
-    },
     onStateChanged: async (kind) => {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
@@ -349,6 +335,11 @@ export async function setupMultiWindow(state) {
           Object.assign(state.settings, fresh, keep);
           state.emit("settings-changed");
           state.emit("theme-changed");
+          // theme-changed repaints the editor but nothing else re-derives
+          // the sidebar's --theme-bg — without this, a sibling window's
+          // style/appearance change left this window's sidebar on the
+          // old colours.
+          updatePrivateBoxColor(state);
           // A sibling planting/clearing a YOUAREHERE marker must repaint
           // this window's sidebar row too — scoped to actual registry
           // changes so ordinary settings echoes don't rebuild the panel.
@@ -377,8 +368,7 @@ export async function setupMultiWindow(state) {
   });
 
   try {
-    const info = await registerThisWindow();
-    state.currentWindowNumber = info?.number || 1;
+    await registerThisWindow();
     const { fileId, fileType } = currentFileFromState(state);
     await pushCurrentFile(fileId, fileType);
   } catch (e) {
@@ -445,10 +435,10 @@ export async function setupMultiWindow(state) {
   // no destroy event, no unload — so the registry expires entries that
   // stop beating (mobile-side, 15 s) and this ping is what keeps ours
   // alive. A `true` reply means we had been expired while suspended and
-  // were just re-registered: re-push our file so our badge comes back
-  // on the right row. Timers stop while iOS suspends us, which is
-  // exactly the point — a scene that isn't running drops off siblings'
-  // sidebars, then reappears here the moment it resumes.
+  // were just re-registered: re-push our file so the registry knows what
+  // this window is showing. Timers stop while iOS suspends us, which is
+  // exactly the point — a scene that isn't running drops out of the
+  // registry, then reappears here the moment it resumes.
   const heartbeat = async () => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -459,25 +449,16 @@ export async function setupMultiWindow(state) {
   setInterval(heartbeat, 4000);
 
   // Coming back to the foreground: re-assert ourselves (our entry may
-  // have been expired while we slept), re-push our file, and re-fetch
-  // the pruned list so any badge left by a close we slept through
-  // clears immediately instead of on the next heartbeat.
-  const resyncWindowList = async () => {
+  // have been expired while we slept) and re-push our file.
+  const resyncRegistration = async () => {
     try {
       await registerThisWindow();
       syncWindowFile();
     } catch (_) {}
-    const list = await fetchWindowList();
-    const current = JSON.stringify(state.windowList || []);
-    if (JSON.stringify(list) === current) return;
-    state.windowList = list;
-    const mine = list.find((w) => w.label === myLabel);
-    if (mine?.number) state.currentWindowNumber = mine.number;
-    state.emit("windows-changed");
   };
-  window.addEventListener("focus", () => { void resyncWindowList(); });
+  window.addEventListener("focus", () => { void resyncRegistration(); });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") void resyncWindowList();
+    if (document.visibilityState === "visible") void resyncRegistration();
   });
 }
 

@@ -6,7 +6,6 @@
 
 import { applyAppearance } from "./settings/settings-ui.js";
 import { applyActiveStyle } from "./style-application.js";
-import { updatePrivateBoxColor } from "./theme-colors.js";
 import { applyNotebookSettings } from "./notebook/notebook-bridge.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
@@ -29,10 +28,14 @@ export function installNotebookAppearanceSync(state) {
     const nowDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     lastSystemDark = nowDark;
     applyAppearance("auto");
-    if (state.settings.activeStyleId) applyActiveStyle(state);
-    updatePrivateBoxColor(state);
-    state.emit("theme-changed");
-    syncNotebookIfActive();
+    // Unconditional — the Default style is a style too. The old
+    // `if (activeStyleId)` guard skipped the editor repaint for the
+    // Default style while the sidebar's colours still refreshed,
+    // which is exactly the "sidebar out of sync after the app was
+    // backgrounded" bug. applyActiveStyle repaints editor + sidebar
+    // in one synchronous pass and emits theme-changed itself (which
+    // also re-syncs an open notebook canvas).
+    applyActiveStyle(state);
   }
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", refreshAutoAppearance);
   document.addEventListener("visibilitychange", () => {

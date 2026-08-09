@@ -378,7 +378,6 @@ export function createSidebar(state) {
   // Cross-window settings merge — a sibling's sticky / pane / marker
   // writes landed in state.settings; repaint the indicator squares.
   state.on("remote-settings-merged", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
-  state.on("windows-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
 
   // Replay persisted open state. Any truthy value reopens the Files
   // panel since that's the only panel that lives in the sidebar now.

@@ -510,15 +510,12 @@ async function init() {
       } : {};
       Object.assign(state.settings, newSettings, keepPerWindow);
 
-      // If there's an active style, apply it; otherwise apply standard settings
-      if (state.settings.activeStyleId) {
-        applyActiveStyle(state);
-      } else {
-        applyAppearance(state.settings.appearance || "dark");
-        document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
-        document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
-        applyFontFamily(state.settings.fontFamily);
-      }
+      // Unconditional — applyActiveStyle's Default-style branch already
+      // re-applies appearance / font / size, and it repaints the editor
+      // and the sidebar (--theme-bg) from the same resolver so the two
+      // can't disagree. (The old `if (activeStyleId)` fork left the
+      // Default style on a hand-rolled path that skipped the sidebar.)
+      applyActiveStyle(state);
 
       // Apply visibility setting
       const { invoke } = await import("@tauri-apps/api/core");
@@ -531,7 +528,6 @@ async function init() {
         .catch((e) => console.warn("set_always_on_top failed:", e));
       state.emit("settings-changed");
       state.emit("theme-changed");
-      updatePrivateBoxColor(state);
     });
 
     // A desk recovered from a snapshot (Settings > Sync > Recovery).

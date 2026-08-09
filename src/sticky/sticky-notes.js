@@ -66,6 +66,9 @@ export function initStickyNotes(state) {
   for (const ev of [
     "file-opened", "notebook-open", "notebook-unmount",
     "pdf-open", "pdf-unmount", "stack-open", "stack-unmount",
+    // clearActiveFile ends on "no-file-state" (empty desk, deleted open
+    // file, archived desk) — without it a file sticky outlives its file.
+    "no-file-state",
     "active-desk-changed", "desktop-opened", "desktop-closed",
   ]) state.on(ev, refresh);
   // Desktop-pinned notes track the canvas camera.
