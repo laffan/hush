@@ -260,6 +260,11 @@ pub struct AppSettings {
     #[serde(default)]
     pub shader_layer: Option<ShaderLayer>,
 
+    // Background layers attached to the Default style (user styles carry
+    // their own backgroundLayers field). Opaque JSON — JS owns the shape.
+    #[serde(default)]
+    pub background_layers: Option<serde_json::Value>,
+
     // Outline View (right sidebar)
     #[serde(default = "default_true")]
     pub longview_show_paragraphs: bool,
@@ -625,6 +630,7 @@ impl Default for AppSettings {
             global_style_id: None,
             seeded_preset_files: Vec::new(),
             shader_layer: None,
+            background_layers: None,
             longview_show_paragraphs: true,
             longview_show_numbers: true,
             longview_show_comments: false,

@@ -372,6 +372,185 @@
   flex: 1;
 }
 
+/* ===== Background Layers ===== */
+.style-bg-layer-list {
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.style-bg-layer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--fg);
+  border-bottom: 1px solid rgba(128, 128, 128, 0.12);
+  user-select: none;
+}
+.style-bg-layer-row:last-child { border-bottom: none; }
+.style-bg-layer-row:hover { background: rgba(128, 128, 128, 0.08); }
+.style-bg-layer-row.selected { background: rgba(128, 128, 128, 0.16); }
+.style-bg-layer-row.layer-off .style-bg-layer-label,
+.style-bg-layer-row.layer-off .style-bg-layer-blend,
+.style-bg-layer-row.layer-off .style-bg-layer-thumb { opacity: 0.4; }
+
+.style-bg-layer-eye {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0.8;
+}
+.style-bg-layer-eye:hover { background: rgba(128, 128, 128, 0.18); opacity: 1; }
+.style-bg-layer-eye svg { width: 13px; height: 13px; }
+.style-bg-layer-row.layer-off .style-bg-layer-eye { opacity: 0.3; }
+
+.style-bg-layer-thumb {
+  width: 22px;
+  height: 15px;
+  border-radius: 3px;
+  border: 1px solid var(--panel-border);
+  background-size: cover;
+  background-position: center;
+  flex: none;
+}
+
+.style-bg-layer-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.style-bg-layer-blend {
+  font-size: 10px;
+  opacity: 0.55;
+  text-transform: capitalize;
+}
+
+.style-bg-layer-empty {
+  font-size: 12px;
+  color: var(--sidebar-fg);
+  opacity: 0.6;
+  padding: 4px 2px 8px;
+}
+
+.style-bg-layer-add {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.style-bg-layer-add button {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.style-bg-layer-add button:hover { background: rgba(128, 128, 128, 0.15); }
+
+.style-bg-layer-options {
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
+  padding-top: 8px;
+}
+
+.style-modal-subsection-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--sidebar-fg);
+  opacity: 0.55;
+  margin: 10px 0 6px;
+  padding: 0;
+}
+
+.style-bg-layer-actions {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 6px;
+}
+.style-bg-layer-actions button {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.style-bg-layer-actions button:hover:not(:disabled) { background: rgba(128, 128, 128, 0.15); }
+.style-bg-layer-actions button:disabled { opacity: 0.4; cursor: default; }
+
+.style-bg-layer-delete {
+  width: 100%;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, #e5484d 45%, transparent);
+  background: transparent;
+  color: #e5484d;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.style-bg-layer-delete:hover { background: color-mix(in srgb, #e5484d 14%, transparent); }
+
+/* Gradient pad — the draggable RGB node field. */
+.style-grad-pad {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  touch-action: none;
+  background-color: rgba(128, 128, 128, 0.08);
+}
+
+.style-grad-node {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  background: var(--node-color, #888);
+  transform: translate(-50%, -50%);
+  cursor: grab;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+.style-grad-node.selected {
+  width: 18px;
+  height: 18px;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
+}
+.style-grad-node:active { cursor: grabbing; }
+
+.style-grad-node-btns {
+  display: flex;
+  gap: 6px;
+}
+.style-grad-node-btns button {
+  padding: 4px 10px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.style-grad-node-btns button:hover:not(:disabled) { background: rgba(128, 128, 128, 0.15); }
+.style-grad-node-btns button:disabled { opacity: 0.4; cursor: default; }
+
 .style-editor-rail-appearance {
   display: flex;
   gap: 4px;
@@ -557,6 +736,14 @@
 
 .style-preview-content {
   max-width: 480px;
+  /* Sit above the background-layers preview host (z-index 0). */
+  position: relative;
+  z-index: 1;
+}
+
+.style-preview-cursor-demo {
+  position: relative;
+  z-index: 1;
 }
 
 .style-preview-content .preview-h1 {

@@ -55,9 +55,15 @@ pub struct Style {
     pub shader_layer: Option<ShaderLayer>,
     /// Optional decorative background image config (src data-URL, fit,
     /// repeat, blend mode, opacity). Stored opaquely as JSON so the shape
-    /// can evolve without a Rust schema change.
+    /// can evolve without a Rust schema change. Legacy — superseded by
+    /// `background_layers`; kept so un-migrated styles round-trip.
     #[serde(default)]
     pub background_image: Option<serde_json::Value>,
+    /// Composite background layers (image / gradient / webgl entries,
+    /// each with blend mode + per-type options). Stored opaquely as
+    /// JSON — the JS side owns the shape.
+    #[serde(default)]
+    pub background_layers: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

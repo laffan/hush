@@ -7,7 +7,7 @@
  */
 
 import { typeIcons } from "./files-panel-shared.js";
-import { showPromptModal } from "./files-panel-shared.js";
+import { showPromptModal, showCreateWithParentModal, collectParentFolders } from "./files-panel-shared.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 
@@ -70,9 +70,24 @@ export function mountAddPopup(state, anchorEl) {
         onConfirm: async (name) => { await state.createStack(name); },
       });
     } else if (action === "new-folder") {
-      await state.createFolder("New Folder");
+      // Folders and projects go through the same name-first modal flow
+      // as notebooks and stacks, with an extra Location picker (desk
+      // root or any folder) so the new container lands where it belongs.
+      showCreateWithParentModal({
+        title: "New folder",
+        placeholder: "New Folder",
+        initialValue: "New Folder",
+        parentFolders: collectParentFolders(state),
+        onConfirm: async (name, parentId) => { await state.createFolder(name, parentId); },
+      });
     } else if (action === "new-project") {
-      await state.createProject("New Project");
+      showCreateWithParentModal({
+        title: "New project",
+        placeholder: "New Project",
+        initialValue: "New Project",
+        parentFolders: collectParentFolders(state),
+        onConfirm: async (name, parentId) => { await state.createProject(name, parentId); },
+      });
     } else if (action === "new-desk") {
       const { startNewDeskFlow } = await import("./new-desk-flow.js");
       await startNewDeskFlow(state);

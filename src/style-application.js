@@ -6,7 +6,7 @@
  */
 import { applyAppearance } from "./settings/settings-ui.js";
 import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
-import { resolveBackgroundImage } from "./sidebar/styles-panel-shared.js";
+import { resolveBackgroundLayersList, resolvePostShader } from "./sidebar/styles-panel-shared.js";
 import { themeBackgrounds, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 
 // Tracks whether the shader-layer module has ever been loaded this session.
@@ -19,7 +19,9 @@ function loadShaderModule() {
 }
 
 function syncShaderLayerForStyle(style) {
-  const cfg = style && style.shaderLayer;
+  // The WebGL2 entries render as background layers now — resolvePostShader
+  // masks them out so only the CSS-family overlays reach this path.
+  const cfg = resolvePostShader(style);
   if (!cfg || !cfg.enabled || !cfg.layerId) {
     // Only touch the shader subsystem if it's already been loaded this
     // session — otherwise importing it just to call unmount would defeat
@@ -34,6 +36,29 @@ function syncShaderLayerForStyle(style) {
     intensity: typeof cfg.intensity === "number" ? cfg.intensity : 0.5,
     options: cfg.options || {},
   })).catch(e => console.warn("shader layer mount failed", e));
+}
+
+// Same lazy-load discipline for the background-layers runtime: only
+// imported once a style with at least one enabled layer applies.
+let _bgLayersModulePromise = null;
+function loadBgLayersModule() {
+  if (!_bgLayersModulePromise) _bgLayersModulePromise = import("./background-layers/index.js");
+  return _bgLayersModulePromise;
+}
+
+function syncBackgroundLayersForStyle(state, style, appearance) {
+  const layers = resolveBackgroundLayersList(style).filter(l => l && l.enabled !== false);
+  if (!layers.length) {
+    if (_bgLayersModulePromise) {
+      loadBgLayersModule().then(m => m.unmountBackgroundLayers()).catch(() => {});
+    }
+    return;
+  }
+  loadBgLayersModule().then(m => m.applyBackgroundLayers({
+    layers,
+    appearance,
+    getEditorView: () => state.editor?.view || null,
+  })).catch(e => console.warn("background layers mount failed", e));
 }
 
 /** Publish the editor opacity CSS variables — `--focus-mode-opacity`
@@ -60,28 +85,6 @@ export function applyDeskGlobalStyle(state) {
   if (state.settings.activeStyleId === next) return;
   state.updateSettings({ activeStyleId: next });
   state.emit("style-changed");
-}
-
-/** Publish (or clear) the decorative background-image CSS variables read
- *  by the `.cm-editor::before` layer. `cfg` is a style's `backgroundImage`
- *  object or null. */
-function applyStyleBackgroundImage(cfg, appearance) {
-  const root = document.documentElement.style;
-  if (cfg && cfg.enabled && cfg.src) {
-    const { opacity, invert } = resolveBackgroundImage(cfg, appearance) || { opacity: 1, invert: false };
-    root.setProperty("--style-bg-image", `url("${cfg.src}")`);
-    root.setProperty("--style-bg-size", cfg.fit || "cover");
-    root.setProperty("--style-bg-repeat", cfg.repeat || "no-repeat");
-    root.setProperty("--style-bg-blend", cfg.blend || "normal");
-    root.setProperty("--style-bg-opacity", String(opacity));
-    root.setProperty("--style-bg-filter", invert ? "invert(1)" : "none");
-    document.body.classList.add("style-bg-image-active");
-  } else {
-    root.removeProperty("--style-bg-image");
-    root.setProperty("--style-bg-opacity", "0");
-    root.removeProperty("--style-bg-filter");
-    document.body.classList.remove("style-bg-image-active");
-  }
 }
 
 export function applyActiveStyle(state) {
@@ -162,9 +165,19 @@ export function applyActiveStyle(state) {
     // the same shared chain that painted the editor above, so they
     // land in the same synchronous pass — the sidebar can't disagree.
     updatePrivateBoxColor(state);
-    // Default style's shader lives at the top level of AppSettings.
+    // Default style's shader + background layers live at the top level
+    // of AppSettings rather than on a Style entry.
     syncShaderLayerForStyle({ shaderLayer: state.settings.shaderLayer });
-    applyStyleBackgroundImage(null);
+    // shaderLayer rides along so a legacy Default with the WebGL2 post
+    // effect derives a webgl background layer (same as user styles).
+    syncBackgroundLayersForStyle(
+      state,
+      {
+        backgroundLayers: state.settings.backgroundLayers,
+        shaderLayer: state.settings.shaderLayer,
+      },
+      appearance,
+    );
     // Emit last so theme-changed listeners (CodeMirror reconfigure,
     // notebook sync) read fully-written CSS vars.
     state.emit("theme-changed");
@@ -178,7 +191,7 @@ export function applyActiveStyle(state) {
   if (bgAppearance === "auto") {
     bgAppearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
-  applyStyleBackgroundImage(style.backgroundImage, bgAppearance);
+  syncBackgroundLayersForStyle(state, style, bgAppearance);
 
   // Apply style overrides
   document.body.classList.add("style-active");

@@ -148,23 +148,10 @@ body.file-in-trash #notebook-container .notes-canvas + * {
   outline: none;
 }
 
-/* Decorative per-style background image, composited with the editor's
-   background colour via the --style-bg-* vars (see style-application.js).
-   Invisible by default (opacity 0); text sits above via the scroller. */
-#editor-container .cm-editor::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image: var(--style-bg-image, none);
-  background-size: var(--style-bg-size, cover);
-  background-repeat: var(--style-bg-repeat, no-repeat);
-  background-position: center;
-  opacity: var(--style-bg-opacity, 0);
-  mix-blend-mode: var(--style-bg-blend, normal);
-  filter: var(--style-bg-filter, none);
-  pointer-events: none;
-  z-index: 0;
-}
+/* Decorative per-style background layers mount as a
+   #background-layers-host div inserted as the editor's first child
+   (see background-layers/index.js) at z-index 0; the scroller sits
+   above it so text always paints over the composite. */
 #editor-container .cm-editor .cm-scroller {
   position: relative;
   z-index: 1;

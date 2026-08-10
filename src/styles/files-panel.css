@@ -301,6 +301,55 @@
   user-select: none;
 }
 
+/* Icon strip at the top of the row menu — the flag / rename / delete
+   trio promoted from labeled entries to one-tap icon buttons. */
+.tree-row-menu-icons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--panel-border, rgba(128, 128, 128, 0.25));
+}
+
+.tree-row-menu-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.tree-row-menu-icon-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tree-row-menu-icon-btn:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+/* Active flag (row is currently flagged → button unflags) renders
+   filled so the state is readable at a glance. */
+.tree-row-menu-icon-flag.active svg path {
+  fill: currentColor;
+}
+
+.tree-row-menu-icon-delete:hover {
+  color: #e5484d;
+}
+
 .tree-row-menu-item {
   display: block;
   width: 100%;
@@ -749,6 +798,30 @@
 }
 .tree-prompt-modal-input:focus {
   border-color: color-mix(in srgb, var(--fg) 60%, transparent);
+}
+
+/* Location picker in the create-folder / create-project modal. Matches
+   the name input above it; option indentation is baked into the option
+   labels (nested folders render with leading nbsp padding). */
+.tree-prompt-modal-select {
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  color: var(--fg);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  margin-bottom: 16px;
+  outline: none;
+}
+.tree-prompt-modal-select:focus {
+  border-color: color-mix(in srgb, var(--fg) 60%, transparent);
+}
+.tree-prompt-modal-select option {
+  background: var(--panel-bg, var(--bg));
+  color: var(--fg);
 }
 
 /* ===== Backup App Data modal ===== */

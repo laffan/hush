@@ -40,19 +40,43 @@ export function applyPreviewCursorMode(el, mode, accent, cursor) {
   else Object.assign(el.style, { borderLeft: `2px solid ${cursor}`, width: "0" });
 }
 
-/** Resolve a style's `backgroundImage` config for the active appearance.
- *  Opacity and invert can diverge between light and dark; the legacy
- *  single `opacity` field is the fallback for both. Returns
- *  `{ opacity, invert }` (or null when no image config is present). */
-export function resolveBackgroundImage(bi, appearance) {
-  if (!bi) return null;
-  const isDark = appearance === "dark";
-  const legacy = bi.opacity != null ? bi.opacity : 1;
-  const opacity = isDark
-    ? (bi.darkOpacity != null ? bi.darkOpacity : legacy)
-    : (bi.lightOpacity != null ? bi.lightOpacity : legacy);
-  const invert = isDark ? !!bi.darkInvert : !!bi.lightInvert;
-  return { opacity, invert };
+/**
+ * Resolve a style's background-layer list, deriving one from the legacy
+ * shapes when the style hasn't been re-saved since the Background
+ * Layers editor shipped: the old single `backgroundImage` becomes an
+ * image layer, and a WebGL2 `shaderLayer` (the one Post Processing
+ * entry that moved into Background Layers) becomes a webgl layer.
+ * Application code always reads through this, so un-migrated styles
+ * keep rendering without being rewritten on disk.
+ */
+export function resolveBackgroundLayersList(style) {
+  if (!style) return [];
+  if (Array.isArray(style.backgroundLayers)) return style.backgroundLayers;
+  const out = [];
+  const bi = style.backgroundImage;
+  if (bi && bi.src) {
+    out.push({ ...bi, id: "legacy-image", type: "image", enabled: !!bi.enabled, blend: bi.blend || "normal" });
+  }
+  const sl = style.shaderLayer;
+  if (sl && sl.layerId === "webgl-neon-bloom") {
+    out.push({
+      id: "legacy-webgl", type: "webgl", enabled: !!sl.enabled, blend: "screen",
+      effectId: "webgl-neon-bloom",
+      intensity: typeof sl.intensity === "number" ? sl.intensity : 0.5,
+      options: sl.options || {},
+      caretEffect: "none",
+    });
+  }
+  return out;
+}
+
+/** The style's Post Processing overlay config, with the WebGL2 entry
+ *  masked out — that one now renders as a background layer (see
+ *  resolveBackgroundLayersList), not as the fullscreen overlay. */
+export function resolvePostShader(style) {
+  const sl = style?.shaderLayer;
+  if (!sl || sl.layerId === "webgl-neon-bloom") return null;
+  return sl;
 }
 
 /** Migrate old single-mode styles to dual light/dark format. */
@@ -79,6 +103,19 @@ export function migrateStyle(st) {
     if (!st.lightColors.lineIndicator) st.lightColors.lineIndicator = st.lineIndicatorColor;
     if (!st.darkColors.lineIndicator) st.darkColors.lineIndicator = st.lineIndicatorColor;
     delete st.lineIndicatorColor;
+  }
+  // Legacy background image / WebGL2 post-processing → background layers.
+  // Same derivation the application-side resolver performs, but baked
+  // onto the style once it's opened for editing so the modal edits real
+  // layer objects.
+  if (!Array.isArray(st.backgroundLayers)) {
+    const derived = resolveBackgroundLayersList(st).map((l, i) => ({
+      ...l,
+      id: "layer_migrated_" + i,
+    }));
+    st.backgroundLayers = derived;
+    delete st.backgroundImage;
+    if (st.shaderLayer && st.shaderLayer.layerId === "webgl-neon-bloom") st.shaderLayer = null;
   }
   return st;
 }

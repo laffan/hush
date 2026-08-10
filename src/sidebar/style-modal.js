@@ -12,7 +12,7 @@ import {
   renderCursorOptions,
 } from "./styles-panel-shared.js";
 import { renderShaderSection, bindShaderSection, endShaderPreview } from "./style-modal-shader.js";
-import { renderStyleExtras, bindStyleExtras } from "./style-modal-background.js";
+import { renderStyleExtras, bindStyleExtras, endBackgroundPreview } from "./style-modal-background.js";
 import { applyActiveStyle } from "../style-application.js";
 import { bindCustomDropdown } from "./custom-dropdown.js";
 import {
@@ -60,9 +60,13 @@ function buildDefaultDraftFromSettings(state) {
     blockCursor: !!s.blockCursor,
     cursorMode: s.cursorMode || (s.blockCursor ? "block" : "system"),
     lineIndicator: s.lineIndicator || "none",
-    // Default style's shader rides a top-level AppSettings field so
-    // it persists alongside the other Default-only knobs.
+    // Default style's shader + background layers ride top-level
+    // AppSettings fields so they persist alongside the other
+    // Default-only knobs.
     shaderLayer: s.shaderLayer ? { ...s.shaderLayer } : null,
+    backgroundLayers: Array.isArray(s.backgroundLayers)
+      ? JSON.parse(JSON.stringify(s.backgroundLayers))
+      : s.backgroundLayers ?? null,
   };
 }
 
@@ -84,7 +88,10 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
   const isDefault = existingStyle === "__default__";
   const isNew = !existingStyle;
   const draft = isDefault
-    ? buildDefaultDraftFromSettings(state)
+    // migrateStyle also normalizes the Default draft's legacy fields —
+    // most importantly a WebGL2 shaderLayer, which now lives on as a
+    // webgl background layer instead of a Post Processing overlay.
+    ? migrateStyle(buildDefaultDraftFromSettings(state))
     : existingStyle
       ? JSON.parse(JSON.stringify(migrateStyle(existingStyle)))
       : {
@@ -92,6 +99,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
           lightThemeId: state.settings.lightTheme || "ayuLight",
           darkThemeId: state.settings.darkTheme || "dracula",
           lightColors: {}, darkColors: {},
+          backgroundLayers: [],
         };
 
   // Pre-select the tab that matches the current appearance so editors
@@ -156,6 +164,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         cursorMode: draft.cursorMode || (draft.blockCursor ? "block" : "system"),
         lineIndicator: draft.lineIndicator || "none",
         shaderLayer: draft.shaderLayer || null,
+        backgroundLayers: draft.backgroundLayers || null,
       });
     } else {
       const name = (draft.name || "").trim() || "Untitled";
@@ -198,6 +207,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         cursorMode: state.settings.cursorMode,
         lineIndicator: state.settings.lineIndicator || "none",
         shaderLayer: state.settings.shaderLayer || null,
+        backgroundLayers: state.settings.backgroundLayers || null,
       });
     } else {
       state.updateSettings({ styles: state.settings.styles });
@@ -221,8 +231,12 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     flushSave();
     if (ownsBackdrop) backdrop.remove();
     else backdrop.innerHTML = "";
-    // Drop any modal-driven shader preview, then re-apply the active
-    // style so its shader (if any) takes the screen back.
+    // Drop any modal-driven background-layer / shader preview, then
+    // re-apply the active style so its layers and shader (if any) take
+    // the screen back. Layer preview first: it releases the scoped-
+    // preview lock synchronously so the applyActiveStyle inside
+    // endShaderPreview can re-mount the editor-context layers.
+    endBackgroundPreview();
     endShaderPreview(applyActiveStyle, state);
   }
 
@@ -553,7 +567,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     });
 
     bindShaderSection(backdrop, draft, scheduleSave);
-    bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave);
+    bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave, state);
 
     const deleteBtn = backdrop.querySelector(".style-modal-delete");
     if (deleteBtn) deleteBtn.addEventListener("click", () => {
