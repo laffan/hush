@@ -68,6 +68,52 @@ pub(crate) fn note_tree_placement(root: &Path, desk: &TreeNode) {
     note_placement(root, &desk.id, &files);
 }
 
+/// Which vanished index entry an added file is, if any — the rename /
+/// move pairing. The filesystem offers no identity but the path, so a
+/// provider-level move arrives as one entry disappearing and one file
+/// appearing, and pairing them is what keeps a fileId (and with it the
+/// version history, panes and recents) across the move.
+///
+/// Two passes, and they cover different halves. **Bytes**: an added file
+/// hashing to a vanished entry's cached hash is that file, wherever it
+/// went and whatever it's now called. **Name**: a file the far device
+/// moved *while both machines were writing into it* arrives with bytes we
+/// never cached, so the hash pass sees nothing — but its filename didn't
+/// change, because a move doesn't change one. That case (a move to Trash
+/// after an edit, which is simply what trashing a file you were working
+/// on looks like) minted a fresh id for a file that already had one and
+/// left the old row haunting its folder for the whole grace window:
+/// `added: 3, pending: 3` in a log where nothing had been created.
+///
+/// The passes are complementary — a rename changes the name and keeps the
+/// bytes; a move keeps the name and may change the bytes.
+pub(crate) fn pair_vanished(
+    rel: &str,
+    node_type: &str,
+    disk_hash: Option<&str>,
+    missing: &[(String, String)],
+    paired: &HashSet<String>,
+    hashes: &HashMap<String, crate::desk_hashes::HashEntry>,
+) -> Option<(String, String)> {
+    let candidates = || {
+        missing.iter().filter(|(id, old_rel)| {
+            !paired.contains(id)
+                && crate::desk_scan::kind_for_rel(old_rel).as_deref() == Some(node_type)
+        })
+    };
+    if let Some(hash) = disk_hash {
+        let hit = candidates()
+            .find(|(id, _)| hashes.get(id).map(|e| e.hash == hash).unwrap_or(false));
+        if let Some(hit) = hit {
+            return Some(hit.clone());
+        }
+    }
+    let filename = Path::new(rel).file_name()?.to_str()?;
+    candidates()
+        .find(|(_, old)| Path::new(old).file_name().and_then(|s| s.to_str()) == Some(filename))
+        .cloned()
+}
+
 /// Move a row to wherever its file actually is.
 ///
 /// The mirror of `rebase_placement`, and its necessary other half. That

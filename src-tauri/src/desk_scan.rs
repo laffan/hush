@@ -355,21 +355,16 @@ impl DeskStore {
                 continue;
             };
 
-            // Rename pairing: an added file whose bytes hash to a
-            // vanished entry's cached hash (same kind) is that file,
-            // renamed or relocated outside Hush. Keep its fileId.
             if node_type != "image" {
                 let disk_hash = fs::read(root.join(&rel)).ok().map(|b| fnv1a_hex(&b));
-                let hit = disk_hash.as_ref().and_then(|h| {
-                    missing
-                        .iter()
-                        .find(|(id, old_rel)| {
-                            !paired.contains(id)
-                                && kind_for_rel(old_rel) == Some(node_type.clone())
-                                && hashes.get(id).map(|e| &e.hash == h).unwrap_or(false)
-                        })
-                        .cloned()
-                });
+                let hit = crate::desk_index::pair_vanished(
+                    &rel,
+                    &node_type,
+                    disk_hash.as_deref(),
+                    &missing,
+                    &paired,
+                    &hashes,
+                );
                 if let Some((old_id, old_rel)) = hit {
                     rename_or_move_node(&mut desk, &old_id, &name, &old_rel, &segments);
                     index.insert(old_id.clone(), rel.clone());
