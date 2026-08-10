@@ -20,6 +20,41 @@ fn is_image_rel(rel: &str) -> bool {
 }
 
 impl DeskStore {
+    /// Let the far device's moves stand before placement enforces ours.
+    ///
+    /// Placement asserts the tree onto the disk, which is only ours to do
+    /// for files *we* moved. Where a folder has moved one since we last
+    /// committed a placement, take its answer — otherwise the save drags
+    /// the far device's file back out of the Trash (or its folder) to
+    /// match a tree that predates the move, and the deletion undoes
+    /// itself. See `desk_index::rebase_placement` for the three-way rule.
+    pub(crate) fn rebase_far_moves(
+        &self,
+        desks: &[&crate::TreeNode],
+        new_indexes: &mut HashMap<String, HashMap<String, String>>,
+        roots: &HashMap<String, String>,
+        skip: &HashSet<String>,
+    ) {
+        for desk in desks {
+            if skip.contains(&desk.id) || !roots.contains_key(&desk.id) {
+                continue; // no folder, or no far device to disagree with
+            }
+            let root = self.desk_dir(&desk.id);
+            let files = new_indexes.entry(desk.id.clone()).or_default();
+            let published = self.try_load_index(&desk.id).unwrap_or_default();
+            let adopted = crate::desk_index::rebase_placement(&root, &desk.id, files, &published);
+            if adopted.is_empty() {
+                continue;
+            }
+            crate::activity_log::note(
+                "desks",
+                "info",
+                format!("Left {} file(s) where the other device moved them: {}",
+                    adopted.len(), adopted.join(", ")),
+            );
+        }
+    }
+
     /// Ensure the file for `id` exists at its expected location, sourcing
     /// from (in priority order) its previous indexed location, the staging
     /// area, an already-present file at the target (adopt), or — for text

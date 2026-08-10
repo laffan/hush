@@ -288,6 +288,7 @@ impl DeskStore {
         // still reports the failure at the end.
         let mut desk_errors: Vec<String> = Vec::new();
         let mut failed: HashSet<String> = HashSet::new();
+        self.rebase_far_moves(&desks, &mut new_indexes, &roots, &fabricated);
         for desk in &desks {
             if fabricated.contains(&desk.id) {
                 continue;

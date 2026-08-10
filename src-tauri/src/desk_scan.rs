@@ -476,6 +476,11 @@ impl DeskStore {
         if hashes_dirty {
             let _ = self.save_hashes(desk_id, &hashes);
         }
+        // Tree and index now agree about where every file is, which makes
+        // this the merge base a later save rebases its moves onto. Recorded
+        // even on a no-op pass: "nothing changed" is itself confirmation
+        // that our placement is the folder's.
+        crate::desk_index::note_placement(&root, desk_id, &index);
         Ok(report)
     }
 }

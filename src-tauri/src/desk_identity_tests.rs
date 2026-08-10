@@ -539,6 +539,78 @@ fn find_by_name<'a>(nodes: &'a [TreeNode], name: &str) -> Option<&'a TreeNode> {
     nodes.iter().find(|n| n.name == name)
 }
 
+/// The trash clobber. `save_forest` computes every file's path from the
+/// tree and makes the disk match — it *asserts* the tree, which is only
+/// ours to do for files we moved ourselves. Two devices trashed their own
+/// files seconds apart; each tree still placed the *other's* at the root,
+/// and the next save on either device renamed the far device's files back
+/// out of `Trash/`. Both machines then agreed on the wrong answer, which
+/// is why only one device's files ever stayed deleted.
+#[test]
+fn a_tree_save_never_drags_the_far_devices_file_out_of_the_trash() {
+    let dir = tmp();
+    let store = seed_simple_desk(dir.path());
+    let external = tmp();
+    let folder = external.path().join("Shared");
+    store.make_desk_local("d1", &folder, None).unwrap();
+
+    // Our file plus the far device's, both at the root.
+    fs::write(folder.join("Theirs.md"), "theirs").unwrap();
+    let mut index = store.load_index("d1");
+    index.insert("their-id".into(), "Theirs.md".into());
+    store.save_index("d1", &index).unwrap();
+    let ours = node("n1", "document", "Doc", Some("f1"), Vec::new());
+    let theirs = node("n2", "document", "Theirs", Some("their-id"), Vec::new());
+    let at_root = |kids: Vec<TreeNode>| vec![desk_with_id("d1", kids)];
+    store.save_forest(&at_root(vec![ours.clone(), theirs.clone()])).unwrap();
+    assert!(folder.join("Doc.md").exists() && folder.join("Theirs.md").exists());
+
+    // The far device trashes *its* file: the move lands on disk and in the
+    // folder's index, and its `tree.json` has not arrived yet.
+    fs::create_dir_all(folder.join("Trash")).unwrap();
+    fs::rename(folder.join("Theirs.md"), folder.join("Trash/Theirs.md")).unwrap();
+    let mut index = store.load_index("d1");
+    index.insert("their-id".into(), "Trash/Theirs.md".into());
+    store.save_index("d1", &index).unwrap();
+
+    // We trash ours, from a tree that still shows theirs at the root.
+    let trash = |kids: Vec<TreeNode>| {
+        vec![desk_with_id("d1", vec![node("__trash__:d1", "folder", "Trash", None, kids)])]
+    };
+    let mut tree = trash(vec![ours.clone()]);
+    tree[0].children.push(theirs.clone());
+    store.save_forest(&tree).unwrap();
+
+    assert!(folder.join("Trash/Doc.md").exists(), "our own move must still happen");
+    assert!(
+        folder.join("Trash/Theirs.md").exists(),
+        "the far device's file was dragged back out of the Trash",
+    );
+    assert!(!folder.join("Theirs.md").exists());
+    assert_eq!(
+        store.load_index("d1").get("their-id").map(String::as_str),
+        Some("Trash/Theirs.md"),
+        "and the index must say where the file actually is",
+    );
+
+    // Saving the same stale tree again must not tug it back either — the
+    // frontend may not have reloaded yet.
+    store.save_forest(&tree).unwrap();
+    assert!(folder.join("Trash/Theirs.md").exists(), "a second stale save moved it");
+
+    // Pulling it back out is still allowed — but only from a tree that
+    // has caught up. A tree that never learned about the far move is
+    // byte-identical to one whose user dragged the file out again, so the
+    // only thing separating the two is having seen the move first. The
+    // frontend reloads on `treeChanged` before the user can act, so this
+    // is the real order; the ambiguous case resolves toward "leave it".
+    let mut caught_up = trash(vec![ours]);
+    caught_up[0].children[0].children.push(theirs.clone());
+    store.save_forest(&caught_up).unwrap();
+    store.save_forest(&at_root(vec![theirs])).unwrap();
+    assert!(folder.join("Theirs.md").exists(), "a deliberate move must not be swallowed");
+}
+
 /// `.hush/index.json` present but unreadable (a half-synced sidecar) is
 /// not "this desk has no files" — reconciling on that reading re-mints a
 /// fileId for every file in the folder and strands every node the tree

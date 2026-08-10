@@ -60,6 +60,11 @@ export function decodeStackContent(raw) {
           id: item.id || crypto.randomUUID(),
           fileId: item.fileId,
           fileType: item.fileType || "document",
+          // Encoded since the format existed and never read back, so every
+          // load → save round trip silently cleared every column's name
+          // (stack-spine.js and stack-list-view.js both prefer it over the
+          // tree node's). One save after opening a stack was enough.
+          name: item.name ?? null,
           width: item.width ?? 500,
           height: item.height ?? 600,
           open: item.open !== false,
