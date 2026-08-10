@@ -93,7 +93,23 @@ Two iOS-only traps, both of which read as "my Mac's changes never reach the iPad
 
 ## The provider-agnostic core (`sync/`)
 
-**A content-only change is not a reconcile event.** The reconciler reports *structure* — added, removed, renamed. A file whose bytes changed under it produces nothing, so any surface holding that file open has to re-read on every pass or it stays stale until closed and re-opened. `maybeReloadOpenDoc` has always done that for the open doc; `maybeReloadOpenNotebook` now does it for the open canvas (via the `notebook-external-reload` event, so `sync/` stays clear of the lazily-loaded notebook bundle — the handler skips an unsaved canvas, then `mirrorContent`s, which keeps local undo history and drops the incoming camera). Without it a notebook synced its *existence* and nothing else. **Stacks (`.hushstack`) still have no reload path** and need a re-open to show a far-side edit.
+**A content-only change is not a reconcile event.** The reconciler reports *structure* — added, removed, renamed. A file whose bytes changed under it produces nothing, so **any surface holding that file open has to re-read on every reconcile pass** or it stays stale until closed and re-opened. Each open surface has its own hook, and they share one policy: our own write back is a no-op, an unsaved buffer is strictly newer than disk and keeps what it has, and per-device viewport state (cursor, scroll, camera, zoom) is never taken from the far side.
+
+| Surface | Hook | How the change lands |
+|---|---|---|
+| Doc | `maybeReloadOpenDoc` | `applyExternalDocContent` — minimal diff, cursor maps through |
+| Notebook | `maybeReloadOpenNotebook` → `notebook-external-reload` | `mirrorContent` — local undo history survives, incoming camera dropped |
+| Stack | `maybeReloadOpenStack` → `stack-external-reload` | layout + columns, below |
+| Floating panes, Gutter | — | still stale until re-opened |
+
+The events exist so `sync/` never imports the lazily-loaded notebook bundle or the stack's component.
+
+**A stack is two syncing things, not one.** The `.hushstack` envelope is pure *structure* (which files are columns, in what order, at what width) plus this device's viewport; the text in a column is an ordinary doc or notebook syncing on its own. Both have to arrive or the stack looks broken, and they arrive differently:
+
+- **The layout** has no in-place mirror — `reloadStackContent` rebuilds the component around the incoming items, carrying this device's scroll offsets and each surviving column's scroll / camera / zoom across. Because rebuilding tears down live columns, it fires only on a change to `structureOf()` — the envelope minus every viewport field. The far device merely *scrolling* rewrites the file every couple of seconds, and reacting to that would re-mount every column while the user was reading it.
+- **The columns** re-read individually through `refreshStackColumns` → each column's `liveData.applyExternal`, under its own dirty guard. Only mounted columns; an off-screen one re-reads when virtualization brings it back. Project columns are skipped — their buffer is several files concatenated behind separators.
+
+Relatedly, a column's teardown now **flushes** before destroying its editor (`liveData.cleanup`). It only cleared the autosave timer, so scrolling a just-edited column out of the virtualization window dropped the last couple of seconds of typing — and the rebuild above tears columns down deliberately.
 
 - **`apply-external.js`** — the single implementation of "apply externally-produced content to the open buffer": pull-locked, applied as a minimal common-prefix/suffix diff (cursor maps through the edit), clears `dirty` (an applied external change is not a user edit), skips on identical content, and — with `skipWhenDirty: true`, the standard policy — never clobbers unsaved keystrokes (the buffer is strictly newer than anything disk can offer; the next autosave reasserts it). Callers: local-desk reconcile, Local Sync watcher/foreground reload, multi-window broadcasts.
 - **`echo-ring.js`** — bounded "recently seen" rings + `sha256Hex`. **Echo suppression is by content identity, never by timestamp** — iCloud's bird daemon replays events seconds late, which is exactly what killed the old 500 ms write-origin window: late events landed outside it while the buffer had moved past the last autosave, so the reload wiped keystrokes and threw the cursor to the top, every few seconds while typing. Every write path marks a hash into its ring; on-disk content matching any recent own-write hash is skipped as an echo no matter how late it arrives.

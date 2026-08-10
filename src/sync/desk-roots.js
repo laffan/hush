@@ -433,6 +433,7 @@ export async function reconcileDesk(state, deskId) {
   } catch (_) {}
   await maybeReloadOpenDoc(state, deskId);
   await maybeReloadOpenNotebook(state, deskId);
+  await maybeReloadOpenStack(state, deskId);
 }
 
 /** If the open doc lives in `deskId`, re-read it from disk and apply the
@@ -467,10 +468,7 @@ async function maybeReloadOpenDoc(state, deskId) {
  *  checkpoint, content byte-identical to our own last write is a no-op,
  *  and the incoming camera is deliberately ignored — viewports are
  *  per-device. The pull lock keeps the mirror from looping back out
- *  through autosave.
- *
- *  Stacks (`.hushstack`) have no equivalent reload path and still need
- *  a re-open to pick up a far-side edit. */
+ *  through autosave. */
 async function maybeReloadOpenNotebook(state, deskId) {
   const fileId = state.currentNotebookFileId;
   if (!fileId || !fileInDesk(state, deskId, fileId)) return;
@@ -479,6 +477,25 @@ async function maybeReloadOpenNotebook(state, deskId) {
     const file = await invoke("load_file", { id: fileId });
     if (!file || state.currentNotebookFileId !== fileId) return;
     state.emit("notebook-external-reload", file.content);
+  } catch (_) { /* file may have just been removed by the reconcile */ }
+  finally { state.releasePullLock(); }
+}
+
+/** And for the open stack. A `.hushstack` is structure — which files are
+ *  columns, in what order, at what width — so a far-side edit means the
+ *  component has to be rebuilt rather than mirrored; the guards for that
+ *  (own echo, unsaved local changes, viewport-only drift) live in
+ *  `stack-bridge.js#reloadStackContent`, which is the only thing that can
+ *  see the live component. The columns *inside* a stack are separate
+ *  files that sync on their own. */
+async function maybeReloadOpenStack(state, deskId) {
+  const fileId = state.currentStackFileId;
+  if (!fileId || !fileInDesk(state, deskId, fileId)) return;
+  state.acquirePullLock(fileId);
+  try {
+    const file = await invoke("load_file", { id: fileId });
+    if (!file || state.currentStackFileId !== fileId) return;
+    state.emit("stack-external-reload", file.content);
   } catch (_) { /* file may have just been removed by the reconcile */ }
   finally { state.releasePullLock(); }
 }

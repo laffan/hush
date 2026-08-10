@@ -91,7 +91,15 @@ async function mountDocContent(contentEl, item, state, liveData) {
     // style's fg/bg override never reaches stack doc text.
     editor.reconfigureTheme?.(state.settings);
 
-    const saveInterval = setInterval(async () => {
+    // One writer for both the interval and teardown. A column is torn
+    // down whenever it leaves the virtualization window (or the whole
+    // stack is re-mounted), and teardown that only cleared the timer
+    // took the last couple of seconds of typing with it — scroll a
+    // just-edited column off-screen and those keystrokes were gone.
+    // Everything up to the first `await` runs synchronously, so calling
+    // this immediately before `editor.destroy()` still reads a live
+    // buffer.
+    const flush = async () => {
       if (!dirty) return;
       dirty = false;
       const text = editor.getContent();
@@ -105,7 +113,8 @@ async function mountDocContent(contentEl, item, state, liveData) {
         }
       }
       state.syncFileToExternal?.(item.fileId, text);
-    }, 2000);
+    };
+    const saveInterval = setInterval(flush, 2000);
 
     liveData.editor = editor;
     liveData.modeContext = mc;
@@ -117,8 +126,25 @@ async function mountDocContent(contentEl, item, state, liveData) {
       });
     }
 
+    // A column editor never re-reads its file on its own — the same gap
+    // floating panes have. The text in a column is a separate file that
+    // syncs independently of the `.hushstack` envelope, so without this
+    // a stack showed the far device's *layout* over this device's stale
+    // text. Policy matches the main editor's external apply: an unsaved
+    // column is strictly newer than disk and keeps what it has, and the
+    // apply clears `dirty` on the same tick so the next save can't write
+    // the just-loaded content straight back out. `setContent` is already
+    // a minimal common-prefix/suffix diff carrying the programmatic
+    // annotations, so the caret maps through instead of jumping.
+    liveData.applyExternal = (text) => {
+      if (dirty || typeof text !== "string") return;
+      if (editor.getContent() === text) return;
+      editor.setContent(text);
+      dirty = false;
+    };
     liveData.cleanup = () => {
       clearInterval(saveInterval);
+      void flush();
       editor.destroy();
     };
     liveData.getScrollState = () => ({
@@ -208,7 +234,8 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
     let dirty = false;
     wrapper.addEventListener("notebook-change", () => { dirty = true; });
 
-    const saveInterval = setInterval(async () => {
+    // Same single-writer shape as mountDocContent — teardown flushes.
+    const flush = async () => {
       if (!dirty) return;
       dirty = false;
       const content = encodeNotebookContent({
@@ -223,7 +250,8 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
         catch (e) { console.error("Stack notebook save failed:", e); }
       }
       state.syncFileToExternal?.(item.fileId, content);
-    }, 2000);
+    };
+    const saveInterval = setInterval(flush, 2000);
 
     liveData.canvas = canvas;
     // Register as a Cmd+drag drop target so text can be dragged
@@ -252,8 +280,27 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
         }, () => { dirty = true; });
       });
     }
+    // Same re-read seam as a doc column, mirroring rather than loading
+    // so the column's own undo history survives; the incoming camera is
+    // dropped for the same reason the main canvas drops it — a viewport
+    // is per-device.
+    liveData.applyExternal = (content) => {
+      if (dirty || typeof content !== "string") return;
+      try {
+        const snap = decodeNotebookContent(content);
+        if (!snap || typeof canvas.mirrorContent !== "function") return;
+        canvas.mirrorContent({
+          shapes: snap.shapes,
+          layers: snap.layers,
+          flowEdges: snap.flowEdges,
+          bookmarks: Array.isArray(snap.bookmarks) ? snap.bookmarks : undefined,
+        });
+        dirty = false;
+      } catch (e) { console.warn("stack notebook column reload failed:", e); }
+    };
     liveData.cleanup = () => {
       clearInterval(saveInterval);
+      void flush();
       if (unregDrop) unregDrop();
       if (unregTxtDrag) unregTxtDrag();
       if (unregImgDrag) unregImgDrag();
@@ -419,7 +466,8 @@ async function mountProjectContent(contentEl, item, state, liveData) {
     // Match the active style's theme + colour overrides (see mountDocContent).
     editor.reconfigureTheme?.(projectState.settings);
 
-    const saveInterval = setInterval(async () => {
+    // Same single-writer shape as mountDocContent — teardown flushes.
+    const flush = async () => {
       if (!dirty) return;
       dirty = false;
       const text = editor.getContent();
@@ -439,13 +487,15 @@ async function mountProjectContent(contentEl, item, state, liveData) {
           catch (e) { console.error("Stack project save failed:", e); }
         }
       }
-    }, 2000);
+    };
+    const saveInterval = setInterval(flush, 2000);
 
     liveData.editor = editor;
     liveData.modeContext = mc;
     liveData.container = wrapper;
     liveData.cleanup = () => {
       clearInterval(saveInterval);
+      void flush();
       editor.destroy();
     };
     liveData.getScrollState = () => ({

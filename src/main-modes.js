@@ -103,6 +103,16 @@ export async function setupModeSwitching(state) {
     if (result) state.syncFileToExternal(result.fileId, result.content);
     if (!emptyPaneActive) showEditor();
   });
+  // A far device's edit to the open stack, arriving through a synced
+  // desk folder. The bridge owns the guards (own-echo, unsaved-local,
+  // viewport-only) because only it can see the live component.
+  state.on("stack-external-reload", async (content) => {
+    try {
+      const m = await import("./stack/stack-bridge.js");
+      await m.reloadStackContent(content);   // the layout
+      await m.refreshStackColumns();         // and the files inside it
+    } catch (e) { console.warn("stack-external-reload failed:", e); }
+  });
   state.on("project-demoted", async (projectId) => {
     const { getStackInstance } = await import("./stack/stack-bridge.js");
     const inst = getStackInstance();

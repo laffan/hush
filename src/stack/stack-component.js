@@ -507,6 +507,22 @@ export class StackComponent {
     this._updateEmptyState();
   }
 
+  /** Live (mounted) columns as `{ fileId, apply }`. The seam a sync pull
+   *  uses to refresh column *contents* — the files behind the columns
+   *  are ordinary docs and notebooks that sync on their own schedule,
+   *  quite separately from the `.hushstack` envelope. Only mounted
+   *  columns appear: an off-screen one re-reads when it mounts anyway. */
+  liveColumnSinks() {
+    const out = [];
+    for (const [itemId, live] of this._liveColumns) {
+      const item = this._items.find((i) => i.id === itemId);
+      if (item?.fileId && live?.applyExternal) {
+        out.push({ fileId: item.fileId, apply: live.applyExternal });
+      }
+    }
+    return out;
+  }
+
   serialize() {
     for (const [itemId, liveData] of this._liveColumns) {
       const item = this._items.find((i) => i.id === itemId);
