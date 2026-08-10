@@ -231,6 +231,37 @@ fn a_file_that_arrives_before_the_index_keeps_the_tree_s_id() {
     assert_eq!(sketches[0].file_id.as_deref(), Some("far-file-id"));
 }
 
+/// "Not downloaded yet" and "gone" are different answers, and the open
+/// path needs to tell them apart: one is worth waiting for and saying
+/// so, the other is content loss worth pointing at the repair tool. On
+/// iOS every read of an evicted file comes back ENOENT — the bytes sit
+/// behind a `.<name>.icloud` placeholder — so the placeholder is the
+/// only thing that distinguishes them.
+#[test]
+fn an_undelivered_file_reads_as_awaiting_download_not_missing() {
+    let dir = tmp();
+    let store = seed_simple_desk(dir.path());
+    let external = tmp();
+    let folder = external.path().join("Shared");
+    store.make_desk_local("d1", &folder, None).unwrap();
+    assert_eq!(store.availability("f1").0, "ready");
+
+    // iCloud evicts it: the file goes, a placeholder stands in.
+    fs::remove_file(folder.join("Doc.md")).unwrap();
+    fs::write(folder.join(".Doc.md.icloud"), "plist").unwrap();
+    let (state, path) = store.availability("f1");
+    assert_eq!(state, "awaiting-download");
+    assert_eq!(path.as_deref(), folder.join("Doc.md").to_str());
+    let err = store.read_by_id("f1").unwrap_err().to_string();
+    assert!(err.starts_with("awaiting-download:"), "unexpected error: {err}");
+
+    // Without the placeholder it is simply gone, and says so.
+    fs::remove_file(folder.join(".Doc.md.icloud")).unwrap();
+    assert_eq!(store.availability("f1").0, "missing");
+    let err = store.read_by_id("f1").unwrap_err().to_string();
+    assert!(!err.contains("awaiting-download"), "unexpected error: {err}");
+}
+
 /// `.hush/index.json` present but unreadable (a half-synced sidecar) is
 /// not "this desk has no files" — reconciling on that reading re-mints a
 /// fileId for every file in the folder and strands every node the tree

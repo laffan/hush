@@ -28,7 +28,7 @@
 //! binaries stay a per-device cache (`files/pdfs/`).
 
 use crate::atomic::{write_atomic, write_atomic_str};
-use crate::desk_identity::OrderFile;
+use crate::desk_identity::{undelivered_or, OrderFile};
 use crate::desk_paths::{collect_expected, sanitize_segment};
 use crate::hushnote;
 use crate::TreeNode;
@@ -482,7 +482,7 @@ impl DeskStore {
     /// library, the cost that stalled autosave on large desks).
     pub fn read_at(&self, desk_id: &str, rel: &str) -> Result<(String, u64, String), BoxError> {
         let abs = self.abs_path(desk_id, rel);
-        let content = read_content_at(&abs)?;
+        let content = read_content_at(&abs).map_err(|e| undelivered_or(e, &abs))?;
         let modified = mtime_secs(&abs);
         let name = Path::new(rel)
             .file_stem()

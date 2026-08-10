@@ -18,6 +18,26 @@ pub async fn load_file(state: State<'_, AppState>, id: String) -> Result<FileEnt
     state.file_manager.lock().unwrap().load_file(&id).map_err(|e| e.to_string())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileAvailability {
+    /// `"ready"` | `"awaiting-download"` | `"missing"`.
+    pub state: String,
+    /// Absolute path, when the file is placed — what the frontend hands
+    /// the provider to ask for a download.
+    pub path: Option<String>,
+}
+
+/// Are this file's bytes on the device? A `stat`, not a read, so the
+/// open path can ask before mounting something multi-megabyte, and so a
+/// file the provider hasn't delivered can be waited for rather than
+/// reported as content loss. See `state/open-file-wait.js`.
+#[tauri::command]
+pub fn file_availability(state: State<AppState>, id: String) -> FileAvailability {
+    let (s, path) = state.file_manager.lock().unwrap().availability(&id);
+    FileAvailability { state: s.to_string(), path }
+}
+
 // Async so the write runs on the async runtime's worker pool instead of
 // the main thread. Notebook autosave ships the full multi-MB envelope
 // every couple of seconds, and for `.hushnote` files the store deflates

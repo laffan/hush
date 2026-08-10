@@ -143,6 +143,12 @@ impl FileManager {
         })
     }
 
+    /// See `DeskStore::availability` — a stat, safe to ask before a
+    /// heavyweight open.
+    pub fn availability(&self, id: &str) -> (&'static str, Option<String>) {
+        self.store.availability(id)
+    }
+
     pub fn save_file(&self, id: &str, content: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.store.write_by_id(id, content)
     }

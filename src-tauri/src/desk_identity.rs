@@ -74,6 +74,26 @@ pub(crate) fn awaiting_download(path: &Path) -> bool {
     !path.exists() && placeholder_for(path).map(|p| p.exists()).unwrap_or(false)
 }
 
+/// Error prefix for "the provider has this file, it just isn't on this
+/// device yet". The frontend switches on it: a file waiting on iCloud is
+/// something to wait for and say so, not something to report as content
+/// loss and point at the repair tool.
+pub const AWAITING_DOWNLOAD: &str = "awaiting-download";
+
+/// Re-label a failed read that a `.icloud` placeholder explains. On iOS
+/// an evicted file *is* absent as far as `std::fs` is concerned — the
+/// bytes live in the placeholder's stead — so every read of one comes
+/// back ENOENT, indistinguishable from a file that genuinely went away.
+/// The path rides along: only the frontend can ask the provider for it
+/// (through the plugin's coordinated read), and it needs somewhere to
+/// point.
+pub(crate) fn undelivered_or(e: BoxError, abs: &Path) -> BoxError {
+    if awaiting_download(abs) {
+        return format!("{}: {}", AWAITING_DOWNLOAD, abs.display()).into();
+    }
+    e
+}
+
 /// The `id` field of a small JSON sidecar, when it reads cleanly.
 fn read_desk_id(path: &Path) -> Option<String> {
     let raw = fs::read_to_string(path).ok()?;
@@ -113,6 +133,29 @@ pub fn inspect_folder(path: &Path) -> FolderDesk {
 }
 
 impl DeskStore {
+    /// Whether a file's bytes are on this device — a `stat`, never a
+    /// read, so it is safe to ask before opening something
+    /// multi-megabyte. Returns the state plus the absolute path, which
+    /// is what the frontend hands the provider when asking for a
+    /// download.
+    pub fn availability(&self, id: &str) -> (&'static str, Option<String>) {
+        if let Some((desk_id, rel)) = self.locate(id) {
+            let abs = self.abs_path(&desk_id, &rel);
+            let path = Some(abs.to_string_lossy().into_owned());
+            if abs.exists() {
+                return ("ready", path);
+            }
+            if awaiting_download(&abs) {
+                return (AWAITING_DOWNLOAD, path);
+            }
+            return ("missing", path);
+        }
+        if self.staging_path(id).exists() {
+            return ("ready", None);
+        }
+        ("missing", None)
+    }
+
     /// Make `roots.json` agree with the folders themselves: one
     /// registration per folder, keyed by the id that folder carries.
     ///

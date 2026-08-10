@@ -80,3 +80,19 @@
 .import-toast-leaving {
   opacity: 0;
 }
+
+/* Sticky variant: work of unknown duration (waiting on a sync provider
+   to deliver a file). A slow pulse says "still going" without a spinner
+   to animate — no layout, no repaint beyond opacity. */
+.import-toast-sticky {
+  animation: import-toast-waiting 1.6s ease-in-out infinite;
+}
+
+@keyframes import-toast-waiting {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.62; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .import-toast-sticky { animation: none; }
+}

@@ -8,16 +8,10 @@ import { findNode, findNodeByFileId, insertNode, removeNode, uniqueChildName } f
 import { stashActiveEditorState } from "./editor-cache-key.js";
 import * as _naming from "./state-naming.js";
 import { logActivity } from "../activity-log.js";
-import { reportUnopenableFile } from "./unopenable-file.js";
-
-/** A doc is "empty Untitled" when it carries the placeholder name and
- *  has no actual content. Such docs are user noise — created when the
- *  app spins up a fresh slot but the user never typed into it — so we
- *  skip saving / syncing them and prune any survivors at boot. */
-function isEmptyUntitled(name, content) {
-  if (name && name !== "Untitled") return false;
-  return !content || !content.trim();
-}
+// The empty-Untitled hygiene pass lives beside the rule it enforces;
+// re-exported so callers keep importing from this barrel.
+import { isEmptyUntitled, pruneEmptyUntitled } from "./empty-untitled.js";
+export { pruneEmptyUntitled };
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -214,6 +208,17 @@ export async function newFile(state, parentId = null, opts = {}) {
   return { fileId, name: treeNode.name };
 }
 
+/** Hold the open until the file's bytes are on the device, with the
+ *  on-screen explanation and download retry that live in
+ *  `open-file-wait.js`. False means don't proceed — it has already said
+ *  why. PDFs skip this: their binaries are a per-device cache, never in
+ *  the desk folder, so a provider never has one to deliver. */
+async function awaitDelivery(state, fileId) {
+  if (!IS_TAURI || !fileId) return true;
+  const { ensureFileAvailable } = await import("./open-file-wait.js");
+  return ensureFileAvailable(state, fileId, findNodeByFileId(state.fileTree, fileId));
+}
+
 export async function openFile(state, id) {
   if (state.ratchetMode) return;
   // Guard: if the fileId belongs to a non-document type, redirect to
@@ -247,8 +252,16 @@ export async function openFile(state, id) {
   state.projectDocIds = [];
   state.currentLocalSync = null;
   if (IS_TAURI) {
-    try { const file = await tauriInvoke("load_file", { id }); state.currentFileId = file.id; if (state.editor) state.editor.loadDocState(`doc:${file.id}`, file.content); }
-    catch (e) { await reportUnopenableFile(state, id, node, e); }
+    // Not a bare `load_file`: inside a synced desk folder the read can be
+    // slow (macOS materialises on open) or fail outright (iOS hands back
+    // a placeholder), and both used to look like the click doing nothing.
+    // See state/open-file-wait.js.
+    const { loadFileForOpen } = await import("./open-file-wait.js");
+    const file = await loadFileForOpen(state, id, node);
+    if (file) {
+      state.currentFileId = file.id;
+      if (state.editor) state.editor.loadDocState(`doc:${file.id}`, file.content);
+    }
   } else {
     const file = state.files.find((f) => f.id === id);
     if (file) { state.currentFileId = file.id; if (state.editor) state.editor.loadDocState(`doc:${file.id}`, file.content); }
@@ -270,36 +283,6 @@ export async function openFile(state, id) {
   // Per-desk last-file: switching back to this desk later should land
   // here, not on the desk's first inbox item. Synced via desks.json.
   state.recordActiveDeskLastFile(state.currentFileId, "document");
-}
-
-/** Walk the loaded files + tree and drop any empty Untitled docs that
- *  survived a previous session. Called once during init() after the tree
- *  has been hydrated so the next "restore last file" branch never lands
- *  on a placeholder doc the user never used. */
-export async function pruneEmptyUntitled(state) {
-  if (!Array.isArray(state.files) || state.files.length === 0) return;
-  const targets = [];
-  for (const file of state.files) {
-    if (!isEmptyUntitled(file?.name, file?.content)) continue;
-    const node = findNodeByFileId(state.fileTree, file.id);
-    targets.push({ fileId: file.id, nodeId: node?.id || null });
-  }
-  if (!targets.length) return;
-  for (const { fileId, nodeId } of targets) {
-    if (IS_TAURI) {
-      try { await tauriInvoke("delete_file", { id: fileId }); }
-      catch (e) { console.warn("prune empty Untitled failed:", e); }
-    }
-    if (nodeId) removeNode(state.fileTree, nodeId);
-  }
-  if (IS_TAURI) {
-    try { state.files = await tauriInvoke("list_files"); }
-    catch (_) {}
-  } else {
-    state.files = state.files.filter((f) => !targets.some((t) => t.fileId === f.id));
-    state._saveFilesLocal();
-  }
-  try { await state.saveFileTree(); } catch (_) {}
 }
 
 export async function deleteFile(state, id) {
@@ -599,6 +582,12 @@ export async function registerPdfPlaceholder(state, name, opts = {}) {
 
 export async function openNotebook(state, fileId) {
   if (state.ratchetMode) return;
+  // Wait for the provider *before* tearing down what's on screen. The
+  // canvas mounts around whatever `load_file` gives it, so a file that
+  // hasn't downloaded yet comes up as an empty notebook — which reads as
+  // data loss even though the empty-save guard keeps it from becoming
+  // any. A stat, not a read; see state/open-file-wait.js.
+  if (!(await awaitDelivery(state, fileId))) return;
   if (state.dirty) await state.saveCurrentFile();
   // Park the outgoing doc's editor state (see openPdf).
   stashActiveEditorState(state);
@@ -627,6 +616,7 @@ export async function openNotebook(state, fileId) {
 
 export async function openStack(state, fileId) {
   if (state.ratchetMode) return;
+  if (!(await awaitDelivery(state, fileId))) return; // see openNotebook
   if (state.dirty) await state.saveCurrentFile();
   // Park the outgoing doc's editor state (see openPdf).
   stashActiveEditorState(state);
