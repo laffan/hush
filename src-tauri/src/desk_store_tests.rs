@@ -403,3 +403,8 @@ mod adopt_flow_tests;
 // folder vs. the id this device registered it under.
 #[path = "desk_identity_tests.rs"]
 mod identity_tests;
+
+// The index.json <-> tree.json contract: merged writes, restored rows,
+// the placement rebase, and the relocate that makes a row follow its file.
+#[path = "desk_index_tests.rs"]
+mod index_tests;
