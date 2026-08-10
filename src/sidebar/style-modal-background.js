@@ -53,15 +53,8 @@ function loadRuntime() {
   return _bgModulePromise;
 }
 
-function resolvePreviewAppearance(state) {
-  let a = state?.settings?.appearance || "dark";
-  if (a === "auto") a = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  if (a === "sepia") a = "light";
-  return a;
-}
-
 let _previewing = false;
-function pushLayersPreview(draft, previewPane, state) {
+function pushLayersPreview(draft, previewPane, appearance) {
   if (!previewPane) return;
   const layers = layersEnabled(draft)
     ? (draft.backgroundLayers || []).filter(l => l && l.enabled !== false)
@@ -71,7 +64,7 @@ function pushLayersPreview(draft, previewPane, state) {
     _previewing = true;
     m.applyBackgroundLayers({
       layers,
-      appearance: resolvePreviewAppearance(state),
+      appearance,
       container: previewPane,
       // The pane's own painted colour is what the blend modes composite
       // against — read live so a theme / colour edit re-bases them.
@@ -285,13 +278,13 @@ function defaultLayer(type) {
 
 /** Wire the Background Layers section + Export button. `flushSave`
  *  (optional) commits any pending debounced edit before exporting so the
- *  download captures the latest draft. `state` feeds the live preview
- *  (appearance resolution). */
-export function bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave, state) {
+ *  download captures the latest draft. `appearance` is "light" | "dark"
+ *  — whichever half the preview's own switch is showing. */
+export function bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave, state, appearance) {
   const sectionEl = backdrop.querySelector("#style-bg-layers-section");
   const previewPane = backdrop.querySelector("#style-preview-pane");
 
-  const preview = () => pushLayersPreview(draft, previewPane, state);
+  const preview = () => pushLayersPreview(draft, previewPane, appearance);
   const commit = () => { preview(); scheduleSave(); };
 
   function rerenderSection() {

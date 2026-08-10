@@ -142,6 +142,13 @@ export function updatePreview(state, backdrop, draft, colorTab, previewState) {
   pane.style.fontSize = size;
   pane.style.lineHeight = lh;
 
+  // The preview's light / dark switch sits outside the pane (see
+  // style-modal.js), so it can't inherit the preview's colours — paint
+  // it here or it goes invisible whenever the preview and the modal
+  // chrome land on the same tone.
+  const appearanceToggle = backdrop.querySelector(".style-preview-appearance");
+  if (appearanceToggle) appearanceToggle.style.color = fg;
+
   // Line indicator preview — toggle the matching `line-ind-<variant>`
   // class on the preview pane and publish the indicator colour from
   // the per-appearance colour set (cursor colour as fallback).

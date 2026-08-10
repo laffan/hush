@@ -23,6 +23,8 @@ import {
   formatPreviewHtml,
   updatePreview as renderPreview,
 } from "./style-modal-preview.js";
+import appearanceLightRaw from "./sidebar_icons/appearance-light.svg?raw";
+import appearanceDarkRaw from "./sidebar_icons/appearance-dark.svg?raw";
 
 const lightThemes = themeList.filter(t => t.type === "light");
 const darkThemes = themeList.filter(t => t.type === "dark");
@@ -276,6 +278,18 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     backdrop.innerHTML = `
       <div class="style-modal${ownsBackdrop ? "" : " in-host"}">
         ${ownsBackdrop ? '<button class="style-modal-close">&times;</button>' : ""}
+        <!-- Light / dark switch for the preview, pinned to the modal's
+             top-right beside the close button. It lives out here rather
+             than inside the preview pane because that pane is its own
+             scroll container, and a control inside it would scroll away.
+             It drives the same colorTab state as the Colors tabs in the
+             settings column, so the two always agree on which half of
+             the style is on show; updatePreview paints it with the
+             preview's own text colour so it reads in either half. -->
+        <div class="style-preview-appearance" role="group" aria-label="Preview appearance">
+          <button type="button" class="style-preview-appearance-btn${colorTab === 'light' ? ' active' : ''}" data-preview-mode="light" title="Light" aria-label="Preview light mode" aria-pressed="${colorTab === 'light'}">${appearanceLightRaw}</button>
+          <button type="button" class="style-preview-appearance-btn${colorTab === 'dark' ? ' active' : ''}" data-preview-mode="dark" title="Dark" aria-label="Preview dark mode" aria-pressed="${colorTab === 'dark'}">${appearanceDarkRaw}</button>
+        </div>
         <div class="style-modal-body">
 
           <!-- LEFT: settings column -->
@@ -472,6 +486,16 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
       });
     });
 
+    // The preview pane's own light / dark switch — same state as the
+    // Colors tabs above, so flipping either moves both.
+    backdrop.querySelectorAll("[data-preview-mode]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (colorTab === btn.dataset.previewMode) return;
+        colorTab = btn.dataset.previewMode;
+        render();
+      });
+    });
+
     // Hover-preview hooks: onHover fires with the option's value (null
     // when the cursor leaves the option list); onClose fires when the
     // dropdown collapses without a click. Both reset the preview var
@@ -570,7 +594,11 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     });
 
     bindShaderSection(backdrop, draft, scheduleSave);
-    bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave, state);
+    // `colorTab` is the preview's light / dark switch — layers resolve
+    // their per-appearance opacity and invert against it, so the preview
+    // shows the half the switch is on. Safe to pass by value: flipping
+    // the switch re-runs render(), which re-runs bind().
+    bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave, state, colorTab);
 
     const deleteBtn = backdrop.querySelector(".style-modal-delete");
     if (deleteBtn) deleteBtn.addEventListener("click", () => {

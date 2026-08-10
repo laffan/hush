@@ -758,6 +758,55 @@
   position: relative;
 }
 
+/* Light / dark switch for the preview, pinned to the modal's top-right
+   just left of the close button (which sits at right: 12px, 28px wide,
+   in both the standalone and in-host shells). Anchored to .style-modal
+   rather than to the preview pane so it never scrolls away — and the
+   preview pane's right edge is the modal's right edge in both the
+   side-by-side and the narrow stacked layout, so this is the preview's
+   corner either way. */
+.style-preview-appearance {
+  position: absolute;
+  top: 9px;
+  right: 48px;
+  z-index: var(--z-modal-content);
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.style-preview-appearance-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.4;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.style-preview-appearance-btn:hover { opacity: 0.75; }
+
+.style-preview-appearance-btn.active {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.style-preview-appearance-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+}
+
 .style-preview-content {
   max-width: 480px;
   /* Sit above the background-layers preview host (z-index 0). */
