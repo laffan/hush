@@ -1,14 +1,12 @@
 /**
  * WebGL2 background layer — hosts one effect from the effects registry
- * (the modules under shader-layer/layers/, unchanged) plus an optional
- * caret-effect canvas stacked over it in the same layer slot.
+ * (the modules under shader-layer/layers/, unchanged).
  *
  * The effect modules were written against shader-layer's ctx contract
  * (width/height/dpr + onResize / onVisible setters), so this builds a
  * compatible per-layer ctx rather than teaching the modules a new one.
  */
 import { findEffect, resolveEffectOptions } from "./effects-registry.js";
-import { createCaretEffect } from "./caret-effects.js";
 
 function buildEffectCtx(intensity, options, width, height, dpr) {
   const ctx = {
@@ -25,13 +23,21 @@ function buildEffectCtx(intensity, options, width, height, dpr) {
   return ctx;
 }
 
-export async function mountWebglLayer(host, cfg, appearance, ctx, caretSource) {
+export async function mountWebglLayer(host, cfg, appearance, ctx) {
   let effectId = cfg.effectId || "webgl-neon-bloom";
-  let effectCtx = buildEffectCtx(cfg.intensity, resolveEffectOptions(effectId, cfg.options), ctx.width, ctx.height, ctx.dpr);
+  // Tracks the newest config so a remount (effect swap) re-applies the
+  // *current* blend — the mount-time cfg goes stale after the first
+  // update, and the effect module's own dispose() clears the host's
+  // blend on its way out.
+  let current = cfg;
+  const effectCtx = buildEffectCtx(cfg.intensity, resolveEffectOptions(effectId, cfg.options), ctx.width, ctx.height, ctx.dpr);
   let instance = null;
-  let caret = null;
   let disposed = false;
   let visible = true;
+
+  function applyBlend() {
+    host.style.mixBlendMode = current.blend || "screen";
+  }
 
   async function mountEffect() {
     const reg = findEffect(effectId);
@@ -41,64 +47,42 @@ export async function mountWebglLayer(host, cfg, appearance, ctx, caretSource) {
     instance = await mod.default(host, effectCtx);
     // The module may stamp its preferred blend on the host (neon bloom
     // sets "screen"); the layer's own blend choice wins.
-    applyBlend(cfg);
-  }
-
-  function applyBlend(c) {
-    host.style.mixBlendMode = c.blend || "screen";
-  }
-
-  function syncCaret(c) {
-    const preset = c.caretEffect && c.caretEffect !== "none" ? c.caretEffect : null;
-    if (!preset) {
-      if (caret) { caret.dispose(); caret = null; }
-      return;
-    }
-    const caretCfg = { preset, color: c.caretColor, intensity: c.caretIntensity };
-    if (caret) caret.update(caretCfg);
-    else caret = createCaretEffect(host, caretCfg, caretSource, effectCtx);
+    applyBlend();
   }
 
   await mountEffect();
-  syncCaret(cfg);
 
   return {
-    async update(nextCfg, _appearance) {
-      applyBlend(nextCfg);
+    async update(nextCfg) {
+      current = nextCfg;
+      applyBlend();
       const nextId = nextCfg.effectId || "webgl-neon-bloom";
       const fullOptions = resolveEffectOptions(nextId, nextCfg.options);
+      effectCtx.intensity = typeof nextCfg.intensity === "number" ? nextCfg.intensity : 0.5;
+      effectCtx.options = fullOptions;
       if (nextId !== effectId) {
         effectId = nextId;
         try { instance?.dispose?.(); } catch (_) {}
         instance = null;
-        effectCtx.intensity = typeof nextCfg.intensity === "number" ? nextCfg.intensity : 0.5;
-        effectCtx.options = fullOptions;
         await mountEffect();
         if (!visible) effectCtx._onVisible?.(false);
       } else {
-        instance?.update?.({
-          intensity: typeof nextCfg.intensity === "number" ? nextCfg.intensity : 0.5,
-          options: fullOptions,
-        });
+        instance?.update?.({ intensity: effectCtx.intensity, options: fullOptions });
       }
-      syncCaret(nextCfg);
     },
     resize(width, height, dpr) {
       effectCtx.width = width;
       effectCtx.height = height;
       effectCtx.dpr = dpr || 1;
       effectCtx._onResize?.(effectCtx);
-      caret?.resize(width, height, dpr);
     },
     setVisible(v) {
       visible = v;
       effectCtx._onVisible?.(v);
-      caret?.setVisible(v);
     },
     dispose() {
       disposed = true;
       try { instance?.dispose?.(); } catch (_) {}
-      if (caret) { caret.dispose(); caret = null; }
       host.style.mixBlendMode = "";
     },
   };

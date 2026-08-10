@@ -67,6 +67,7 @@ function buildDefaultDraftFromSettings(state) {
     backgroundLayers: Array.isArray(s.backgroundLayers)
       ? JSON.parse(JSON.stringify(s.backgroundLayers))
       : s.backgroundLayers ?? null,
+    backgroundLayersEnabled: s.backgroundLayersEnabled !== false,
   };
 }
 
@@ -165,6 +166,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         lineIndicator: draft.lineIndicator || "none",
         shaderLayer: draft.shaderLayer || null,
         backgroundLayers: draft.backgroundLayers || null,
+        backgroundLayersEnabled: draft.backgroundLayersEnabled !== false,
       });
     } else {
       const name = (draft.name || "").trim() || "Untitled";
@@ -208,6 +210,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         lineIndicator: state.settings.lineIndicator || "none",
         shaderLayer: state.settings.shaderLayer || null,
         backgroundLayers: state.settings.backgroundLayers || null,
+        backgroundLayersEnabled: state.settings.backgroundLayersEnabled,
       });
     } else {
       state.updateSettings({ styles: state.settings.styles });

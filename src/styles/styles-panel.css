@@ -383,13 +383,14 @@
 .style-bg-layer-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
+  gap: 4px;
+  padding: 5px 6px;
   cursor: pointer;
   font-size: 12px;
   color: var(--fg);
   border-bottom: 1px solid rgba(128, 128, 128, 0.12);
   user-select: none;
+  background: var(--panel-bg, var(--bg));
 }
 .style-bg-layer-row:last-child { border-bottom: none; }
 .style-bg-layer-row:hover { background: rgba(128, 128, 128, 0.08); }
@@ -398,11 +399,25 @@
 .style-bg-layer-row.layer-off .style-bg-layer-blend,
 .style-bg-layer-row.layer-off .style-bg-layer-thumb { opacity: 0.4; }
 
-.style-bg-layer-eye {
+/* The row being dragged rides above its siblings so the reorder reads
+   clearly as the rows shuffle underneath it. */
+.style-bg-layer-row.dragging {
+  opacity: 0.9;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  position: relative;
+  z-index: 2;
+}
+.style-bg-layer-list.dragging-active .style-bg-layer-row:not(.dragging) {
+  transition: transform 0.12s ease;
+}
+
+.style-bg-layer-eye,
+.style-bg-layer-grip,
+.style-bg-layer-trash {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
+  width: 20px;
   height: 20px;
   padding: 0;
   border: none;
@@ -411,10 +426,24 @@
   cursor: pointer;
   border-radius: 4px;
   opacity: 0.8;
+  flex: none;
 }
-.style-bg-layer-eye:hover { background: rgba(128, 128, 128, 0.18); opacity: 1; }
-.style-bg-layer-eye svg { width: 13px; height: 13px; }
-.style-bg-layer-row.layer-off .style-bg-layer-eye { opacity: 0.3; }
+.style-bg-layer-eye:hover,
+.style-bg-layer-trash:hover { background: rgba(128, 128, 128, 0.18); opacity: 1; }
+.style-bg-layer-eye svg,
+.style-bg-layer-grip svg,
+.style-bg-layer-trash svg { width: 13px; height: 13px; }
+.style-bg-layer-row.layer-off .style-bg-layer-eye { opacity: 0.35; }
+.style-bg-layer-trash:hover { color: #e5484d; }
+
+.style-bg-layer-grip {
+  cursor: grab;
+  opacity: 0.45;
+  touch-action: none;
+  width: 16px;
+}
+.style-bg-layer-grip:hover { opacity: 0.85; }
+.style-bg-layer-grip:active { cursor: grabbing; }
 
 .style-bg-layer-thumb {
   width: 22px;
@@ -442,20 +471,28 @@
 
 .style-bg-layer-add {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   margin-bottom: 10px;
 }
 .style-bg-layer-add button {
   flex: 1;
-  padding: 4px 6px;
+  padding: 4px 2px;
   border: 1px solid var(--panel-border);
   background: transparent;
   color: var(--fg);
   border-radius: 5px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 .style-bg-layer-add button:hover { background: rgba(128, 128, 128, 0.15); }
+
+.style-editor-hint {
+  font-size: 11px;
+  color: var(--sidebar-fg);
+  opacity: 0.55;
+  margin: 6px 0 0;
+}
 
 .style-bg-layer-options {
   border-top: 1px solid rgba(128, 128, 128, 0.15);
@@ -472,36 +509,6 @@
   margin: 10px 0 6px;
   padding: 0;
 }
-
-.style-bg-layer-actions {
-  display: flex;
-  gap: 6px;
-  margin: 10px 0 6px;
-}
-.style-bg-layer-actions button {
-  flex: 1;
-  padding: 4px 6px;
-  border: 1px solid var(--panel-border);
-  background: transparent;
-  color: var(--fg);
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 12px;
-}
-.style-bg-layer-actions button:hover:not(:disabled) { background: rgba(128, 128, 128, 0.15); }
-.style-bg-layer-actions button:disabled { opacity: 0.4; cursor: default; }
-
-.style-bg-layer-delete {
-  width: 100%;
-  padding: 6px;
-  border: 1px solid color-mix(in srgb, #e5484d 45%, transparent);
-  background: transparent;
-  color: #e5484d;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 12px;
-}
-.style-bg-layer-delete:hover { background: color-mix(in srgb, #e5484d 14%, transparent); }
 
 /* Gradient pad — the draggable RGB node field. */
 .style-grad-pad {
@@ -711,6 +718,23 @@
   opacity: 0.6;
   margin: 0 0 8px;
   padding: 0;
+}
+
+/* Section title + its on/off switch on one line, checkbox flush right —
+   used by the Background Layers and Post Processing sections, both of
+   which can be switched off wholesale. */
+.style-modal-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.style-modal-section-header .style-modal-section-title {
+  margin-bottom: 8px;
+}
+.style-modal-section-header input[type="checkbox"] {
+  margin: 0 0 8px;
+  flex: none;
 }
 
 /* Hides the header-scale slider row when "suppress size" is checked */

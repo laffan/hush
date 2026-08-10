@@ -15,16 +15,20 @@
  *
  * The host is a single absolutely-positioned div inserted *inside* the
  * editor element (or the given container, for the style modal preview),
- * painted with the surface's own background via `background: inherit`
- * so per-layer mix-blend-modes composite against the real page colour
- * instead of a transparent backdrop.
+ * painted with the surface's resolved background colour so per-layer
+ * mix-blend-modes composite against the real page colour. The colour is
+ * passed in explicitly (`backdropColor`) rather than picked up with
+ * `background: inherit`: the editor element is transparent under some
+ * theme/style combinations, and blending against a transparent backdrop
+ * silently turns every blend mode into a no-op or a black wash.
  */
 import { mountImageLayer } from "./layer-image.js";
 import { mountGradientLayer } from "./layer-gradient.js";
 import { mountWebglLayer } from "./layer-webgl.js";
+import { mountCaretLayer } from "./layer-caret.js";
 import { acquireCaretSource, releaseCaretSource } from "./caret-tracker.js";
 
-export { WEBGL_BG_EFFECTS, CARET_EFFECTS, resolveEffectOptions, defaultGradientNodes } from "./effects-registry.js";
+export { WEBGL_BG_EFFECTS, CARET_PRESETS, resolveEffectOptions, defaultGradientNodes } from "./effects-registry.js";
 
 const HOST_ID = "background-layers-host";
 
@@ -62,22 +66,39 @@ function editorParent() {
     || document.getElementById("editor-container");
 }
 
-function ensureHost(container) {
+function ensureHost(container, backdropColor) {
   const parent = container || editorParent();
   if (!parent) return null;
-  if (_state && _state.host.parentElement === parent) return _state.host;
   const host = document.createElement("div");
   host.id = HOST_ID;
   host.style.cssText = [
     "position:absolute",
     "inset:0",
+    // A stacking context, so the layers' blend modes are isolated to
+    // this host and can't reach the chrome painted behind the surface.
     "z-index:0",
     "pointer-events:none",
     "overflow:hidden",
-    "background:inherit",
   ].join(";");
+  host.style.background = backdropColor || "inherit";
   parent.insertBefore(host, parent.firstChild);
   return host;
+}
+
+/** The colour blend modes composite against. Callers pass the surface's
+ *  resolved background; falling back to the parent's computed colour
+ *  keeps a caller that can't resolve one from blending into the void. */
+function resolveBackdrop(container, backdropColor) {
+  if (backdropColor) return backdropColor;
+  const parent = container || editorParent();
+  if (!parent) return null;
+  let el = parent;
+  while (el) {
+    const c = getComputedStyle(el).backgroundColor;
+    if (c && c !== "transparent" && !/rgba\(0,\s*0,\s*0,\s*0\)/.test(c)) return c;
+    el = el.parentElement;
+  }
+  return null;
 }
 
 /** A stand-in caret source for scoped previews (no editor caret there):
@@ -109,21 +130,19 @@ function createSyntheticCaretSource(container) {
   };
 }
 
-function layerSignature(layers, container) {
-  // Caret-effect on/off joins the signature: turning it on must rebuild
-  // the layer so it mounts with a live caret source (a layer mounted
-  // without one holds the inert placeholder source).
-  return layers.map(l =>
-    `${l.id}:${l.type}${l.type === "webgl" && l.caretEffect && l.caretEffect !== "none" ? ":caret" : ""}`
-  ).join("|") + "@" + (container ? "scoped" : "editor");
+function layerSignature(layers, container, backdrop) {
+  return layers.map(l => `${l.id}:${l.type}`).join("|")
+    + "@" + (container ? "scoped" : "editor")
+    + "#" + (backdrop || "");
 }
 
-async function doApply({ layers, appearance, container, getEditorView }) {
+async function doApply({ layers, appearance, container, getEditorView, backdropColor }) {
   const enabled = (layers || []).filter(l => l && l.enabled !== false);
   if (!enabled.length) { teardown(); return; }
 
   const wantContainer = container || null;
-  const signature = layerSignature(enabled, wantContainer);
+  const backdrop = resolveBackdrop(wantContainer, backdropColor);
+  const signature = layerSignature(enabled, wantContainer, backdrop);
 
   // In-place update only when the structure matches AND the host is
   // still attached to the same live container — a modal re-render
@@ -138,10 +157,10 @@ async function doApply({ layers, appearance, container, getEditorView }) {
   }
 
   teardown();
-  const host = ensureHost(wantContainer);
+  const host = ensureHost(wantContainer, backdrop);
   if (!host) return;
 
-  const needsCaret = enabled.some(l => l.type === "webgl" && l.caretEffect && l.caretEffect !== "none");
+  const needsCaret = enabled.some(l => l.type === "caret");
   let caretMode = null;
   let syntheticSource = null;
   let caretSource = { get: () => ({ x: 0, y: 0, t: 0, valid: false }) };
@@ -172,7 +191,8 @@ async function doApply({ layers, appearance, container, getEditorView }) {
     try {
       if (layer.type === "image") inst = mountImageLayer(child, layer, appearance);
       else if (layer.type === "gradient") inst = mountGradientLayer(child, layer, appearance, ctx);
-      else if (layer.type === "webgl") inst = await mountWebglLayer(child, layer, appearance, ctx, caretSource);
+      else if (layer.type === "webgl") inst = await mountWebglLayer(child, layer, appearance, ctx);
+      else if (layer.type === "caret") inst = mountCaretLayer(child, layer, appearance, ctx, caretSource);
     } catch (e) { console.warn("background layer mount failed", e); }
     children.push({ id: layer.id, inst, el: child });
   }

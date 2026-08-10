@@ -51,7 +51,10 @@ export function applyPreviewCursorMode(el, mode, accent, cursor) {
  */
 export function resolveBackgroundLayersList(style) {
   if (!style) return [];
-  if (Array.isArray(style.backgroundLayers)) return style.backgroundLayers;
+  // The section-level Enable switch. Absent = on, so styles saved
+  // before the switch existed keep their layers.
+  if (style.backgroundLayersEnabled === false) return [];
+  if (Array.isArray(style.backgroundLayers)) return splitCaretLayers(style.backgroundLayers);
   const out = [];
   const bi = style.backgroundImage;
   if (bi && bi.src) {
@@ -64,8 +67,31 @@ export function resolveBackgroundLayersList(style) {
       effectId: "webgl-neon-bloom",
       intensity: typeof sl.intensity === "number" ? sl.intensity : 0.5,
       options: sl.options || {},
-      caretEffect: "none",
     });
+  }
+  return out;
+}
+
+/** Caret effects began life as knobs on the WebGL layer and are their
+ *  own layer type now. A WebGL layer still carrying `caretEffect` emits
+ *  a caret layer directly above it, so styles saved under the old shape
+ *  render identically without being rewritten. */
+function splitCaretLayers(layers) {
+  if (!layers.some(l => l && l.type === "webgl" && l.caretEffect && l.caretEffect !== "none")) return layers;
+  const out = [];
+  for (const l of layers) {
+    if (l && l.type === "webgl" && l.caretEffect && l.caretEffect !== "none") {
+      const { caretEffect, caretColor, caretIntensity, ...webgl } = l;
+      out.push(webgl);
+      out.push({
+        id: l.id + "_caret", type: "caret", enabled: l.enabled !== false,
+        blend: "screen", preset: caretEffect,
+        color: caretColor || "#9ecbff",
+        intensity: typeof caretIntensity === "number" ? caretIntensity : 0.6,
+      });
+    } else {
+      out.push(l);
+    }
   }
   return out;
 }
@@ -109,13 +135,20 @@ export function migrateStyle(st) {
   // onto the style once it's opened for editing so the modal edits real
   // layer objects.
   if (!Array.isArray(st.backgroundLayers)) {
-    const derived = resolveBackgroundLayersList(st).map((l, i) => ({
+    // Read through the enable switch being off — the derivation must
+    // see the legacy fields either way, or turning the section back on
+    // would find an empty stack.
+    const { backgroundLayersEnabled, ...forDerivation } = st;
+    const derived = resolveBackgroundLayersList(forDerivation).map((l, i) => ({
       ...l,
       id: "layer_migrated_" + i,
     }));
     st.backgroundLayers = derived;
     delete st.backgroundImage;
     if (st.shaderLayer && st.shaderLayer.layerId === "webgl-neon-bloom") st.shaderLayer = null;
+  } else {
+    // Caret knobs on a WebGL layer become their own caret layer.
+    st.backgroundLayers = splitCaretLayers(st.backgroundLayers);
   }
   return st;
 }

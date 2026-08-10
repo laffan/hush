@@ -6,7 +6,7 @@ Under the minimal surface is a full writing system: a Markdown editor, canvas-ba
 
 ## Writing
 
-**The editor** is Markdown with inline rendering — headings, bold/italic, links, tables, images, footnotes, callouts, YAML properties, and `[[wikilinks]]` between notes. Sixteen color themes across light, dark, and sepia, and **Styles** that bundle theme + font + colors + optional post-processing effects (scanlines, glow) into presets you can switch, share, and import as JSON. Each style can also stack **Background Layers** — images, animatable multi-node gradients, and WebGL effects, each with its own blend mode — into a composite backdrop, and WebGL layers offer **Caret Effects** (sparks, bubbles, ripples) that follow your cursor as you type.
+**The editor** is Markdown with inline rendering — headings, bold/italic, links, tables, images, footnotes, callouts, YAML properties, and `[[wikilinks]]` between notes. Sixteen color themes across light, dark, and sepia, and **Styles** that bundle theme + font + colors + optional post-processing effects (scanlines, glow) into presets you can switch, share, and import as JSON. Each style can also stack **Background Layers** — images, animatable multi-node gradients, WebGL effects, and caret effects (sparks, bubbles, ripples that follow your cursor as you type) — into a composite backdrop, each layer with its own blend mode, dragged into whatever order you like.
 
 **Focus tools** keep you in the text:
 

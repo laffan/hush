@@ -46,7 +46,12 @@ function loadBgLayersModule() {
   return _bgLayersModulePromise;
 }
 
-function syncBackgroundLayersForStyle(state, style, appearance) {
+/** `backdropColor` is the surface colour the layers' blend modes
+ *  composite against — the same value just written to `--bg`. Passing it
+ *  explicitly matters: `.cm-editor` is transparent under plenty of
+ *  theme/style combinations, and a transparent backdrop makes every
+ *  blend mode either a no-op or a black wash. */
+function syncBackgroundLayersForStyle(state, style, appearance, backdropColor) {
   const layers = resolveBackgroundLayersList(style).filter(l => l && l.enabled !== false);
   if (!layers.length) {
     if (_bgLayersModulePromise) {
@@ -57,6 +62,7 @@ function syncBackgroundLayersForStyle(state, style, appearance) {
   loadBgLayersModule().then(m => m.applyBackgroundLayers({
     layers,
     appearance,
+    backdropColor,
     getEditorView: () => state.editor?.view || null,
   })).catch(e => console.warn("background layers mount failed", e));
 }
@@ -112,6 +118,7 @@ export function applyActiveStyle(state) {
     document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
 
     // Background override — fall back to the resolved theme's bg.
+    let defaultBackdrop = defaultColors.bg || null;
     if (defaultColors.bg) {
       document.documentElement.style.setProperty("--bg", defaultColors.bg);
       document.documentElement.style.setProperty("--style-bg", defaultColors.bg);
@@ -120,6 +127,7 @@ export function applyActiveStyle(state) {
       const themeId = appearance === "dark" ? state.settings.darkTheme : state.settings.lightTheme;
       const themeBg = themeBackgrounds[themeId];
       if (themeBg) document.documentElement.style.setProperty("--bg", themeBg);
+      defaultBackdrop = themeBg || null;
       document.documentElement.style.removeProperty("--style-bg");
       if (cmEditor) cmEditor.style.backgroundColor = '';
     }
@@ -174,9 +182,11 @@ export function applyActiveStyle(state) {
       state,
       {
         backgroundLayers: state.settings.backgroundLayers,
+        backgroundLayersEnabled: state.settings.backgroundLayersEnabled,
         shaderLayer: state.settings.shaderLayer,
       },
       appearance,
+      defaultBackdrop,
     );
     // Emit last so theme-changed listeners (CodeMirror reconfigure,
     // notebook sync) read fully-written CSS vars.
@@ -191,7 +201,6 @@ export function applyActiveStyle(state) {
   if (bgAppearance === "auto") {
     bgAppearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
-  syncBackgroundLayersForStyle(state, style, bgAppearance);
 
   // Apply style overrides
   document.body.classList.add("style-active");
@@ -247,6 +256,9 @@ export function applyActiveStyle(state) {
     document.documentElement.style.removeProperty("--style-bg");
     if (cmEditorEl) cmEditorEl.style.backgroundColor = '';
   }
+  // Mounted here rather than at the top of the branch so the layers'
+  // blend backdrop is the background colour just resolved above.
+  syncBackgroundLayersForStyle(state, style, bgAppearance, effectiveBg);
   if (overrides.fg) {
     // Apply text color to editor only, not sidebar/panels (--fg is global)
     document.documentElement.style.setProperty("--style-fg", overrides.fg);

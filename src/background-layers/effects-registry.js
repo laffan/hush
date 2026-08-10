@@ -27,12 +27,11 @@ export const WEBGL_BG_EFFECTS = [
   },
 ];
 
-// Caret-effect presets for WebGL2 layers. The shader implementations
-// live in caret-effects.js (lazily loaded with the runtime); this list
-// is here so the modal can render the preset picker without pulling
-// that code in.
-export const CARET_EFFECTS = [
-  { id: "none", name: "None" },
+// Presets for the caret layer — effects that follow the text cursor.
+// The shader implementations live in caret-effects.js (lazily loaded
+// with the runtime); this list is here so the modal can render the
+// preset picker without pulling that code in.
+export const CARET_PRESETS = [
   { id: "sparks", name: "Sparks" },
   { id: "bubbles", name: "Bubbles" },
   { id: "ripples", name: "Ripples" },

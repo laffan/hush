@@ -1,11 +1,11 @@
 /**
- * WebGL-layer options for the Background Layers section — effect picker,
- * master intensity, the per-effect knobs from the effects registry, and
- * the Caret Effects block (presets that feed the caret position into
- * the shader: sparks / bubbles / ripples). Split out of
+ * Options blocks for the two shader-backed background layer types:
+ * WebGL layers (effect picker, master intensity, and the per-effect
+ * knobs from the effects registry) and Caret layers (preset, colour,
+ * intensity — the effect that follows the text cursor). Split out of
  * style-modal-background.js for the 700-line cap.
  */
-import { WEBGL_BG_EFFECTS, CARET_EFFECTS, resolveEffectOptions } from "../background-layers/effects-registry.js";
+import { WEBGL_BG_EFFECTS, CARET_PRESETS, resolveEffectOptions } from "../background-layers/effects-registry.js";
 import { escAttr, escHtml } from "./styles-panel-shared.js";
 
 function knobHtml(s, v) {
@@ -38,10 +38,6 @@ export function renderWebglOptions(layer) {
   const reg = WEBGL_BG_EFFECTS.find(e => e.id === effectId) || WEBGL_BG_EFFECTS[0];
   const intensity = typeof layer.intensity === "number" ? layer.intensity : 0.5;
   const resolved = resolveEffectOptions(reg.id, layer.options);
-  const caretEffect = layer.caretEffect || "none";
-  const caretActive = caretEffect !== "none";
-  const caretColor = layer.caretColor || "#9ecbff";
-  const caretIntensity = typeof layer.caretIntensity === "number" ? layer.caretIntensity : 0.6;
   return `
     <div class="style-editor-row">
       <label>Effect</label>
@@ -56,29 +52,7 @@ export function renderWebglOptions(layer) {
         <span class="style-slider-value">${Math.round(intensity * 100)}%</span>
       </div>
     </div>
-    ${(reg.settings || []).map(s => knobHtml(s, resolved[s.id])).join("")}
-    <h4 class="style-modal-subsection-title">Caret Effects</h4>
-    <div class="style-editor-row">
-      <label>Preset</label>
-      <select id="style-caret-effect" class="style-native-select">
-        ${CARET_EFFECTS.map(c => `<option value="${escAttr(c.id)}"${c.id === caretEffect ? " selected" : ""}>${escHtml(c.name)}</option>`).join("")}
-      </select>
-    </div>
-    <div class="style-caret-knobs${caretActive ? "" : " style-row-hidden"}">
-      <div class="style-editor-color-row">
-        <label>Color</label>
-        <div class="style-color-group">
-          <input type="color" id="style-caret-color" value="${escAttr(caretColor)}" />
-        </div>
-      </div>
-      <div class="style-editor-row">
-        <label>Intensity</label>
-        <div class="style-slider-group">
-          <input type="range" id="style-caret-intensity" min="0" max="1" step="0.01" value="${caretIntensity}" />
-          <span class="style-slider-value">${Math.round(caretIntensity * 100)}%</span>
-        </div>
-      </div>
-    </div>`;
+    ${(reg.settings || []).map(s => knobHtml(s, resolved[s.id])).join("")}`;
 }
 
 export function bindWebglOptions(container, layer, { onCommit, rerender }) {
@@ -117,26 +91,55 @@ export function bindWebglOptions(container, layer, { onCommit, rerender }) {
     input.addEventListener("input", handler);
     if (input.type === "color") input.addEventListener("change", handler);
   });
+}
 
-  const caretEl = container.querySelector("#style-caret-effect");
-  if (caretEl) caretEl.addEventListener("change", () => {
-    layer.caretEffect = caretEl.value;
-    container.querySelector(".style-caret-knobs")?.classList.toggle("style-row-hidden", caretEl.value === "none");
+export function renderCaretOptions(layer) {
+  const preset = layer.preset || "sparks";
+  const color = layer.color || "#9ecbff";
+  const intensity = typeof layer.intensity === "number" ? layer.intensity : 0.6;
+  return `
+    <div class="style-editor-row">
+      <label>Preset</label>
+      <select id="style-caret-preset" class="style-native-select">
+        ${CARET_PRESETS.map(c => `<option value="${escAttr(c.id)}"${c.id === preset ? " selected" : ""}>${escHtml(c.name)}</option>`).join("")}
+      </select>
+    </div>
+    <div class="style-editor-color-row">
+      <label>Color</label>
+      <div class="style-color-group">
+        <input type="color" id="style-caret-color" value="${escAttr(color)}" />
+      </div>
+    </div>
+    <div class="style-editor-row">
+      <label>Intensity</label>
+      <div class="style-slider-group">
+        <input type="range" id="style-caret-intensity" min="0" max="1" step="0.01" value="${intensity}" />
+        <span class="style-slider-value">${Math.round(intensity * 100)}%</span>
+      </div>
+    </div>
+    <p class="style-editor-hint">Follows the text cursor as you type.</p>`;
+}
+
+export function bindCaretOptions(container, layer, { onCommit, rerender }) {
+  const presetEl = container.querySelector("#style-caret-preset");
+  if (presetEl) presetEl.addEventListener("change", () => {
+    layer.preset = presetEl.value;
+    rerender(); // the row label carries the preset name
     onCommit();
   });
 
-  const caretColorEl = container.querySelector("#style-caret-color");
-  if (caretColorEl) {
-    const handler = () => { layer.caretColor = caretColorEl.value; onCommit(); };
-    caretColorEl.addEventListener("input", handler);
-    caretColorEl.addEventListener("change", handler);
+  const colorEl = container.querySelector("#style-caret-color");
+  if (colorEl) {
+    const handler = () => { layer.color = colorEl.value; onCommit(); };
+    colorEl.addEventListener("input", handler);
+    colorEl.addEventListener("change", handler);
   }
 
-  const caretIntEl = container.querySelector("#style-caret-intensity");
-  if (caretIntEl) caretIntEl.addEventListener("input", () => {
-    const v = parseFloat(caretIntEl.value);
-    layer.caretIntensity = v;
-    if (caretIntEl.nextElementSibling) caretIntEl.nextElementSibling.textContent = Math.round(v * 100) + "%";
+  const intEl = container.querySelector("#style-caret-intensity");
+  if (intEl) intEl.addEventListener("input", () => {
+    const v = parseFloat(intEl.value);
+    layer.intensity = v;
+    if (intEl.nextElementSibling) intEl.nextElementSibling.textContent = Math.round(v * 100) + "%";
     onCommit();
   });
 }

@@ -85,12 +85,9 @@ export function renderShaderSection(draft) {
 
   return `
     <div class="style-modal-section">
-      <h3 class="style-modal-section-title">Post Processing</h3>
-      <div class="style-editor-row">
-        <label>Enable</label>
-        <div class="style-checkbox-group">
-          <input type="checkbox" id="style-shader-enabled" ${enabled ? "checked" : ""} />
-        </div>
+      <div class="style-modal-section-header">
+        <h3 class="style-modal-section-title">Post Processing</h3>
+        <input type="checkbox" id="style-shader-enabled" aria-label="Enable post processing" ${enabled ? "checked" : ""} />
       </div>
       <div class="style-editor-row${enabled ? "" : " style-row-hidden"}" id="shader-layer-row">
         <label>Layer</label>

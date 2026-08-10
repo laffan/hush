@@ -2,27 +2,29 @@
  * Background Layers section + JSON export row for the style editor.
  *
  * A style's `backgroundLayers` is an ordered array (index 0 = back) of
- * layer objects, each `{ id, type: "image" | "gradient" | "webgl",
- * enabled, blend, ...type-specific }`:
+ * layer objects, each `{ id, type: "image" | "gradient" | "webgl" |
+ * "caret", enabled, blend, ...type-specific }`:
  *   - image:    { src, fit, repeat, lightOpacity, darkOpacity,
  *                 lightInvert, darkInvert } — the old single
  *                 "Background Image" section, now one layer among many
  *   - gradient: { nodes: [{x, y, color}], animate, light/darkOpacity }
- *   - webgl:    { effectId, intensity, options, caretEffect,
- *                 caretColor, caretIntensity }
+ *   - webgl:    { effectId, intensity, options }
+ *   - caret:    { preset, color, intensity } — follows the text cursor
+ * `backgroundLayersEnabled === false` switches the whole stack off
+ * without discarding it (the checkbox in the section header).
  *
- * The list renders front-most layer at the top (Photoshop order);
- * selecting a row shows that layer's options underneath, ending in
- * Move / Delete Layer controls. Live edits push a scoped preview into
- * the modal's preview pane through the background-layers runtime.
+ * The list renders front-most layer at the top (Photoshop order) and
+ * rows drag to reorder by their grip. Selecting a row shows that
+ * layer's options underneath. Live edits push a scoped preview into the
+ * modal's preview pane through the background-layers runtime.
  *
- * Gradient and WebGL option blocks live in style-modal-gradient.js /
+ * Per-type option blocks live in style-modal-gradient.js /
  * style-modal-webgl.js (700-line cap).
  */
 import { escAttr, escHtml } from "./styles-panel-shared.js";
-import { WEBGL_BG_EFFECTS, defaultGradientNodes } from "../background-layers/effects-registry.js";
+import { WEBGL_BG_EFFECTS, CARET_PRESETS, defaultGradientNodes } from "../background-layers/effects-registry.js";
 import { renderGradientOptions, bindGradientOptions } from "./style-modal-gradient.js";
-import { renderWebglOptions, bindWebglOptions } from "./style-modal-webgl.js";
+import { renderWebglOptions, bindWebglOptions, renderCaretOptions, bindCaretOptions } from "./style-modal-webgl.js";
 
 export const BLEND_MODES = [
   "normal", "multiply", "screen", "overlay", "darken", "lighten",
@@ -37,6 +39,9 @@ function opt(value, label, selected) {
 function cap(s) { return s.replace(/(^|[-\s])(\w)/g, (_, p, c) => (p === "-" ? " " : p) + c.toUpperCase()); }
 
 const EYE_SVG = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>`;
+const EYE_OFF_SVG = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/><line x1="2.5" y1="13.5" x2="13.5" y2="2.5"/></svg>`;
+const GRIP_SVG = `<svg viewBox="0 0 16 16" fill="currentColor" stroke="none"><circle cx="6" cy="4" r="1.15"/><circle cx="10" cy="4" r="1.15"/><circle cx="6" cy="8" r="1.15"/><circle cx="10" cy="8" r="1.15"/><circle cx="6" cy="12" r="1.15"/><circle cx="10" cy="12" r="1.15"/></svg>`;
+const TRASH_SVG = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 4 4 4 14 4"/><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M12 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4"/></svg>`;
 
 // ── runtime preview plumbing ─────────────────────────────────────────────
 let _bgModulePromise = null;
@@ -58,7 +63,9 @@ function resolvePreviewAppearance(state) {
 let _previewing = false;
 function pushLayersPreview(draft, previewPane, state) {
   if (!previewPane) return;
-  const layers = (draft.backgroundLayers || []).filter(l => l && l.enabled !== false);
+  const layers = layersEnabled(draft)
+    ? (draft.backgroundLayers || []).filter(l => l && l.enabled !== false)
+    : [];
   loadRuntime().then(m => {
     m.setScopedPreviewLock(true);
     _previewing = true;
@@ -66,6 +73,9 @@ function pushLayersPreview(draft, previewPane, state) {
       layers,
       appearance: resolvePreviewAppearance(state),
       container: previewPane,
+      // The pane's own painted colour is what the blend modes composite
+      // against — read live so a theme / colour edit re-bases them.
+      backdropColor: getComputedStyle(previewPane).backgroundColor,
     });
   }).catch(() => {});
 }
@@ -96,6 +106,11 @@ function ensureLayers(draft) {
   return draft.backgroundLayers;
 }
 
+/** Absent = on, so styles saved before the switch existed keep theirs. */
+function layersEnabled(draft) {
+  return draft.backgroundLayersEnabled !== false;
+}
+
 function newLayerId() {
   return "layer_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7);
 }
@@ -108,6 +123,10 @@ function selectedLayer(draft) {
 function layerTitle(layer) {
   if (layer.type === "image") return "Image";
   if (layer.type === "gradient") return "Gradient";
+  if (layer.type === "caret") {
+    const p = CARET_PRESETS.find(c => c.id === layer.preset);
+    return "Caret" + (p ? ` — ${p.name}` : "");
+  }
   if (layer.type === "webgl") {
     const reg = WEBGL_BG_EFFECTS.find(e => e.id === layer.effectId);
     return "WebGL" + (reg ? ` — ${reg.name}` : "");
@@ -120,12 +139,15 @@ function layerRowHtml(layer, selected) {
   const thumb = layer.type === "image" && layer.src
     ? `<span class="style-bg-layer-thumb" style="background-image:url('${escAttr(layer.src)}')"></span>`
     : "";
+  const blend = layer.blend || "normal";
   return `
     <div class="style-bg-layer-row${selected ? " selected" : ""}${off ? " layer-off" : ""}" data-layer-id="${escAttr(layer.id)}">
-      <button type="button" class="style-bg-layer-eye" data-layer-eye="${escAttr(layer.id)}" title="${off ? "Show layer" : "Hide layer"}">${EYE_SVG}</button>
+      <button type="button" class="style-bg-layer-grip" data-layer-grip="${escAttr(layer.id)}" title="Drag to reorder" aria-label="Drag to reorder">${GRIP_SVG}</button>
+      <button type="button" class="style-bg-layer-eye" data-layer-eye="${escAttr(layer.id)}" title="${off ? "Show layer" : "Hide layer"}">${off ? EYE_OFF_SVG : EYE_SVG}</button>
       ${thumb}
       <span class="style-bg-layer-label">${escHtml(layerTitle(layer))}</span>
-      <span class="style-bg-layer-blend">${escHtml(layer.blend || "normal")}</span>
+      ${blend !== "normal" ? `<span class="style-bg-layer-blend">${escHtml(blend)}</span>` : ""}
+      <button type="button" class="style-bg-layer-trash" data-layer-trash="${escAttr(layer.id)}" title="Delete layer" aria-label="Delete layer">${TRASH_SVG}</button>
     </div>`;
 }
 
@@ -190,9 +212,16 @@ function opacityRowsHtml(layer) {
 
 function sectionInnerHtml(draft) {
   const layers = ensureLayers(draft);
+  const on = layersEnabled(draft);
   if (_selectedLayerId && !layers.some(l => l.id === _selectedLayerId)) _selectedLayerId = null;
   if (!_selectedLayerId && layers.length) _selectedLayerId = layers[layers.length - 1].id;
   const sel = selectedLayer(draft);
+
+  const header = `
+    <div class="style-modal-section-header">
+      <h3 class="style-modal-section-title">Background Layers</h3>
+      <input type="checkbox" id="style-bg-layers-enable" aria-label="Enable background layers" ${on ? "checked" : ""} />
+    </div>`;
 
   // Front-most layer (highest index) renders at the top of the list.
   const rows = layers.slice().reverse().map(l => layerRowHtml(l, sel && l.id === sel.id)).join("");
@@ -202,9 +231,6 @@ function sectionInnerHtml(draft) {
 
   let optionsHtml = "";
   if (sel) {
-    const idx = layers.indexOf(sel);
-    const canForward = idx < layers.length - 1;
-    const canBack = idx > 0;
     optionsHtml = `
       <div class="style-bg-layer-options" data-layer-id="${escAttr(sel.id)}">
         <div class="style-editor-row">
@@ -214,23 +240,21 @@ function sectionInnerHtml(draft) {
         ${sel.type === "image" ? imageOptionsHtml(sel) + opacityRowsHtml(sel) : ""}
         ${sel.type === "gradient" ? renderGradientOptions(sel) + opacityRowsHtml(sel) : ""}
         ${sel.type === "webgl" ? renderWebglOptions(sel) : ""}
-        <div class="style-bg-layer-actions">
-          <button type="button" id="style-layer-up" ${canForward ? "" : "disabled"} title="Bring forward">Move Up</button>
-          <button type="button" id="style-layer-down" ${canBack ? "" : "disabled"} title="Send backward">Move Down</button>
-        </div>
-        <button type="button" class="style-bg-layer-delete">Delete Layer</button>
+        ${sel.type === "caret" ? renderCaretOptions(sel) : ""}
       </div>`;
   }
 
-  return `
-    <h3 class="style-modal-section-title">Background Layers</h3>
-    ${listHtml}
-    <div class="style-bg-layer-add">
-      <button type="button" data-add-layer="image">+ Image</button>
-      <button type="button" data-add-layer="gradient">+ Gradient</button>
-      <button type="button" data-add-layer="webgl">+ WebGL</button>
-    </div>
-    ${optionsHtml}`;
+  return `${header}
+    <div class="style-bg-layers-body${on ? "" : " style-row-hidden"}">
+      ${listHtml}
+      <div class="style-bg-layer-add">
+        <button type="button" data-add-layer="image">+ Image</button>
+        <button type="button" data-add-layer="gradient">+ Gradient</button>
+        <button type="button" data-add-layer="webgl">+ WebGL</button>
+        <button type="button" data-add-layer="caret">+ Caret</button>
+      </div>
+      ${optionsHtml}
+    </div>`;
 }
 
 /** Background Layers section HTML + a trailing Export row. */
@@ -250,10 +274,12 @@ function defaultLayer(type) {
   if (type === "gradient") {
     return { ...base, blend: "normal", nodes: defaultGradientNodes(), animate: false, lightOpacity: 1, darkOpacity: 1 };
   }
+  if (type === "caret") {
+    return { ...base, blend: "screen", preset: "sparks", color: "#9ecbff", intensity: 0.6 };
+  }
   return {
     ...base, blend: "screen", effectId: WEBGL_BG_EFFECTS[0].id,
-    intensity: 0.5, options: {}, caretEffect: "none",
-    caretColor: "#9ecbff", caretIntensity: 0.6,
+    intensity: 0.5, options: {},
   };
 }
 
@@ -278,10 +304,17 @@ export function bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave
     if (!sectionEl) return;
     const layers = ensureLayers(draft);
 
-    // Row select + eye toggles
+    const enableEl = sectionEl.querySelector("#style-bg-layers-enable");
+    if (enableEl) enableEl.addEventListener("change", () => {
+      draft.backgroundLayersEnabled = enableEl.checked;
+      rerenderSection();
+      commit();
+    });
+
+    // Row select + eye / trash buttons
     sectionEl.querySelectorAll(".style-bg-layer-row").forEach(row => {
       row.addEventListener("click", (e) => {
-        if (e.target.closest("[data-layer-eye]")) return;
+        if (e.target.closest("[data-layer-eye],[data-layer-trash],[data-layer-grip]")) return;
         _selectedLayerId = row.dataset.layerId;
         rerenderSection();
       });
@@ -296,6 +329,30 @@ export function bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave
         commit();
       });
     });
+    sectionEl.querySelectorAll("[data-layer-trash]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const idx = layers.findIndex(l => l.id === btn.dataset.layerTrash);
+        if (idx < 0) return;
+        layers.splice(idx, 1);
+        const neighbor = layers[Math.min(idx, layers.length - 1)];
+        _selectedLayerId = neighbor ? neighbor.id : null;
+        rerenderSection();
+        commit();
+      });
+    });
+
+    bindRowDrag(sectionEl, layers, {
+      onDrop: (orderedIds) => {
+        // The list paints front-most first, so the DOM order is the
+        // reverse of the array's back-to-front paint order.
+        const byId = new Map(layers.map(l => [l.id, l]));
+        const next = orderedIds.map(id => byId.get(id)).filter(Boolean).reverse();
+        if (next.length === layers.length) layers.splice(0, layers.length, ...next);
+        rerenderSection();
+        commit();
+      },
+    });
 
     // Add-layer buttons
     sectionEl.querySelectorAll("[data-add-layer]").forEach(btn => {
@@ -303,6 +360,9 @@ export function bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave
         const layer = defaultLayer(btn.dataset.addLayer);
         layers.push(layer); // top of the stack (front-most)
         _selectedLayerId = layer.id;
+        // Adding a layer while the section is switched off would file it
+        // somewhere invisible — turn the section back on instead.
+        draft.backgroundLayersEnabled = true;
         rerenderSection();
         commit();
       });
@@ -314,7 +374,7 @@ export function bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave
     const blendEl = sectionEl.querySelector("#style-layer-blend");
     if (blendEl) blendEl.addEventListener("change", () => {
       sel.blend = blendEl.value;
-      rerenderSection(); // blend shows on the row label too
+      rerenderSection(); // the row badge shows the blend too
       commit();
     });
 
@@ -338,31 +398,9 @@ export function bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave
     if (sel.type === "webgl") {
       bindWebglOptions(sectionEl, sel, { onCommit: commit, rerender: rerenderSection });
     }
-
-    const upBtn = sectionEl.querySelector("#style-layer-up");
-    const downBtn = sectionEl.querySelector("#style-layer-down");
-    const move = (delta) => {
-      const idx = layers.indexOf(sel);
-      const next = idx + delta;
-      if (idx < 0 || next < 0 || next >= layers.length) return;
-      layers.splice(idx, 1);
-      layers.splice(next, 0, sel);
-      rerenderSection();
-      commit();
-    };
-    if (upBtn) upBtn.addEventListener("click", () => move(1));    // toward the front
-    if (downBtn) downBtn.addEventListener("click", () => move(-1)); // toward the back
-
-    const deleteBtn = sectionEl.querySelector(".style-bg-layer-delete");
-    if (deleteBtn) deleteBtn.addEventListener("click", () => {
-      const idx = layers.indexOf(sel);
-      if (idx < 0) return;
-      layers.splice(idx, 1);
-      const neighbor = layers[Math.min(idx, layers.length - 1)];
-      _selectedLayerId = neighbor ? neighbor.id : null;
-      rerenderSection();
-      commit();
-    });
+    if (sel.type === "caret") {
+      bindCaretOptions(sectionEl, sel, { onCommit: commit, rerender: rerenderSection });
+    }
   }
 
   function bindImageOptions(layer) {
@@ -417,6 +455,62 @@ export function bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave
     // current draft (e.g. an image chosen a moment ago).
     if (typeof flushSave === "function") flushSave();
     downloadStyleJson(draft);
+  });
+}
+
+/**
+ * Drag-to-reorder for the layer rows. The dragged row moves among its
+ * siblings live, so the drop position is just the DOM order at pointer
+ * release — no index arithmetic during the drag, and the visual and the
+ * committed result can't disagree.
+ *
+ * The move listeners live on `document`, deliberately not on the grip
+ * under a `setPointerCapture`: relocating the row mid-drag counts as a
+ * remove-and-reinsert, which drops the capture, and the pointerup that
+ * commits the reorder would never arrive.
+ */
+function bindRowDrag(sectionEl, layers, { onDrop }) {
+  const list = sectionEl.querySelector(".style-bg-layer-list");
+  if (!list) return;
+
+  sectionEl.querySelectorAll("[data-layer-grip]").forEach(grip => {
+    grip.addEventListener("pointerdown", (e) => {
+      if (layers.length < 2) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const row = grip.closest(".style-bg-layer-row");
+      if (!row) return;
+      row.classList.add("dragging");
+      list.classList.add("dragging-active");
+      let moved = false;
+
+      const onMove = (me) => {
+        moved = true;
+        const siblings = [...list.querySelectorAll(".style-bg-layer-row")].filter(r => r !== row);
+        for (const other of siblings) {
+          const r = other.getBoundingClientRect();
+          if (me.clientY < r.top || me.clientY > r.bottom) continue;
+          const before = me.clientY < r.top + r.height / 2;
+          // Only actually move when the row would land somewhere new,
+          // so hovering the same gap doesn't thrash the DOM.
+          if (before && other.previousElementSibling !== row) list.insertBefore(row, other);
+          else if (!before && other.nextElementSibling !== row) list.insertBefore(row, other.nextSibling);
+          break;
+        }
+      };
+      const onUp = () => {
+        document.removeEventListener("pointermove", onMove, true);
+        document.removeEventListener("pointerup", onUp, true);
+        document.removeEventListener("pointercancel", onUp, true);
+        row.classList.remove("dragging");
+        list.classList.remove("dragging-active");
+        if (!moved) return;
+        onDrop([...list.querySelectorAll(".style-bg-layer-row")].map(r => r.dataset.layerId));
+      };
+      document.addEventListener("pointermove", onMove, true);
+      document.addEventListener("pointerup", onUp, true);
+      document.addEventListener("pointercancel", onUp, true);
+    });
   });
 }
 

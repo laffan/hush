@@ -59,11 +59,15 @@ pub struct Style {
     /// `background_layers`; kept so un-migrated styles round-trip.
     #[serde(default)]
     pub background_image: Option<serde_json::Value>,
-    /// Composite background layers (image / gradient / webgl entries,
-    /// each with blend mode + per-type options). Stored opaquely as
-    /// JSON — the JS side owns the shape.
+    /// Composite background layers (image / gradient / webgl / caret
+    /// entries, each with blend mode + per-type options). Stored
+    /// opaquely as JSON — the JS side owns the shape.
     #[serde(default)]
     pub background_layers: Option<serde_json::Value>,
+    /// Section-level on/off for the whole layer stack. `None` reads as
+    /// enabled, so styles saved before the switch existed keep theirs.
+    #[serde(default)]
+    pub background_layers_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
