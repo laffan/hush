@@ -262,6 +262,97 @@ fn an_undelivered_file_reads_as_awaiting_download_not_missing() {
     assert!(!err.contains("awaiting-download"), "unexpected error: {err}");
 }
 
+/// Both devices adding files at once. Each sees the other's file arrive
+/// before the index naming it, mints its own id, and publishes a whole
+/// `index.json` — so the second write erases the first device's ids.
+/// That device's *tree* still holds them, and every one of its rows is
+/// now pointing at an id nothing can resolve: "file not found", on every
+/// open, until the app restarts and re-reads the shared tree.
+///
+/// The index in the folder is the published answer for a path. A node
+/// whose id isn't in it, sitting at a path the index does claim, adopts
+/// the published id.
+#[test]
+fn a_node_orphaned_by_the_far_index_adopts_the_published_id() {
+    let dir = tmp();
+    let store = seed_simple_desk(dir.path());
+    let external = tmp();
+    let folder = external.path().join("Shared");
+    store.make_desk_local("d1", &folder, None).unwrap();
+
+    // We minted `mine` for a file that arrived from the far device...
+    fs::write(folder.join("Theirs.md"), "from the other machine").unwrap();
+    let mut desk = store.load_desk_tree("d1").unwrap();
+    desk.children.push(node("n2", "document", "Theirs", Some("mine"), Vec::new()));
+    fs::write(folder.join(".hush/tree.json"), serde_json::to_string(&desk).unwrap()).unwrap();
+    let mut index = store.load_index("d1");
+    index.insert("mine".into(), "Theirs.md".into());
+    store.save_index("d1", &index).unwrap();
+    assert!(store.read_by_id("mine").is_ok());
+
+    // ...and then their index.json landed, carrying *their* id for it.
+    index.remove("mine");
+    index.insert("theirs".into(), "Theirs.md".into());
+    store.save_index("d1", &index).unwrap();
+    assert!(store.read_by_id("mine").is_err(), "precondition: the row is orphaned");
+
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!(report.rekeyed, 1);
+    assert_eq!(report.added, 0, "the file is not new — it already had a row");
+
+    // The row resolves again, under the id both devices now agree on.
+    let desk = store.load_desk_tree("d1").unwrap();
+    let row = desk.children.iter().find(|n| n.name == "Theirs").unwrap();
+    assert_eq!(row.file_id.as_deref(), Some("theirs"));
+    let (content, _, _) = store.read_by_id("theirs").unwrap();
+    assert_eq!(content, "from the other machine");
+}
+
+/// The other half: don't publish a fresh id for a path the folder's
+/// index already names. The far device's id was published first, so it
+/// is the one that survives — the tree row, the index entry and the hash
+/// cache all move over. Adopting rather than asserting is what makes two
+/// installs converge instead of taking turns overwriting each other.
+#[test]
+fn a_freshly_minted_id_yields_to_one_already_published() {
+    use crate::desk_hashes::HashEntry;
+    use std::collections::HashMap;
+
+    let mut desk = named_desk("d1", "Desk", vec![
+        node("n1", "document", "Arrived", Some("ours"), Vec::new()),
+        node("n2", "document", "OnlyHere", Some("solo"), Vec::new()),
+    ]);
+    let minted = vec![
+        ("ours".to_string(), "Arrived.md".to_string()),
+        ("solo".to_string(), "OnlyHere.md".to_string()),
+    ];
+    let published: HashMap<String, String> =
+        [("far-id".to_string(), "Arrived.md".to_string())].into_iter().collect();
+    let mut index: HashMap<String, String> = [
+        ("ours".to_string(), "Arrived.md".to_string()),
+        ("solo".to_string(), "OnlyHere.md".to_string()),
+    ].into_iter().collect();
+    let mut hashes: HashMap<String, HashEntry> =
+        [("ours".to_string(), HashEntry { hash: "abc".into(), mtime: 7 })].into_iter().collect();
+
+    let handed_back = crate::desk_scan::defer_to_published(
+        &minted, &published, &mut index, &mut desk, &mut hashes,
+    );
+
+    assert_eq!(handed_back, 1);
+    // The contested path resolves to the published id, once.
+    assert_eq!(index.get("far-id").map(String::as_str), Some("Arrived.md"));
+    assert!(!index.contains_key("ours"));
+    assert_eq!(index.values().filter(|r| r.as_str() == "Arrived.md").count(), 1);
+    let row = desk.children.iter().find(|n| n.name == "Arrived").unwrap();
+    assert_eq!(row.file_id.as_deref(), Some("far-id"), "the row follows the id");
+    assert_eq!(hashes.get("far-id").map(|e| e.hash.as_str()), Some("abc"));
+    // A path only *we* know about keeps the id we minted.
+    assert_eq!(index.get("solo").map(String::as_str), Some("OnlyHere.md"));
+    let solo = desk.children.iter().find(|n| n.name == "OnlyHere").unwrap();
+    assert_eq!(solo.file_id.as_deref(), Some("solo"));
+}
+
 /// `.hush/index.json` present but unreadable (a half-synced sidecar) is
 /// not "this desk has no files" — reconciling on that reading re-mints a
 /// fileId for every file in the folder and strands every node the tree

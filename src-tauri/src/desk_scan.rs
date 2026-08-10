@@ -46,6 +46,9 @@
 //! so a rename never has to wait out the window.
 
 use crate::desk_hashes::{fnv1a_hex, mtime_ms, HashEntry};
+use crate::desk_tree_ops::{
+    find_node_by_file_id, remove_node_by_file_id, rename_or_move_node,
+};
 use crate::desk_store::DeskStore;
 use crate::TreeNode;
 use std::collections::{HashMap, HashSet};
@@ -102,6 +105,14 @@ pub struct ScanReport {
     /// that row's fileId instead of being minted as new — the sidecar
     /// hadn't arrived yet. Structure didn't change; the index did.
     pub matched: usize,
+    /// Rows re-pointed at the fileId the folder's index publishes for
+    /// their path, because the id they held resolves to nothing. That
+    /// happens when both devices minted an id for the same arriving file
+    /// and the far one's `index.json` landed last.
+    pub rekeyed: usize,
+    /// Ids this pass minted and then gave up, because the folder's index
+    /// had gained the far device's id for the same path while we walked.
+    pub deferred: usize,
     pub conflicts: usize,
     /// Index entries whose file is absent but deliberately *kept*: an
     /// iCloud placeholder stands in for it, or the absence hasn't
@@ -117,13 +128,16 @@ impl ScanReport {
     /// Whether the tree/index changed (conflict adoption rewrites file
     /// *content* but leaves structure alone, so it isn't counted here).
     pub fn changed(&self) -> bool {
-        self.added > 0 || self.removed > 0 || self.renamed > 0 || self.matched > 0
+        self.added > 0 || self.removed > 0 || self.renamed > 0
+            || self.matched > 0 || self.rekeyed > 0 || self.deferred > 0
     }
 
     /// Whether the *tree* changed — what the frontend needs to reload
-    /// for. A match only rewrites the index.
+    /// for. A match only rewrites the index; a re-key rewrites the row's
+    /// fileId, which the frontend very much needs to pick up.
     pub fn structural(&self) -> bool {
         self.added > 0 || self.removed > 0 || self.renamed > 0
+            || self.rekeyed > 0 || self.deferred > 0
     }
 }
 
@@ -203,6 +217,9 @@ impl DeskStore {
             }
         }
         let mut paired: HashSet<String> = HashSet::new();
+        // Ids invented in this pass, with the path each was invented
+        // for — re-checked against the folder's index before publishing.
+        let mut minted: Vec<(String, String)> = Vec::new();
 
         // Paths the *tree* already claims for a fileId the index doesn't
         // place yet. A desk folder's sidecars sync as separate files, in
@@ -214,9 +231,8 @@ impl DeskStore {
         // a per-device file that never syncs: the file appears on both
         // machines and then silently stops carrying anything. The tree
         // is an identity record; consult it before inventing one.
-        let mut tree_claims: HashMap<String, String> = HashMap::new();
+        let mut expected = HashMap::new();
         {
-            let mut expected = HashMap::new();
             let mut dirs = HashSet::new();
             crate::desk_paths::collect_expected(
                 &desk.children,
@@ -224,10 +240,42 @@ impl DeskStore {
                 &mut expected,
                 &mut dirs,
             );
-            for (id, rel) in expected {
-                if !index.contains_key(&id) {
-                    tree_claims.insert(rel, id);
+        }
+        let mut tree_claims: HashMap<String, String> = HashMap::new();
+        for (id, rel) in &expected {
+            if !index.contains_key(id) {
+                tree_claims.insert(rel.clone(), id.clone());
+            }
+        }
+
+        // ----- Rows the far device's index orphaned. Both installs can
+        // mint an id for the same arriving file — each sees the file
+        // before the `index.json` naming it — and each then publishes a
+        // whole index, so the second write erases the first's ids. That
+        // device's rows are left pointing at ids nothing resolves:
+        // "file not found" on every open until a restart re-reads the
+        // shared tree. The index in the folder is the *published* answer
+        // for a path, so a row whose id isn't in it, at a path the index
+        // does claim, takes the published id. Always adopting rather
+        // than asserting is what makes this converge instead of the two
+        // installs swapping ids back and forth forever.
+        let by_path: HashMap<&str, &str> =
+            index.iter().map(|(id, rel)| (rel.as_str(), id.as_str())).collect();
+        let rekeys: Vec<(String, String)> = expected
+            .iter()
+            .filter(|(id, _)| !index.contains_key(*id))
+            .filter_map(|(id, rel)| {
+                by_path.get(rel.as_str()).map(|published| (id.clone(), (*published).to_string()))
+            })
+            .collect();
+        for (stale, published) in rekeys {
+            if let Some(node) = find_node_by_file_id(&mut desk.children, &stale) {
+                node.file_id = Some(published.clone());
+                if let Some(entry) = hashes.remove(&stale) {
+                    hashes.insert(published, entry);
+                    hashes_dirty = true;
                 }
+                report.rekeyed += 1;
             }
         }
 
@@ -314,6 +362,7 @@ impl DeskStore {
                     hashes_dirty = true;
                     let container = ensure_container_chain(&mut desk, &segments);
                     container.push(new_node(&node_type, &name, Some(&file_id)));
+                    minted.push((file_id.clone(), rel.clone()));
                     index.insert(file_id, rel);
                     report.added += 1;
                     continue;
@@ -327,6 +376,9 @@ impl DeskStore {
             };
             let container = ensure_container_chain(&mut desk, &segments);
             container.push(new_node(&node_type, &name, Some(&file_id)));
+            if node_type != "image" {
+                minted.push((file_id.clone(), rel.clone()));
+            }
             index.insert(file_id, rel);
             report.added += 1;
         }
@@ -364,6 +416,23 @@ impl DeskStore {
             }
         }
 
+        // ----- Before publishing anything we minted this pass, look at
+        // the folder's index *again*. The far device may have published
+        // its own id for one of these paths in the seconds we spent
+        // walking the folder, and the id that was published first is the
+        // one to keep — otherwise the two installs take turns
+        // overwriting each other's answer and every row on the losing
+        // side goes unresolvable. Cheap: one small read, only when this
+        // pass actually minted something.
+        if !minted.is_empty() {
+            let published = self.try_load_index(desk_id).unwrap_or_default();
+            report.deferred =
+                defer_to_published(&minted, &published, &mut index, &mut desk, &mut hashes);
+            if report.deferred > 0 {
+                hashes_dirty = true;
+            }
+        }
+
         if report.changed() {
             self.save_index(desk_id, &index)?;
         }
@@ -384,8 +453,43 @@ impl DeskStore {
     }
 }
 
+/// Hand back ids this pass minted for paths the folder's index already
+/// names, adopting the published id instead — in the index, on the tree
+/// row, and in the hash cache. Returns how many were handed back.
+///
+/// Always *adopting* rather than asserting is the point: it's what makes
+/// two installs that both minted for the same arriving file converge on
+/// one answer, instead of taking turns overwriting each other's.
+pub(crate) fn defer_to_published(
+    minted: &[(String, String)],
+    published: &HashMap<String, String>,
+    index: &mut HashMap<String, String>,
+    desk: &mut TreeNode,
+    hashes: &mut HashMap<String, HashEntry>,
+) -> usize {
+    let by_path: HashMap<&str, &str> =
+        published.iter().map(|(id, rel)| (rel.as_str(), id.as_str())).collect();
+    let mut handed_back = 0;
+    for (ours, rel) in minted {
+        let Some(theirs) = by_path.get(rel.as_str()) else { continue };
+        if *theirs == ours.as_str() {
+            continue;
+        }
+        index.remove(ours);
+        index.insert((*theirs).to_string(), rel.clone());
+        if let Some(node) = find_node_by_file_id(&mut desk.children, ours) {
+            node.file_id = Some((*theirs).to_string());
+        }
+        if let Some(entry) = hashes.remove(ours) {
+            hashes.insert((*theirs).to_string(), entry);
+        }
+        handed_back += 1;
+    }
+    handed_back
+}
+
 /// The directory chain of a desk-relative path, as name segments.
-fn dir_segments(path: &Path) -> Vec<String> {
+pub(crate) fn dir_segments(path: &Path) -> Vec<String> {
     path.parent()
         .map(|d| {
             d.components()
@@ -393,57 +497,6 @@ fn dir_segments(path: &Path) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
-}
-
-/// Apply an external rename/relocation to the tree node carrying
-/// `file_id`: rename in place when the directory didn't change (keeps
-/// sibling ordering), otherwise lift the node — decoration, children and
-/// all — into the container chain for its new directory.
-fn rename_or_move_node(
-    desk: &mut TreeNode,
-    file_id: &str,
-    new_name: &str,
-    old_rel: &str,
-    new_segments: &[String],
-) {
-    let old_segments = dir_segments(Path::new(old_rel));
-    if old_segments == new_segments {
-        if let Some(node) = find_node_by_file_id(&mut desk.children, file_id) {
-            node.name = new_name.to_string();
-            return;
-        }
-    }
-    if let Some(mut node) = take_node_by_file_id(&mut desk.children, file_id) {
-        node.name = new_name.to_string();
-        ensure_container_chain(desk, new_segments).push(node);
-    }
-}
-
-fn find_node_by_file_id<'a>(
-    nodes: &'a mut Vec<TreeNode>,
-    file_id: &str,
-) -> Option<&'a mut TreeNode> {
-    for node in nodes.iter_mut() {
-        if node.file_id.as_deref() == Some(file_id) {
-            return Some(node);
-        }
-        if let Some(found) = find_node_by_file_id(&mut node.children, file_id) {
-            return Some(found);
-        }
-    }
-    None
-}
-
-fn take_node_by_file_id(nodes: &mut Vec<TreeNode>, file_id: &str) -> Option<TreeNode> {
-    for i in 0..nodes.len() {
-        if nodes[i].file_id.as_deref() == Some(file_id) {
-            return Some(nodes.remove(i));
-        }
-        if let Some(taken) = take_node_by_file_id(&mut nodes[i].children, file_id) {
-            return Some(taken);
-        }
-    }
-    None
 }
 
 /// Recognised files under `dir` as desk-relative paths. Hidden entries
@@ -593,19 +646,6 @@ pub(crate) fn absorb_disk_files(
         container.push(new_node(&node_type, &name, Some(&file_id)));
         index.insert(file_id, rel);
     }
-}
-
-fn remove_node_by_file_id(nodes: &mut Vec<TreeNode>, file_id: &str) -> bool {
-    for i in 0..nodes.len() {
-        if nodes[i].file_id.as_deref() == Some(file_id) {
-            nodes.remove(i);
-            return true;
-        }
-        if remove_node_by_file_id(&mut nodes[i].children, file_id) {
-            return true;
-        }
-    }
-    false
 }
 
 fn new_node(node_type: &str, name: &str, file_id: Option<&str>) -> TreeNode {

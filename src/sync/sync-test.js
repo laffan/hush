@@ -43,6 +43,9 @@ const ROUND_TIMEOUT_MS = 60_000;
 /** How long to wait for any sign of the other device at all. */
 const PEER_TIMEOUT_MS = 120_000;
 const POLL_MS = 3_000;
+/** After the reply round, how long to let the two writes settle before
+ *  reading every probe back. */
+const CROSSTALK_SETTLE_MS = 20_000;
 /** Probes from an *earlier* run would otherwise read as an instant
  *  arrival. Both devices start within seconds of each other, so anything
  *  claiming to be older than this is a leftover. */
@@ -78,57 +81,100 @@ async function deviceTag() {
 const NAME_RE = /^SyncTest (\S+) (Doc|Notebook|Stack)$/;
 const probeName = (tag, kind) => `${PREFIX} ${tag} ${kind}`;
 
-/** The marker every probe carries, whatever its file format. `run` is
- *  the sender's start time — that's what tells this run's probes from a
- *  previous run's leftovers. */
-const marker = (tag, version, run) => `hush-sync-test ${tag} v${version} run${run}`;
+/** The marker every probe carries, whatever its file format. `label` is
+ *  `v1`/`v2`/`v3` for the owner's own rounds, or `reply` for a line the
+ *  *other* device appended into this file. `run` is the sender's start
+ *  time — that's what tells this run's probes from a previous run's
+ *  leftovers. */
+const marker = (tag, label, run) => `hush-sync-test ${tag} ${label} run${run}`;
+const MARK_RE = /hush-sync-test (\S+) (v\d+|reply) run(\d+)/g;
 
-/** `{ version, run }` from a probe's content, or null. */
-function readMarker(content) {
-  let best = null;
-  for (const m of String(content || "").matchAll(/hush-sync-test \S+ v(\d+) run(\d+)/g)) {
-    const version = Number(m[1]) || 0;
-    if (!best || version > best.version) best = { version, run: Number(m[2]) || 0 };
+/** What each device has written into a probe: tag → { top, labels, run }.
+ *  Edits **append**, so a finished probe carries the owner's whole
+ *  history and the other device's reply beside it — you can open the
+ *  file and read the exchange rather than infer it from a log. */
+function markersByTag(content) {
+  const out = new Map();
+  for (const m of String(content || "").matchAll(MARK_RE)) {
+    const [, tag, label, run] = m;
+    const entry = out.get(tag) || { top: 0, labels: [], run: Number(run) || 0 };
+    if (label.startsWith("v")) entry.top = Math.max(entry.top, Number(label.slice(1)) || 0);
+    entry.labels.push(label);
+    out.set(tag, entry);
   }
-  return best;
+  return out;
 }
 
 // ===== Probe bodies, one per file type =====
+//
+// Every edit appends. Three rounds leave three lines (three text shapes,
+// three stack columns) and the peer's reply makes four — which is the
+// point: open any probe afterwards and both machines' marks are in it.
 
-function docBody(tag, version, run) {
-  return [marker(tag, version, run), "", "Delete this file when the test is over."].join("\n");
+function appendToDoc(current, line) {
+  const body = String(current || "").trimEnd();
+  return body ? `${body}\n${line}` : line;
 }
 
-async function notebookBody(tag, version, run) {
-  const { encodeNotebookContent } = await import("../notebook/notebook-content.ts");
+async function appendToNotebook(current, line, tag, n) {
+  const { encodeNotebookContent, decodeNotebookContent } =
+    await import("../notebook/notebook-content.ts");
+  const snap = (current && decodeNotebookContent(current)) || null;
+  const shapes = Array.isArray(snap?.shapes) ? [...snap.shapes] : [];
+  shapes.push({
+    id: `synctest-${tag}-${n}`, type: "text", x: 40, y: 40 + shapes.length * 48,
+    text: line, fontSize: 18, color: "#000000",
+  });
   return encodeNotebookContent({
-    shapes: [{
-      id: `synctest-${tag}`, type: "text", x: 40, y: 40,
-      text: marker(tag, version, run), fontSize: 18, color: "#000000",
-    }],
-    layers: [], flowEdges: [], bookmarks: [],
-    camera: { x: 0, y: 0, zoom: 1 },
+    shapes,
+    layers: snap?.layers || [],
+    flowEdges: snap?.flowEdges || [],
+    bookmarks: snap?.bookmarks || [],
+    camera: snap?.camera || { x: 0, y: 0, zoom: 1 },
   });
 }
 
-async function stackBody(tag, version, run, columnFileId) {
-  const { encodeStackContent } = await import("../stack/stack-content.js");
-  return encodeStackContent(
-    columnFileId
-      ? [{
-          id: `synctest-${tag}`, fileId: columnFileId, fileType: "document",
-          name: marker(tag, version, run), width: 400, height: 600, open: true,
-        }]
-      : [],
-    0,
-    { scrollY: 0, scrollDirection: "horizontal" },
-  );
+async function appendToStack(current, line, tag, n, columnFileId) {
+  const { encodeStackContent, decodeStackContent } = await import("../stack/stack-content.js");
+  const data = current ? decodeStackContent(current) : { items: [], scrollX: 0 };
+  const items = [...(data.items || [])];
+  if (columnFileId) {
+    items.push({
+      id: `synctest-${tag}-${n}`, fileId: columnFileId, fileType: "document",
+      name: line, width: 400, height: 600, open: true,
+    });
+  }
+  return encodeStackContent(items, data.scrollX || 0, {
+    scrollY: data.scrollY || 0,
+    scrollDirection: data.scrollDirection || "horizontal",
+  });
 }
 
-function bodyFor(kind, tag, version, run, docFileId) {
-  if (kind === "Doc") return Promise.resolve(docBody(tag, version, run));
-  if (kind === "Notebook") return notebookBody(tag, version, run);
-  return stackBody(tag, version, run, docFileId);
+/** Append `label`'s marker to whatever `current` holds, in that kind's
+ *  own format. `current` null means "start the file". */
+async function appendMarker(kind, current, tag, label, run, docFileId, n) {
+  const line = marker(tag, label, run);
+  if (kind === "Doc") {
+    return appendToDoc(current ?? "", line)
+      + (current ? "" : "\n\nDelete this file when the test is over.");
+  }
+  if (kind === "Notebook") return appendToNotebook(current, line, tag, n);
+  return appendToStack(current, line, tag, n, docFileId);
+}
+
+/** Read a probe, append our marker, write it back. Returns false when
+ *  the file couldn't be read — a result in itself. */
+async function appendToProbe(fileId, kind, tag, label, run, docFileId, n) {
+  let current = null;
+  try {
+    const file = await invoke("load_file", { id: fileId });
+    current = file?.content ?? null;
+  } catch (_) { return false; }
+  await invoke("save_file", {
+    id: fileId,
+    content: await appendMarker(kind, current, tag, label, run, docFileId, n),
+  });
+  return true;
 }
 
 // ===== The run =====
@@ -196,6 +242,10 @@ export async function runSyncTest(state, { newDesk = false } = {}) {
       }
     }
 
+    // Finally: both devices write into each other's files, and both
+    // read everything back. Skipped when the peer never showed up.
+    if (peerTag) await crosstalk(state, desk.id, tag, started, log);
+
     summarise(log, tag, peerTag, probes, results);
   } catch (e) {
     log("error", "Sync test failed", { error: String(e), stack: e?.stack || null });
@@ -255,19 +305,19 @@ async function createProbes(state, tag, run, log) {
   const doc = await state.newFile(null, {
     openImmediately: false,
     initialName: probeName(tag, "Doc"),
-    initialContent: docBody(tag, 1, run),
+    initialContent: await appendMarker("Doc", null, tag, "v1", run, null, 1),
   });
   if (doc?.fileId) out.push({ kind: "Doc", fileId: doc.fileId, name: doc.name });
 
   const nb = await state.createNotebook(probeName(tag, "Notebook"), null, {
     openImmediately: false,
-    initialContent: await notebookBody(tag, 1, run),
+    initialContent: await appendMarker("Notebook", null, tag, "v1", run, null, 1),
   });
   if (nb?.fileId) out.push({ kind: "Notebook", fileId: nb.fileId, name: nb.name });
 
   const st = await state.createStack(probeName(tag, "Stack"), null, {
     openImmediately: false,
-    initialContent: await stackBody(tag, 1, run, doc?.fileId || null),
+    initialContent: await appendMarker("Stack", null, tag, "v1", run, doc?.fileId || null, 1),
   });
   if (st?.fileId) out.push({ kind: "Stack", fileId: st.fileId, name: st.name });
 
@@ -287,18 +337,78 @@ async function createProbes(state, tag, run, log) {
   return out;
 }
 
-/** Bump every probe to `version`, through the ordinary save path. */
+/** Append round `version`'s marker to every probe, through the ordinary
+ *  save path. Appending (not replacing) is what leaves a readable
+ *  history in the file itself. */
 async function editProbes(state, tag, run, probes, version, log) {
   const docFileId = probes.find((p) => p.kind === "Doc")?.fileId || null;
   for (const probe of probes) {
     try {
-      await invoke("save_file", {
-        id: probe.fileId,
-        content: await bodyFor(probe.kind, tag, version, run, docFileId),
-      });
-      log("info", `Sent ${probe.kind} edit v${version}`, { fileId: probe.fileId });
+      const ok = await appendToProbe(
+        probe.fileId, probe.kind, tag, `v${version}`, run, docFileId, version,
+      );
+      if (ok) log("info", `Sent ${probe.kind} edit v${version}`, { fileId: probe.fileId });
+      else log("error", `Couldn't read our own ${probe.kind} probe to edit it`, { fileId: probe.fileId });
     } catch (e) {
       log("error", `Sending the ${probe.kind} edit v${version} failed`, { error: String(e) });
+    }
+  }
+}
+
+/**
+ * The last phase: write into the *other device's* files.
+ *
+ * Everything up to here has each device editing only what it owns, which
+ * keeps the handshake unambiguous but never puts two writers on one
+ * file — and that is the case most likely to lose someone's work.
+ * So each device appends one `reply` line to each of the peer's probes,
+ * and then both read every probe back and report whose marks survived.
+ * Conflict policy is last-write-wins, so a lost reply here is a real
+ * finding, not a bug in the test.
+ */
+async function crosstalk(state, deskId, ourTag, run, log) {
+  const peers = peerProbes(state, deskId, ourTag);
+  if (peers.length === 0) return;
+  const docFileId = peers.find((p) => p.kind === "Doc")?.node.fileId || null;
+  for (const { node, kind } of peers) {
+    try {
+      const ok = await appendToProbe(node.fileId, kind, ourTag, "reply", run, docFileId, 9);
+      log(ok ? "info" : "error",
+        ok ? `Replied into the peer's ${kind}` : `Couldn't read the peer's ${kind} to reply into it`,
+        { file: node.name });
+    } catch (e) {
+      log("error", `Replying into the peer's ${kind} failed`, { file: node.name, error: String(e) });
+    }
+  }
+  await sleep(CROSSTALK_SETTLE_MS);
+  await reportProbeContents(state, deskId, ourTag, log);
+}
+
+/** Read every probe in the desk and say who is written into it. This is
+ *  the "at least three lines, from both machines" check, made explicit. */
+async function reportProbeContents(state, deskId, ourTag, log) {
+  const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
+  const rows = [];
+  const walk = (nodes) => {
+    for (const n of nodes || []) {
+      if (NAME_RE.test(String(n?.name || "")) && n.fileId) rows.push(n);
+      if (n?.children) walk(n.children);
+    }
+  };
+  walk(desk?.children);
+  for (const node of rows) {
+    try {
+      const file = await invoke("load_file", { id: node.fileId });
+      const marks = markersByTag(file?.content);
+      const summary = [...marks.entries()]
+        .map(([tag, e]) => `${tag}: ${e.labels.join(" ")}`)
+        .sort();
+      const both = marks.size >= 2;
+      log(both ? "info" : "warn",
+        `${both ? "✓" : "!"} "${node.name}" carries marks from ${marks.size} device(s)`,
+        { marks: summary, lines: [...marks.values()].reduce((n, e) => n + e.labels.length, 0) });
+    } catch (e) {
+      log("error", `Couldn't read "${node.name}" to check its contents`, { error: String(e) });
     }
   }
 }
@@ -312,25 +422,36 @@ async function awaitPeerVersion(state, deskId, ourTag, version, sinceMs, budget,
   const results = [];
   let peerTag = null;
   const deadline = Date.now() + budget;
+  // A row whose file won't read is worth saying — once. Polling said it
+  // every three seconds for the whole window, which buried the run in a
+  // hundred identical lines.
+  const complained = new Set();
 
   while (outstanding.size > 0 && Date.now() < deadline) {
     await sleep(POLL_MS);
     for (const { node, tag, kind } of peerProbes(state, deskId, ourTag)) {
       if (!outstanding.has(kind)) continue;
       peerTag = peerTag || tag;
-      let mark = null;
+      let marks = null;
       try {
         const file = await invoke("load_file", { id: node.fileId });
-        mark = readMarker(file?.content);
+        marks = markersByTag(file?.content);
       } catch (e) {
         // In the tree but not readable is itself a result — that's the
         // undelivered-file case, and worth seeing rather than waiting out.
-        log("warn", `Peer ${kind} "${node.name}" is in the tree but not readable yet`, { error: String(e) });
+        if (complained.has(node.fileId)) continue;
+        complained.add(node.fileId);
+        log("warn", `Peer ${kind} "${node.name}" is in the tree but its content won't load`, {
+          fileId: node.fileId, error: String(e),
+          note: "an id the far index doesn't publish, or a file the provider hasn't delivered",
+        });
         continue;
       }
+      // The *peer's* own marks, not the reply we may have written in.
+      const mark = marks.get(tag);
       if (!mark) continue;
       if (mark.run && Math.abs(mark.run - sinceMs) > RUN_SKEW_MS) continue; // leftover from an older run
-      if (mark.version < version) continue;
+      if (mark.top < version) continue;
       outstanding.delete(kind);
       const waitedMs = Date.now() - sinceMs;
       results.push({ kind, version, waitedMs, peerTag: tag });

@@ -28,6 +28,7 @@ mod desk_rescue;
 mod desk_roots;
 mod desk_scan;
 mod desk_store;
+mod desk_tree_ops;
 mod files;
 mod hushnote;
 mod images;
