@@ -611,6 +611,64 @@ fn a_tree_save_never_drags_the_far_devices_file_out_of_the_trash() {
     assert!(folder.join("Theirs.md").exists(), "a deliberate move must not be swallowed");
 }
 
+/// Keeping the far device's file in the Trash is only half the job: the
+/// *row* has to follow, or our `tree.json` publishes the old position,
+/// the far device reloads it, and its own deletion bounces back out a
+/// beat after landing. ("I watched the files be deleted, then they popped
+/// back.") The full loop, with nothing left drifting.
+#[test]
+fn a_far_devices_move_to_trash_reaches_our_sidebar_and_stays() {
+    let dir = tmp();
+    let store = seed_simple_desk(dir.path());
+    let external = tmp();
+    let folder = external.path().join("Shared");
+    store.make_desk_local("d1", &folder, None).unwrap();
+
+    fs::write(folder.join("Theirs.md"), "theirs").unwrap();
+    let mut index = store.load_index("d1");
+    index.insert("their-id".into(), "Theirs.md".into());
+    store.save_index("d1", &index).unwrap();
+    let ours = node("n1", "document", "Doc", Some("f1"), Vec::new());
+    let theirs = node("n2", "document", "Theirs", Some("their-id"), Vec::new());
+    store.save_forest(&vec![desk_with_id("d1", vec![ours.clone(), theirs.clone()])]).unwrap();
+
+    // The far device trashes its file: the move lands on disk and in the
+    // folder's index; its `tree.json` has not arrived.
+    fs::create_dir_all(folder.join("Trash")).unwrap();
+    fs::rename(folder.join("Theirs.md"), folder.join("Trash/Theirs.md")).unwrap();
+    let mut index = store.load_index("d1");
+    index.insert("their-id".into(), "Trash/Theirs.md".into());
+    store.save_index("d1", &index).unwrap();
+
+    // We trash ours from a tree that still shows theirs at the root. The
+    // file stays put (the rebase) — and the row has to catch up.
+    let mut stale = vec![desk_with_id("d1", vec![
+        node("__trash__:d1", "folder", "Trash", None, vec![ours]),
+    ])];
+    stale[0].children.push(theirs);
+    store.save_forest(&stale).unwrap();
+
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!(report.relocated, 1, "the row must follow the file into Trash");
+    assert_eq!(report.removed, 0, "nothing was deleted, only moved");
+
+    let desk = store.load_forest().unwrap().remove(0);
+    let trash = find_by_name(&desk.children, "Trash").expect("Trash special");
+    let names: Vec<&str> = trash.children.iter().map(|n| n.name.as_str()).collect();
+    assert!(names.contains(&"Theirs"), "far device's row is still outside Trash: {:?}", names);
+    assert!(names.contains(&"Doc"), "our own row left the Trash: {:?}", names);
+    assert!(
+        !desk.children.iter().any(|n| n.name == "Theirs"),
+        "the row was copied into Trash rather than moved",
+    );
+
+    // And it holds: saving the reloaded tree must not push anything back.
+    store.save_forest(&vec![desk]).unwrap();
+    assert!(folder.join("Trash/Theirs.md").exists(), "the file bounced out of the Trash");
+    assert!(folder.join("Trash/Doc.md").exists());
+    assert_eq!(store.reconcile_desk_from_disk("d1").unwrap().relocated, 0, "should be settled");
+}
+
 /// `.hush/index.json` present but unreadable (a half-synced sidecar) is
 /// not "this desk has no files" — reconciling on that reading re-mints a
 /// fileId for every file in the folder and strands every node the tree

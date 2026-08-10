@@ -43,9 +43,9 @@ const ROUND_TIMEOUT_MS = 60_000;
 /** How long to wait for any sign of the other device at all. */
 const PEER_TIMEOUT_MS = 120_000;
 const POLL_MS = 3_000;
-/** After the reply round, how long to let the two writes settle before
- *  reading every probe back. */
-const CROSSTALK_SETTLE_MS = 20_000;
+/** After the reply round, how long to keep re-reading every probe waiting
+ *  for both devices' marks before calling one of them lost. */
+const CROSSTALK_SETTLE_MS = 60_000;
 /** Probes from an *earlier* run would otherwise read as an instant
  *  arrival. Both devices start within seconds of each other, so anything
  *  claiming to be older than this is a leftover. */
@@ -401,7 +401,6 @@ async function crosstalk(state, deskId, ourTag, run, log) {
       log("error", `Replying into the peer's ${kind} failed`, { file: node.name, error: String(e) });
     }
   }
-  await sleep(CROSSTALK_SETTLE_MS);
   await reportProbeContents(state, deskId, ourTag, log);
 }
 
@@ -505,8 +504,16 @@ function inTrash(state, deskId, nodeId) {
   return walk(trash?.children);
 }
 
-/** Read every probe in the desk and say who is written into it. This is
- *  the "at least three lines, from both machines" check, made explicit. */
+/**
+ * Read every probe in the desk and say who is written into it — the "at
+ * least three lines, from both machines" check, made explicit.
+ *
+ * A handshake, not a fixed settle: a device whose peer replied 30s ago
+ * would otherwise report a clean "!" for a file that was merely still in
+ * flight, and the two logs would disagree about the same file. Each probe
+ * is re-read until it carries both devices' marks or the round times out,
+ * and only then reported — so a `!` here means the write really was lost.
+ */
 async function reportProbeContents(state, deskId, ourTag, log) {
   const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
   const rows = [];
@@ -517,20 +524,36 @@ async function reportProbeContents(state, deskId, ourTag, log) {
     }
   };
   walk(desk?.children);
-  for (const node of rows) {
-    try {
-      const file = await invoke("load_file", { id: node.fileId });
-      const marks = markersByTag(file?.content);
-      const summary = [...marks.entries()]
-        .map(([tag, e]) => `${tag}: ${e.labels.join(" ")}`)
-        .sort();
-      const both = marks.size >= 2;
-      log(both ? "info" : "warn",
-        `${both ? "✓" : "!"} "${node.name}" carries marks from ${marks.size} device(s)`,
-        { marks: summary, lines: [...marks.values()].reduce((n, e) => n + e.labels.length, 0) });
-    } catch (e) {
-      log("error", `Couldn't read "${node.name}" to check its contents`, { error: String(e) });
+
+  const seen = new Map();   // node → { marks, error }
+  const deadline = Date.now() + CROSSTALK_SETTLE_MS;
+  do {
+    for (const node of rows) {
+      if (seen.get(node)?.marks?.size >= 2) continue;
+      try {
+        const file = await invoke("load_file", { id: node.fileId });
+        seen.set(node, { marks: markersByTag(file?.content) });
+      } catch (e) {
+        seen.set(node, { error: String(e) });
+      }
     }
+    if (rows.every((n) => seen.get(n)?.marks?.size >= 2)) break;
+    await sleep(POLL_MS);
+  } while (Date.now() < deadline);
+
+  for (const node of rows) {
+    const { marks, error } = seen.get(node) || {};
+    if (!marks) {
+      log("error", `Couldn't read "${node.name}" to check its contents`, { error });
+      continue;
+    }
+    const both = marks.size >= 2;
+    log(both ? "info" : "warn",
+      `${both ? "✓" : "!"} "${node.name}" carries marks from ${marks.size} device(s)`,
+      {
+        marks: [...marks.entries()].map(([tag, e]) => `${tag}: ${e.labels.join(" ")}`).sort(),
+        lines: [...marks.values()].reduce((n, e) => n + e.labels.length, 0),
+      });
   }
 }
 

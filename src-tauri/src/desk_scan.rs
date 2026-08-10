@@ -127,6 +127,10 @@ pub struct ScanReport {
     /// the folder is new, and the distinction is what tells the two apart
     /// in a log.
     pub restored: usize,
+    /// Rows moved to where their file actually is, because the folder
+    /// (or our own placement rebase) put it somewhere the tree doesn't
+    /// say. This is how a far device's move to Trash reaches the sidebar.
+    pub relocated: usize,
     /// Index entries whose file is absent but deliberately *kept*: an
     /// iCloud placeholder stands in for it, or the absence hasn't
     /// outlasted the removal grace window yet.
@@ -143,7 +147,7 @@ impl ScanReport {
     pub fn changed(&self) -> bool {
         self.added > 0 || self.removed > 0 || self.renamed > 0
             || self.matched > 0 || self.rekeyed > 0 || self.deferred > 0
-            || self.restored > 0
+            || self.restored > 0 || self.relocated > 0
     }
 
     /// Whether the *tree* changed — what the frontend needs to reload
@@ -152,6 +156,7 @@ impl ScanReport {
     pub fn structural(&self) -> bool {
         self.added > 0 || self.removed > 0 || self.renamed > 0
             || self.rekeyed > 0 || self.deferred > 0 || self.restored > 0
+            || self.relocated > 0
     }
 
     /// Whether the frontend should re-read the tree: either we changed
@@ -312,6 +317,13 @@ impl DeskStore {
         // the row back on the published id instead.
         report.restored =
             crate::desk_index::restore_missing_rows(&root, &mut desk, &index, &placeholders);
+
+        // ----- Rows whose file has moved out from under them. The index
+        // is where the file is; the tree follows. Without this the far
+        // device's move lands on disk and in the index while our row —
+        // and the `tree.json` we publish from it — still points at the
+        // old place, which the far device then reloads and un-does.
+        report.relocated = crate::desk_index::relocate_rows(&root, &mut desk, &index);
 
         // ----- Additions: recognised files with no index entry -----
         let known: HashSet<String> = index.values().cloned().collect();
@@ -476,11 +488,6 @@ impl DeskStore {
         if hashes_dirty {
             let _ = self.save_hashes(desk_id, &hashes);
         }
-        // Tree and index now agree about where every file is, which makes
-        // this the merge base a later save rebases its moves onto. Recorded
-        // even on a no-op pass: "nothing changed" is itself confirmation
-        // that our placement is the folder's.
-        crate::desk_index::note_placement(&root, desk_id, &index);
         Ok(report)
     }
 }

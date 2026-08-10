@@ -40,9 +40,76 @@ fn placement_base() -> &'static Mutex<HashMap<(String, String), HashMap<String, 
     PLACEMENT_BASE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Record the placement our tree and index just agreed on.
+/// Where a file sits, ignoring how its name is spelled: directory chain
+/// plus stem. The tree computes `X.md` for a doc the folder holds as
+/// `X.txt` (adopted extensions), and dedupe can add a ` (2)` — neither is
+/// a *move*, and comparing raw paths would read both as one.
+fn placement_key(rel: &str) -> String {
+    let path = Path::new(rel);
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or(rel);
+    let dir = crate::desk_scan::dir_segments(path).join("/");
+    if dir.is_empty() { stem.to_string() } else { format!("{}/{}", dir, stem) }
+}
+
+/// Record the placement our in-memory tree currently has.
 pub(crate) fn note_placement(root: &Path, desk_id: &str, placement: &HashMap<String, String>) {
-    placement_base().lock().unwrap().insert(base_key(root, desk_id), placement.clone());
+    let keyed = placement.iter().map(|(id, rel)| (id.clone(), placement_key(rel))).collect();
+    placement_base().lock().unwrap().insert(base_key(root, desk_id), keyed);
+}
+
+/// The same, from a desk node — used wherever a tree is *read*, because
+/// loading one is never a user move. Without this, a tree that arrives
+/// from the far device and gets loaded here reads on the next save as
+/// "we moved these files", and the save asserts it: the far device's
+/// deletions bounce back out of the Trash a beat after landing.
+pub(crate) fn note_tree_placement(root: &Path, desk: &TreeNode) {
+    let mut files = HashMap::new();
+    collect_expected(&desk.children, &mut Vec::new(), &mut files, &mut HashSet::new());
+    note_placement(root, &desk.id, &files);
+}
+
+/// Move a row to wherever its file actually is.
+///
+/// The mirror of `rebase_placement`, and its necessary other half. That
+/// rule stops a save dragging the far device's file back out of the
+/// Trash — but it leaves the index saying `Trash/X.md` while our tree
+/// still hangs the row in `Inbox`, and nothing else in the reconcile
+/// closes that gap: the path is claimed, so the file never reads as new,
+/// and the rename pairing (which used to do this job, by way of the
+/// index still being stale) no longer fires. The row then stays visibly
+/// in the wrong place, *and* our `tree.json` publishes that to the far
+/// device — which reloads it and undoes its own move.
+///
+/// The index is where the file is. The tree follows it.
+pub(crate) fn relocate_rows(
+    root: &Path,
+    desk: &mut TreeNode,
+    index: &HashMap<String, String>,
+) -> usize {
+    let mut current = HashMap::new();
+    collect_expected(&desk.children, &mut Vec::new(), &mut current, &mut HashSet::new());
+
+    let mut moves: Vec<(&String, &String)> = index
+        .iter()
+        .filter(|(id, rel)| {
+            current.get(*id).map(|now| placement_key(now) != placement_key(rel)).unwrap_or(false)
+        })
+        .collect();
+    moves.sort_by(|a, b| a.1.cmp(b.1));
+
+    let mut moved = 0;
+    for (id, rel) in moves {
+        // Absent is not deleted, and it isn't relocated either — the
+        // removal pass and its grace window own that call.
+        if !root.join(rel).exists() {
+            continue;
+        }
+        let Some((_, name, segments)) = node_shape(rel) else { continue };
+        let old_rel = current.get(id).cloned().unwrap_or_default();
+        crate::desk_tree_ops::rename_or_move_node(desk, id, &name, &old_rel, &segments);
+        moved += 1;
+    }
+    moved
 }
 
 /// Take the far device's moves for files **we** didn't move.
@@ -78,13 +145,13 @@ pub(crate) fn rebase_placement(
     expected: &mut HashMap<String, String>,
     published: &HashMap<String, String>,
 ) -> Vec<String> {
-    let key = base_key(root, desk_id);
+    let keyed = expected.iter().map(|(id, rel)| (id.clone(), placement_key(rel))).collect();
     let mut guard = placement_base().lock().unwrap();
-    let base = guard.insert(key, expected.clone());
+    let base = guard.insert(base_key(root, desk_id), keyed);
     let Some(base) = base else { return Vec::new() };
     let mut adopted = Vec::new();
     for (id, rel) in expected.iter_mut() {
-        if base.get(id) != Some(&*rel) {
+        if base.get(id) != Some(&placement_key(rel)) {
             continue; // we moved this one — our move stands
         }
         let Some(theirs) = published.get(id) else { continue };

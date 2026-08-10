@@ -417,6 +417,11 @@ impl DeskStore {
     pub(crate) fn load_desk_tree_raw(&self, desk_id: &str) -> Option<(TreeNode, String)> {
         let s = fs::read_to_string(self.tree_path(desk_id)).ok()?;
         let node = serde_json::from_str::<TreeNode>(&s).ok()?;
+        // Reading a tree is never a user move. Every seam that puts one
+        // in front of the user goes through here, so this is where the
+        // merge base for the *next* save is set — see
+        // `desk_index::note_tree_placement`.
+        crate::desk_index::note_tree_placement(&self.desk_dir(desk_id), &node);
         Some((node, s))
     }
 }
