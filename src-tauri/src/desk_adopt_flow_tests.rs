@@ -137,11 +137,24 @@ fn stale_childless_tree_save_never_wipes_a_local_desk() {
         "local-desk files must never be orphan-parked"
     );
 
-    // Disk wins: the next reconcile re-absorbs both files.
+    // Disk wins: the next reconcile re-lists both files. Their index
+    // entries survived the stale save (the index is merged, never
+    // replaced), so they come back as *restored* rows under the ids they
+    // already had — not as re-minted additions, which is what used to
+    // strand every write the far device still aimed at the old id.
+    let before = store.load_index(&desk_id);
     let report = store.reconcile_desk_from_disk(&desk_id).unwrap();
-    assert_eq!(report.added, 2);
+    assert_eq!(report.restored, 2);
+    assert_eq!(report.added, 0, "a re-listed file must keep its published id");
+    assert_eq!(store.load_index(&desk_id), before, "ids must not move");
     let desk = store.load_forest().unwrap().remove(0);
     assert!(desk.children.iter().any(|n| n.name == "Today"));
+    let nested = desk
+        .children
+        .iter()
+        .find(|n| n.name == "2026")
+        .expect("nested file's folder must come back too");
+    assert!(nested.children.iter().any(|n| n.name == "January"));
 }
 
 /// Empty directories the user made in their own folder are theirs — a

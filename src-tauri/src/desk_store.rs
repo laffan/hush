@@ -121,6 +121,17 @@ impl DeskStore {
         }
     }
 
+    /// Write a desk's index as a **merge** with what the folder publishes
+    /// now — see `desk_index::merge_published` for why replacing it whole
+    /// loses the far device's ids.
+    pub(crate) fn save_index_merged(&self, desk_id: &str, ours: &HashMap<String, String>) -> Result<(), BoxError> {
+        let published = self.try_load_index(desk_id).unwrap_or_default();
+        let merged = crate::desk_index::merge_published(ours, &published, |rel| {
+            self.abs_path(desk_id, rel).exists()
+        });
+        self.save_index(desk_id, &merged)
+    }
+
     pub(crate) fn save_index(&self, desk_id: &str, files: &HashMap<String, String>) -> Result<(), BoxError> {
         let path = self.index_path(desk_id);
         if let Some(parent) = path.parent() {
@@ -371,7 +382,7 @@ impl DeskStore {
                 continue;
             }
             let res = (|| -> Result<(), BoxError> {
-                self.save_index(&desk.id, &new_indexes[&desk.id])?;
+                self.save_index_merged(&desk.id, &new_indexes[&desk.id])?;
                 let raw = serde_json::to_string_pretty(desk)?;
                 write_atomic_str(&self.tree_path(&desk.id), &raw)?;
                 // Our own write — so the next reconcile doesn't mistake
@@ -522,6 +533,19 @@ impl DeskStore {
         let staged = self.staging_path(id);
         if let Some(parent) = staged.parent() {
             fs::create_dir_all(parent)?;
+        }
+        // `create_file` stages a new id before its first write, so an
+        // existing staging file is the normal case. Nothing there means
+        // this id *was* placed and has fallen out of its desk's index.
+        // Staging catches the bytes but is per-device — the edit reaches
+        // no other machine — and the symptom looks exactly like nothing
+        // happening, so say so.
+        if !staged.exists() {
+            crate::activity_log::note(
+                "desks",
+                "error",
+                format!("Wrote {} to staging — no desk index places it", id),
+            );
         }
         write_atomic_str(&staged, content)?;
         Ok(())

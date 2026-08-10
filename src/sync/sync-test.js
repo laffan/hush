@@ -218,8 +218,11 @@ export async function runSyncTest(state, { newDesk = false } = {}) {
       rounds: ROUNDS.length,
     });
 
-    const probes = await createProbes(state, tag, started, log);
-    const results = [];   // { kind, version, waitedMs } | { kind, version, missed: true }
+    // { kind, version, waitedMs }        the peer's copy arrived
+    // { kind, version, missed: true }    it never did
+    // { kind, version, failedToSend }    it never left *this* device
+    const { probes, unsent } = await createProbes(state, tag, started, log);
+    const results = [...unsent];
     const sentAt = new Map([[1, Date.now()]]);
 
     // Round 0 is the create; each later round waits for the peer to
@@ -227,7 +230,7 @@ export async function runSyncTest(state, { newDesk = false } = {}) {
     let peerTag = null;
     for (const version of [1, ...ROUNDS]) {
       if (version > 1) {
-        await editProbes(state, tag, started, probes, version, log);
+        results.push(...await editProbes(state, desk.id, tag, started, probes, version, log));
         sentAt.set(version, Date.now());
       }
       const budget = version === 1 ? PEER_TIMEOUT_MS : ROUND_TIMEOUT_MS;
@@ -327,10 +330,12 @@ async function createProbes(state, tag, run, log) {
   });
   if (st?.fileId) out.push({ kind: "Stack", fileId: st.fileId, name: st.name });
 
+  const unsent = [];
   for (const kind of KINDS) {
     const made = out.find((p) => p.kind === kind);
-    if (made) log("info", `Created ${kind} probe "${made.name}"`, { fileId: made.fileId });
-    else log("error", `${kind} probe could not be created`);
+    if (made) { log("info", `Created ${kind} probe "${made.name}"`, { fileId: made.fileId }); continue; }
+    log("error", `${kind} probe could not be created`);
+    unsent.push({ kind, version: 1, failedToSend: true });
   }
   // The tree save is what places the new files into the desk folder —
   // until it runs they're in staging and there is nothing to sync.
@@ -340,25 +345,35 @@ async function createProbes(state, tag, run, log) {
   } catch (e) {
     log("error", "Tree save failed — probes may still be in staging", { error: String(e) });
   }
-  return out;
+  return { probes: out, unsent };
 }
 
 /** Append round `version`'s marker to every probe, through the ordinary
  *  save path. Appending (not replacing) is what leaves a readable
  *  history in the file itself. */
-async function editProbes(state, tag, run, probes, version, log) {
+async function editProbes(state, deskId, tag, run, probes, version, log) {
+  // Re-find every probe first: the stack column references the doc's
+  // id, so a re-key has to be picked up before anything is written.
+  for (const probe of probes) {
+    if (!resolveProbe(state, deskId, probe, log)) {
+      log("error", `Our ${probe.kind} probe has no row in the tree`, { file: probe.name });
+    }
+  }
   const docFileId = probes.find((p) => p.kind === "Doc")?.fileId || null;
+  const unsent = [];
   for (const probe of probes) {
     try {
       const ok = await appendToProbe(
         probe.fileId, probe.kind, tag, `v${version}`, run, docFileId, version,
       );
-      if (ok) log("info", `Sent ${probe.kind} edit v${version}`, { fileId: probe.fileId });
-      else log("error", `Couldn't read our own ${probe.kind} probe to edit it`, { fileId: probe.fileId });
+      if (ok) { log("info", `Sent ${probe.kind} edit v${version}`, { fileId: probe.fileId }); continue; }
+      log("error", `Couldn't read our own ${probe.kind} probe to edit it`, { fileId: probe.fileId });
     } catch (e) {
       log("error", `Sending the ${probe.kind} edit v${version} failed`, { error: String(e) });
     }
+    unsent.push({ kind: probe.kind, version, failedToSend: true });
   }
+  return unsent;
 }
 
 /**
@@ -402,21 +417,26 @@ async function crosstalk(state, deskId, ourTag, run, log) {
  * both machines.
  */
 async function trashRound(state, deskId, ourTag, probes, log) {
+  const results = [];
   for (const probe of probes) {
-    const node = findNodeByFileId(state, deskId, probe.fileId);
+    const node = resolveProbe(state, deskId, probe, log);
     if (!node) {
-      log("error", `Couldn't find the ${probe.kind} probe's row to trash it`, { fileId: probe.fileId });
+      log("error", `Couldn't find the ${probe.kind} probe's row to trash it`, {
+        file: probe.name, fileId: probe.fileId,
+      });
+      results.push({ kind: probe.kind, version: "trash", failedToSend: true });
       continue;
     }
     try {
       await state.deleteTreeNode(node.id);
       log("info", `Moved our ${probe.kind} to Trash`, { file: probe.name });
+      continue;
     } catch (e) {
       log("error", `Trashing our ${probe.kind} failed`, { file: probe.name, error: String(e) });
     }
+    results.push({ kind: probe.kind, version: "trash", failedToSend: true });
   }
   const outstanding = new Set(KINDS);
-  const results = [];
   const deadline = Date.now() + ROUND_TIMEOUT_MS;
   const sentAt = Date.now();
   while (outstanding.size > 0 && Date.now() < deadline) {
@@ -436,19 +456,45 @@ async function trashRound(state, deskId, ourTag, probes, log) {
   return results;
 }
 
-/** The row carrying `fileId` inside this desk. */
-function findNodeByFileId(state, deskId, fileId) {
+/** The first row under this desk matching `pred`. */
+function findNode(state, deskId, pred) {
   const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
   let found = null;
   const walk = (nodes) => {
     for (const n of nodes || []) {
       if (found) return;
-      if (n?.fileId === fileId) { found = n; return; }
+      if (pred(n)) { found = n; return; }
       if (n?.children) walk(n.children);
     }
   };
   walk(desk?.children);
   return found;
+}
+
+/**
+ * Re-find a probe by **name** and refresh the fileId we hold for it.
+ *
+ * A fileId is not a constant across two devices. When both mint an id
+ * for the same arriving file, the loser's rows get re-keyed to the id
+ * the folder's index publishes — legitimately, and behind the test's
+ * back. A test holding the id it was handed at creation then edits and
+ * trashes a file that no longer exists ("couldn't find the row"), and
+ * every write goes to per-device staging where it syncs to nobody.
+ *
+ * The name is the stable handle: it's ours, it's unique per device, and
+ * it survives a re-key. Resolve through it every round, and say so when
+ * the id moves — that swap is the single most useful line in the log.
+ */
+function resolveProbe(state, deskId, probe, log) {
+  const node = findNode(state, deskId, (n) => n?.name === probe.name && n?.fileId);
+  if (!node) return null;
+  if (node.fileId !== probe.fileId) {
+    log("warn", `Our ${probe.kind} probe was re-keyed — following it`, {
+      file: probe.name, was: probe.fileId, now: node.fileId,
+    });
+    probe.fileId = node.fileId;
+  }
+  return node;
 }
 
 /** Is `nodeId` under this desk's Trash special? */
@@ -569,20 +615,27 @@ function summarise(log, ourTag, peerTag, probes, results) {
   for (const kind of KINDS) {
     const parts = [];
     for (const version of [1, ...ROUNDS, "trash"]) {
-      const r = results.find((x) => x.kind === kind && x.version === version);
+      const at = (f) => results.find((x) => x.kind === kind && x.version === version && f(x));
       const label = version === 1 ? "create"
         : version === "trash" ? "to Trash"
         : `edit v${version}`;
-      if (!r) parts.push(`${label}: not reached`);
+      const r = at((x) => !x.failedToSend);
+      // Our own failure to send comes first: "MISSED" would blame the
+      // provider for something that never left this machine.
+      if (at((x) => x.failedToSend)) parts.push(`${label}: NOT SENT`);
+      else if (!r) parts.push(`${label}: not reached`);
       else if (r.missed) parts.push(`${label}: MISSED`);
       else parts.push(`${label}: ${(r.waitedMs / 1000).toFixed(1)}s`);
     }
     rows.push(`${kind} — ${parts.join(", ")}`);
   }
+  const unsent = results.filter((r) => r.failedToSend);
   const missed = results.filter((r) => r.missed);
-  log(missed.length ? "error" : "info",
-    missed.length
-      ? `RESULT: ${missed.length} of ${results.length} transfers did not arrive`
+  const bad = unsent.length + missed.length;
+  log(bad ? "error" : "info",
+    bad
+      ? `RESULT: ${bad} of ${results.length} transfers failed`
+        + (unsent.length ? ` (${unsent.length} never left this device)` : "")
       : "RESULT: every probe and every edit crossed in both directions",
     {
       thisDevice: ourTag,

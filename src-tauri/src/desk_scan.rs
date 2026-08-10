@@ -121,6 +121,12 @@ pub struct ScanReport {
     /// lands in `tree.json` with nothing for the reconciler to do, so
     /// without this the change reaches disk and never reaches the UI.
     pub tree_changed: bool,
+    /// Indexed files that had no tree row and were given one back under
+    /// the id the index publishes — a stale tree save dropped the row, or
+    /// a `tree.json` arrived that predates it. Not `added`: nothing about
+    /// the folder is new, and the distinction is what tells the two apart
+    /// in a log.
+    pub restored: usize,
     /// Index entries whose file is absent but deliberately *kept*: an
     /// iCloud placeholder stands in for it, or the absence hasn't
     /// outlasted the removal grace window yet.
@@ -137,6 +143,7 @@ impl ScanReport {
     pub fn changed(&self) -> bool {
         self.added > 0 || self.removed > 0 || self.renamed > 0
             || self.matched > 0 || self.rekeyed > 0 || self.deferred > 0
+            || self.restored > 0
     }
 
     /// Whether the *tree* changed — what the frontend needs to reload
@@ -144,7 +151,7 @@ impl ScanReport {
     /// fileId, which the frontend very much needs to pick up.
     pub fn structural(&self) -> bool {
         self.added > 0 || self.removed > 0 || self.renamed > 0
-            || self.rekeyed > 0 || self.deferred > 0
+            || self.rekeyed > 0 || self.deferred > 0 || self.restored > 0
     }
 
     /// Whether the frontend should re-read the tree: either we changed
@@ -297,6 +304,15 @@ impl DeskStore {
             }
         }
 
+        // ----- Rows the tree lost while the index kept them. The
+        // additions pass below can't recover these: the path is already
+        // claimed, so the file doesn't read as new, and it stays out of
+        // the sidebar until something re-mints an id for it — the exact
+        // identity break the merged index write exists to prevent. Hang
+        // the row back on the published id instead.
+        report.restored =
+            crate::desk_index::restore_missing_rows(&root, &mut desk, &index, &placeholders);
+
         // ----- Additions: recognised files with no index entry -----
         let known: HashSet<String> = index.values().cloned().collect();
         let mut on_disk = Vec::new();
@@ -323,22 +339,9 @@ impl DeskStore {
                 report.matched += 1;
                 continue;
             }
-            let Some(node_type) = kind_for_rel(&rel) else { continue };
-            let path = Path::new(&rel);
-            let filename = path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or(&rel)
-                .to_string();
-            let name = if node_type == "image" {
-                filename.clone()
-            } else {
-                path.file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or(&filename)
-                    .to_string()
+            let Some((node_type, name, segments)) = crate::desk_index::node_shape(&rel) else {
+                continue;
             };
-            let segments = dir_segments(path);
 
             // Rename pairing: an added file whose bytes hash to a
             // vanished entry's cached hash (same kind) is that file,
@@ -388,7 +391,7 @@ impl DeskStore {
             }
             // Images (addressed by filename) and unreadable files.
             let file_id = if node_type == "image" {
-                filename.clone()
+                name.clone()
             } else {
                 Uuid::new_v4().to_string()
             };
@@ -452,7 +455,9 @@ impl DeskStore {
         }
 
         if report.changed() {
-            self.save_index(desk_id, &index)?;
+            // Merged, not replaced — the far device may have published
+            // entries we've never seen while this pass was walking.
+            self.save_index_merged(desk_id, &index)?;
         }
         // The tree is only rewritten when the *tree* changed. A re-paired
         // file leaves it byte-identical, and rewriting it anyway bumps
@@ -577,7 +582,7 @@ pub(crate) fn walk_placeholders(root: &Path, dir: &Path, out: &mut Vec<String>) 
     }
 }
 
-fn kind_for_rel(rel: &str) -> Option<String> {
+pub(crate) fn kind_for_rel(rel: &str) -> Option<String> {
     let ext = Path::new(rel)
         .extension()
         .and_then(|e| e.to_str())
@@ -643,34 +648,21 @@ pub(crate) fn absorb_disk_files(
     let mut on_disk = Vec::new();
     walk_files(root, root, &mut on_disk);
     for rel in on_disk {
-        let Some(node_type) = kind_for_rel(&rel) else { continue };
-        let path = Path::new(&rel);
-        let filename = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or(&rel)
-            .to_string();
-        let name = if node_type == "image" {
-            filename.clone()
-        } else {
-            path.file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or(&filename)
-                .to_string()
+        let Some((node_type, name, segments)) = crate::desk_index::node_shape(&rel) else {
+            continue;
         };
         let file_id = if node_type == "image" {
-            filename
+            name.clone()
         } else {
             Uuid::new_v4().to_string()
         };
-        let segments = dir_segments(path);
         let container = ensure_container_chain(desk, &segments);
         container.push(new_node(&node_type, &name, Some(&file_id)));
         index.insert(file_id, rel);
     }
 }
 
-fn new_node(node_type: &str, name: &str, file_id: Option<&str>) -> TreeNode {
+pub(crate) fn new_node(node_type: &str, name: &str, file_id: Option<&str>) -> TreeNode {
     TreeNode {
         id: Uuid::new_v4().to_string(),
         name: name.to_string(),
