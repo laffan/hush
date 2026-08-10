@@ -38,6 +38,17 @@ pub fn file_availability(state: State<AppState>, id: String) -> FileAvailability
     FileAvailability { state: s.to_string(), path }
 }
 
+/// Modification times (epoch ms) for a batch of fileIds — a `stat`
+/// each, no reads. Lets a surface holding a file open skip re-reading it
+/// when nothing moved; see `sync/file-freshness.js`.
+#[tauri::command]
+pub fn file_mtimes(
+    state: State<AppState>,
+    ids: Vec<String>,
+) -> std::collections::HashMap<String, u64> {
+    state.file_manager.lock().unwrap().mtimes(&ids)
+}
+
 // Async so the write runs on the async runtime's worker pool instead of
 // the main thread. Notebook autosave ships the full multi-MB envelope
 // every couple of seconds, and for `.hushnote` files the store deflates

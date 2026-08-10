@@ -104,7 +104,12 @@ async function _refresh() {
     if (!targets.has(pane.fileId)) targets.set(pane.fileId, []);
     targets.get(pane.fileId).push(pane);
   }
+  // One batched `stat` before any reading: most passes find nothing has
+  // moved, and a pane onto a big notebook is not cheap to re-read.
+  const { movedSince } = await import("../sync/file-freshness.js");
+  const moved = await movedSince([...targets.keys()]);
   for (const [fileId, group] of targets) {
+    if (!moved.has(fileId)) continue;
     let content = null;
     try {
       const file = await tauriInvoke("load_file", { id: fileId });

@@ -22,10 +22,40 @@ let currentContainer = null; // for rebuilding in place on an external change
 // the stack hasn't changed, instead of churning IPC/network every 2 s.
 let lastSavedContent = null;
 
-export async function mountStack(container, fileId, state) {
+/**
+ * Serialized lifecycle. `openStack` emits `stack-unmount` and then
+ * `stack-open`, and `AppState.emit` is synchronous while its handlers
+ * are not — so the unmount and the mount ran *concurrently*. Both begin
+ * with `await saveStack()`, and whichever resumed second found
+ * `currentInstance` already torn down by the first:
+ *
+ *   Unhandled rejection: null is not an object
+ *   (evaluating 'currentInstance.destroy')  — mountStack
+ *
+ * The mount rejected, no stack appeared, and the click looked ignored;
+ * clicking again worked because by then there was nothing to tear down.
+ * Every lifecycle operation now queues behind the last one, which is the
+ * same shape notebook-bridge uses and closes the whole class of race
+ * rather than one null check.
+ */
+let _lifecycle = Promise.resolve();
+function serialized(fn) {
+  const run = _lifecycle.then(fn, fn);
+  _lifecycle = run.then(() => {}, () => {});
+  return run;
+}
+
+export function mountStack(container, fileId, state) {
+  return serialized(() => _mountStack(container, fileId, state));
+}
+
+async function _mountStack(container, fileId, state) {
   if (currentInstance) {
     await saveStack();
-    currentInstance.destroy();
+    // Re-check: `saveStack` awaits, and this is the window the race used
+    // to open. Serialization should make it unreachable; the guard costs
+    // nothing and the failure mode was a dead click.
+    if (currentInstance) currentInstance.destroy();
     currentInstance = null;
   }
   container.innerHTML = "";
@@ -64,7 +94,11 @@ export async function mountStack(container, fileId, state) {
   startAutosave(state);
 }
 
-export async function unmountStack() {
+export function unmountStack() {
+  return serialized(_unmountStack);
+}
+
+async function _unmountStack() {
   stopAutosave();
   const result = await saveStack();
   if (currentInstance) {
@@ -133,7 +167,13 @@ function structureOf(raw) {
  *  carried across, so a far-side reorder doesn't also yank the reader
  *  back to the top. Same reasoning as the notebook mirror deliberately
  *  dropping the incoming camera. */
-export async function reloadStackContent(jsonContent) {
+export function reloadStackContent(jsonContent) {
+  // Through the same queue as mount/unmount: it destroys and rebuilds
+  // the component, so it must never interleave with either.
+  return serialized(() => _reloadStackContent(jsonContent));
+}
+
+async function _reloadStackContent(jsonContent) {
   if (!currentInstance || !currentFileId || !currentContainer) return;
   if (typeof jsonContent !== "string" || jsonContent === lastSavedContent) return;
   const forFileId = currentFileId;
@@ -179,11 +219,20 @@ export async function reloadStackContent(jsonContent) {
  *  into is left alone. Project columns are skipped: their buffer is
  *  several files concatenated behind separators, and splicing an
  *  external change into that is not a thing to do blind. */
-export async function refreshStackColumns() {
+export function refreshStackColumns() {
+  return serialized(_refreshStackColumns);
+}
+
+async function _refreshStackColumns() {
   if (!currentInstance || !IS_TAURI) return;
   const sinks = currentInstance.liveColumnSinks?.() || [];
+  // Stat first, read only what moved — a column can be a big notebook,
+  // and on iOS this runs on a poll.
+  const { movedSince } = await import("../sync/file-freshness.js");
+  const moved = await movedSince(sinks.map((s) => s.fileId));
   for (const { fileId, apply } of sinks) {
     if (!fileId || String(fileId).startsWith("localsync:")) continue;
+    if (!moved.has(fileId)) continue;
     try {
       const file = await tauriInvoke("load_file", { id: fileId });
       if (file) apply(file.content);

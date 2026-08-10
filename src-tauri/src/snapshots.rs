@@ -286,7 +286,7 @@ fn now_ms() -> i64 {
 /// Stable per-install id used to suffix snapshot filenames so two devices
 /// writing into a shared desk folder never contend. Persisted at
 /// `{data_dir}/device_id`.
-fn load_device_id(data_dir: &Path) -> String {
+pub fn load_device_id(data_dir: &Path) -> String {
     let path = data_dir.join("device_id");
     if let Ok(existing) = fs::read_to_string(&path) {
         let trimmed = existing.trim().to_string();

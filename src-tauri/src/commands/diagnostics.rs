@@ -99,5 +99,10 @@ pub fn build_info() -> serde_json::Value {
         "profile": if cfg!(debug_assertions) { "debug" } else { "release" },
         "target": std::env::consts::OS,
         "dataDir": crate::get_data_dir().to_string_lossy(),
+        // Which install this is. Already on disk (it suffixes snapshot
+        // filenames so two devices sharing a folder never contend);
+        // surfaced here because every cross-device bug report needs to
+        // say which machine each half came from.
+        "deviceId": crate::snapshots::load_device_id(&crate::get_data_dir()),
     })
 }

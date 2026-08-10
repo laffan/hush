@@ -455,6 +455,7 @@ pub fn run() {
             commands::files::list_files,
             commands::files::load_file,
             commands::files::file_availability,
+            commands::files::file_mtimes,
             commands::files::save_file,
             commands::files::save_file_raw,
             commands::files::create_file,

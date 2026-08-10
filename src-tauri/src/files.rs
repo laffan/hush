@@ -149,6 +149,11 @@ impl FileManager {
         self.store.availability(id)
     }
 
+    /// See `DeskStore::mtimes` — stats, no reads.
+    pub fn mtimes(&self, ids: &[String]) -> std::collections::HashMap<String, u64> {
+        self.store.mtimes(ids)
+    }
+
     pub fn save_file(&self, id: &str, content: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.store.write_by_id(id, content)
     }

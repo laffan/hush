@@ -156,6 +156,28 @@ impl DeskStore {
         ("missing", None)
     }
 
+    /// Modification times (epoch ms) for a batch of fileIds — one
+    /// `stat` each, never a read. The open-surface reload hooks run on
+    /// every reconcile pass, and on iOS those passes are a poll; reading
+    /// a multi-megabyte notebook back to discover nothing moved is the
+    /// kind of work an iPad notices. Ids with no placed file are simply
+    /// absent from the map.
+    pub fn mtimes(&self, ids: &[String]) -> HashMap<String, u64> {
+        if ids.is_empty() {
+            return HashMap::new();
+        }
+        let global = self.global_index();
+        let mut out = HashMap::new();
+        for id in ids {
+            let Some((desk_id, rel)) = global.get(id) else { continue };
+            let abs = self.abs_path(desk_id, rel);
+            if abs.exists() {
+                out.insert(id.clone(), crate::desk_hashes::mtime_ms(&abs));
+            }
+        }
+        out
+    }
+
     /// Make `roots.json` agree with the folders themselves: one
     /// registration per folder, keyed by the id that folder carries.
     ///

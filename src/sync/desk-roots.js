@@ -15,7 +15,6 @@
  * when the app comes to the foreground instead.
  */
 
-import { applyExternalDocContent } from "./apply-external.js";
 import { isIOSTauri } from "../command-palette-helpers.js";
 import { logActivity } from "../activity-log.js";
 
@@ -73,6 +72,13 @@ export async function materialiseDeskSidecars(root) {
     try { await plugin("read_file", { path: `${base}/${rel}` }); }
     catch (_) { /* absent, offline, or genuinely not a desk — the caller decides */ }
   }
+}
+
+/** Same folder? Darwin exposes one place as both `/private/var/…` and
+ *  `/var/…`, and a trailing slash is noise. */
+function samePath(a, b) {
+  const norm = (p) => String(p || "").replace(/^\/private(?=\/)/, "").replace(/\/+$/, "");
+  return !!a && !!b && norm(a) === norm(b);
 }
 
 /** Last path segment of a picked folder — a local desk's name. Handles
@@ -371,9 +377,9 @@ async function notePendingFiles(state, deskId, report) {
 }
 
 /** Run the disk-wins reconcile for one desk and refresh the UI when it
- *  changed anything. Also reloads the open doc's buffer when its on-disk
- *  content moved (identical-content and dirty-buffer cases are both
- *  no-ops inside applyExternalDocContent). */
+ *  changed anything, then re-read every surface holding one of its files
+ *  open — a content-only change is invisible to the reconcile, so the
+ *  surfaces have to ask (see desk-reload.js). */
 export async function reconcileDesk(state, deskId) {
   if (!IS_TAURI) return;
   let report = null;
@@ -431,101 +437,8 @@ export async function reconcileDesk(state, deskId) {
     const { pullDeskMeta } = await import("./desk-meta.js");
     await pullDeskMeta(state, deskId);
   } catch (_) {}
-  await maybeReloadOpenDoc(state, deskId);
-  await maybeReloadOpenNotebook(state, deskId);
-  await maybeReloadOpenStack(state, deskId);
-  await maybeReloadOpenPanes();
-}
-
-/** If the open doc lives in `deskId`, re-read it from disk and apply the
- *  external content under the standard guards. */
-async function maybeReloadOpenDoc(state, deskId) {
-  const fileId = state.currentFileId;
-  if (!fileId || !state.editor || state.currentProjectId) return;
-  if (!fileInDesk(state, deskId, fileId)) return;
-  try {
-    const file = await invoke("load_file", { id: fileId });
-    if (!file || state.currentFileId !== fileId) return;
-    applyExternalDocContent(state, {
-      content: file.content,
-      lockKey: fileId,
-      skipWhenDirty: true,
-    });
-  } catch (_) { /* file may have just been removed by the reconcile */ }
-}
-
-/** The same thing for an open notebook — which the reconcile never did,
- *  so a canvas open on this device simply never saw the far device's
- *  strokes. The reconciler reports *structure* (added / removed /
- *  renamed); a `.hushnote` whose bytes changed under it is no event at
- *  all, exactly as with a doc, so the open surface has to re-read on
- *  every pass or it goes stale until it's closed and re-opened.
- *
- *  Routed through the `notebook-external-reload` event rather than an
- *  import, so this module stays clear of the lazily-loaded notebook
- *  bundle. The handler skips an unsaved canvas (the doc path's
- *  `skipWhenDirty` policy) and then `mirror`s the incoming content:
- *  local undo history survives, the remote edit lands as one
- *  checkpoint, content byte-identical to our own last write is a no-op,
- *  and the incoming camera is deliberately ignored — viewports are
- *  per-device. The pull lock keeps the mirror from looping back out
- *  through autosave. */
-async function maybeReloadOpenNotebook(state, deskId) {
-  const fileId = state.currentNotebookFileId;
-  if (!fileId || !fileInDesk(state, deskId, fileId)) return;
-  state.acquirePullLock(fileId);
-  try {
-    const file = await invoke("load_file", { id: fileId });
-    if (!file || state.currentNotebookFileId !== fileId) return;
-    state.emit("notebook-external-reload", file.content);
-  } catch (_) { /* file may have just been removed by the reconcile */ }
-  finally { state.releasePullLock(); }
-}
-
-/** And for the open stack. A `.hushstack` is structure — which files are
- *  columns, in what order, at what width — so a far-side edit means the
- *  component has to be rebuilt rather than mirrored; the guards for that
- *  (own echo, unsaved local changes, viewport-only drift) live in
- *  `stack-bridge.js#reloadStackContent`, which is the only thing that can
- *  see the live component. The columns *inside* a stack are separate
- *  files that sync on their own. */
-async function maybeReloadOpenStack(state, deskId) {
-  const fileId = state.currentStackFileId;
-  if (!fileId || !fileInDesk(state, deskId, fileId)) return;
-  state.acquirePullLock(fileId);
-  try {
-    const file = await invoke("load_file", { id: fileId });
-    if (!file || state.currentStackFileId !== fileId) return;
-    state.emit("stack-external-reload", file.content);
-  } catch (_) { /* file may have just been removed by the reconcile */ }
-  finally { state.releasePullLock(); }
-}
-
-/** And every open floating pane — the Gutter included, since a gutter is
- *  a docked notebook pane. Not scoped to `deskId`: a pane can show a
- *  file from any desk (that is rather the point of one), and the read is
- *  keyed by fileId, so scoping it would just make panes onto other desks
- *  the one surface that stayed stale. Guards live in
- *  `pane/pane-external.js`, which is the only module that can see a
- *  pane's dirty flag and its editor. */
-async function maybeReloadOpenPanes() {
-  try {
-    const { refreshPanesFromDisk } = await import("../pane/pane-external.js");
-    await refreshPanesFromDisk();
-  } catch (e) { console.warn("pane reload failed:", e); }
-}
-
-function fileInDesk(state, deskId, fileId) {
-  const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
-  if (!desk) return false;
-  const walk = (nodes) => {
-    for (const n of nodes || []) {
-      if (n.fileId === fileId) return true;
-      if (n.children && walk(n.children)) return true;
-    }
-    return false;
-  };
-  return walk(desk.children);
+  const { reloadOpenSurfaces } = await import("./desk-reload.js");
+  await reloadOpenSurfaces(state, deskId);
 }
 
 /** iOS boot: resolve every bookmarked root, which re-acquires
@@ -593,9 +506,20 @@ async function armIOSLiveUpdates(state) {
     await addPluginListener("icloud-folder", "watch-changed", (payload) => {
       const path = payload?.path;
       if (!path) return;
+      // Match on a normalised path, and reconcile *everything* when the
+      // path matches nothing. The event carries the string the watch was
+      // armed with, which is not necessarily the string roots.json holds
+      // now: iOS hands back `/private/var/…` and `/var/…` for the same
+      // place (one is a symlink to the other), and a bookmark re-resolved
+      // at boot can repoint a root under a watch armed before it. A
+      // strict `===` silently dropped the event, and dropping it is worse
+      // than reconciling one desk too many.
       const deskId = Object.keys(state.deskRoots || {})
-        .find((id) => state.deskRoots[id] === path);
-      if (!deskId) return;
+        .find((id) => samePath(state.deskRoots[id], path));
+      if (!deskId) {
+        reconcileAllLocalDesks(state).catch(() => {});
+        return;
+      }
       clearTimeout(timers.get(deskId));
       timers.set(deskId, setTimeout(() => {
         timers.delete(deskId);
@@ -621,6 +545,36 @@ async function armIOSLiveUpdates(state) {
       await plugin("start_watch", { path });
     } catch (_) { /* non-iCloud folder or older plugin — fallback covers it */ }
   }
+}
+
+/** How often iOS re-checks the desk it's showing. Short enough that a
+ *  change made on the other machine turns up while you're still looking
+ *  for it; long enough to be invisible next to the reads it gates. */
+const ACTIVE_DESK_POLL_MS = 20_000;
+
+/** iOS safety net: re-check the *active* desk on a timer.
+ *
+ *  iOS has no filesystem events, so the reconcile has always depended on
+ *  two signals — the NSMetadataQuery watch and `visibilitychange`. Both
+ *  have a hole, and the hole is the same scenario: two machines side by
+ *  side. The watch only covers iCloud (a Dropbox or Syncthing folder
+ *  emits nothing) and only fires when the metadata daemon feels like it;
+ *  `visibilitychange` needs the app to be *backgrounded*, which is
+ *  exactly what doesn't happen when you look over at the other device
+ *  and then look back. Between them, "I had to restart the app to see
+ *  the Mac's file".
+ *
+ *  Only the desk on screen, and only while the window is visible — the
+ *  other desks keep the foreground pass. The reload hooks it triggers
+ *  are `stat`-gated (`sync/file-freshness.js`), so a tick that finds
+ *  nothing costs a directory walk and a handful of stats. */
+function startActiveDeskPoll(state) {
+  setInterval(() => {
+    if (document.visibilityState !== "visible") return;
+    const deskId = state.getActiveDesk?.()?.id;
+    if (!deskId || !state.deskRoots?.[deskId]) return;
+    reconcileDesk(state, deskId).catch(() => {});
+  }, ACTIVE_DESK_POLL_MS);
 }
 
 /** Boot wiring: load the roots cache and subscribe to change signals —
@@ -650,6 +604,7 @@ export async function installDeskRootsLifecycle(state) {
       last = now;
       reconcileAllLocalDesks(state).catch(() => {});
     });
+    startActiveDeskPoll(state);
     return;
   }
   await refreshDeskRoots(state);
