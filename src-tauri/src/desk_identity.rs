@@ -36,6 +36,7 @@ use crate::TreeNode;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 
 type BoxError = Box<dyn std::error::Error>;
 
@@ -92,6 +93,47 @@ pub(crate) fn undelivered_or(e: BoxError, abs: &Path) -> BoxError {
         return format!("{}: {}", AWAITING_DOWNLOAD, abs.display()).into();
     }
     e
+}
+
+/// Hash of the `tree.json` this process last wrote — or last read — for
+/// a desk, keyed by root path + desk id.
+///
+/// The reconciler compares *files on disk* against *the tree it just
+/// loaded from disk*, so a desk the far device restructured looks
+/// entirely consistent to it: the file moved to `Trash/` and the tree
+/// says it's in Trash, nothing to reconcile, report empty. Meanwhile
+/// this window is still showing the pre-move tree and will happily save
+/// it back, dragging the file out of Trash again. The missing signal is
+/// simply "the tree.json is not the one we last saw", and it has to be
+/// by content — the folder's mtimes belong to a sync daemon, not to us.
+static TREE_SEEN: OnceLock<Mutex<HashMap<(String, String), String>>> = OnceLock::new();
+
+fn tree_seen() -> &'static Mutex<HashMap<(String, String), String>> {
+    TREE_SEEN.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn tree_key(root: &Path, desk_id: &str) -> (String, String) {
+    (root.to_string_lossy().into_owned(), desk_id.to_string())
+}
+
+/// Remember the tree we just wrote (or read), so the next look can tell
+/// a foreign change from our own.
+pub(crate) fn note_tree_seen(root: &Path, desk_id: &str, raw: &str) {
+    tree_seen()
+        .lock()
+        .unwrap()
+        .insert(tree_key(root, desk_id), crate::desk_hashes::fnv1a_hex(raw.as_bytes()));
+}
+
+/// True when `raw` differs from what we last wrote or read. `false` on
+/// the first sighting: the frontend has just loaded that tree itself.
+pub(crate) fn tree_is_foreign(root: &Path, desk_id: &str, raw: &str) -> bool {
+    tree_seen()
+        .lock()
+        .unwrap()
+        .get(&tree_key(root, desk_id))
+        .map(|seen| seen != &crate::desk_hashes::fnv1a_hex(raw.as_bytes()))
+        .unwrap_or(false)
 }
 
 /// The `id` field of a small JSON sidecar, when it reads cleanly.
@@ -366,7 +408,15 @@ impl DeskStore {
     }
 
     pub(crate) fn load_desk_tree(&self, desk_id: &str) -> Option<TreeNode> {
+        self.load_desk_tree_raw(desk_id).map(|(node, _)| node)
+    }
+
+    /// The desk node *and* the bytes it was parsed from. The reconciler
+    /// needs the raw form to tell "the far device changed this tree"
+    /// from "we did" — by content, not by mtime (see `note_tree_seen`).
+    pub(crate) fn load_desk_tree_raw(&self, desk_id: &str) -> Option<(TreeNode, String)> {
         let s = fs::read_to_string(self.tree_path(desk_id)).ok()?;
-        serde_json::from_str::<TreeNode>(&s).ok()
+        let node = serde_json::from_str::<TreeNode>(&s).ok()?;
+        Some((node, s))
     }
 }

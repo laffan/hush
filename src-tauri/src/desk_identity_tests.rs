@@ -353,6 +353,73 @@ fn a_freshly_minted_id_yields_to_one_already_published() {
     assert_eq!(solo.file_id.as_deref(), Some("solo"));
 }
 
+/// Moving a file to Trash on the far device is a change to `tree.json`
+/// and nothing else the reconciler looks at: the file is at `Trash/X.md`
+/// and the tree says it's in Trash, so the pass finds *nothing* to do
+/// and reports an empty result. The frontend then never re-reads, keeps
+/// showing the file where it used to be — and the next tree save from
+/// this window drags it back out of Trash.
+///
+/// Same for a rename, a reorder, a move between folders: all structure,
+/// all invisible to a file-level reconcile.
+#[test]
+fn a_far_device_restructuring_the_desk_asks_for_a_tree_reload() {
+    let dir = tmp();
+    let store = seed_simple_desk(dir.path());
+    let external = tmp();
+    let folder = external.path().join("Shared");
+    store.make_desk_local("d1", &folder, None).unwrap();
+
+    // First pass: we've just loaded this tree ourselves, nothing foreign.
+    let first = store.reconcile_desk_from_disk("d1").unwrap();
+    assert!(!first.tree_changed);
+    assert!(!first.needs_tree_reload());
+
+    // The far device moves the doc into Trash: the file moves and the
+    // tree it publishes says so. Everything on disk agrees with itself.
+    fs::create_dir_all(folder.join("Trash")).unwrap();
+    fs::rename(folder.join("Doc.md"), folder.join("Trash/Doc.md")).unwrap();
+    let mut desk = store.load_desk_tree("d1").unwrap();
+    let doc = desk.children.remove(
+        desk.children.iter().position(|n| n.name == "Doc").unwrap(),
+    );
+    desk.children.push(node("__trash__:d1", "folder", "Trash", None, vec![doc]));
+    fs::write(folder.join(".hush/tree.json"), serde_json::to_string_pretty(&desk).unwrap()).unwrap();
+    let mut index = store.load_index("d1");
+    index.insert("f1".into(), "Trash/Doc.md".into());
+    store.save_index("d1", &index).unwrap();
+
+    let after = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!(after.added, 0, "nothing was added — the file just moved");
+    assert_eq!(after.removed, 0);
+    assert!(after.tree_changed, "the far device's restructure has to be reported");
+    assert!(after.needs_tree_reload());
+
+    // And it's reported once, not on every pass thereafter.
+    let settled = store.reconcile_desk_from_disk("d1").unwrap();
+    assert!(!settled.tree_changed);
+}
+
+/// Our own tree writes must never look foreign, or every save would
+/// bounce back through the frontend as an external change.
+#[test]
+fn our_own_tree_save_is_not_reported_as_a_far_change() {
+    let dir = tmp();
+    let store = seed_simple_desk(dir.path());
+    let external = tmp();
+    let folder = external.path().join("Shared");
+    store.make_desk_local("d1", &folder, None).unwrap();
+    store.reconcile_desk_from_disk("d1").unwrap();
+
+    let tree = vec![desk_with_id("d1", vec![
+        node("n1", "document", "Renamed", Some("f1"), Vec::new()),
+    ])];
+    store.save_forest(&tree).unwrap();
+
+    let after = store.reconcile_desk_from_disk("d1").unwrap();
+    assert!(!after.tree_changed, "we wrote that tree ourselves");
+}
+
 /// `.hush/index.json` present but unreadable (a half-synced sidecar) is
 /// not "this desk has no files" — reconciling on that reading re-mints a
 /// fileId for every file in the folder and strands every node the tree

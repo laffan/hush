@@ -242,9 +242,15 @@ export async function runSyncTest(state, { newDesk = false } = {}) {
       }
     }
 
-    // Finally: both devices write into each other's files, and both
-    // read everything back. Skipped when the peer never showed up.
+    // Both devices write into each other's files, and both read
+    // everything back. Skipped when the peer never showed up.
     if (peerTag) await crosstalk(state, desk.id, tag, started, log);
+
+    // Then the last thing anyone does with a file: throw it away.
+    const trashed = peerTag
+      ? await trashRound(state, desk.id, tag, probes, log)
+      : [];
+    results.push(...trashed);
 
     summarise(log, tag, peerTag, probes, results);
   } catch (e) {
@@ -384,6 +390,75 @@ async function crosstalk(state, deskId, ourTag, run, log) {
   await reportProbeContents(state, deskId, ourTag, log);
 }
 
+/**
+ * The trash round: move our own probes to Trash, then wait to see the
+ * peer's land in *our* Trash.
+ *
+ * Trashing is a move within the tree — the file goes to `Trash/` on disk
+ * and the row moves under the desk's Trash special. Nothing about it is
+ * an add or a remove, so a file-level reconcile has nothing to say about
+ * it and the far device can miss it entirely. Which makes it exactly the
+ * thing to end the test on: every probe should finish in the Trash on
+ * both machines.
+ */
+async function trashRound(state, deskId, ourTag, probes, log) {
+  for (const probe of probes) {
+    const node = findNodeByFileId(state, deskId, probe.fileId);
+    if (!node) {
+      log("error", `Couldn't find the ${probe.kind} probe's row to trash it`, { fileId: probe.fileId });
+      continue;
+    }
+    try {
+      await state.deleteTreeNode(node.id);
+      log("info", `Moved our ${probe.kind} to Trash`, { file: probe.name });
+    } catch (e) {
+      log("error", `Trashing our ${probe.kind} failed`, { file: probe.name, error: String(e) });
+    }
+  }
+  const outstanding = new Set(KINDS);
+  const results = [];
+  const deadline = Date.now() + ROUND_TIMEOUT_MS;
+  const sentAt = Date.now();
+  while (outstanding.size > 0 && Date.now() < deadline) {
+    await sleep(POLL_MS);
+    for (const { node, kind } of peerProbes(state, deskId, ourTag)) {
+      if (!outstanding.has(kind) || !inTrash(state, deskId, node.id)) continue;
+      outstanding.delete(kind);
+      const waitedMs = Date.now() - sentAt;
+      results.push({ kind, version: "trash", waitedMs });
+      log("info", `✓ Peer ${kind} reached the Trash`, { file: node.name, waitedMs });
+    }
+  }
+  for (const kind of outstanding) {
+    results.push({ kind, version: "trash", missed: true });
+    log("error", `✗ Peer ${kind} never reached the Trash (waited ${Math.round(ROUND_TIMEOUT_MS / 1000)}s)`);
+  }
+  return results;
+}
+
+/** The row carrying `fileId` inside this desk. */
+function findNodeByFileId(state, deskId, fileId) {
+  const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
+  let found = null;
+  const walk = (nodes) => {
+    for (const n of nodes || []) {
+      if (found) return;
+      if (n?.fileId === fileId) { found = n; return; }
+      if (n?.children) walk(n.children);
+    }
+  };
+  walk(desk?.children);
+  return found;
+}
+
+/** Is `nodeId` under this desk's Trash special? */
+function inTrash(state, deskId, nodeId) {
+  const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
+  const trash = (desk?.children || []).find((n) => n?.id === `__trash__:${deskId}`);
+  const walk = (nodes) => (nodes || []).some((n) => n?.id === nodeId || walk(n?.children));
+  return walk(trash?.children);
+}
+
 /** Read every probe in the desk and say who is written into it. This is
  *  the "at least three lines, from both machines" check, made explicit. */
 async function reportProbeContents(state, deskId, ourTag, log) {
@@ -493,9 +568,11 @@ function summarise(log, ourTag, peerTag, probes, results) {
   const rows = [];
   for (const kind of KINDS) {
     const parts = [];
-    for (const version of [1, ...ROUNDS]) {
+    for (const version of [1, ...ROUNDS, "trash"]) {
       const r = results.find((x) => x.kind === kind && x.version === version);
-      const label = version === 1 ? "create" : `edit v${version}`;
+      const label = version === 1 ? "create"
+        : version === "trash" ? "to Trash"
+        : `edit v${version}`;
       if (!r) parts.push(`${label}: not reached`);
       else if (r.missed) parts.push(`${label}: MISSED`);
       else parts.push(`${label}: ${(r.waitedMs / 1000).toFixed(1)}s`);

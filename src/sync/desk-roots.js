@@ -396,10 +396,17 @@ export async function reconcileDesk(state, deskId) {
   }
   kickPendingDownloads(state, deskId, report);
   await notePendingFiles(state, deskId, report);
-  // `matched` is in here too: it doesn't change the tree, but re-pairing
-  // a row with the fileId the far device is writing under is exactly the
-  // event worth having on the record when sync goes wrong.
-  if (report && (report.added > 0 || report.removed > 0 || report.renamed > 0 || report.matched > 0)) {
+  // `matched` and `rekeyed` are in here too: they don't add or remove a
+  // row, but re-pairing one with the fileId the far device is writing
+  // under is exactly the event worth having on the record when sync goes
+  // wrong. `treeChanged` is the far device having *restructured* the
+  // desk — moved something to Trash, renamed a folder, reordered — which
+  // the reconciler otherwise has nothing to say about, because the files
+  // on disk and the tree on disk agree with each other perfectly. It's
+  // our copy that's stale, and until this it stayed that way.
+  if (report && (report.added > 0 || report.removed > 0 || report.renamed > 0
+      || report.matched > 0 || report.rekeyed > 0 || report.deferred > 0
+      || report.treeChanged)) {
     const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
     logActivity("desks", report.removed > 0 ? "warn" : "info",
       `Desk folder reconciled: "${desk?.name || deskId}"`, report);
@@ -411,6 +418,9 @@ export async function reconcileDesk(state, deskId) {
       if (report.removed) bits.push(`${report.removed} removed`);
       if (report.renamed) bits.push(`${report.renamed} renamed`);
       if (report.matched) bits.push(`${report.matched} re-paired`);
+      if (report.rekeyed) bits.push(`${report.rekeyed} re-keyed`);
+      if (report.deferred) bits.push(`${report.deferred} id(s) yielded`);
+      if (report.treeChanged) bits.push("structure changed on the other device");
       appendSyncLog(`Desk folder reconciled: ${bits.join(", ")}`);
     } catch (_) {}
   }

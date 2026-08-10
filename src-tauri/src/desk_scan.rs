@@ -46,6 +46,7 @@
 //! so a rename never has to wait out the window.
 
 use crate::desk_hashes::{fnv1a_hex, mtime_ms, HashEntry};
+use crate::desk_identity::{note_tree_seen, tree_is_foreign};
 use crate::desk_tree_ops::{
     find_node_by_file_id, remove_node_by_file_id, rename_or_move_node,
 };
@@ -114,6 +115,12 @@ pub struct ScanReport {
     /// had gained the far device's id for the same path while we walked.
     pub deferred: usize,
     pub conflicts: usize,
+    /// The desk's `tree.json` on disk is not the one this process last
+    /// wrote or last read — i.e. the *far* device restructured the desk.
+    /// Moving a file to Trash, renaming a folder, reordering: all of it
+    /// lands in `tree.json` with nothing for the reconciler to do, so
+    /// without this the change reaches disk and never reaches the UI.
+    pub tree_changed: bool,
     /// Index entries whose file is absent but deliberately *kept*: an
     /// iCloud placeholder stands in for it, or the absence hasn't
     /// outlasted the removal grace window yet.
@@ -139,14 +146,20 @@ impl ScanReport {
         self.added > 0 || self.removed > 0 || self.renamed > 0
             || self.rekeyed > 0 || self.deferred > 0
     }
+
+    /// Whether the frontend should re-read the tree: either we changed
+    /// it, or the far device did.
+    pub fn needs_tree_reload(&self) -> bool {
+        self.structural() || self.tree_changed
+    }
 }
 
 impl DeskStore {
     /// Make `desk_id`'s tree + index follow its folder. Returns what
     /// changed so callers can skip UI refreshes on no-ops.
     pub fn reconcile_desk_from_disk(&self, desk_id: &str) -> Result<ScanReport, BoxError> {
-        let mut desk = self
-            .load_desk_tree(desk_id)
+        let (mut desk, raw_tree) = self
+            .load_desk_tree_raw(desk_id)
             .ok_or_else(|| format!("no tree for desk {}", desk_id))?;
         // Strict: an index we can't read is not an empty one. Rebuilding
         // the desk from that reading re-mints a fileId for every file in
@@ -154,6 +167,11 @@ impl DeskStore {
         let mut index = self.try_load_index(desk_id)?;
         let root = self.desk_dir(desk_id);
         let mut report = ScanReport::default();
+        // Did the far device restructure this desk while we weren't
+        // looking? Nothing else in this pass can tell: the tree on disk
+        // and the files on disk agree with each other, and it's *our*
+        // copy that's stale.
+        report.tree_changed = tree_is_foreign(&root, desk_id, &raw_tree);
 
         // Fold provider conflict siblings back into their mapped files
         // first, so they never surface as new files below.
@@ -441,10 +459,14 @@ impl DeskStore {
         // the mtime of a file sitting in a synced folder — which the far
         // device's watcher then reports as a change, for nothing.
         if report.structural() {
-            crate::atomic::write_atomic_str(
-                &self.tree_path(desk_id),
-                &serde_json::to_string_pretty(&desk)?,
-            )?;
+            let rewritten = serde_json::to_string_pretty(&desk)?;
+            crate::atomic::write_atomic_str(&self.tree_path(desk_id), &rewritten)?;
+            note_tree_seen(&root, desk_id, &rewritten);
+        } else {
+            // Nothing to write, but we've now *seen* this tree — so the
+            // next pass compares against it rather than re-reporting the
+            // same foreign change forever.
+            note_tree_seen(&root, desk_id, &raw_tree);
         }
         if hashes_dirty {
             let _ = self.save_hashes(desk_id, &hashes);

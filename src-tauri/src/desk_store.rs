@@ -372,10 +372,11 @@ impl DeskStore {
             }
             let res = (|| -> Result<(), BoxError> {
                 self.save_index(&desk.id, &new_indexes[&desk.id])?;
-                write_atomic_str(
-                    &self.tree_path(&desk.id),
-                    &serde_json::to_string_pretty(desk)?,
-                )?;
+                let raw = serde_json::to_string_pretty(desk)?;
+                write_atomic_str(&self.tree_path(&desk.id), &raw)?;
+                // Our own write — so the next reconcile doesn't mistake
+                // it for the far device restructuring the desk.
+                crate::desk_identity::note_tree_seen(&self.desk_dir(&desk.id), &desk.id, &raw);
                 let meta_path = self.desk_dir(&desk.id).join(".hushdesk");
                 // Start from the existing file so createdAt and any fields
                 // other writers own (the per-desk "meta" object — style,
