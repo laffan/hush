@@ -100,9 +100,12 @@ Two iOS-only traps, both of which read as "my Mac's changes never reach the iPad
 | Doc | `maybeReloadOpenDoc` | `applyExternalDocContent` — minimal diff, cursor maps through |
 | Notebook | `maybeReloadOpenNotebook` → `notebook-external-reload` | `mirrorContent` — local undo history survives, incoming camera dropped |
 | Stack | `maybeReloadOpenStack` → `stack-external-reload` | layout + columns, below |
-| Floating panes, Gutter | — | still stale until re-opened |
+| Stack columns | `refreshStackColumns` → `liveData.applyExternal` | per mounted column, its own dirty flag |
+| Floating panes, Gutter | `refreshPanesFromDisk` → `applyExternalToPane` | per pane, its own dirty flag |
 
 The events exist so `sync/` never imports the lazily-loaded notebook bundle or the stack's component.
+
+**Panes are the one hook not scoped to the reconciled desk.** A pane exists to show something you are *not* looking at, routinely from another desk, so scoping the refresh would make panes onto other desks the single surface that stayed stale. Reads are de-duped by fileId (one file, several panes, one round trip) and the whole pass is coalesced behind an in-flight promise, because every local desk reconciles separately and one burst of provider activity would otherwise re-read every pane once per desk. A gutter is a docked notebook pane and needs no special case; its camera is scroll-tied, and `mirrorContent` doesn't carry one.
 
 **A stack is two syncing things, not one.** The `.hushstack` envelope is pure *structure* (which files are columns, in what order, at what width) plus this device's viewport; the text in a column is an ordinary doc or notebook syncing on its own. Both have to arrive or the stack looks broken, and they arrive differently:
 

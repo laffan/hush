@@ -434,6 +434,7 @@ export async function reconcileDesk(state, deskId) {
   await maybeReloadOpenDoc(state, deskId);
   await maybeReloadOpenNotebook(state, deskId);
   await maybeReloadOpenStack(state, deskId);
+  await maybeReloadOpenPanes();
 }
 
 /** If the open doc lives in `deskId`, re-read it from disk and apply the
@@ -498,6 +499,20 @@ async function maybeReloadOpenStack(state, deskId) {
     state.emit("stack-external-reload", file.content);
   } catch (_) { /* file may have just been removed by the reconcile */ }
   finally { state.releasePullLock(); }
+}
+
+/** And every open floating pane — the Gutter included, since a gutter is
+ *  a docked notebook pane. Not scoped to `deskId`: a pane can show a
+ *  file from any desk (that is rather the point of one), and the read is
+ *  keyed by fileId, so scoping it would just make panes onto other desks
+ *  the one surface that stayed stale. Guards live in
+ *  `pane/pane-external.js`, which is the only module that can see a
+ *  pane's dirty flag and its editor. */
+async function maybeReloadOpenPanes() {
+  try {
+    const { refreshPanesFromDisk } = await import("../pane/pane-external.js");
+    await refreshPanesFromDisk();
+  } catch (e) { console.warn("pane reload failed:", e); }
 }
 
 function fileInDesk(state, deskId, fileId) {
