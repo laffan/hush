@@ -496,10 +496,11 @@ async function init() {
     // settings window is a separate webview — so it asks from there and
     // the work happens here. Only the primary window responds, or two
     // windows would each write their own probes into the same desk.
-    await listen("hush-sync-test-start", async () => {
+    await listen("hush-sync-test-start", async (event) => {
       if (state.isSecondaryWindow) return;
       const { runSyncTest } = await import("./sync/sync-test.js");
-      await runSyncTest(state).catch((e) => console.error("sync test failed:", e));
+      await runSyncTest(state, { newDesk: !!event?.payload?.newDesk })
+        .catch((e) => console.error("sync test failed:", e));
     });
     await listen("settings-updated", async (event) => {
       const newSettings = event.payload;

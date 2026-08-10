@@ -87,7 +87,12 @@ export function renderDebugTab(settings) {
 
     <div class="settings-section" id="debug-sync-test">
       <h2>Sync Test</h2>
-      <p class="settings-help">A scripted two-device round trip for the local-desk sync. Put both machines in front of you, switch each to the <em>same</em> local desk, and press this within a few seconds of each other. Each device clears its own activity log, creates a Doc, a Notebook and a Stack tagged with its name, edits them at 20s and 50s, and watches three minutes for the other device's copies — logging every arrival with the time it took. When it finishes, copy each device's log (Activity Log → Copy all) and hand both over: side by side they show exactly which file types crossed, in which direction, and how long each took.</p>
+      <p class="settings-help">A scripted two-device round trip for the local-desk sync. Put both machines in front of you, switch each to the <em>same</em> local desk, and press this within a few seconds of each other. Each device clears its own activity log, creates a Doc, a Notebook and a Stack tagged with its name, and then <strong>hands off</strong>: it waits until it has actually seen the other device's copies before sending its next edit, twice over. Every line is stamped with the time since that device started, so the two logs read side by side. It ends as soon as the last round lands — then copy both logs (Activity Log → Copy all) and hand them over.</p>
+      <div class="settings-row">
+        <label for="debug-sync-test-new-desk">Create a new desk for the test</label>
+        <input type="checkbox" id="debug-sync-test-new-desk" />
+      </div>
+      <p class="settings-help">With this on, each device asks for a folder first and opens it as a desk — pick (or create) the <em>same</em> folder name on both machines. That exercises the folder-identity handshake as well as the file sync: the log records which device made the desk and which adopted the one already there.</p>
       <p class="settings-help">The probe files are ordinary files in the desk's Inbox. Delete them when you're done.</p>
       <div class="debug-actions">
         <button class="debug-button" id="debug-sync-test-run">Run Sync Test</button>
@@ -157,30 +162,37 @@ export function bindDebugTab() {
 
 /** The test needs the editor window's AppState (the active desk, the
  *  file-creation paths), and this is a separate webview — so ask the
- *  main window to run it and report back here. */
+ *  main window to run it and wait for it to say it's done. The run has
+ *  no fixed length any more: it ends when the last round lands, or when
+ *  a round times out. */
 async function runSyncTest() {
   const btn = document.getElementById("debug-sync-test-run");
   const out = document.getElementById("debug-sync-test-result");
-  if (btn) { btn.disabled = true; btn.textContent = "Running… (3 min)"; }
-  if (out) {
-    out.hidden = false;
-    out.textContent = "Started. Run it on the other device too, then leave both apps in the foreground. "
-      + "The log below fills as probes are created and the other device's copies arrive.";
-  }
-  try {
-    const { emit } = await import("@tauri-apps/api/event");
-    await emit("hush-sync-test-start");
-  } catch (e) {
-    if (out) out.textContent = `Couldn't start the sync test: ${e}`;
-  }
-  // Keep the log in view while it runs, then hand the button back.
-  const poll = setInterval(() => { void refreshLog(); }, 5000);
-  setTimeout(() => {
+  const newDesk = !!document.getElementById("debug-sync-test-new-desk")?.checked;
+  const poll = setInterval(() => { void refreshLog(); }, 3000);
+  const finish = (message) => {
     clearInterval(poll);
     void refreshLog();
     if (btn) { btn.disabled = false; btn.textContent = "Run Sync Test"; }
-    if (out) out.textContent = "Finished. Activity Log → Copy all, on both devices.";
-  }, 185_000);
+    if (out) out.textContent = message;
+  };
+  if (btn) { btn.disabled = true; btn.textContent = "Running…"; }
+  if (out) {
+    out.hidden = false;
+    out.textContent = newDesk
+      ? "Started — answer the folder picker in the main window, on both devices."
+      : "Started. Run it on the other device too, then leave both apps frontmost. The log below fills as the two sides hand off.";
+  }
+  try {
+    const { emit, listen } = await import("@tauri-apps/api/event");
+    const stop = await listen("hush-sync-test-done", () => {
+      stop();
+      finish("Finished — see RESULT at the end of the log. Activity Log → Copy all, on both devices.");
+    });
+    await emit("hush-sync-test-start", { newDesk });
+  } catch (e) {
+    finish(`Couldn't start the sync test: ${e}`);
+  }
 }
 
 function on(id, event, handler) {

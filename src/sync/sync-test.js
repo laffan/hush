@@ -3,22 +3,25 @@
  *
  * Sync bugs are miserable to report because the interesting part happens
  * on the *other* machine, minutes later, with nothing tying the two
- * halves together. This drives a fixed script on both devices at once
- * and writes every step to the activity log with a `T+<ms>` stamp, so
- * the two logs can be read side by side and the gaps read off directly:
- * how long a file took to arrive, how long an edit took, which file
- * types made it and which didn't.
+ * halves together. This drives the same script on both devices and
+ * stamps every line `T+<ms>`, so the two logs read side by side and the
+ * latencies come straight off.
  *
- * Start it on both machines at roughly the same moment. It:
+ * It is a **handshake**, not two timelines running past each other. Each
+ * device creates its probes, then waits until it has actually seen the
+ * peer's before sending the next round — so every edit in the log is one
+ * the other side confirmed receiving, and a round that didn't cross says
+ * so in as many words instead of being absent. The run ends as soon as
+ * the last round is confirmed, which also means the log you copy is a
+ * finished one.
  *
- *   1. clears the activity log, so a copy-paste of each device's log is
- *      exactly one test run and nothing else;
- *   2. records what this device is — platform, desk, folder, build;
- *   3. creates one probe of each file type, tagged with this device;
- *   4. edits each probe twice, at T+20s and T+50s;
- *   5. watches for the *other* device's probes for three minutes,
- *      logging each arrival and each edit as it lands;
- *   6. prints a summary table of what arrived and how long it took.
+ *   1. clears the activity log, so each device's log is exactly one run;
+ *   2. optionally creates/adopts a desk first (the `newDesk` option) —
+ *      the folder-identity path, which is where the worst bug lived;
+ *   3. creates a Doc, a Notebook and a Stack tagged with this device;
+ *   4. round 1: waits for the peer's probes, then edits its own to v2;
+ *   5. round 2: waits for the peer's v2, then edits its own to v3;
+ *   6. waits for the peer's v3 and prints a per-type, per-round verdict.
  *
  * The probes are ordinary files in the desk's Inbox — delete them when
  * you're done, on either machine.
@@ -32,10 +35,18 @@ import { logActivity } from "../activity-log.js";
 import { isIOSTauri } from "../command-palette-helpers.js";
 
 const PREFIX = "SyncTest";
-/** Edits land at these offsets; the watch runs to the last one + tail. */
-const EDIT_AT_MS = [20_000, 50_000];
-const WATCH_UNTIL_MS = 180_000;
-const POLL_MS = 5_000;
+const KINDS = ["Doc", "Notebook", "Stack"];
+/** Versions after the initial create — two genuine back-and-forth edits. */
+const ROUNDS = [2, 3];
+/** How long one round may wait for the peer before it's called a miss. */
+const ROUND_TIMEOUT_MS = 60_000;
+/** How long to wait for any sign of the other device at all. */
+const PEER_TIMEOUT_MS = 120_000;
+const POLL_MS = 3_000;
+/** Probes from an *earlier* run would otherwise read as an instant
+ *  arrival. Both devices start within seconds of each other, so anything
+ *  claiming to be older than this is a leftover. */
+const RUN_SKEW_MS = 10 * 60_000;
 
 let _running = false;
 
@@ -46,16 +57,15 @@ async function invoke(cmd, args) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Two devices, one log format: everything is stamped with elapsed
- *  milliseconds since this run started, so the two logs line up even
- *  though their clocks don't. */
+/** Two devices, one log format: elapsed milliseconds since this run
+ *  started, so the logs align even though the clocks don't. */
 function makeLog(started) {
   return (level, message, data) =>
     logActivity("synctest", level, `T+${String(Date.now() - started).padStart(6, "0")}ms  ${message}`, data);
 }
 
 /** Which machine this is. Two devices side by side are almost always one
- *  Mac and one iPad; the id suffix keeps the names apart if they aren't. */
+ *  Mac and one iPad; the id suffix keeps them apart if they aren't. */
 async function deviceTag() {
   const base = isIOSTauri() ? "iPad" : "Mac";
   try {
@@ -65,55 +75,49 @@ async function deviceTag() {
   } catch (_) { return base; }
 }
 
-/** `SyncTest Mac-a1b2 Doc` → `Mac-a1b2`; null when it isn't a probe. */
-function tagOf(name) {
-  const m = /^SyncTest ([^\s]+) (Doc|Notebook|Stack)$/.exec(String(name || ""));
-  return m ? m[1] : null;
-}
-function kindOf(name) {
-  const m = /^SyncTest ([^\s]+) (Doc|Notebook|Stack)$/.exec(String(name || ""));
-  return m ? m[2] : null;
-}
+const NAME_RE = /^SyncTest (\S+) (Doc|Notebook|Stack)$/;
+const probeName = (tag, kind) => `${PREFIX} ${tag} ${kind}`;
 
-/** The marker every probe carries, whatever its file format. Version
- *  bumps are how the far side detects an edit rather than an arrival. */
-const marker = (tag, version) => `hush-sync-test ${tag} v${version}`;
+/** The marker every probe carries, whatever its file format. `run` is
+ *  the sender's start time — that's what tells this run's probes from a
+ *  previous run's leftovers. */
+const marker = (tag, version, run) => `hush-sync-test ${tag} v${version} run${run}`;
 
-/** Highest version marker present in a file's content, or 0. */
-function versionIn(content) {
-  let best = 0;
-  for (const m of String(content || "").matchAll(/hush-sync-test \S+ v(\d+)/g)) {
-    best = Math.max(best, Number(m[1]) || 0);
+/** `{ version, run }` from a probe's content, or null. */
+function readMarker(content) {
+  let best = null;
+  for (const m of String(content || "").matchAll(/hush-sync-test \S+ v(\d+) run(\d+)/g)) {
+    const version = Number(m[1]) || 0;
+    if (!best || version > best.version) best = { version, run: Number(m[2]) || 0 };
   }
   return best;
 }
 
 // ===== Probe bodies, one per file type =====
 
-async function docBody(tag, version) {
-  return [marker(tag, version), "", "Delete this file when the test is over."].join("\n");
+function docBody(tag, version, run) {
+  return [marker(tag, version, run), "", "Delete this file when the test is over."].join("\n");
 }
 
-async function notebookBody(tag, version) {
+async function notebookBody(tag, version, run) {
   const { encodeNotebookContent } = await import("../notebook/notebook-content.ts");
   return encodeNotebookContent({
     shapes: [{
       id: `synctest-${tag}`, type: "text", x: 40, y: 40,
-      text: marker(tag, version), fontSize: 18, color: "#000000",
+      text: marker(tag, version, run), fontSize: 18, color: "#000000",
     }],
     layers: [], flowEdges: [], bookmarks: [],
     camera: { x: 0, y: 0, zoom: 1 },
   });
 }
 
-async function stackBody(tag, version, columnFileId) {
+async function stackBody(tag, version, run, columnFileId) {
   const { encodeStackContent } = await import("../stack/stack-content.js");
   return encodeStackContent(
     columnFileId
       ? [{
-          id: `synctest-${tag}-${version}`, fileId: columnFileId,
-          fileType: "document", name: marker(tag, version),
-          width: 400, height: 600, open: true,
+          id: `synctest-${tag}`, fileId: columnFileId, fileType: "document",
+          name: marker(tag, version, run), width: 400, height: 600, open: true,
         }]
       : [],
     0,
@@ -121,107 +125,162 @@ async function stackBody(tag, version, columnFileId) {
   );
 }
 
+function bodyFor(kind, tag, version, run, docFileId) {
+  if (kind === "Doc") return Promise.resolve(docBody(tag, version, run));
+  if (kind === "Notebook") return notebookBody(tag, version, run);
+  return stackBody(tag, version, run, docFileId);
+}
+
 // ===== The run =====
 
 /**
- * Drive the test on this device. Resolves when the watch window closes.
- * Refuses politely when the active desk isn't a local (folder-backed)
- * one — there'd be nothing to sync through.
+ * Drive the test on this device.
+ *
+ * `newDesk: true` runs the folder picker first and opens the chosen
+ * folder as a desk — pick (or create) the *same* folder name on both
+ * machines and the log records which device initialised it and which
+ * adopted it, which is the identity handshake that used to go wrong.
  */
-export async function runSyncTest(state) {
+export async function runSyncTest(state, { newDesk = false } = {}) {
   if (_running) return;
-  const desk = state.getActiveDesk?.();
-  const root = desk ? state.deskRoots?.[desk.id] : null;
-  if (!desk || !root) {
-    logActivity("synctest", "error", "Sync test needs a local desk — switch to one whose folder your provider syncs, then run it again", {
-      activeDesk: desk?.name || null, isLocal: !!root,
-    });
-    try {
-      const { showImportToast } = await import("../editor/import-toast.js");
-      showImportToast("Switch to a local (folder-backed) desk first — the sync test has nothing to sync through.", "error");
-    } catch (_) {}
-    return;
-  }
   _running = true;
+  const started = Date.now();
+  const log = makeLog(started);
   try {
     try { await invoke("activity_log_clear"); } catch (_) {}
-    const started = Date.now();
-    const log = makeLog(started);
     const tag = await deviceTag();
+
+    if (newDesk && !(await adoptTestDesk(state, log))) return;
+
+    const desk = state.getActiveDesk?.();
+    const root = desk ? state.deskRoots?.[desk.id] : null;
+    if (!desk || !root) {
+      log("error", "Sync test needs a local desk — switch to one whose folder your provider syncs, then run it again", {
+        activeDesk: desk?.name || null, isLocal: !!root,
+      });
+      await toast("Switch to a local (folder-backed) desk first — the sync test has nothing to sync through.", "error");
+      return;
+    }
+
     let build = null;
     try { build = await invoke("build_info"); } catch (_) {}
-
     log("info", `Sync test started on ${tag}`, {
       tag, desk: desk.name, deskId: desk.id, folder: root,
       wallClock: new Date(started).toISOString(),
       platform: isIOSTauri() ? "ios" : "desktop",
       build: build ? `${build.version || "?"} ${build.commit || ""}`.trim() : null,
+      rounds: ROUNDS.length,
     });
 
-    const probes = await createProbes(state, tag, log);
-    const seen = new Map(); // peer file name → highest version logged
-    const arrivals = [];
+    const probes = await createProbes(state, tag, started, log);
+    const results = [];   // { kind, version, waitedMs } | { kind, version, missed: true }
+    const sentAt = new Map([[1, Date.now()]]);
 
-    let nextEdit = 0;
-    const deadline = started + WATCH_UNTIL_MS;
-    while (Date.now() < deadline) {
-      await sleep(POLL_MS);
-      const now = Date.now() - started;
-      if (nextEdit < EDIT_AT_MS.length && now >= EDIT_AT_MS[nextEdit]) {
-        nextEdit++;
-        await editProbes(state, tag, probes, nextEdit + 1, log);
+    // Round 0 is the create; each later round waits for the peer to
+    // confirm the previous one before sending its own.
+    let peerTag = null;
+    for (const version of [1, ...ROUNDS]) {
+      if (version > 1) {
+        await editProbes(state, tag, started, probes, version, log);
+        sentAt.set(version, Date.now());
       }
-      await pollPeers(state, desk.id, tag, seen, arrivals, started, log);
+      const budget = version === 1 ? PEER_TIMEOUT_MS : ROUND_TIMEOUT_MS;
+      const round = await awaitPeerVersion(state, desk.id, tag, version, sentAt.get(version), budget, log);
+      peerTag = round.peerTag || peerTag;
+      results.push(...round.results);
+      if (version === 1 && !round.results.some((r) => !r.missed)) {
+        log("error", "No sign of the other device — is the test running there, on the same desk?", {
+          waitedMs: Date.now() - sentAt.get(1),
+        });
+        break;
+      }
     }
 
-    log("info", "Sync test finished", {
-      sent: probes.map((p) => `${p.kind} (${p.name})`),
-      peersSeen: [...new Set(arrivals.map((a) => a.tag))],
-      arrivals: arrivals.map((a) => `${a.tag} ${a.kind} v${a.version} at T+${a.at}ms`),
-      nothingArrived: arrivals.length === 0 || undefined,
-    });
+    summarise(log, tag, peerTag, probes, results);
+  } catch (e) {
+    log("error", "Sync test failed", { error: String(e), stack: e?.stack || null });
   } finally {
     _running = false;
+    try {
+      const { emit } = await import("@tauri-apps/api/event");
+      await emit("hush-sync-test-done");
+    } catch (_) {}
   }
+}
+
+async function toast(message, kind) {
+  try {
+    const { showImportToast } = await import("../editor/import-toast.js");
+    showImportToast(message, kind);
+  } catch (_) {}
+}
+
+/** The `newDesk` option: pick a folder and open it as a desk, then run
+ *  the test there. Pick the same folder name on both machines. */
+async function adoptTestDesk(state, log) {
+  log("info", "Choose (or create) the folder for the test desk — the same one on both machines");
+  try {
+    const { adoptDeskFolder } = await import("./desk-roots.js");
+    const deskId = await adoptDeskFolder(state, "Folder for the sync test desk");
+    if (!deskId) {
+      log("error", "No folder chosen — sync test cancelled");
+      return false;
+    }
+    const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
+    log("info", `Test desk ready: "${desk?.name || deskId}"`, {
+      deskId, folder: state.deskRoots?.[deskId] || null,
+      files: countFiles(desk?.children),
+      note: "check the [desks] line above for whether this device initialised the folder or adopted one the other device made",
+    });
+    return true;
+  } catch (e) {
+    log("error", "Couldn't open a folder as the test desk", { error: String(e) });
+    return false;
+  }
+}
+
+function countFiles(nodes) {
+  let n = 0;
+  for (const node of nodes || []) {
+    if (node?.fileId) n++;
+    if (node?.children) n += countFiles(node.children);
+  }
+  return n;
 }
 
 /** One probe of each type, created through the app's own paths so the
  *  test exercises what a user does rather than a private shortcut. */
-async function createProbes(state, tag, log) {
+async function createProbes(state, tag, run, log) {
   const out = [];
   const doc = await state.newFile(null, {
     openImmediately: false,
-    initialName: `${PREFIX} ${tag} Doc`,
-    initialContent: await docBody(tag, 1),
+    initialName: probeName(tag, "Doc"),
+    initialContent: docBody(tag, 1, run),
   });
-  if (doc?.fileId) {
-    out.push({ kind: "Doc", fileId: doc.fileId, name: doc.name });
-    log("info", `Created Doc probe "${doc.name}"`, { fileId: doc.fileId });
-  } else log("error", "Doc probe could not be created");
+  if (doc?.fileId) out.push({ kind: "Doc", fileId: doc.fileId, name: doc.name });
 
-  const nb = await state.createNotebook(`${PREFIX} ${tag} Notebook`, null, {
+  const nb = await state.createNotebook(probeName(tag, "Notebook"), null, {
     openImmediately: false,
-    initialContent: await notebookBody(tag, 1),
+    initialContent: await notebookBody(tag, 1, run),
   });
-  if (nb?.fileId) {
-    out.push({ kind: "Notebook", fileId: nb.fileId, name: nb.name });
-    log("info", `Created Notebook probe "${nb.name}"`, { fileId: nb.fileId });
-  } else log("error", "Notebook probe could not be created");
+  if (nb?.fileId) out.push({ kind: "Notebook", fileId: nb.fileId, name: nb.name });
 
-  const st = await state.createStack(`${PREFIX} ${tag} Stack`, null, {
+  const st = await state.createStack(probeName(tag, "Stack"), null, {
     openImmediately: false,
-    initialContent: await stackBody(tag, 1, doc?.fileId || null),
+    initialContent: await stackBody(tag, 1, run, doc?.fileId || null),
   });
-  if (st?.fileId) {
-    out.push({ kind: "Stack", fileId: st.fileId, name: st.name });
-    log("info", `Created Stack probe "${st.name}"`, { fileId: st.fileId });
-  } else log("error", "Stack probe could not be created");
+  if (st?.fileId) out.push({ kind: "Stack", fileId: st.fileId, name: st.name });
 
+  for (const kind of KINDS) {
+    const made = out.find((p) => p.kind === kind);
+    if (made) log("info", `Created ${kind} probe "${made.name}"`, { fileId: made.fileId });
+    else log("error", `${kind} probe could not be created`);
+  }
   // The tree save is what places the new files into the desk folder —
   // until it runs they're in staging and there is nothing to sync.
   try {
     await state.saveFileTree();
-    log("info", "Probes written to the desk folder", { folderWriteOk: true });
+    log("info", "Probes written to the desk folder — waiting for the other device");
   } catch (e) {
     log("error", "Tree save failed — probes may still be in staging", { error: String(e) });
   }
@@ -229,59 +288,108 @@ async function createProbes(state, tag, log) {
 }
 
 /** Bump every probe to `version`, through the ordinary save path. */
-async function editProbes(state, tag, probes, version, log) {
+async function editProbes(state, tag, run, probes, version, log) {
+  const docFileId = probes.find((p) => p.kind === "Doc")?.fileId || null;
   for (const probe of probes) {
     try {
-      const content = probe.kind === "Doc" ? await docBody(tag, version)
-        : probe.kind === "Notebook" ? await notebookBody(tag, version)
-        : await stackBody(tag, version, probes.find((p) => p.kind === "Doc")?.fileId || null);
-      await invoke("save_file", { id: probe.fileId, content });
-      log("info", `Edited ${probe.kind} probe to v${version}`, { fileId: probe.fileId });
+      await invoke("save_file", {
+        id: probe.fileId,
+        content: await bodyFor(probe.kind, tag, version, run, docFileId),
+      });
+      log("info", `Sent ${probe.kind} edit v${version}`, { fileId: probe.fileId });
     } catch (e) {
-      log("error", `Editing the ${probe.kind} probe failed`, { error: String(e) });
+      log("error", `Sending the ${probe.kind} edit v${version} failed`, { error: String(e) });
     }
   }
 }
 
-/** Look for the other device's probes in the desk, and report each
- *  arrival and each edit exactly once. */
-async function pollPeers(state, deskId, ourTag, seen, arrivals, started, log) {
+/**
+ * Block until the peer's probes reach `version` — the handshake. Logs
+ * each type as it lands, and the ones that never do.
+ */
+async function awaitPeerVersion(state, deskId, ourTag, version, sinceMs, budget, log) {
+  const outstanding = new Set(KINDS);
+  const results = [];
+  let peerTag = null;
+  const deadline = Date.now() + budget;
+
+  while (outstanding.size > 0 && Date.now() < deadline) {
+    await sleep(POLL_MS);
+    for (const { node, tag, kind } of peerProbes(state, deskId, ourTag)) {
+      if (!outstanding.has(kind)) continue;
+      peerTag = peerTag || tag;
+      let mark = null;
+      try {
+        const file = await invoke("load_file", { id: node.fileId });
+        mark = readMarker(file?.content);
+      } catch (e) {
+        // In the tree but not readable is itself a result — that's the
+        // undelivered-file case, and worth seeing rather than waiting out.
+        log("warn", `Peer ${kind} "${node.name}" is in the tree but not readable yet`, { error: String(e) });
+        continue;
+      }
+      if (!mark) continue;
+      if (mark.run && Math.abs(mark.run - sinceMs) > RUN_SKEW_MS) continue; // leftover from an older run
+      if (mark.version < version) continue;
+      outstanding.delete(kind);
+      const waitedMs = Date.now() - sinceMs;
+      results.push({ kind, version, waitedMs, peerTag: tag });
+      log("info",
+        version === 1
+          ? `✓ Peer ${kind} arrived — "${node.name}"`
+          : `✓ Peer ${kind} edit v${version} arrived`,
+        { fromDevice: tag, waitedMs });
+    }
+  }
+  for (const kind of outstanding) {
+    results.push({ kind, version, missed: true });
+    log("error",
+      version === 1
+        ? `✗ Peer ${kind} never arrived (waited ${Math.round(budget / 1000)}s)`
+        : `✗ Peer ${kind} edit v${version} never arrived (waited ${Math.round(budget / 1000)}s)`);
+  }
+  return { results, peerTag };
+}
+
+/** The other device's probes, as they stand in this desk's tree. */
+function peerProbes(state, deskId, ourTag) {
   const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
-  if (!desk) return;
-  const found = [];
+  const out = [];
   const walk = (nodes) => {
     for (const n of nodes || []) {
-      const tag = tagOf(n?.name);
-      if (tag && tag !== ourTag && n.fileId) found.push({ node: n, tag });
+      const m = NAME_RE.exec(String(n?.name || ""));
+      if (m && m[1] !== ourTag && n.fileId) out.push({ node: n, tag: m[1], kind: m[2] });
       if (n?.children) walk(n.children);
     }
   };
-  walk(desk.children);
+  walk(desk?.children);
+  return out;
+}
 
-  for (const { node, tag } of found) {
-    let version = 0;
-    try {
-      const file = await invoke("load_file", { id: node.fileId });
-      version = versionIn(file?.content);
-    } catch (e) {
-      // Present in the tree but not readable yet is itself a result
-      // worth having — it's the undelivered-file case.
-      if (!seen.has(node.name)) {
-        seen.set(node.name, 0);
-        log("warn", `Peer ${kindOf(node.name)} "${node.name}" is in the tree but not readable yet`, { error: String(e) });
-      }
-      continue;
+/** One line per file type per round, so the verdict is readable without
+ *  reconstructing it from the timeline. */
+function summarise(log, ourTag, peerTag, probes, results) {
+  const rows = [];
+  for (const kind of KINDS) {
+    const parts = [];
+    for (const version of [1, ...ROUNDS]) {
+      const r = results.find((x) => x.kind === kind && x.version === version);
+      const label = version === 1 ? "create" : `edit v${version}`;
+      if (!r) parts.push(`${label}: not reached`);
+      else if (r.missed) parts.push(`${label}: MISSED`);
+      else parts.push(`${label}: ${(r.waitedMs / 1000).toFixed(1)}s`);
     }
-    const best = seen.get(node.name) ?? -1;
-    if (version > best) {
-      seen.set(node.name, version);
-      const at = Date.now() - started;
-      arrivals.push({ tag, kind: kindOf(node.name), version, at });
-      log("info",
-        best < 0
-          ? `Peer ${kindOf(node.name)} arrived: "${node.name}" at v${version}`
-          : `Peer ${kindOf(node.name)} "${node.name}" updated to v${version}`,
-        { fromDevice: tag, version, elapsedMs: at });
-    }
+    rows.push(`${kind} — ${parts.join(", ")}`);
   }
+  const missed = results.filter((r) => r.missed);
+  log(missed.length ? "error" : "info",
+    missed.length
+      ? `RESULT: ${missed.length} of ${results.length} transfers did not arrive`
+      : "RESULT: every probe and every edit crossed in both directions",
+    {
+      thisDevice: ourTag,
+      otherDevice: peerTag || "never seen",
+      sent: probes.map((p) => p.name),
+      perType: rows,
+    });
 }
