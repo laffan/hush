@@ -108,9 +108,13 @@ polygon** and returns Hush shape ids:
 | Pen-mode finger marquee | engine SVG rect — one finger dragging while a brush / eraser is active (iPad) |
 
 Once something *is* selected, the finger stops sweeping and starts
-moving: on iPad a touch-drag anywhere in pen mode carries the whole
-selection, and a tap clears it. Pen and mouse keep lassoing from empty
-canvas, so desktop and a deliberately-chosen Lasso are unchanged.
+moving — in every tool, not just pen mode. A touch-drag that would have
+started a region carries the whole selection instead, and a tap clears
+it; pinning a fingertip on a small bbox is the hard part, so the grab
+is anywhere the sweep would have been. Under the Select tool a drag
+that lands *on* a shape still grabs that shape (direct manipulation
+wins where there's something under the finger). Mouse and pen keep
+sweeping from empty canvas, so desktop is unchanged.
 
 Hit rules: a `DrawShape` is caught when any of its points is inside the
 polygon **or** any of its segments crosses one (a sparsely sampled

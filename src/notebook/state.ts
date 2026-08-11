@@ -43,6 +43,11 @@ export interface EditingText {
 
 export type ResizeHandle = "nw" | "ne" | "sw" | "se" | "n" | "s" | "e" | "w";
 const HANDLE_SIZE = 8;
+/** Client-px drift (squared) a finger must cross before a selection drag
+ *  started on empty canvas actually moves anything. Mirrors MOVE_SLOP_2
+ *  in the drawing engine's selection.js so the two surfaces agree on
+ *  what separates a tap from a drag. */
+const TOUCH_SELECT_SLOP_2 = 25; // (5 CSS px)^2
 
 export type BackgroundPattern = "grid" | "dot-grid" | "lined" | "isometric" | "blank";
 
@@ -693,6 +698,11 @@ export class DrawingState extends EventTarget {
    *  shim pauses — otherwise the engine keeps its strokes hidden
    *  for the duration of the drag. */
   private _dragStartFired = false;
+  /** A selection drag a finger began on empty canvas (Select tool). Held
+   *  until the contact clears TOUCH_SELECT_SLOP_2 so a tap's wobble
+   *  can't nudge the selection; `moved` staying false on release is how
+   *  the gesture reads as a tap, which deselects. */
+  private _touchSelectDrag: { client: Point; moved: boolean } | null = null;
   private _isResizing = false;
   private _resizeHandle: ResizeHandle | null = null;
   private _resizeStart: Point = { x: 0, y: 0 };
@@ -1446,6 +1456,25 @@ export class DrawingState extends EventTarget {
           this._captureReorderOrigins();
           this._dragCmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
         }
+      } else if (e.pointerType === "touch" && !e.shiftKey && this.selectedIds.size > 0) {
+        // A finger landing on empty canvas with something selected drags
+        // the selection rather than sweeping a new marquee — the same
+        // rule pen mode follows, where pinning a fingertip on a small
+        // bbox is the hard part. Tap-then-sweep is how you select
+        // something else; the tap fires from pointer-up (below) once we
+        // know the contact didn't travel. A drag that lands ON a shape
+        // still grabs that shape, and mouse / pen keep the marquee, so
+        // desktop is unchanged.
+        this._isDragging = true;
+        this._dragStart = canvasPt;
+        this._dragOrigin = canvasPt;
+        this._touchSelectDrag = { client: { x: e.clientX, y: e.clientY }, moved: false };
+        // Leave _dragStartFired false: the drag-start hook fires from
+        // the first real movement, so a tap never opens (and closes) an
+        // engine preview transform for nothing.
+        this._setupDragAreaResize();
+        this._captureReorderOrigins();
+        this._dragCmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
       } else {
         if (!e.shiftKey) { this.selectedIds = new Set(); this.notify("selectedIds"); }
         this._selectStart = canvasPt;
@@ -1575,6 +1604,17 @@ export class DrawingState extends EventTarget {
     }
 
     if (this._isDragging && (this.tool === "select" || this.brainstormMode)) {
+      // Finger drag started on empty canvas: nothing moves until the
+      // contact has really travelled. Measured in client px because the
+      // canvas-space threshold below is world units — at low zoom a
+      // pixel of finger wobble is several world px.
+      const tsd = this._touchSelectDrag;
+      if (tsd && !tsd.moved) {
+        const cdx = e.clientX - tsd.client.x;
+        const cdy = e.clientY - tsd.client.y;
+        if (cdx * cdx + cdy * cdy < TOUCH_SELECT_SLOP_2) return;
+        tsd.moved = true;
+      }
       const dx = canvasPt.x - this._dragStart.x;
       const dy = canvasPt.y - this._dragStart.y;
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
@@ -1781,6 +1821,11 @@ export class DrawingState extends EventTarget {
 
     if (this._isDragging) {
       this._isDragging = false;
+      // A finger that grabbed the selection from empty canvas and let go
+      // without travelling is a tap — the deselect gesture. Resolved
+      // after the drag teardown below so the two can't half-apply.
+      const touchTap = !!this._touchSelectDrag && !this._touchSelectDrag.moved;
+      this._touchSelectDrag = null;
       // Only call onShapeDragEnd if a start actually fired — a
       // pocket-exit that never reached a real drag move shouldn't
       // emit an end with no start.
@@ -2015,6 +2060,16 @@ export class DrawingState extends EventTarget {
       }
       this.flowDropTargetId = null;
 
+      // The tap that ends a finger's grab on the selection: nothing
+      // moved, so there's no shape change to record — just drop the
+      // selection. Skipping recordHistory here also keeps a tap from
+      // spending an undo step on a no-op checkpoint.
+      if (touchTap) {
+        this.selectedIds = new Set();
+        this.notify("selectedIds");
+        return;
+      }
+
       this.recordHistory();
       this.notify("shapes");
       return;
@@ -2188,6 +2243,7 @@ export class DrawingState extends EventTarget {
     }
     if (this._isDragging) {
       this._isDragging = false;
+      this._touchSelectDrag = null;
       if (this._dragStartFired && this.onShapeDragEnd) this.onShapeDragEnd();
       this._dragStartFired = false;
       this._dragAreaResizeOriginals.clear();
