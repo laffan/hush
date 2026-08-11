@@ -93,9 +93,10 @@ export function bindWebglOptions(container, layer, { onCommit, rerender }) {
   });
 }
 
-// Underline-glow knob bounds, shared by the renderer and the binder.
+// Per-preset knob bounds, shared by the renderer and the binder.
 const UNDERLINE_HEIGHT = { min: 1, max: 12, step: 0.5, default: 3 };
 const UNDERLINE_TRAIL = { min: 0.5, max: 8, step: 0.1, default: 3.5 };
+const HUD_RINGS = { min: 1, max: 10, step: 1, default: 2 };
 
 export function renderCaretOptions(layer) {
   const preset = layer.preset || "sparks";
@@ -108,6 +109,15 @@ export function renderCaretOptions(layer) {
   const intensity = typeof layer.intensity === "number" ? layer.intensity : 0.6;
   const height = typeof layer.height === "number" ? layer.height : UNDERLINE_HEIGHT.default;
   const trail = typeof layer.trailSeconds === "number" ? layer.trailSeconds : UNDERLINE_TRAIL.default;
+  const rings = typeof layer.rings === "number" ? layer.rings : HUD_RINGS.default;
+  const hudRows = preset !== "hud" ? "" : `
+    <div class="style-editor-row">
+      <label>Rings</label>
+      <div class="style-slider-group">
+        <input type="range" id="style-caret-rings" min="${HUD_RINGS.min}" max="${HUD_RINGS.max}" step="${HUD_RINGS.step}" value="${rings}" />
+        <span class="style-slider-value">${rings}</span>
+      </div>
+    </div>`;
   const underlineRows = preset !== "underline" ? "" : `
     <div class="style-editor-row">
       <label>Height</label>
@@ -156,6 +166,7 @@ export function renderCaretOptions(layer) {
         <span class="style-slider-value">${Math.round(intensity * 100)}%</span>
       </div>
     </div>
+    ${hudRows}
     ${underlineRows}
     <p class="style-editor-hint">Follows the text cursor as you type.</p>`;
 }
@@ -205,4 +216,5 @@ export function bindCaretOptions(container, layer, { onCommit, rerender }) {
   bindRange("#style-caret-intensity", "intensity", (v) => Math.round(v * 100) + "%");
   bindRange("#style-caret-height", "height", (v) => v + "px");
   bindRange("#style-caret-trail", "trailSeconds", (v) => v.toFixed(1) + "s");
+  bindRange("#style-caret-rings", "rings", (v) => String(v));
 }

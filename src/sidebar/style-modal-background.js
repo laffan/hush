@@ -233,7 +233,7 @@ function sectionInnerHtml(draft) {
         ${sel.type === "image" ? imageOptionsHtml(sel) + opacityRowsHtml(sel) : ""}
         ${sel.type === "gradient" ? renderGradientOptions(sel) + opacityRowsHtml(sel) : ""}
         ${sel.type === "webgl" ? renderWebglOptions(sel) : ""}
-        ${sel.type === "caret" ? renderCaretOptions(sel) : ""}
+        ${sel.type === "caret" ? renderCaretOptions(sel) + opacityRowsHtml(sel) : ""}
       </div>`;
   }
 
@@ -275,7 +275,8 @@ function defaultLayer(type) {
     return {
       ...base, blend: "screen", preset: "sparks", intensity: 0.6,
       matchCaret: false, lightColor: "#3b82f6", darkColor: "#9ecbff",
-      height: 3, trailSeconds: 3.5,
+      height: 3, trailSeconds: 3.5, rings: 2,
+      lightOpacity: 1, darkOpacity: 1,
     };
   }
   return {

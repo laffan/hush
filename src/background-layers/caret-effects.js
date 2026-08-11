@@ -47,12 +47,22 @@ uniform float u_angle;     // accumulated rotation (radians)
 uniform float u_activity;  // typing speed, 0..1
 uniform float u_lineH;     // underline thickness (CSS px)
 uniform float u_life;      // trail lifetime (s) — how long the streak lasts
+uniform float u_rings;     // HUD ring count
 
 float hash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 `;
 
-// Sparks: each trail entry throws a handful of bright motes upward that
-// arc over and die out.
+// Every preset below is tuned for STRAIGHT alpha (blending is off, see
+// the mount code). Under the old SRC_ALPHA path alpha was silently
+// squared, so a gaussian's outer half was invisible and the shapes read
+// as small tight marks. Once that squaring went away those halos became
+// visible and the same numbers rendered as huge soft blobs — hence the
+// tight radii, hard falloffs and low alpha ceilings here.
+
+// Sparks: a few 1px motes per keystroke, thrown sideways off the text
+// baseline and bouncing along it with a decaying hop before winking out.
+// The hop is |sin| under an exponential rather than a simulated bounce:
+// same read, one sin and one exp instead of an iterated collision.
 const FRAG_SPARKS = COMMON + `
 void main() {
   vec2 frag = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
@@ -61,26 +71,35 @@ void main() {
     vec4 tp = u_trail[i];
     if (tp.z < 0.0) continue;
     float age = u_time - tp.z;
-    if (age < 0.0 || age > 1.2) continue;
-    float fade = 1.0 - age / 1.2;
-    for (int j = 0; j < 4; j++) {
+    if (age < 0.0 || age > 0.75) continue;
+    float fade = 1.0 - age / 0.75;
+    fade *= fade;
+    float baseY = tp.y + u_caretH * 0.30;
+    for (int j = 0; j < 3; j++) {
       float fj = float(j);
       float h1 = hash(tp.w + fj * 17.3);
       float h2 = hash(tp.w + fj * 31.7 + 5.0);
       float h3 = hash(tp.w + fj * 7.9 + 11.0);
-      vec2 dir = vec2((h1 - 0.5) * 2.2, -(0.7 + 1.1 * h2));
-      float spd = (45.0 + 110.0 * h3) * u_px;
-      vec2 p = tp.xy + dir * spd * age + vec2(0.0, 190.0 * u_px * age * age);
-      float r = (1.2 + 1.6 * h2) * u_px;
+      float vx = (h1 - 0.5) * 190.0 * u_px;
+      float period = 0.15 + 0.13 * h2;
+      float amp = (6.0 + 15.0 * h3) * u_px;
+      float hop = amp * abs(sin(3.14159265 * age / period)) * exp(-age * 3.4);
+      vec2 p = vec2(tp.x + vx * age, baseY - hop);
       float d = length(frag - p);
-      acc += exp(-d * d / (r * r * 4.0)) * fade;
+      float r = 1.0 * u_px;
+      acc += exp(-(d * d) / (r * r * 2.0)) * fade;
     }
   }
-  float a = clamp(acc * u_intensity, 0.0, 0.85);
+  // Clamp coverage first, then scale by intensity: clamping the
+  // product instead lets a preset whose coverage exceeds 1 saturate,
+  // and the top of the intensity slider then does nothing at all.
+  float a = clamp(acc, 0.0, 1.0) * u_intensity * 0.95;
   outColor = vec4(u_color, a);
 }`;
 
-// Bubbles: soft rings drifting up from the caret with a lateral wobble.
+// Bubbles: thin hairline rings drifting up from the caret with a lateral
+// wobble. Coverage takes the max rather than summing so crossing rings
+// stay airy instead of pooling into a bright mass.
 const FRAG_BUBBLES = COMMON + `
 void main() {
   vec2 frag = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
@@ -89,26 +108,26 @@ void main() {
     vec4 tp = u_trail[i];
     if (tp.z < 0.0) continue;
     float age = u_time - tp.z;
-    if (age < 0.0 || age > 2.2) continue;
-    float fade = 1.0 - age / 2.2;
-    for (int j = 0; j < 3; j++) {
+    if (age < 0.0 || age > 1.8) continue;
+    float fade = 1.0 - age / 1.8;
+    for (int j = 0; j < 2; j++) {
       float fj = float(j);
       float h1 = hash(tp.w + fj * 13.1);
       float h2 = hash(tp.w + fj * 29.7 + 3.0);
-      float rise = (26.0 + 40.0 * h1) * u_px;
-      float wob = sin(age * (2.0 + 3.0 * h2) + h1 * 6.283) * 9.0 * u_px;
-      vec2 p = tp.xy + vec2(wob + (h2 - 0.5) * 26.0 * u_px, -rise * age);
-      float radius = (2.5 + 4.5 * h2 + age * 2.0) * u_px;
+      float rise = (22.0 + 30.0 * h1) * u_px;
+      float wob = sin(age * (2.2 + 3.0 * h2) + h1 * 6.283) * 7.0 * u_px;
+      vec2 p = tp.xy + vec2(wob + (h2 - 0.5) * 20.0 * u_px, -rise * age);
+      float radius = (2.0 + 3.0 * h2 + age * 1.6) * u_px;
       float d = abs(length(frag - p) - radius);
-      float band = 1.1 * u_px;
-      acc += exp(-d * d / (band * band * 2.0)) * fade * 0.8;
+      float band = 0.6 * u_px;
+      acc = max(acc, exp(-(d * d) / (band * band * 2.0)) * fade * 0.55);
     }
   }
-  float a = clamp(acc * u_intensity, 0.0, 0.8);
+  float a = clamp(acc, 0.0, 1.0) * u_intensity * 0.7;
   outColor = vec4(u_color, a);
 }`;
 
-// Ripples: expanding rings centred where the caret has been.
+// Ripples: thin fast rings expanding from where the caret has been.
 const FRAG_RIPPLES = COMMON + `
 void main() {
   vec2 frag = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
@@ -117,13 +136,13 @@ void main() {
     vec4 tp = u_trail[i];
     if (tp.z < 0.0) continue;
     float age = u_time - tp.z;
-    if (age < 0.0 || age > 1.8) continue;
-    float radius = age * 95.0 * u_px;
+    if (age < 0.0 || age > 1.1) continue;
+    float radius = age * 190.0 * u_px;
     float d = abs(length(frag - tp.xy) - radius);
-    float band = (2.0 + age * 3.0) * u_px;
-    acc += exp(-d * d / (band * band)) * exp(-age * 2.1);
+    float band = (0.7 + age * 0.7) * u_px;
+    acc = max(acc, exp(-(d * d) / (band * band * 2.0)) * exp(-age * 3.0));
   }
-  float a = clamp(acc * u_intensity, 0.0, 0.8);
+  float a = clamp(acc, 0.0, 1.0) * u_intensity * 0.75;
   outColor = vec4(u_color, a);
 }`;
 
@@ -134,12 +153,14 @@ void main() {
 //
 // Coverage combines with max(), not +=: overlapping capsules must not
 // accumulate, or the joins would read brighter than the run and the
-// "filled" bar would look lumpy.
+// "filled" bar would look lumpy. The glow rides the bar's own half-
+// height so a 1px setting really is a 1px line — a fixed-width halo
+// made every thin setting render several px tall.
 const FRAG_UNDERLINE = COMMON + `
 void main() {
   vec2 frag = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
   float halfH = max(u_lineH * 0.5 * u_px, 0.5 * u_px);
-  float edge = 0.75 * u_px;
+  float edge = 0.5 * u_px;
   float acc = 0.0;
   for (int i = 0; i < ${TRAIL}; i++) {
     vec4 a = u_trail[i];
@@ -148,7 +169,7 @@ void main() {
     if (age < 0.0 || age > u_life) continue;
     float fade = 1.0 - age / u_life;
     fade *= fade;
-    vec2 pa = vec2(a.x, a.y + u_caretH * 0.42);
+    vec2 pa = vec2(a.x, a.y + u_caretH * 0.30);
     vec2 pb = pa;
     // The trail arrives oldest-first, so entry i+1 is the next position
     // the caret took. Join them into one capsule when they share a
@@ -162,7 +183,7 @@ void main() {
           && abs(b.y - a.y) < u_caretH * 0.6
           && abs(b.x - a.x) < 160.0 * u_px
           && (b.z - a.z) < 2.0) {
-        pb = vec2(b.x, b.y + u_caretH * 0.42);
+        pb = vec2(b.x, b.y + u_caretH * 0.30);
       }
     }
     // Both endpoints sit on the same baseline, so the capsule is always
@@ -177,10 +198,11 @@ void main() {
     float h = clamp(dot(pf, ba) / max(dot(ba, ba), 1e-4), 0.0, 1.0);
     float d = length(pf - ba * h);
     float core = 1.0 - smoothstep(halfH - edge, halfH + edge, d);
-    float glow = exp(-(d * d) / max(halfH * halfH * 7.0, 1e-4)) * 0.3;
+    float glowR = halfH * 1.6;
+    float glow = exp(-(d * d) / max(glowR * glowR * 2.0, 1e-4)) * 0.22;
     acc = max(acc, (core + glow) * fade);
   }
-  float aOut = clamp(acc * u_intensity, 0.0, 0.9);
+  float aOut = clamp(acc, 0.0, 1.0) * u_intensity * 0.9;
   outColor = vec4(u_color, aOut);
 }`;
 
@@ -188,8 +210,9 @@ void main() {
 // an old-watch-bezel crosshair. Ring rotation rides u_angle, which the
 // JS side accumulates at a typing-speed-scaled rate, and brightness
 // leans on u_activity so the whole instrument wakes up as you type.
-// The two innermost elements (a solid ring at 16px and the 8-tick ring
-// at 30px) were dropped — they crowded the caret and the text under it.
+// Ring count is a knob (u_rings); each successive ring sits further out
+// and carries more, finer ticks, turning the opposite way to its
+// neighbour.
 const FRAG_HUD = COMMON + `
 float ring(vec2 d, float r, float R, float N, float rot, float tickHalf, float sharp) {
   float theta = atan(d.y, d.x) + rot;
@@ -203,10 +226,19 @@ void main() {
   float r = length(d);
   float px = u_px;
   float acc = 0.0;
-  acc += ring(d, r, 46.0 * px, 24.0, -u_angle * 0.62, 4.0 * px, 26.0) * 0.95;
-  acc += ring(d, r, 62.0 * px, 48.0, u_angle * 0.38,  3.0 * px, 40.0) * 0.75;
+  for (int k = 0; k < 10; k++) {
+    if (float(k) >= u_rings) break;
+    float fk = float(k);
+    float R = (46.0 + fk * 16.0) * px;
+    float N = 24.0 * (fk + 1.0);
+    float dir = mod(fk, 2.0) < 0.5 ? -1.0 : 1.0;
+    float rot = u_angle * dir * (0.62 - fk * 0.06);
+    float tick = (4.0 - fk * 0.35) * px;
+    float sharp = 26.0 + fk * 14.0;
+    acc += ring(d, r, R, N, rot, max(tick, 1.5 * px), sharp) * (0.95 - fk * 0.06);
+  }
   acc *= 0.6 + 0.4 * u_activity;
-  float a = clamp(acc * u_intensity, 0.0, 0.85);
+  float a = clamp(acc, 0.0, 1.0) * u_intensity * 0.85;
   outColor = vec4(u_color, a);
 }`;
 
@@ -236,8 +268,9 @@ const FRAGS = {
   flicker: FRAG_FLICKER,
 };
 // Underline's entry is the fallback for its user-set trail length.
-const LIFETIMES = { sparks: 1.2, bubbles: 2.2, ripples: 1.8, underline: 3.5, hud: 3.0, flicker: 3.0 };
+const LIFETIMES = { sparks: 0.75, bubbles: 1.8, ripples: 1.1, underline: 3.5, hud: 3.0, flicker: 3.0 };
 export const UNDERLINE_DEFAULTS = { height: 3, trailSeconds: 3.5 };
+export const HUD_DEFAULTS = { rings: 2 };
 // clear: fade out, wipe, park. freeze: park on the last-drawn frame (the
 // HUD stays parked at the caret). run: never trail-park — animate while
 // a caret exists and the window is visible.
@@ -267,6 +300,7 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
   let color = hexToVec3(cfg.color || "#9ecbff");
   let intensity = clamp01(cfg.intensity ?? 0.6);
   let lineH = num(cfg.height, UNDERLINE_DEFAULTS.height);
+  let rings = num(cfg.rings, HUD_DEFAULTS.rings);
   let life = presetLife(preset, cfg);
 
   let program = null;
@@ -293,6 +327,7 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
       activity: gl.getUniformLocation(program, "u_activity"),
       lineH: gl.getUniformLocation(program, "u_lineH"),
       life: gl.getUniformLocation(program, "u_life"),
+      rings: gl.getUniformLocation(program, "u_rings"),
     };
   }
   buildProgram();
@@ -403,6 +438,7 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
     gl.uniform1f(uni.intensity, intensity);
     gl.uniform1f(uni.lineH, lineH);
     gl.uniform1f(uni.life, life);
+    gl.uniform1f(uni.rings, rings);
     gl.uniform2f(uni.caret, lastCaret.bx, lastCaret.by);
     gl.uniform1f(uni.caretH, lastCaret.bh);
     gl.uniform1f(uni.angle, angleAccum);
@@ -465,6 +501,7 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
       color = hexToVec3(nextCfg.color || "#9ecbff");
       intensity = clamp01(nextCfg.intensity ?? 0.6);
       lineH = num(nextCfg.height, UNDERLINE_DEFAULTS.height);
+      rings = num(nextCfg.rings, HUD_DEFAULTS.rings);
       life = presetLife(nextPreset, nextCfg);
       if (nextPreset !== preset) {
         preset = nextPreset;

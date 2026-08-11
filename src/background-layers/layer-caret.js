@@ -33,8 +33,21 @@ function resolveColor(host, cfg, appearance) {
   return normalizeColor(per || cfg.color || DEFAULT_COLOR, DEFAULT_COLOR);
 }
 
+/** Layer opacity for the appearance being rendered — the same
+ *  per-appearance pair the image and gradient layers carry. Distinct
+ *  from the effect's own `intensity`, which governs how bright and
+ *  dense the effect draws itself before the layer is composited. */
+function resolveOpacity(cfg, appearance) {
+  const v = appearance === "dark" ? cfg.darkOpacity : cfg.lightOpacity;
+  return v != null ? v : 1;
+}
+
 export function mountCaretLayer(host, cfg, appearance, ctx, caretSource) {
-  host.style.mixBlendMode = cfg.blend || "screen";
+  const applyChrome = (c, app) => {
+    host.style.mixBlendMode = c.blend || "screen";
+    host.style.opacity = String(resolveOpacity(c, app));
+  };
+  applyChrome(cfg, appearance);
 
   const toEffectCfg = (c, app) => ({
     preset: c.preset || "sparks",
@@ -42,13 +55,14 @@ export function mountCaretLayer(host, cfg, appearance, ctx, caretSource) {
     intensity: c.intensity,
     height: c.height,
     trailSeconds: c.trailSeconds,
+    rings: c.rings,
   });
 
   const inst = createCaretEffect(host, toEffectCfg(cfg, appearance), caretSource, ctx);
 
   return {
     update(nextCfg, nextAppearance) {
-      host.style.mixBlendMode = nextCfg.blend || "screen";
+      applyChrome(nextCfg, nextAppearance);
       inst.update(toEffectCfg(nextCfg, nextAppearance));
     },
     resize(width, height, dpr) { inst.resize(width, height, dpr); },
@@ -56,6 +70,7 @@ export function mountCaretLayer(host, cfg, appearance, ctx, caretSource) {
     dispose() {
       inst.dispose();
       host.style.mixBlendMode = "";
+      host.style.opacity = "";
     },
   };
 }
