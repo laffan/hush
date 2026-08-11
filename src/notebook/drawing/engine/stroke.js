@@ -74,6 +74,19 @@
  *      and swaps the same way. The done target is therefore dynamic:
  *      consumers resolve it via renderer.getDoneCtx() /
  *      engine.getDoneCanvas().
+ *  33. Finger drag → rectangle marquee. In pencil-only mode a finger
+ *      contact arms the hold-to-lasso timer (delta #19); drifting past
+ *      FINGER_DRAG_THRESHOLD_2 before it fires used to abandon the
+ *      gesture silently. It now hands off through `onFingerDragSelect`,
+ *      which the host turns into a marquee (selection.js delta #33) —
+ *      so on iPad the pencil draws and a finger sweeps a selection box
+ *      without leaving the brush. Drift is measured in CLIENT px, not
+ *      engine-local px: the local threshold the hold uses is world
+ *      space, and at zoom 0.25 four world px is one screen px — far
+ *      too twitchy to promote a gesture on. A finger that neither
+ *      drifts nor holds is a tap — `onFingerTap` — and clears the
+ *      selection, so the finger owns the whole selection vocabulary
+ *      while a brush is active: tap clears, drag boxes, hold lassos.
  *   (Deltas 4 + 5 live in selection.js + gestures.js; #24 in
  *    gestures.js; #26 — the per-stroke streamline cache — in
  *    stroke-render.js; #30 — ImageBitmap tinted atlases, so stamp
@@ -131,6 +144,11 @@ const isIOS =
 
 const LONG_PRESS_MS_DEFAULT = 500;
 const LONG_PRESS_MOVE_THRESHOLD_2 = 16; // 4px
+// Hush delta #33: finger drift (CLIENT px, squared) that promotes a
+// pencil-only finger contact into a rectangle marquee. 8 px matches the
+// tap tolerance the gesture recogniser uses, so a still finger waiting
+// on the hold-to-lasso timer isn't stolen by hand tremor.
+const FINGER_DRAG_THRESHOLD_2 = 64; // (8 CSS px)^2
 
 export function createStrokeEngine({
   svg,                   // pointer target + overlay host
@@ -144,6 +162,14 @@ export function createStrokeEngine({
   brushUrl,              // Hush delta #3: optional brush-PNG resolver passed to createAtlasCache
   blitCanvas,            // Hush delta #29: optional ATTACHED helper canvas for readback-free shifts
   onLongPress,
+  onFingerDragSelect,    // Hush delta #33: ({ pointerId, point }) — a pencil-only
+                         //   finger dragged instead of holding; host starts a marquee
+  onPenResumeDraw,       // Hush delta #33: () => boolean — pen touched down while a
+                         //   finger-started select was live; host flips back to the
+                         //   brush synchronously and returns true to let this
+                         //   contact draw
+  onFingerTap,           // Hush delta #33: () => void — a pencil-only finger landed and
+                         //   lifted without drifting or holding long enough to lasso
   onStrokeAdded,
   onStrokesRemoved,
   onStrokesTransformed,
@@ -207,6 +233,7 @@ export function createStrokeEngine({
     longPressMs: LONG_PRESS_MS_DEFAULT,  // Hush delta #11: configurable via setLongPressMs()
     pencilOnly: false,        // Hush delta #18: when true, only pointerType="pen" can start a stroke
     fingerHoldPointer: null,  // Hush delta #19: pointerId of a finger waiting on the long-press timer
+    fingerHoldClient: null,   // Hush delta #33: that finger's landing point in client px
                               // (pencil-only mode lets fingers hold-to-select without drawing)
     previewingIds: null,      // Set<id> currently rendered to previewCanvas
     previewingTiles: null,    // tile keys currently held out of doneCanvas
@@ -414,7 +441,18 @@ export function createStrokeEngine({
 
   // --------- pointer handlers ---------
   function onPointerDown(e) {
-    if (state.tool !== 'draw' && state.tool !== 'erase' && state.tool !== 'slice') return;
+    if (state.tool !== 'draw' && state.tool !== 'erase' && state.tool !== 'slice') {
+      // Hush delta #33: the finger marquee / hold-lasso borrows select
+      // mode from whatever brush the user was on. Putting the pencil
+      // down is unambiguously "I want to keep drawing", so hand the
+      // brush back and let this very contact start the stroke —
+      // otherwise the pen silently does nothing until the user
+      // remembers to tap empty canvas. The host only says yes for a
+      // *borrowed* select; the toolbar's own Lasso keeps the pen
+      // lassoing.
+      if (!(state.tool === 'select' && e.pointerType === 'pen'
+            && onPenResumeDraw && onPenResumeDraw())) return;
+    }
     if (state.tool === 'draw') {
       const L = activeLayer();
       if (L && (L.locked || L.hidden)) return;
@@ -441,6 +479,7 @@ export function createStrokeEngine({
       e.preventDefault();
       const fp = getPoint(e);
       state.fingerHoldPointer = e.pointerId;
+      state.fingerHoldClient = { x: e.clientX, y: e.clientY };
       armLongPress(fp, e.pointerId);
       return;
     }
@@ -534,17 +573,28 @@ export function createStrokeEngine({
 
   function onPointerMove(e) {
     if (e.pointerId === state.suppressedPointerId) return;
-    // Hush delta #19: finger-hold drift cancellation. A finger that
-    // wandered too far before the long-press timer fires drops the
-    // gesture quietly — same threshold as the pen long-press.
+    // Hush delta #19 / #33: a finger waiting on the hold-to-lasso timer
+    // has drifted. Held still it becomes a freehand lasso; dragged it
+    // becomes a rectangle marquee (`onFingerDragSelect`) so the user can
+    // sweep a selection without putting the pencil down. Hosts that
+    // don't wire the hook keep the old behaviour: drop the gesture.
     if (state.fingerHoldPointer !== null && e.pointerId === state.fingerHoldPointer) {
       if (state.longPressTimer && state.longPressAnchor) {
-        const fp = getPoint(e);
-        const ax = fp.x - state.longPressAnchor.x;
-        const ay = fp.y - state.longPressAnchor.y;
-        if (ax * ax + ay * ay > LONG_PRESS_MOVE_THRESHOLD_2) {
+        const c = state.fingerHoldClient;
+        const cx = c ? e.clientX - c.x : 0;
+        const cy = c ? e.clientY - c.y : 0;
+        if (cx * cx + cy * cy > FINGER_DRAG_THRESHOLD_2) {
+          const pid = state.fingerHoldPointer;
+          const anchor = { x: state.longPressAnchor.x, y: state.longPressAnchor.y };
           cancelLongPress();
           state.fingerHoldPointer = null;
+          state.fingerHoldClient = null;
+          if (onFingerDragSelect) {
+            // Suppress this pointer for the stroke path; the selection
+            // engine owns its move / up events from here.
+            state.suppressedPointerId = pid;
+            onFingerDragSelect({ pointerId: pid, point: anchor });
+          }
         }
       }
       return;
@@ -614,18 +664,31 @@ export function createStrokeEngine({
       state.suppressedPointerId = null;
       // Long-press fired and the lasso took over; clear the finger
       // tracker too in case this pointer was the held finger.
-      if (state.fingerHoldPointer === e.pointerId) state.fingerHoldPointer = null;
+      if (state.fingerHoldPointer === e.pointerId) {
+        state.fingerHoldPointer = null;
+        state.fingerHoldClient = null;
+      }
       svg.classList.remove('erasing');
       eraserCursor.setAttribute('visibility', 'hidden');
       return;
     }
-    // Hush delta #19: finger lifted before the long-press fired —
-    // drop the gesture quietly. Don't fall through to the stroke
-    // commit branch (there's no active stroke to commit).
+    // Hush delta #19 / #33: finger lifted before the long-press fired
+    // and without drifting far enough to sweep a marquee — that's a
+    // tap, which clears the selection (`onFingerTap`). Don't fall
+    // through to the stroke commit branch; there's no active stroke.
+    //
+    // Reaching here already excludes every other reading of the
+    // contact: a drift cleared fingerHoldPointer on promotion, the
+    // long-press timer firing routes the lift through the
+    // suppressedPointerId branch above, and a second finger landing
+    // makes the gesture recogniser call cancelActiveStroke(), which
+    // clears the tracker — so a two-finger tap never lands here.
     if (state.fingerHoldPointer !== null && e.pointerId === state.fingerHoldPointer) {
       cancelLongPress();
       state.fingerHoldPointer = null;
+      state.fingerHoldClient = null;
       try { svg.releasePointerCapture(e.pointerId); } catch {}
+      if (onFingerTap) onFingerTap();
       return;
     }
     if (!state.active) return;
@@ -830,6 +893,7 @@ export function createStrokeEngine({
       if (state.fingerHoldPointer !== null) {
         cancelLongPress();
         state.fingerHoldPointer = null;
+        state.fingerHoldClient = null;
       }
       if (!state.active) return false;
       // For an erase/slice drag, drop the snapshot without firing — the

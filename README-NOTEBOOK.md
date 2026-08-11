@@ -15,6 +15,7 @@ src/notebook/
   renderer-background.ts  Background patterns (dot-grid, grid, lined, isometric)
   input-handler.ts        DOM events → state methods; reads shortcuts from Hush settings
   markdown.ts             Inline markdown parser for text shapes
+  selection-region.ts     Region → selection hit test shared by marquee + lasso
   themes.ts               16 canvas themes mirroring the editor set
   types.ts                Shape types, constants, palettes
   undo-manager.ts         Snapshot undo/redo (100 entries, structural sharing)
@@ -93,6 +94,41 @@ Layers are notebook-level (every shape type, ordered top-first, hidden/locked pe
 ### Flowchart
 
 A portable layer (`flowchart.ts`) that knows nothing about Hush shape types — `DrawingState` configures it with `getBounds` / `isFlowable` callbacks (only `TextShape`s are flowable; `getBounds` is `unionGroupBounds` so arrows anchor to a whole group's edge, not one stray member). Connect by drag-onto (child), ⌘-drop (merge text into target), or from the inline editor (⌘→ child, ⌘↓ sibling; ⌘← parent, ⌘↑ MRU). Edges sharing a box side fan apart (`edgeOffsets`, scaled by `arrowWidth`); each edge carries a midpoint delete dot; drags pull transitive descendants; `tidy()` re-lays out a subtree. Edges serialize into the envelope; Desktops reuse the layer with authoring disabled and derived, locked edges (see `desktop/` + README-TECHNICAL).
+
+### Selection (one hit test, three gestures)
+
+Every "sweep an area to select" gesture funnels through
+`selection-region.ts#collectShapesInPolygon`, which takes a **world-space
+polygon** and returns Hush shape ids:
+
+| Gesture | Where the polygon comes from |
+|---|---|
+| Select-tool marquee | `state.selectionBox`, as a 4-point rect |
+| Pen-mode freehand lasso | engine SVG path (hold-to-lasso, or the Lasso sub-tool) |
+| Pen-mode finger marquee | engine SVG rect — one finger dragging while a brush / eraser is active (iPad) |
+
+Once something *is* selected, the finger stops sweeping and starts
+moving — in every tool, not just pen mode. A touch-drag that would have
+started a region carries the whole selection instead, and a tap clears
+it; pinning a fingertip on a small bbox is the hard part, so the grab
+is anywhere the sweep would have been. Under the Select tool a drag
+that lands *on* a shape still grabs that shape (direct manipulation
+wins where there's something under the finger). Mouse and pen keep
+sweeping from empty canvas, so desktop is unchanged.
+
+Hit rules: a `DrawShape` is caught when any of its points is inside the
+polygon **or** any of its segments crosses one (a sparsely sampled
+straight line swept across the middle still counts); every other type is
+caught when its bounds intersect the polygon, which for an axis-aligned
+rect reduces to plain bounds overlap. Groups promote whole, hidden
+layers and pocketed shapes are skipped, and a degenerate region (a tap)
+selects nothing — pen mode reads that as a dismissal.
+
+Before this, the marquee lived in `DrawingState` and hit-tested bounding
+boxes while the lasso lived in the stroke engine and could only ever see
+strokes: two mechanisms, two answers. The engine now hands its polygon
+up (deltas #32/#33) instead of resolving it, and the selection bridge
+pushes the stroke subset back down for the bbox — see README-DRAWING.md.
 
 ### Selection toolbar actions
 

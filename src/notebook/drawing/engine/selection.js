@@ -23,6 +23,35 @@
  *      retroactive selection so the chrome stays painted (visual
  *      feedback) but every pointerdown falls through to the stroke
  *      engine, leaving the user's next stroke un-intercepted.
+ *  32. onLassoRegion(poly) — region handoff. When the host supplies it,
+ *      a completed lasso / marquee hands its polygon up instead of
+ *      running the engine's stroke-only hit test: Hush hit-tests every
+ *      shape type against the same polygon (src/notebook/
+ *      selection-region.ts) and pushes the result back down through
+ *      setSelectedIds. The engine keeps its own hit test as the
+ *      fallback for hosts that don't wire the callback.
+ *  33. Rectangle marquee mode + startMarqueeAtPointer(). A single
+ *      finger dragging in pen mode (stroke.js delta #33) sweeps a box
+ *      instead of a freehand loop; it reuses the lasso path element
+ *      (four corners, closed) so there's one region pipeline and one
+ *      set of visuals.
+ *  34. setExternalBounds(bbox) / setHandlesHidden(bool) — a selection
+ *      can now hold shapes the engine knows nothing about (text,
+ *      images, drag-areas). The host unions their bounds into the
+ *      engine bbox so the chrome frames the whole selection and the
+ *      bbox-grab move covers it; the resize / rotate handles hide,
+ *      because those transforms only reach strokes.
+ *  35. A live selection makes the finger a mover. With something
+ *      selected, a *touch* landing anywhere on the canvas drags the
+ *      whole selection instead of starting a new region, and lifting
+ *      without dragging is a tap that clears it (`onRegionTap`) — so
+ *      the finger's whole vocabulary stays consistent whether or not
+ *      the contact starts on the bbox. Pen and mouse still lasso from
+ *      empty canvas, so desktop and deliberate pencil-lassos are
+ *      unchanged. `startMoveAtPointer()` is the handoff for a move that
+ *      began outside this engine (stroke.js's finger drift, which has
+ *      already crossed a larger threshold — hence the pre-satisfied
+ *      slop flag).
  * ============================================================
  *
  * selection.js — lasso + bounding box + move/resize/delete.
@@ -55,6 +84,10 @@ const MIN_SCALE = 0.05;
 // toolbar hovers there and kept hiding it.
 const ROTATE_HANDLE_R = 8;
 const ROTATE_OFFSET = 48;
+// Hush delta #35: client-px drift (squared) a move must cross before it
+// previews anything. Without it a finger tap's natural wobble nudges the
+// selection a pixel and stops reading as a tap on release.
+const MOVE_SLOP_2 = 25; // (5 CSS px)^2
 
 const HANDLE_SPEC = [
   { name: 'nw', sx: 0, sy: 0 },
@@ -102,11 +135,21 @@ export function createSelectionEngine({
   strokeEngine,
   isSelectable,    // (stroke) => bool — skip locked/hidden in lasso hit-test
   onExit,          // () => void — user hit Escape to leave select mode
+  onLassoRegion,   // Hush delta #32: (poly: [x,y][], { marquee }) => void — host
+                   //   owns the hit test for every shape type; when present the
+                   //   engine skips its own stroke-only pass.
   onLassoComplete, // ({ selected: boolean }) — fires at the end of every lasso
   onSelectionDeleted, // () — fires after strokes were removed from a selection
   onDragStart,     // (kind: 'move' | 'resize' | 'rotate', ids: Set<number>) — engine-driven drag begins
   onDragMove,      // ({ kind, dx, dy }) — engine-driven drag tick (move only emits dx/dy)
-  onDragEnd,       // () — engine-driven drag finished (committed or cancelled)
+  onDragEnd,       // (cancelled?: boolean) — engine-driven drag finished.
+                   //   `true` = aborted by cancelActive (a gesture claimed the
+                   //   burst), so the host must roll its half back too.
+  onRegionTap,     // Hush delta #35: () — a touch landed and lifted on a live
+                   //   selection without dragging it. Host clears the selection.
+  onRegionCancel,  // Hush delta #33: () — an in-flight lasso / marquee was
+                   //   abandoned (promoted into a multi-touch gesture). The host
+                   //   uses it to hand back the brush the region gesture borrowed.
 }) {
   const selectable = isSelectable || (() => true);
   const toLocal = pointToLocal || ((p) => {
@@ -128,6 +171,14 @@ export function createSelectionEngine({
   bboxRect.setAttribute('class', 'bbox');
   bboxGroup.appendChild(bboxRect);
 
+  // Hush delta #34: resize / rotate handles live in their own group so
+  // they can be hidden as a unit when the selection contains shapes the
+  // engine can't transform (text, images, drag-areas). `visibility` —
+  // not pointer-events — because it's inherited, so a hidden handle
+  // can't be grabbed either.
+  const handlesGroup = document.createElementNS(SVG_NS, 'g');
+  bboxGroup.appendChild(handlesGroup);
+
   const handleNodes = {};
   for (const spec of HANDLE_SPEC) {
     const c = document.createElementNS(SVG_NS, 'rect');
@@ -135,7 +186,7 @@ export function createSelectionEngine({
     c.setAttribute('width', HANDLE_SIZE);
     c.setAttribute('height', HANDLE_SIZE);
     c.dataset.handle = spec.name;
-    bboxGroup.appendChild(c);
+    handlesGroup.appendChild(c);
     handleNodes[spec.name] = c;
   }
 
@@ -146,12 +197,12 @@ export function createSelectionEngine({
   rotateTether.setAttribute('class', 'handle-tether');
   rotateTether.setAttribute('stroke', 'currentColor');
   rotateTether.setAttribute('stroke-width', '1');
-  bboxGroup.appendChild(rotateTether);
+  handlesGroup.appendChild(rotateTether);
   const rotateHandle = document.createElementNS(SVG_NS, 'circle');
   rotateHandle.setAttribute('class', 'handle rotate');
   rotateHandle.setAttribute('r', ROTATE_HANDLE_R);
   rotateHandle.dataset.handle = 'rotate';
-  bboxGroup.appendChild(rotateHandle);
+  handlesGroup.appendChild(rotateHandle);
 
   // Hush delta #9: the red-X delete badge is hidden. Hush surfaces
   // delete through the shared selection toolbar's trash icon, so an
@@ -167,12 +218,18 @@ export function createSelectionEngine({
   // ---------- state ----------
   const state = {
     active: false,               // whether the select tool is active
-    mode: 'idle',                // 'idle' | 'lasso' | 'move' | 'resize' | 'rotate'
+    mode: 'idle',                // 'idle' | 'lasso' | 'marquee' | 'move' | 'resize' | 'rotate'
     lassoPts: [],
+    marqueeAnchor: null,         // Hush delta #33: { x, y } corner the box grows from
+    extraBBox: null,             // Hush delta #34: host bounds for non-stroke selection
+    handlesHidden: false,        // Hush delta #34: resize/rotate hidden (mixed selection)
     selectedIds: new Set(),
     bbox: null,                  // { x, y, w, h }
     dragPointerId: null,
     dragStart: null,             // { x, y } in SVG space
+    dragStartClient: null,       // Hush delta #35: same point in client px, for slop
+    dragWasTouch: false,         // Hush delta #35: finger gestures get tap-to-deselect
+    moveSlopOk: false,           // Hush delta #35: move has crossed MOVE_SLOP_2
     resizeHandle: null,          // 'nw' | 'n' | ... when mode==='resize'
     bboxAtDragStart: null,       // bbox snapshot for resize math
     lastTransform: null,         // last applied transform (for commit)
@@ -197,12 +254,21 @@ export function createSelectionEngine({
       bboxGroup.setAttribute('visibility', 'hidden');
       return;
     }
-    if (!state.bbox || state.selectedIds.size === 0) {
+    if (!state.bbox || (state.selectedIds.size === 0 && !state.extraBBox)) {
       bboxGroup.setAttribute('visibility', 'hidden');
       return;
     }
     const { x, y, w, h } = state.bbox;
     bboxGroup.setAttribute('visibility', 'visible');
+    // Hush delta #34: when the handles should show, *remove* the
+    // attribute rather than asserting 'visible'. `visibility` is
+    // inherited AND overridable downward, so an explicit `visible` on
+    // this group outlives the parent going hidden — deselecting a
+    // stroke selection left its handles painted (and still hit-testable,
+    // since pointer-events:auto is visibility-gated) over empty canvas.
+    // Inheriting means one attribute governs the whole chrome.
+    if (state.handlesHidden) handlesGroup.setAttribute('visibility', 'hidden');
+    else handlesGroup.removeAttribute('visibility');
     bboxRect.setAttribute('x', x);
     bboxRect.setAttribute('y', y);
     bboxRect.setAttribute('width', w);
@@ -245,13 +311,28 @@ export function createSelectionEngine({
 
   function clearLasso() {
     state.lassoPts = [];
+    state.marqueeAnchor = null;
     lassoPath.setAttribute('d', '');
     lassoPath.setAttribute('visibility', 'hidden');
+  }
+
+  /** Hush delta #33: rebuild the region polygon as the four corners of
+   *  the box between the marquee anchor and the live pointer. Reusing
+   *  `lassoPts` keeps one render path and one completion path. */
+  function updateMarquee(p) {
+    const a = state.marqueeAnchor;
+    if (!a) return;
+    state.lassoPts = [[a.x, a.y], [p.x, a.y], [p.x, p.y], [a.x, p.y]];
+    updateLassoView();
   }
 
   function clearSelection() {
     state.selectedIds.clear();
     state.bbox = null;
+    // Hush delta #34: the host re-pushes its non-stroke bounds on the
+    // next selection notify, so dropping them here can't strand chrome
+    // around shapes that are no longer selected.
+    state.extraBBox = null;
     // Drop any leftover rotation transform from a previous gesture so
     // the chrome reads axis-aligned the next time a selection lands.
     bboxGroup.removeAttribute('transform');
@@ -260,17 +341,43 @@ export function createSelectionEngine({
 
   function recomputeBBoxFromSelection() {
     const strokes = strokeEngine.getStrokes().filter((s) => state.selectedIds.has(s.id));
-    if (!strokes.length) {
+    // Hush delta #34: the host's non-stroke bounds count as selection
+    // too — without them a text-only lasso would clear the chrome here
+    // and leave nothing to grab.
+    const ex = state.extraBBox;
+    if (!strokes.length && !ex) {
       state.selectedIds.clear();
       state.bbox = null;
+    } else if (!strokes.length) {
+      state.bbox = { ...ex };
     } else {
-      state.bbox = computeBBox(strokes);
+      const b = computeBBox(strokes);
+      state.bbox = ex ? {
+        x: Math.min(b.x, ex.x),
+        y: Math.min(b.y, ex.y),
+        w: Math.max(b.x + b.w, ex.x + ex.w) - Math.min(b.x, ex.x),
+        h: Math.max(b.y + b.h, ex.y + ex.h) - Math.min(b.y, ex.y),
+      } : b;
     }
     updateBBoxView();
   }
 
   function selectFromLasso() {
     const poly = state.lassoPts;
+    const wasMarquee = state.marqueeAnchor != null;
+    // Hush delta #32: hand the region up when the host owns hit testing.
+    // The host selects across every shape type and pushes the stroke
+    // subset back through setSelectedIds, so we don't resolve the
+    // selection ourselves — just retire the visible polygon. A
+    // degenerate region (a tap) goes up too: the host reads "nothing
+    // selected" as a dismissal and hands the user back their brush.
+    if (onLassoRegion) {
+      const region = poly.map((p) => [p[0], p[1]]);
+      clearLasso();
+      clearSelection();
+      onLassoRegion(region, { marquee: wasMarquee });
+      return;
+    }
     if (poly.length < 3) {
       clearLasso();
       clearSelection();
@@ -311,7 +418,12 @@ export function createSelectionEngine({
   // ---------- drag / resize math ----------
   function applyMovePreview(dx, dy) {
     state.lastTransform = { kind: 'move', dx, dy };
-    strokeEngine.previewTransform(state.selectedIds, state.lastTransform);
+    // A selection can be pure non-stroke shapes now (delta #34), and an
+    // empty preview still clears the world-sized preview canvas every
+    // frame — expensive for nothing on iPad (see stroke.js delta #28).
+    if (state.selectedIds.size) {
+      strokeEngine.previewTransform(state.selectedIds, state.lastTransform);
+    }
     // update bbox view live
     const b = state.bboxAtDragStart;
     state.bbox = { x: b.x + dx, y: b.y + dy, w: b.w, h: b.h };
@@ -389,6 +501,13 @@ export function createSelectionEngine({
   function commitDrag() {
     const t = state.lastTransform;
     if (!t) return;
+    if (!state.selectedIds.size) {
+      // Non-stroke-only selection: nothing for the engine to bake, the
+      // host already moved its shapes. Just resync the chrome.
+      state.lastTransform = null;
+      recomputeBBoxFromSelection();
+      return;
+    }
     if (t.kind === 'move') {
       strokeEngine.commitTransform(state.selectedIds, (x, y) => [x + t.dx, y + t.dy]);
     } else if (t.kind === 'scale') {
@@ -427,6 +546,9 @@ export function createSelectionEngine({
     const p = clientToSvg(e);
     state.dragPointerId = e.pointerId;
     state.dragStart = p;
+    state.dragStartClient = { x: e.clientX, y: e.clientY };
+    state.dragWasTouch = e.pointerType === 'touch';
+    state.moveSlopOk = false;
     state.bboxAtDragStart = state.bbox ? { ...state.bbox } : null;
 
     if (target === 'delete') {
@@ -461,6 +583,20 @@ export function createSelectionEngine({
       return;
     }
 
+    // Hush delta #35: with a live selection, a finger landing on empty
+    // canvas grabs the selection rather than starting a new region —
+    // dragging moves it from anywhere, lifting without dragging clears
+    // it (see onPointerUp). Tap-then-sweep is how you select something
+    // else. Pen and mouse fall through to the lasso, so desktop and a
+    // deliberately-chosen Lasso tool are unchanged. (Outside pen mode
+    // this branch is unreachable anyway: the SVG root doesn't capture,
+    // so only the bbox and handles ever route here.)
+    if (state.dragWasTouch && state.bbox && (state.selectedIds.size > 0 || state.extraBBox)) {
+      state.mode = 'move';
+      if (onDragStart) onDragStart('move', state.selectedIds);
+      return;
+    }
+
     // 'canvas' → start a new lasso
     clearSelection();
     state.mode = 'lasso';
@@ -482,7 +618,24 @@ export function createSelectionEngine({
       updateLassoView();
       return;
     }
+    if (state.mode === 'marquee') {
+      updateMarquee(p);
+      return;
+    }
     if (state.mode === 'move') {
+      // Hush delta #35: hold the preview until the contact has really
+      // travelled, so a tap that wobbles neither nudges the selection
+      // nor stops reading as a tap. A move handed in via
+      // startMoveAtPointer pre-satisfies this — it only got here by
+      // crossing a larger drift threshold in the stroke engine.
+      if (!state.moveSlopOk) {
+        const c = state.dragStartClient;
+        if (c) {
+          const cdx = e.clientX - c.x, cdy = e.clientY - c.y;
+          if (cdx * cdx + cdy * cdy < MOVE_SLOP_2) return;
+        }
+        state.moveSlopOk = true;
+      }
       applyMovePreview(p.x - state.dragStart.x, p.y - state.dragStart.y);
       return;
     }
@@ -503,13 +656,18 @@ export function createSelectionEngine({
     const prevMode = state.mode;
     state.dragPointerId = null;
 
-    if (prevMode === 'lasso') {
+    if (prevMode === 'lasso' || prevMode === 'marquee') {
       state.mode = 'idle';
       selectFromLasso();
       return;
     }
     if (prevMode === 'move' || prevMode === 'resize' || prevMode === 'rotate') {
       state.mode = 'idle';
+      // Hush delta #35: a finger that grabbed the selection and let go
+      // without dragging it is a tap — the deselect gesture. Only for
+      // `move`: a stationary press on a resize / rotate handle is a
+      // mis-grab, not a request to drop the selection.
+      const wasTap = prevMode === 'move' && state.dragWasTouch && !state.lastTransform;
       commitDrag();
       state.resizeHandle = null;
       state.bboxAtDragStart = null;
@@ -519,6 +677,7 @@ export function createSelectionEngine({
       // axis-aligned.
       bboxGroup.removeAttribute('transform');
       if (onDragEnd) onDragEnd();
+      if (wasTap && onRegionTap) onRegionTap();
       return;
     }
     state.mode = 'idle';
@@ -571,8 +730,49 @@ export function createSelectionEngine({
       updateLassoView();
       try { svg.setPointerCapture(pointerId); } catch {}
     },
+    // Hush delta #33: same handoff for the rectangle marquee. A single
+    // finger drifting in pen mode (stroke.js) lands here with the
+    // contact's anchor point; move / up events for that pointerId then
+    // flow through the shared lasso path.
+    startMarqueeAtPointer(pointerId, point) {
+      state.active = true;
+      state.mode = 'marquee';
+      state.dragPointerId = pointerId;
+      state.dragStart = point;
+      state.bboxAtDragStart = null;
+      clearSelection();
+      state.marqueeAnchor = { x: point.x, y: point.y };
+      state.lassoPts = [[point.x, point.y]];
+      updateLassoView();
+      try { svg.setPointerCapture(pointerId); } catch {}
+    },
+    // Hush delta #35: adopt a move that started outside this engine —
+    // stroke.js's finger-drift promotion, where the contact is already
+    // past a drift threshold, so the slop gate starts satisfied.
+    // Returns false when there's no bbox to move (the caller falls back
+    // to sweeping a new region).
+    startMoveAtPointer(pointerId, point) {
+      if (!state.bbox) return false;
+      state.active = true;
+      state.mode = 'move';
+      state.dragPointerId = pointerId;
+      state.dragStart = point;
+      state.dragStartClient = null;
+      state.dragWasTouch = true;
+      state.moveSlopOk = true;
+      state.bboxAtDragStart = { ...state.bbox };
+      try { svg.setPointerCapture(pointerId); } catch {}
+      if (onDragStart) onDragStart('move', state.selectedIds);
+      return true;
+    },
     hasSelection() {
       return state.selectedIds.size > 0;
+    },
+    // True while a lasso / marquee is mid-gesture. The host's selection
+    // bridge checks this before pushing a selection down: an update
+    // that lands now would clear the in-flight polygon.
+    isRegionActive() {
+      return state.mode === 'lasso' || state.mode === 'marquee';
     },
     getSelectedIds() {
       return state.selectedIds;
@@ -597,11 +797,28 @@ export function createSelectionEngine({
       const present = new Set();
       for (const s of strokeEngine.getStrokes()) if (next.has(s.id)) present.add(s.id);
       state.selectedIds = present;
-      if (present.size === 0) {
+      if (present.size === 0 && !state.extraBBox) {
         clearSelection();
       } else {
         recomputeBBoxFromSelection();
       }
+    },
+    // Hush delta #34: bounds of the selected shapes the engine doesn't
+    // own (text, images, drag-areas), in engine-local coords. Unioned
+    // into the bbox so the chrome frames the whole selection and a
+    // bbox grab moves all of it; pass null when the selection is pure
+    // strokes. Call before setSelectedIds so one recompute sees both.
+    setExternalBounds(bbox) {
+      state.extraBBox = bbox ? { x: bbox.x, y: bbox.y, w: bbox.w, h: bbox.h } : null;
+      recomputeBBoxFromSelection();
+    },
+    // Hush delta #34: hide the resize + rotate handles while keeping
+    // the bbox. Set when the selection reaches past what the engine can
+    // transform — scaling would move the strokes and leave the text
+    // shapes at their original size.
+    setHandlesHidden(hidden) {
+      state.handlesHidden = !!hidden;
+      updateBBoxView();
     },
     // Toggle whether the bbox rect itself absorbs clicks. The handles
     // and rotate handle stay interactive regardless; this only
@@ -667,6 +884,7 @@ export function createSelectionEngine({
     },
     cancelActive() {
       const wasDragging = state.mode === 'move' || state.mode === 'resize' || state.mode === 'rotate';
+      const wasRegion = state.mode === 'lasso' || state.mode === 'marquee';
       if (state.mode === 'idle') return;
       // If a live preview transform is applied, undo it in the DOM.
       if (wasDragging) {
@@ -681,7 +899,11 @@ export function createSelectionEngine({
       state.bboxAtDragStart = null;
       state.rotateAnchor = null;
       clearLasso();
-      if (wasDragging && onDragEnd) onDragEnd();
+      if (wasDragging && onDragEnd) onDragEnd(true);
+      // A gesture stole the region before it resolved — nothing was
+      // selected, so the host's transient select mode has to unwind or
+      // the user is stranded out of their brush.
+      if (wasRegion && onRegionCancel) onRegionCancel();
     },
   };
 }

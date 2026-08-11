@@ -30,6 +30,7 @@ import { brushUrl } from "./brush-urls";
 import { createDrawingDom } from "./drawing-layer-dom";
 import { createSelectionStyleSession } from "./selection-style";
 import { createSelectionBridge } from "./selection-bridge";
+import { createRegionSelect } from "./region-select";
 import type { DrawingLayer, EngineTool, SelectionStyleEntry, SelectionStylePatch } from "./drawing-layer-types";
 import { createPocketBlit } from "./pocket-blit";
 import { createSelectionDragController } from "./selection-drag";
@@ -113,20 +114,6 @@ export function createDrawingLayer({
     originY: dom.originY,
     worldSize: WORLD_SIZE_MIN,
   };
-
-  // Tracks the sub-tool the user was on before the long-press handoff
-  // promoted them into select mode. Restored when the lasso misses or
-  // the user taps away to deselect — mirrors the reference demo's
-  // `transientSelect` flag. Null when no transient select is active
-  // (e.g. the user reached select mode via the main toolbar Lasso
-  // button, in which case we don't want to auto-exit on deselect).
-  let transientPrevSubTool: "draw" | "erase" | "slice" | null = null;
-  function restoreFromTransientSelect(): void {
-    if (!transientPrevSubTool) return;
-    const prev = transientPrevSubTool;
-    transientPrevSubTool = null;
-    if (state.drawingSubTool === "select") state.setDrawingSubTool(prev);
-  }
 
   let selectHintTimer: ReturnType<typeof setTimeout> | null = null;
   function flashSelectHint(localPt: { x: number; y: number }): void {
@@ -214,6 +201,17 @@ export function createDrawingLayer({
   // a lasso, but selection engine needs the stroke engine first.
   const selectionBox: { current: ReturnType<typeof createSelectionEngine> | null } = { current: null };
 
+  // Pen-mode region selection + transient sub-tool + mixed-selection
+  // drag glue. Lives in region-select.ts; see that file's header for
+  // why the engine no longer decides what a lasso selected.
+  const region = createRegionSelect({
+    state, anchor, selectionBox, flashHint: flashSelectHint,
+    // Forward refs: both engines are constructed below, and the pen
+    // resume path needs them synchronously inside a pointerdown.
+    setEngineTool: (t) => strokeEngine.setTool(t),
+    setSelectionEventActive: (a) => selectionBox.current?.setEventActive(a),
+  });
+
   const strokeEngine = createStrokeEngine({
     svg,
     doneCanvas,
@@ -235,14 +233,20 @@ export function createDrawingLayer({
       // otherwise tapping inside the bbox both moves the selection AND
       // starts a new stroke. The previous sub-tool is saved so we can
       // restore it when the user deselects (lasso misses, or tap-away).
-      if (state.drawingSubTool !== "select") {
-        transientPrevSubTool = state.drawingSubTool as "draw" | "erase" | "slice";
-        state.setDrawingSubTool("select");
-      }
+      region.beginRegionGesture();
       const sel = selectionBox.current;
       if (sel) sel.startLassoAtPointer(pointerId, point);
       flashSelectHint(point);
     },
+    // Hush delta #33: a finger dragged instead of holding — sweep a
+    // rectangle marquee rather than a freehand loop.
+    onFingerDragSelect: region.onFingerDragSelect,
+    // Hush delta #33: the pencil always draws — a pen contact hands
+    // back the brush a finger gesture borrowed and starts the stroke.
+    onPenResumeDraw: region.onPenResumeDraw,
+    // Hush delta #33: a bare finger tap deselects, the same as tapping
+    // empty canvas under the Select tool or the Lasso sub-tool.
+    onFingerTap: region.onFingerTap,
     onStrokeAdded: (stroke: EngineStroke, _index: number) => {
       const shim = shimBox.current;
       if (!shim) return;
@@ -309,42 +313,36 @@ export function createDrawingLayer({
       // Mirror into Hush's state.selectedIds so anything that reads
       // hush selection (selection toolbar, Cmd+G group, Delete, etc.)
       // sees the same state.
-      bridgeEngineSelectionToState();
-      restoreFromTransientSelect();
+      state.selectedIds = new Set();
+      state.notify("selectedIds");
+      region.restoreTransientSubTool();
     },
-    onLassoComplete: ({ selected }) => {
-      if (selected) expandSelectionToGroups();
-      // Bridge regardless — a lasso that hits nothing clears engine
-      // selection; we want state.selectedIds to track.
-      bridgeEngineSelectionToState();
-      // A miss (tap on empty canvas, or a drag that found nothing)
-      // should drop us back into the previous sub-tool so the user
-      // can keep drawing without going through the main toolbar.
-      if (!selected) restoreFromTransientSelect();
-    },
+    // Hush delta #32: the polygon comes up here instead of the engine
+    // resolving it against strokes — Hush hit-tests every shape type
+    // (see region-select.ts) and the bridge pushes the stroke subset
+    // back down for the bbox.
+    onLassoRegion: region.onLassoRegion,
     onSelectionDeleted: () => {
       // engine.removeStrokes fires its own onStrokesRemoved callback,
       // which pushes to history + removes from state.shapes. Also
       // clear state.selectedIds so Hush's selection toolbar hides.
       bridgeEngineSelectionToState();
-      restoreFromTransientSelect();
+      region.restoreTransientSubTool();
     },
-    // Engine-driven drag (pen-mode bbox grab). Hide Hush's gray
-    // group highlight + selection toolbar for the duration so the
-    // engine's bbox + handles are the only chrome moving — both
-    // reappear at the committed position on release. Avoids the
-    // "two boxes lagging" feel when one tracks and the other
-    // doesn't.
-    onDragStart: () => {
-      if (state.strokeEngineDragging) return;
-      state.strokeEngineDragging = true;
-      state.notify("strokeEngineDragging");
-    },
-    onDragEnd: () => {
-      if (!state.strokeEngineDragging) return;
-      state.strokeEngineDragging = false;
-      state.notify("strokeEngineDragging");
-    },
+    // Engine-driven drag (pen-mode bbox grab). Hides Hush's own
+    // selection chrome for the duration, and carries the non-stroke
+    // half of a mixed selection alongside the engine's stroke preview
+    // — see region-select.ts.
+    onDragStart: region.onEngineDragStart,
+    onDragMove: region.onEngineDragMove,
+    onDragEnd: region.onEngineDragEnd,
+    // Hush delta #35: a finger grabbed the selection and let go without
+    // dragging it — same tap, same dismissal as everywhere else.
+    onRegionTap: region.onFingerTap,
+    // A second finger promoted the burst into a pan / pinch before the
+    // region resolved — give the user back the brush the gesture
+    // borrowed, or they're stuck in select mode with nothing selected.
+    onRegionCancel: region.restoreTransientSubTool,
   });
 
   /** Mirror the drawing engine's current selected ids into Hush's
@@ -377,16 +375,6 @@ export function createDrawingLayer({
   }
   selectionBox.current = selectionEngine;
 
-  // If the user manually changes the sub-tool (brush slot, Erase, Slice,
-  // or the main toolbar's Pen/Lasso), clear the transient flag so we
-  // don't later "restore" them to a stale prior sub-tool on deselect.
-  const onSubToolChangeForTransient = ((e: CustomEvent) => {
-    const keys: string[] = (e.detail && e.detail.keys) || [];
-    if (!keys.includes("drawingSubTool")) return;
-    if (state.drawingSubTool !== "select") transientPrevSubTool = null;
-  }) as EventListener;
-  state.addEventListener("change", onSubToolChangeForTransient);
-
   // Two/three-finger touch → undo/redo on iPad. Two-finger drift
   // promotes the burst into a pan — forwarded up to the notebook so
   // state.camera picks up the motion.
@@ -404,27 +392,6 @@ export function createDrawingLayer({
     onPinchMove: (mid: { x: number; y: number }, dist: number, angle: number) => { onTouchPinchMove && onTouchPinchMove(mid, dist, angle); },
     onPinchEnd: () => { onTouchPinchEnd && onTouchPinchEnd(); },
   });
-
-  /** Pull every stroke that shares a group with any currently-selected
-   *  stroke into the selection. Keeps move/resize/delete/style ops
-   *  hitting the whole group without engine-level awareness. */
-  function expandSelectionToGroups(): void {
-    const ids = selectionEngine.getSelectedIds();
-    if (!ids.size) return;
-    const groups = new Set<string>();
-    for (const s of strokeEngine.getStrokes() as EngineStroke[]) {
-      if (ids.has(s.id) && s.groupId) groups.add(s.groupId);
-    }
-    if (!groups.size) return;
-    let added = false;
-    for (const s of strokeEngine.getStrokes() as EngineStroke[]) {
-      if (s.groupId && groups.has(s.groupId) && !ids.has(s.id)) {
-        ids.add(s.id);
-        added = true;
-      }
-    }
-    if (added) selectionEngine.refreshBBox();
-  }
 
   // ---------- canvas sizing + re-anchoring ----------
 
@@ -465,7 +432,10 @@ export function createDrawingLayer({
   const reanchorCtl = createReanchor({
     anchor,
     strokeEngine: strokeEngine as unknown as Parameters<typeof createReanchor>[0]["strokeEngine"],
-    refreshSelectionBBox: () => selectionEngine.refreshBBox(),
+    // A re-anchor slides the engine's local origin, so the bridge's
+    // cached non-stroke bounds (delta #34) go stale with it — re-derive
+    // the whole selection rather than just recomputing stroke bounds.
+    refreshSelectionBBox: () => selectionBridge.refresh(),
     pocketStash, pocketStashCtx,
     sizeCanvases,
     getDpr: currentDpr,
@@ -524,7 +494,7 @@ export function createDrawingLayer({
   // Without this ordering, a flow-snap delta applied after pointerup
   // leaves the engine bbox at the pre-snap position until the next
   // selection change.
-  const selectionBridge = createSelectionBridge({ state, selectionEngine, shimBox });
+  const selectionBridge = createSelectionBridge({ state, selectionEngine, shimBox, anchor });
 
   // ---------- public API ----------
 
@@ -662,7 +632,7 @@ export function createDrawingLayer({
 
   function destroy(): void {
     shim.destroy();
-    state.removeEventListener("change", onSubToolChangeForTransient);
+    region.destroy();
     selectionBridge.destroy();
     wrapper.remove();
     if (selectHintTimer) { clearTimeout(selectHintTimer); selectHintTimer = null; }

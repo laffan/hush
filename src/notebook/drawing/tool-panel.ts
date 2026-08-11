@@ -1,8 +1,11 @@
 /* src/notebook/drawing/tool-panel.ts
  *
  * Drawing-tools controller for the notebook bar. Appends the divider,
- * brush slots, slice / erase, and lasso buttons directly onto the
- * bottom toolbar so the bar reads as one continuous strip.
+ * brush slots, and slice / erase buttons directly onto the bottom
+ * toolbar so the bar reads as one continuous strip. The Lasso button is
+ * the exception: it's inserted beside the rectangle Select button at
+ * the head of the bar, since both are selection gestures over the same
+ * region hit test rather than ink tools.
  *
  * After the toolbar redesign the only end-cap that lives next to the
  * bar is a drag handle. The orientation toggle, background-settings
@@ -119,7 +122,15 @@ export function createDrawingToolPanel(
       if (lassoFlyoutOpen) closeLassoFlyout();
     },
   });
-  bottomToolbar.appendChild(lassoBtn);
+  // Lasso sits immediately right of the rectangle Select button rather
+  // than at the end of the drawing tools. Both are selection gestures
+  // over the same region hit test (selection-region.ts) — rectangle vs.
+  // freehand — so they belong side by side, ahead of the divider that
+  // starts the ink tools. Falls back to appending if the host bar has
+  // no Select button (a capability-reduced canvas).
+  const selectBtn = bottomToolbar.querySelector('[data-nb-tool="select"]');
+  if (selectBtn) bottomToolbar.insertBefore(lassoBtn, selectBtn.nextSibling);
+  else bottomToolbar.appendChild(lassoBtn);
 
   // ----- Drag handle (thin strip on the canvas-facing edge) ----------
   // Replaces the previous end-cap pill. The strip spans the bar's main

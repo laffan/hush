@@ -28,6 +28,7 @@ import {
   applyResize, applyCropResize, openLinkRun,
 } from "./state-helpers";
 import { computePocketLayout, POCKET_ZONE_WIDTH } from "./utils";
+import { collectShapesInPolygon, rectPolygon } from "./selection-region";
 // PERF-HUD (temporary): tracer singleton — see perf-hud.ts.
 import { perf } from "./perf-hud";
 
@@ -42,6 +43,11 @@ export interface EditingText {
 
 export type ResizeHandle = "nw" | "ne" | "sw" | "se" | "n" | "s" | "e" | "w";
 const HANDLE_SIZE = 8;
+/** Client-px drift (squared) a finger must cross before a selection drag
+ *  started on empty canvas actually moves anything. Mirrors MOVE_SLOP_2
+ *  in the drawing engine's selection.js so the two surfaces agree on
+ *  what separates a tap from a drag. */
+const TOUCH_SELECT_SLOP_2 = 25; // (5 CSS px)^2
 
 export type BackgroundPattern = "grid" | "dot-grid" | "lined" | "isometric" | "blank";
 
@@ -692,6 +698,11 @@ export class DrawingState extends EventTarget {
    *  shim pauses — otherwise the engine keeps its strokes hidden
    *  for the duration of the drag. */
   private _dragStartFired = false;
+  /** A selection drag a finger began on empty canvas (Select tool). Held
+   *  until the contact clears TOUCH_SELECT_SLOP_2 so a tap's wobble
+   *  can't nudge the selection; `moved` staying false on release is how
+   *  the gesture reads as a tap, which deselects. */
+  private _touchSelectDrag: { client: Point; moved: boolean } | null = null;
   private _isResizing = false;
   private _resizeHandle: ResizeHandle | null = null;
   private _resizeStart: Point = { x: 0, y: 0 };
@@ -1445,6 +1456,25 @@ export class DrawingState extends EventTarget {
           this._captureReorderOrigins();
           this._dragCmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
         }
+      } else if (e.pointerType === "touch" && !e.shiftKey && this.selectedIds.size > 0) {
+        // A finger landing on empty canvas with something selected drags
+        // the selection rather than sweeping a new marquee — the same
+        // rule pen mode follows, where pinning a fingertip on a small
+        // bbox is the hard part. Tap-then-sweep is how you select
+        // something else; the tap fires from pointer-up (below) once we
+        // know the contact didn't travel. A drag that lands ON a shape
+        // still grabs that shape, and mouse / pen keep the marquee, so
+        // desktop is unchanged.
+        this._isDragging = true;
+        this._dragStart = canvasPt;
+        this._dragOrigin = canvasPt;
+        this._touchSelectDrag = { client: { x: e.clientX, y: e.clientY }, moved: false };
+        // Leave _dragStartFired false: the drag-start hook fires from
+        // the first real movement, so a tap never opens (and closes) an
+        // engine preview transform for nothing.
+        this._setupDragAreaResize();
+        this._captureReorderOrigins();
+        this._dragCmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
       } else {
         if (!e.shiftKey) { this.selectedIds = new Set(); this.notify("selectedIds"); }
         this._selectStart = canvasPt;
@@ -1574,6 +1604,17 @@ export class DrawingState extends EventTarget {
     }
 
     if (this._isDragging && (this.tool === "select" || this.brainstormMode)) {
+      // Finger drag started on empty canvas: nothing moves until the
+      // contact has really travelled. Measured in client px because the
+      // canvas-space threshold below is world units — at low zoom a
+      // pixel of finger wobble is several world px.
+      const tsd = this._touchSelectDrag;
+      if (tsd && !tsd.moved) {
+        const cdx = e.clientX - tsd.client.x;
+        const cdy = e.clientY - tsd.client.y;
+        if (cdx * cdx + cdy * cdy < TOUCH_SELECT_SLOP_2) return;
+        tsd.moved = true;
+      }
       const dx = canvasPt.x - this._dragStart.x;
       const dy = canvasPt.y - this._dragStart.y;
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
@@ -1780,6 +1821,11 @@ export class DrawingState extends EventTarget {
 
     if (this._isDragging) {
       this._isDragging = false;
+      // A finger that grabbed the selection from empty canvas and let go
+      // without travelling is a tap — the deselect gesture. Resolved
+      // after the drag teardown below so the two can't half-apply.
+      const touchTap = !!this._touchSelectDrag && !this._touchSelectDrag.moved;
+      this._touchSelectDrag = null;
       // Only call onShapeDragEnd if a start actually fired — a
       // pocket-exit that never reached a real drag move shouldn't
       // emit an end with no start.
@@ -2014,6 +2060,16 @@ export class DrawingState extends EventTarget {
       }
       this.flowDropTargetId = null;
 
+      // The tap that ends a finger's grab on the selection: nothing
+      // moved, so there's no shape change to record — just drop the
+      // selection. Skipping recordHistory here also keeps a tap from
+      // spending an undo step on a no-op checkpoint.
+      if (touchTap) {
+        this.selectedIds = new Set();
+        this.notify("selectedIds");
+        return;
+      }
+
       this.recordHistory();
       this.notify("shapes");
       return;
@@ -2029,40 +2085,14 @@ export class DrawingState extends EventTarget {
     }
 
     if ((this.tool === "select" || this.brainstormMode) && this.selectionBox) {
+      // The marquee is just a 4-point region — same hit test the
+      // pen-mode lasso and finger marquee run (selection-region.ts),
+      // so all three agree on what "inside" means for every shape type.
       const box = normalizeBox(this.selectionBox);
-      const hiddenLayerIds = this._hiddenLayerIds();
-      const hits = this.shapes.filter((s) =>
-        !(s.layerId && hiddenLayerIds.has(s.layerId)) &&
-        boundsOverlap(getShapeBounds(s, this.fontFamily), box),
-      );
-      // Group-aware expansion: a grouped shape's members move / style
-      // together, so the marquee should always pick them up as a unit.
-      // Without this, partial overlap inside a group leaves the other
-      // members unselected and the next drag splits the group apart.
-      const hitIds = new Set<string>();
-      const touchedGroups = new Set<string>();
-      for (const s of hits) {
-        hitIds.add(s.id);
-        if (s.groupId) touchedGroups.add(s.groupId);
-      }
-      if (touchedGroups.size > 0) {
-        for (const s of this.shapes) {
-          if (s.groupId && touchedGroups.has(s.groupId) &&
-              !(s.layerId && hiddenLayerIds.has(s.layerId))) {
-            hitIds.add(s.id);
-          }
-        }
-      }
-      if (e.shiftKey) {
-        const next = new Set(this.selectedIds);
-        hitIds.forEach((id) => next.add(id));
-        this.selectedIds = next;
-      } else if (hitIds.size > 0) {
-        this.selectedIds = new Set(hitIds);
-      }
+      const poly = rectPolygon({ x: box.minX, y: box.minY }, { x: box.maxX, y: box.maxY });
       this.selectionBox = null;
       this._selectStart = null;
-      this.notify("selectedIds");
+      this.selectShapesInRegion(poly, { additive: e.shiftKey });
       this.notify("selectionBox");
     } else if (this.tool === "drag-area" && this.creatingDragArea) {
       const { start, end } = this.creatingDragArea;
@@ -2089,6 +2119,92 @@ export class DrawingState extends EventTarget {
       this.notify("shapes");
       this.notify("creatingDragArea");
     }
+  }
+
+  /** Select every shape a world-space region polygon touches — the one
+   *  entry point behind all three sweep gestures (Select-tool marquee,
+   *  pen-mode finger marquee, pen-mode lasso). Returns how many shapes
+   *  the region hit so the caller can treat "nothing" as a dismissal;
+   *  the drawing layer uses that to drop the user back into their brush.
+   *
+   *  Hit rules and group promotion live in selection-region.ts. */
+  selectShapesInRegion(poly: Point[], opts?: { additive?: boolean }): number {
+    const hits = collectShapesInPolygon(this.shapes, poly, {
+      fontFamily: this.fontFamily,
+      hiddenLayerIds: this._hiddenLayerIds(),
+    });
+    if (opts?.additive) {
+      const next = new Set(this.selectedIds);
+      for (const id of hits) next.add(id);
+      this.selectedIds = next;
+    } else {
+      this.selectedIds = hits;
+    }
+    this.notify("selectedIds");
+    return hits.size;
+  }
+
+  /** Snapshot of the non-stroke shapes an engine-driven bbox drag has
+   *  to carry. Strokes ride the engine's preview transform; everything
+   *  else is repositioned from this snapshot on each tick, so the two
+   *  halves of a mixed selection stay locked together. */
+  private _extMoveSnapshot: Map<string, Shape> | null = null;
+  private _extMoveDirty = false;
+
+  /** Begin an engine-driven move of the current selection (the user
+   *  grabbed the stroke engine's bbox in pen mode). */
+  beginExternalMove(): void {
+    const areaIds = new Set<string>();
+    for (const s of this.shapes) {
+      if (this.selectedIds.has(s.id) && s.type === "drag-area") areaIds.add(s.id);
+    }
+    const snap = new Map<string, Shape>();
+    for (const s of this.shapes) {
+      if (s.type === "draw" || s.pocketed) continue;
+      if (this.selectedIds.has(s.id) || (s.parentId && areaIds.has(s.parentId))) snap.set(s.id, s);
+    }
+    this._extMoveSnapshot = snap.size > 0 ? snap : null;
+    this._extMoveDirty = false;
+  }
+
+  /** Apply the total offset of an engine-driven move. Absolute from the
+   *  snapshot rather than incremental, so a dropped frame can't drift. */
+  updateExternalMove(dx: number, dy: number): void {
+    const snap = this._extMoveSnapshot;
+    if (!snap) return;
+    if (dx === 0 && dy === 0 && !this._extMoveDirty) return;
+    this._extMoveDirty = true;
+    this.shapes = this.shapes.map((s) => {
+      const orig = snap.get(s.id);
+      return orig ? moveShape(orig, dx, dy) : s;
+    });
+    this.notify("shapes");
+  }
+
+  /** Finish an engine-driven move. `cancelled` (a multi-touch gesture
+   *  claimed the burst mid-drag) puts the shapes back where they
+   *  started — the engine rolls its stroke preview back the same way,
+   *  and half a committed move is worse than none. */
+  endExternalMove(cancelled = false): void {
+    const snap = this._extMoveSnapshot;
+    const moved = this._extMoveDirty;
+    if (!snap) return;
+    this._extMoveSnapshot = null;
+    this._extMoveDirty = false;
+    if (!moved) return;
+    if (cancelled) {
+      this.shapes = this.shapes.map((s) => snap.get(s.id) || s);
+      this.notify("shapes");
+      return;
+    }
+    // The engine commits its own stroke transform first and records
+    // history from that callback — a second checkpoint here would cost
+    // the user two undos for one drag. Only record when the selection
+    // was pure non-stroke shapes, which the engine never touches.
+    for (const s of this.shapes) {
+      if (s.type === "draw" && this.selectedIds.has(s.id)) return;
+    }
+    this.recordHistory();
   }
 
   /** Drop any in-flight pointer interaction without committing it.
@@ -2127,6 +2243,7 @@ export class DrawingState extends EventTarget {
     }
     if (this._isDragging) {
       this._isDragging = false;
+      this._touchSelectDrag = null;
       if (this._dragStartFired && this.onShapeDragEnd) this.onShapeDragEnd();
       this._dragStartFired = false;
       this._dragAreaResizeOriginals.clear();

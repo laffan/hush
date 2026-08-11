@@ -2,9 +2,12 @@
  *
  * Bottom toolbar host. Owns the main canvas-tool buttons (select,
  * text, drag-area, brainstorm) plus the layers and bookmarks panels.
- * The drawing-tools section (divider + brush slots + slice / erase /
- * lasso) is appended to this same DOM element by createDrawingToolPanel,
- * so the bar reads as one continuous strip — no inter-pill seam.
+ * The drawing-tools section (divider + brush slots + slice / erase) is
+ * appended to this same DOM element by createDrawingToolPanel, so the
+ * bar reads as one continuous strip — no inter-pill seam. That
+ * controller also slots its Lasso button in beside Select (each tool
+ * button carries `data-nb-tool` so it can find the anchor): rectangle
+ * and freehand select are one pair, ahead of the ink tools.
  *
  * Snap positions: state.drawingToolbarPosition is one of
  *   "top"    → pinned to top edge, centered horizontally (default)
@@ -60,6 +63,10 @@ export function createToolbar(state: DrawingState): HTMLElement {
         state.notify("brainstormMode");
       },
     });
+    // Addressable from the drawing-tools controller, which slots the
+    // Lasso button in beside Select rather than appending it at the
+    // far end of the bar (the two selection tools read as a pair).
+    btn.dataset.nbTool = def.tool;
     buttons.set(def.tool, btn);
     return btn;
   }

@@ -7,6 +7,8 @@
 
 src/notebook/drawing/engine/stroke.js  # — Ported from upstream demo. Documented "deltas" track edits relative to upstream file boundaries; splitting would break the diff-check workflow described in README-DRAWING.md.
 
+src/notebook/drawing/engine/selection.js  # — Same reason as stroke.js: ported from the upstream demo, with deltas (#4/#7/#9/#15/#16/#32/#33/#34) tracked against upstream file boundaries. Crossed the cap adding the region handoff + marquee mode; the Hush-side half of that work lives outside engine/ (selection-region.ts, region-select.ts).
+
 src/notebook/state.ts  # — Pointer-interaction state machine (~lines 465–960) is tightly coupled to shapes/selectedIds/camera/undo. Extraction was evaluated and judged to add a conceptual seam without proportional gain. Revisit if the state machine grows further.
 
 src/notebook/renderer.ts  # — Single cohesive canvas draw pipeline (background → grid → shapes → selection chrome). Splitting would scatter z-order ordering across files for no real gain; sits beside state.ts which is excepted for the same reason.

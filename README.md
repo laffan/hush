@@ -30,7 +30,7 @@ Under the minimal surface is a full writing system: a Markdown editor, canvas-ba
 
 Notebooks are infinite pan-and-zoom canvases for visual thinking: text shapes (with Markdown), images, freehand drawing with pressure-sensitive brushes, drag-area containers, layers, and camera bookmarks. Text shapes connect into **flowcharts** with directed arrows; a **shelf** panel lists every shape as an outline; a **pocket** stashes shapes off to the side; **Brainstorm mode** captures rapid-fire ideas.
 
-On iPad, only the Apple Pencil draws — fingers pan, pinch, and tap to undo. Handwritten strokes can be **recognized into text** on-device (ML Kit on iPad; Apple Vision for images anywhere). Any selection can be **rasterized** into a single image that keeps tracking light/dark appearance.
+On iPad, only the Apple Pencil draws — fingers pan, pinch, tap to undo, and drag out a selection box without leaving the brush. Handwritten strokes can be **recognized into text** on-device (ML Kit on iPad; Apple Vision for images anywhere). Any selection can be **rasterized** into a single image that keeps tracking light/dark appearance.
 
 Notebooks export as `.hushnote` (lossless), PNG, JPG, or PDF.
 
