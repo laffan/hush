@@ -103,7 +103,10 @@ export interface DrawingLayer {
   // For DrawShape selections, Hush's select-drag routes move updates
   // through the engine's previewTransform so dragging N strokes is
   // ~free (one GPU preview per frame, no setStrokePoints churn).
-  beginSelectionDrag(hushIds: Iterable<string>): void;
+  /** Hand the engine the DrawShapes a Hush-side drag is moving. Returns
+   *  the ids it adopted into its preview transform, which the caller
+   *  then leaves untouched for the duration of the drag. */
+  beginSelectionDrag(hushIds: Iterable<string>): Set<string> | null;
   updateSelectionDrag(totalDx: number, totalDy: number): void;
   endSelectionDrag(): void;
 

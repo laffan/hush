@@ -127,7 +127,9 @@ every other shape through `DrawingState.updateExternalMove`, off one drag-start 
 Resize and rotate hide for those selections rather than scaling the ink and leaving the
 text behind.
 
-**Select-drag routes through `engine.previewTransform`** instead of per-frame point mutation: begin excludes the dragged strokes from the done canvas and pauses the shim, update is a single CSS/matrix shift on the preview overlay (one composited frame, independent of N), end commits the total offset and resumes. A 500-stroke drag runs at single-stroke frame rate. Double-clicking a stroke selects just that stroke (the one way to pick a member out of a group).
+**Select-drag routes through `engine.previewTransform`** instead of per-frame point mutation: begin excludes the dragged strokes from the done canvas and pauses the shim, update is a single CSS/matrix shift on the preview overlay (one composited frame, independent of N), end commits the total offset and resumes. A 500-stroke drag runs at single-stroke frame rate.
+
+`beginSelectionDrag` returns the ids it adopted, and **DrawingState then holds those shapes still** for the drag — the engine is already drawing them at the offset and bakes the total on release, so rewriting every point every frame allocated a fresh point array per stroke per frame for a result nothing reads (stroke selections draw no Hush-side chrome). That redundant write was the whole reason a marquee-selected stroke drag chopped while the identical lasso-selected drag stayed smooth: the lasso path never enters `handlePointerMove`. Adopting also flips `strokeEngineDragging`, which parks the selection bridge — otherwise it recomputed the engine bbox from every selected point on every frame. A canvas with no drawing layer (or a preview that threw) gets a null back and keeps moving the points itself. Measured on the same 40-of-600-stroke selection: 1.19 → 0.15 ms per drag frame. Double-clicking a stroke selects just that stroke (the one way to pick a member out of a group).
 
 **Pocket stash**: pocketed strokes are hidden from the done canvas (delta #8) and blitted into a separate offscreen stash canvas that the pocket tray renders from.
 

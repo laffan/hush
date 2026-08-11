@@ -35,7 +35,11 @@ interface ShimLike {
 }
 
 export interface SelectionDragController {
-  begin(hushIds: Iterable<string>): void;
+  /** Returns the hush ids the engine adopted into its preview (null when
+   *  none mapped or the preview failed). The caller holds those shapes
+   *  still in `state.shapes` for the drag — the engine is rendering them
+   *  at the live offset and bakes the total on release. */
+  begin(hushIds: Iterable<string>): Set<string> | null;
   update(totalDx: number, totalDy: number): void;
   end(): void;
 }
@@ -50,13 +54,14 @@ export function createSelectionDragController(opts: {
   let dragTotalDx = 0;
   let dragTotalDy = 0;
 
-  function begin(hushIds: Iterable<string>): void {
+  function begin(hushIds: Iterable<string>): Set<string> | null {
     const ids = new Set<number>();
+    const adopted = new Set<string>();
     for (const hid of hushIds) {
       const eid = shim.getEngineStrokeId(hid);
-      if (eid !== undefined) ids.add(eid);
+      if (eid !== undefined) { ids.add(eid); adopted.add(hid); }
     }
-    if (ids.size === 0) return;
+    if (ids.size === 0) return null;
     dragEngineIds = ids;
     dragTotalDx = 0;
     dragTotalDy = 0;
@@ -67,7 +72,10 @@ export function createSelectionDragController(opts: {
       console.warn("beginSelectionDrag: previewTransform failed:", e);
       shim.resumeForDrag();
       dragEngineIds = null;
+      // The caller must keep moving these itself — nothing is previewing them.
+      return null;
     }
+    return adopted;
   }
 
   function update(totalDx: number, totalDy: number): void {

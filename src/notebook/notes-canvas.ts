@@ -476,7 +476,11 @@ export class NotesCanvas {
       for (const s of this.state.shapes) {
         if (s.type === "draw" && ids.has(s.id)) drawIds.push(s.id);
       }
-      if (drawIds.length > 0) dl.beginSelectionDrag(drawIds);
+      if (drawIds.length === 0) return null;
+      // The adopted set flows back into DrawingState, which then holds
+      // those strokes still instead of rewriting every point per frame —
+      // the engine's preview already draws them at the live offset.
+      return dl.beginSelectionDrag(drawIds);
     };
     this.state.onShapeDragMove = (dx, dy) => { dl.updateSelectionDrag(dx, dy); };
     this.state.onShapeDragEnd = () => { dl.endSelectionDrag(); };

@@ -300,7 +300,10 @@ export class DrawingState extends EventTarget {
   // beginSelectionDrag — without this routing, dragging many
   // selected strokes spams per-frame setStrokePoints calls on the
   // engine, which is quadratic in selection size.
-  onShapeDragStart: ((selectedIds: Set<string>) => void) | null = null;
+  /** Returns the ids the drawing engine adopted into its preview, if
+   *  any — those hold still in `shapes` for the duration (see
+   *  `_engineDragIds`). */
+  onShapeDragStart: ((selectedIds: Set<string>) => Set<string> | null | void) | null = null;
   onShapeDragMove: ((totalDx: number, totalDy: number) => void) | null = null;
   onShapeDragEnd: (() => void) | null = null;
 
@@ -698,6 +701,19 @@ export class DrawingState extends EventTarget {
    *  shim pauses — otherwise the engine keeps its strokes hidden
    *  for the duration of the drag. */
   private _dragStartFired = false;
+  /** Selected DrawShapes the stroke engine is previewing for this drag.
+   *  Their points are deliberately NOT rewritten per frame: the engine
+   *  renders them at the live offset on its preview overlay and bakes
+   *  the total into the points on release, so a per-frame rewrite would
+   *  allocate a fresh point array per stroke per frame for a result
+   *  nothing reads. That allocation is what made a marquee-selected
+   *  stroke drag chop while the identical lasso-selected drag — which
+   *  never enters this handler — stayed smooth. */
+  private _engineDragIds: Set<string> | null = null;
+  /** Shape bounds captured once per drag for the flowchart drop-target
+   *  probe. Non-moving geometry can't change mid-drag, and recomputing
+   *  it every frame is a full pass over every point in the notebook. */
+  private _dragProbeBounds: Map<string, Bounds> | null = null;
   /** A selection drag a finger began on empty canvas (Select tool). Held
    *  until the contact clears TOUCH_SELECT_SLOP_2 so a tap's wobble
    *  can't nudge the selection; `moved` staying false on release is how
@@ -1450,8 +1466,7 @@ export class DrawingState extends EventTarget {
           this._dragStart = canvasPt;
           this._dragOrigin = canvasPt;
           // Normal drag (not from pocket): fire the hook right away.
-          if (this.onShapeDragStart) this.onShapeDragStart(this.selectedIds);
-          this._dragStartFired = true;
+          this._beginShapeDrag();
           this._setupDragAreaResize();
           this._captureReorderOrigins();
           this._dragCmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
@@ -1621,10 +1636,7 @@ export class DrawingState extends EventTarget {
         this._dragStart = canvasPt;
         // Fire the deferred onShapeDragStart (unpocket drags defer
         // it so the shim bridges the pocket-exit before pausing).
-        if (!this._dragStartFired && this.onShapeDragStart) {
-          this.onShapeDragStart(this.selectedIds);
-          this._dragStartFired = true;
-        }
+        if (!this._dragStartFired) this._beginShapeDrag();
         if (this.onShapeDragMove) {
           this.onShapeDragMove(
             canvasPt.x - this._dragOrigin.x,
@@ -1676,7 +1688,15 @@ export class DrawingState extends EventTarget {
             if (sh.groupId && followingGroups.has(sh.groupId)) flowDescendants.add(sh.id);
           }
         }
+        const previewed = this._engineDragIds;
         this.shapes = this.shapes.map((s) => {
+          // Strokes riding the engine's preview transform hold still in
+          // the data model — the engine is drawing them at the offset
+          // and bakes the total on release. Rewriting every point every
+          // frame produced nothing anyone reads (stroke selections draw
+          // no Hush-side chrome) and is the whole cost difference
+          // against the engine-driven drag.
+          if (previewed && previewed.has(s.id)) return s;
           if (this.selectedIds.has(s.id)) return moveShape(s, dx, dy);
           if (s.parentId && selectedDragAreaIds.has(s.parentId)) return moveShape(s, dx, dy);
           if (flowDescendants.has(s.id)) return moveShape(s, dx, dy);
@@ -1732,7 +1752,7 @@ export class DrawingState extends EventTarget {
             if (s.id === exclude) continue;
             if (s.pocketed) continue;
             if (s.groupId && draggingGroupIds.has(s.groupId)) continue;
-            const bb = getShapeBounds(s, this.fontFamily);
+            const bb = this._probeBounds(s, flowDescendants, selectedDragAreaIds);
             if (probe.x >= bb.minX && probe.x <= bb.maxX && probe.y >= bb.minY && probe.y <= bb.maxY) {
               target = s;
               break;
@@ -1826,11 +1846,10 @@ export class DrawingState extends EventTarget {
       // after the drag teardown below so the two can't half-apply.
       const touchTap = !!this._touchSelectDrag && !this._touchSelectDrag.moved;
       this._touchSelectDrag = null;
-      // Only call onShapeDragEnd if a start actually fired — a
+      // Only calls onShapeDragEnd if a start actually fired — a
       // pocket-exit that never reached a real drag move shouldn't
       // emit an end with no start.
-      if (this._dragStartFired && this.onShapeDragEnd) this.onShapeDragEnd();
-      this._dragStartFired = false;
+      this._endShapeDrag();
       this._dragAreaResizeOriginals.clear();
       this._dragCmdHeld = false;
       const droppedInPocket = this.pocketInZone;
@@ -2207,6 +2226,53 @@ export class DrawingState extends EventTarget {
     this.recordHistory();
   }
 
+  /** Fire the drag-start hook and record what the drawing engine took
+   *  over. While the engine previews strokes, Hush's own chrome for them
+   *  is suppressed (`strokeEngineDragging`) — that also parks the
+   *  selection bridge, which would otherwise recompute the engine bbox
+   *  from every selected point on every frame of the drag. */
+  private _beginShapeDrag(): void {
+    this._dragStartFired = true;
+    const adopted = this.onShapeDragStart?.(this.selectedIds);
+    this._engineDragIds = adopted && adopted.size > 0 ? adopted : null;
+    if (this._engineDragIds && !this.strokeEngineDragging) {
+      this.strokeEngineDragging = true;
+      this.notify("strokeEngineDragging");
+    }
+  }
+
+  /** Tear down a shape drag: fire the end hook, release the engine
+   *  preview bookkeeping, and drop the per-drag bounds cache. */
+  private _endShapeDrag(): void {
+    if (this._dragStartFired && this.onShapeDragEnd) this.onShapeDragEnd();
+    this._dragStartFired = false;
+    this._dragProbeBounds = null;
+    // Only unset the flag if this drag was the one that set it — an
+    // engine-driven transform owns it independently.
+    const owned = this._engineDragIds !== null;
+    this._engineDragIds = null;
+    if (owned && this.strokeEngineDragging) {
+      this.strokeEngineDragging = false;
+      this.notify("strokeEngineDragging");
+    }
+  }
+
+  /** Bounds for the drop-target probe. Anything actually moving this
+   *  frame is measured live; everything else comes from the per-drag
+   *  cache, so the probe costs one pass over the notebook per drag
+   *  instead of one per frame. Selected shapes never reach here (the
+   *  probe skips them), but flowchart descendants and the children of a
+   *  dragged drag-area do — and they move, so they can't be cached. */
+  private _probeBounds(shape: Shape, flowDescendants: Set<string>, draggedAreaIds: Set<string>): Bounds {
+    if (flowDescendants.has(shape.id)) return getShapeBounds(shape, this.fontFamily);
+    if (shape.parentId && draggedAreaIds.has(shape.parentId)) return getShapeBounds(shape, this.fontFamily);
+    let cache = this._dragProbeBounds;
+    if (!cache) { cache = new Map(); this._dragProbeBounds = cache; }
+    let b = cache.get(shape.id);
+    if (!b) { b = getShapeBounds(shape, this.fontFamily); cache.set(shape.id, b); }
+    return b;
+  }
+
   /** Drop any in-flight pointer interaction without committing it.
    *  Called when a multi-touch gesture (pan/pinch) takes over so the
    *  marquee selection / drag-area / drag / resize state started by
@@ -2244,8 +2310,7 @@ export class DrawingState extends EventTarget {
     if (this._isDragging) {
       this._isDragging = false;
       this._touchSelectDrag = null;
-      if (this._dragStartFired && this.onShapeDragEnd) this.onShapeDragEnd();
-      this._dragStartFired = false;
+      this._endShapeDrag();
       this._dragAreaResizeOriginals.clear();
       this._dragCmdHeld = false;
       this.pocketProximity = 0;

@@ -95,6 +95,15 @@ Layers are notebook-level (every shape type, ordered top-first, hidden/locked pe
 
 A portable layer (`flowchart.ts`) that knows nothing about Hush shape types — `DrawingState` configures it with `getBounds` / `isFlowable` callbacks (only `TextShape`s are flowable; `getBounds` is `unionGroupBounds` so arrows anchor to a whole group's edge, not one stray member). Connect by drag-onto (child), ⌘-drop (merge text into target), or from the inline editor (⌘→ child, ⌘↓ sibling; ⌘← parent, ⌘↑ MRU). Edges sharing a box side fan apart (`edgeOffsets`, scaled by `arrowWidth`); each edge carries a midpoint delete dot; drags pull transitive descendants; `tidy()` re-lays out a subtree. Edges serialize into the envelope; Desktops reuse the layer with authoring disabled and derived, locked edges (see `desktop/` + README-TECHNICAL).
 
+### Dragging a selection
+
+Both drag pipelines — Hush's (`handlePointerMove`) and the engine's
+(`applyMovePreview`) — leave stroke geometry alone while the gesture
+runs and bake the total offset once on release; see README-DRAWING.md.
+Hush's also caches every non-moving shape's bounds for the flowchart
+drop-target probe, which otherwise re-measured every point (and
+re-ran text metrics) in the notebook on every frame of every drag.
+
 ### Selection (one hit test, three gestures)
 
 Every "sweep an area to select" gesture funnels through
