@@ -279,8 +279,8 @@ function defaultLayer(type) {
       // shouldn't. The Phosphor Blob in particular is meant to read as
       // the cursor itself.
       matchCaret: true, lightColor: "#3b82f6", darkColor: "#9ecbff",
-      height: 3, trailSeconds: 3.5, rings: 2,
-      blobSize: 1, blobSpeed: 1, rainbow: false, antialias: true,
+      height: 3, trailSeconds: 3.5, offsetY: 0, rings: 2,
+      blobSize: 1, blobSpeed: 1, blobOffsetX: 0, rainbow: false, antialias: true,
       lightOpacity: 1, darkOpacity: 1,
     };
   }

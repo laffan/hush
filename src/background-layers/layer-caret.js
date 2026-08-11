@@ -55,9 +55,11 @@ export function mountCaretLayer(host, cfg, appearance, ctx, caretSource) {
     intensity: c.intensity,
     height: c.height,
     trailSeconds: c.trailSeconds,
+    offsetY: c.offsetY,
     rings: c.rings,
     blobSize: c.blobSize,
     blobSpeed: c.blobSpeed,
+    blobOffsetX: c.blobOffsetX,
     rainbow: c.rainbow,
     antialias: c.antialias,
   });

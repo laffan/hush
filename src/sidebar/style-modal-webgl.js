@@ -96,9 +96,17 @@ export function bindWebglOptions(container, layer, { onCommit, rerender }) {
 // Per-preset knob bounds, shared by the renderer and the binder.
 const UNDERLINE_HEIGHT = { min: 1, max: 12, step: 0.5, default: 3 };
 const UNDERLINE_TRAIL = { min: 0.5, max: 8, step: 0.1, default: 3.5 };
+// Both offsets are a nudge from the preset's own resting placement, so
+// 0 is the default and the range straddles it.
+const UNDERLINE_OFFSET = { min: -8, max: 12, step: 0.5, default: 0 };
 const HUD_RINGS = { min: 1, max: 10, step: 1, default: 2 };
 const BLOB_SIZE = { min: 0.5, max: 3, step: 0.05, default: 1 };
 const BLOB_SPEED = { min: 0.1, max: 2.5, step: 0.05, default: 1 };
+const BLOB_OFFSET_X = { min: -12, max: 12, step: 0.5, default: 0 };
+
+/** Offset readout — the sign carries the meaning, so 0 shows as "0px"
+ *  and anything above it keeps its "+". */
+const signedPx = (v) => (v > 0 ? "+" : "") + v + "px";
 
 export function renderCaretOptions(layer) {
   const preset = layer.preset || "sparks";
@@ -114,6 +122,8 @@ export function renderCaretOptions(layer) {
   const rings = typeof layer.rings === "number" ? layer.rings : HUD_RINGS.default;
   const blobSize = typeof layer.blobSize === "number" ? layer.blobSize : BLOB_SIZE.default;
   const blobSpeed = typeof layer.blobSpeed === "number" ? layer.blobSpeed : BLOB_SPEED.default;
+  const offsetY = typeof layer.offsetY === "number" ? layer.offsetY : UNDERLINE_OFFSET.default;
+  const blobOffsetX = typeof layer.blobOffsetX === "number" ? layer.blobOffsetX : BLOB_OFFSET_X.default;
   const blobRows = preset !== "blob" ? "" : `
     <div class="style-editor-row">
       <label>Size</label>
@@ -127,6 +137,13 @@ export function renderCaretOptions(layer) {
       <div class="style-slider-group">
         <input type="range" id="style-caret-blobspeed" min="${BLOB_SPEED.min}" max="${BLOB_SPEED.max}" step="${BLOB_SPEED.step}" value="${blobSpeed}" />
         <span class="style-slider-value">${blobSpeed.toFixed(2)}x</span>
+      </div>
+    </div>
+    <div class="style-editor-row">
+      <label>Horizontal offset</label>
+      <div class="style-slider-group">
+        <input type="range" id="style-caret-bloboffsetx" min="${BLOB_OFFSET_X.min}" max="${BLOB_OFFSET_X.max}" step="${BLOB_OFFSET_X.step}" value="${blobOffsetX}" />
+        <span class="style-slider-value">${signedPx(blobOffsetX)}</span>
       </div>
     </div>
     <div class="style-editor-row">
@@ -156,6 +173,13 @@ export function renderCaretOptions(layer) {
       <div class="style-slider-group">
         <input type="range" id="style-caret-trail" min="${UNDERLINE_TRAIL.min}" max="${UNDERLINE_TRAIL.max}" step="${UNDERLINE_TRAIL.step}" value="${trail}" />
         <span class="style-slider-value">${trail.toFixed(1)}s</span>
+      </div>
+    </div>
+    <div class="style-editor-row">
+      <label>Vertical offset</label>
+      <div class="style-slider-group">
+        <input type="range" id="style-caret-offsety" min="${UNDERLINE_OFFSET.min}" max="${UNDERLINE_OFFSET.max}" step="${UNDERLINE_OFFSET.step}" value="${offsetY}" />
+        <span class="style-slider-value">${signedPx(offsetY)}</span>
       </div>
     </div>`;
   return `
@@ -251,6 +275,8 @@ export function bindCaretOptions(container, layer, { onCommit, rerender }) {
   bindRange("#style-caret-rings", "rings", (v) => String(v));
   bindRange("#style-caret-blobsize", "blobSize", (v) => v.toFixed(2) + "x");
   bindRange("#style-caret-blobspeed", "blobSpeed", (v) => v.toFixed(2) + "x");
+  bindRange("#style-caret-offsety", "offsetY", signedPx);
+  bindRange("#style-caret-bloboffsetx", "blobOffsetX", signedPx);
 
   const aaEl = container.querySelector("#style-caret-antialias");
   if (aaEl) aaEl.addEventListener("change", () => {

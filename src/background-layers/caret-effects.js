@@ -51,6 +51,8 @@ uniform float u_rings;     // HUD ring count
 uniform float u_blobSize;  // phosphor blob scale (1 ≈ block-cursor sized)
 uniform float u_blobSpeed; // phosphor blob flow rate
 uniform float u_rainbow;   // phosphor blob: 1 = hue cycle inside the blob
+uniform float u_offsetY;   // underline glow: vertical nudge (CSS px)
+uniform float u_offsetX;   // phosphor blob: horizontal nudge (CSS px)
 
 float hash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 `;
@@ -62,7 +64,7 @@ float hash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 // visible and the same numbers rendered as huge soft blobs — hence the
 // tight radii, hard falloffs and low alpha ceilings here.
 
-// Sparks: a few 1px motes per keystroke, thrown sideways off the text
+// Sparks: a few 1-2px motes per keystroke, thrown sideways off the text
 // baseline and bouncing along it with a decaying hop before winking out.
 // The hop is |sin| under an exponential rather than a simulated bounce:
 // same read, one sin and one exp instead of an iterated collision.
@@ -93,8 +95,14 @@ void main() {
       float hop = amp * abs(sin(3.14159265 * age / period)) * exp(-age * 3.4);
       vec2 p = vec2(tp.x + vx * age, baseY - hop);
       float d = length(frag - p);
-      float r = 1.0 * u_px;
-      acc += exp(-(d * d) / (r * r * 2.0)) * fade;
+      // A hard little disc with a one-pixel soft edge, not a gaussian:
+      // shrunk to spark size a gaussian spends all its brightness on
+      // the falloff and the motes wash out to nothing. Half-coverage at
+      // 0.85 CSS px of radius is a mote 1-2 px across that still reads
+      // at full alpha in the middle.
+      float rad = 0.85 * u_px;
+      float aa = max(0.55 * u_px, 0.5);
+      acc += (1.0 - smoothstep(rad - aa, rad + aa, d)) * fade;
     }
   }
   // Clamp coverage first, then scale by intensity: clamping the
@@ -128,15 +136,25 @@ void main() {
       vec2 p = tp.xy + vec2(wob + (h2 - 0.5) * 20.0 * u_px, -rise * age);
       float radius = (2.0 + 3.0 * h2 + age * 1.6) * u_px;
       float d = abs(length(frag - p) - radius);
-      float band = 0.6 * u_px;
-      acc = max(acc, exp(-(d * d) / (band * band * 2.0)) * fade * 0.55);
+      // Soft-edged hairline rather than a gaussian band: thin enough to
+      // read as a hairline while staying continuous. A gaussian narrow
+      // enough to look this thin falls under the sampling grid and the
+      // ring dissolves into a dotted line.
+      float halfW = 0.5 * u_px;
+      float aa = max(0.5 * u_px, 0.5);
+      acc = max(acc, (1.0 - smoothstep(halfW - aa, halfW + aa, d)) * fade * 0.55);
     }
   }
   float a = clamp(acc, 0.0, 1.0) * u_intensity * 0.7;
   outColor = vec4(u_color, a);
 }`;
 
-// Ripples: thin fast rings expanding from where the caret has been.
+// Ripples: a drop on still water. The wavefront leaves fast and eases
+// off as it spreads (1 - exp) rather than travelling at a constant
+// speed, thins on the way out, and is gone well inside a second — the
+// old version expanded slowly on a thick band and read as a cartoon
+// shockwave. Alpha ceiling is deliberately the lowest of any preset:
+// this one is meant to be caught out of the corner of the eye.
 const FRAG_RIPPLES = COMMON + `
 void main() {
   vec2 frag = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
@@ -145,15 +163,16 @@ void main() {
     vec4 tp = u_trail[i];
     if (tp.z < 0.0) continue;
     float age = u_time - tp.z;
-    if (age < 0.0 || age > 1.1) continue;
-    float radius = age * 190.0 * u_px;
-    float reach = radius + 8.0 * u_px;
+    if (age < 0.0 || age > 0.7) continue;
+    // ~700 CSS px/s off the mark, easing to a stop near 140 px out.
+    float radius = (1.0 - exp(-age * 5.0)) * 140.0 * u_px;
+    float band = max((0.42 + age * 0.30) * u_px, 0.5);
+    float reach = radius + band * 4.0;
     if (abs(frag.x - tp.x) > reach || abs(frag.y - tp.y) > reach) continue;
     float d = abs(length(frag - tp.xy) - radius);
-    float band = (0.7 + age * 0.7) * u_px;
-    acc = max(acc, exp(-(d * d) / (band * band * 2.0)) * exp(-age * 3.0));
+    acc = max(acc, exp(-(d * d) / (band * band * 2.0)) * exp(-age * 6.0));
   }
-  float a = clamp(acc, 0.0, 1.0) * u_intensity * 0.75;
+  float a = clamp(acc, 0.0, 1.0) * u_intensity * 0.5;
   outColor = vec4(u_color, a);
 }`;
 
@@ -180,7 +199,10 @@ void main() {
     if (age < 0.0 || age > u_life) continue;
     float fade = 1.0 - age / u_life;
     fade *= fade;
-    vec2 pa = vec2(a.x, a.y + u_caretH * 0.30);
+    // The 0.30 of caret height puts the bar's top edge at the glyph
+    // bottom; u_offsetY is the user's nudge from there, in CSS px, so
+    // the resting placement still tracks the font size.
+    vec2 pa = vec2(a.x, a.y + u_caretH * 0.30 + u_offsetY * u_px);
     if (abs(frag.y - pa.y) > halfH * 5.0 + 2.0 * u_px) continue;
     vec2 pb = pa;
     // The trail arrives oldest-first, so entry i+1 is the next position
@@ -195,7 +217,7 @@ void main() {
           && abs(b.y - a.y) < u_caretH * 0.6
           && abs(b.x - a.x) < 160.0 * u_px
           && (b.z - a.z) < 2.0) {
-        pb = vec2(b.x, b.y + u_caretH * 0.30);
+        pb = vec2(b.x, b.y + u_caretH * 0.30 + u_offsetY * u_px);
       }
     }
     // Both endpoints sit on the same baseline, so the capsule is always
@@ -288,7 +310,9 @@ vec3 hue2rgb(float h) {
 }
 void main() {
   vec2 frag = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
-  vec2 d = frag - u_caret;
+  // The caret sits at the *left* edge of the character it precedes, so
+  // the nudge is how you centre the blob on the glyph instead.
+  vec2 d = frag - (u_caret + vec2(u_offsetX * u_px, 0.0));
   float halfH = max(u_caretH * 0.62 * u_blobSize, 1.0);
   float halfW = max(u_caretH * 0.40 * u_blobSize, 1.0);
   vec2 n = vec2(d.x / halfW, d.y / halfH);
@@ -323,10 +347,14 @@ const FRAGS = {
   blob: FRAG_BLOB,
 };
 // Underline's entry is the fallback for its user-set trail length.
-const LIFETIMES = { sparks: 0.75, bubbles: 1.8, ripples: 1.1, underline: 3.5, hud: 3.0, flicker: 3.0, blob: 3.0 };
-export const UNDERLINE_DEFAULTS = { height: 3, trailSeconds: 3.5 };
+// Keep each entry in step with the age cutoff its shader hardcodes —
+// this is what decides when a trail preset may park, so a lifetime
+// longer than the shader's leaves an idle loop running over an empty
+// canvas, and a shorter one wipes the tail mid-fade.
+const LIFETIMES = { sparks: 0.75, bubbles: 1.8, ripples: 0.7, underline: 3.5, hud: 3.0, flicker: 3.0, blob: 3.0 };
+export const UNDERLINE_DEFAULTS = { height: 3, trailSeconds: 3.5, offsetY: 0 };
 export const HUD_DEFAULTS = { rings: 2 };
-export const BLOB_DEFAULTS = { size: 1, speed: 1, rainbow: false };
+export const BLOB_DEFAULTS = { size: 1, speed: 1, rainbow: false, offsetX: 0 };
 // clear: fade out, wipe, park. freeze: park on the last-drawn frame (the
 // HUD stays parked at the caret). run: never trail-park — animate while
 // a caret exists and the window is visible.
@@ -359,6 +387,8 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
   let rings = num(cfg.rings, HUD_DEFAULTS.rings);
   let blobSize = num(cfg.blobSize, BLOB_DEFAULTS.size);
   let blobSpeed = num(cfg.blobSpeed, BLOB_DEFAULTS.speed);
+  let offsetY = num(cfg.offsetY, UNDERLINE_DEFAULTS.offsetY);
+  let offsetX = num(cfg.blobOffsetX, BLOB_DEFAULTS.offsetX);
   let rainbow = cfg.rainbow ? 1 : 0;
   let antialias = cfg.antialias !== false;   // absent = on
   let life = presetLife(preset, cfg);
@@ -391,6 +421,8 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
       blobSize: gl.getUniformLocation(program, "u_blobSize"),
       blobSpeed: gl.getUniformLocation(program, "u_blobSpeed"),
       rainbow: gl.getUniformLocation(program, "u_rainbow"),
+      offsetY: gl.getUniformLocation(program, "u_offsetY"),
+      offsetX: gl.getUniformLocation(program, "u_offsetX"),
     };
   }
   buildProgram();
@@ -505,6 +537,8 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
     gl.uniform1f(uni.blobSize, blobSize);
     gl.uniform1f(uni.blobSpeed, blobSpeed);
     gl.uniform1f(uni.rainbow, rainbow);
+    gl.uniform1f(uni.offsetY, offsetY);
+    gl.uniform1f(uni.offsetX, offsetX);
     gl.uniform2f(uni.caret, lastCaret.bx, lastCaret.by);
     gl.uniform1f(uni.caretH, lastCaret.bh);
     gl.uniform1f(uni.angle, angleAccum);
@@ -576,6 +610,8 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
       rings = num(nextCfg.rings, HUD_DEFAULTS.rings);
       blobSize = num(nextCfg.blobSize, BLOB_DEFAULTS.size);
       blobSpeed = num(nextCfg.blobSpeed, BLOB_DEFAULTS.speed);
+      offsetY = num(nextCfg.offsetY, UNDERLINE_DEFAULTS.offsetY);
+      offsetX = num(nextCfg.blobOffsetX, BLOB_DEFAULTS.offsetX);
       rainbow = nextCfg.rainbow ? 1 : 0;
       const nextAA = nextCfg.antialias !== false;
       if (nextAA !== antialias) {
