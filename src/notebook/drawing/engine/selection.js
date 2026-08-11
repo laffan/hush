@@ -240,7 +240,15 @@ export function createSelectionEngine({
     }
     const { x, y, w, h } = state.bbox;
     bboxGroup.setAttribute('visibility', 'visible');
-    handlesGroup.setAttribute('visibility', state.handlesHidden ? 'hidden' : 'visible');
+    // Hush delta #34: when the handles should show, *remove* the
+    // attribute rather than asserting 'visible'. `visibility` is
+    // inherited AND overridable downward, so an explicit `visible` on
+    // this group outlives the parent going hidden — deselecting a
+    // stroke selection left its handles painted (and still hit-testable,
+    // since pointer-events:auto is visibility-gated) over empty canvas.
+    // Inheriting means one attribute governs the whole chrome.
+    if (state.handlesHidden) handlesGroup.setAttribute('visibility', 'hidden');
+    else handlesGroup.removeAttribute('visibility');
     bboxRect.setAttribute('x', x);
     bboxRect.setAttribute('y', y);
     bboxRect.setAttribute('width', w);
