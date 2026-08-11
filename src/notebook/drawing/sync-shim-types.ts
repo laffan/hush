@@ -6,7 +6,7 @@
  * so existing importers keep working.
  */
 
-import type { DrawPoint, Layer, Shape } from "../types";
+import type { DrawPoint, Layer, Point, Shape } from "../types";
 
 /** Engine stroke shape (mirrors engine/stroke.js's stroke object).
  *  Not imported from the engine because it's pure-JS; we describe
@@ -95,7 +95,19 @@ export interface ShimState {
    *  is true so the engine bbox is the only chrome moving during the
    *  gesture. */
   strokeEngineDragging: boolean;
+  /** Needed to measure text-shape bounds — the selection bridge unions
+   *  non-stroke bounds into the engine bbox. */
+  fontFamily: string;
   setDrawingSubTool(sub: "draw" | "erase" | "slice" | "select"): void;
+  /** Hit-test a world-space region polygon against every shape type and
+   *  replace the selection with what it caught. Returns the hit count;
+   *  the drawing layer reads a zero as "the user dismissed this". */
+  selectShapesInRegion(poly: Point[], opts?: { additive?: boolean }): number;
+  /** Engine-driven bbox move of a mixed selection: the engine previews
+   *  the strokes, these carry every other selected shape. */
+  beginExternalMove(): void;
+  updateExternalMove(dx: number, dy: number): void;
+  endExternalMove(cancelled?: boolean): void;
   addEventListener(type: string, listener: (e: CustomEvent) => void): void;
   removeEventListener(type: string, listener: (e: CustomEvent) => void): void;
   notify(key: string): void;

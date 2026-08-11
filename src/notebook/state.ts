@@ -28,6 +28,7 @@ import {
   applyResize, applyCropResize, openLinkRun,
 } from "./state-helpers";
 import { computePocketLayout, POCKET_ZONE_WIDTH } from "./utils";
+import { collectShapesInPolygon, rectPolygon } from "./selection-region";
 // PERF-HUD (temporary): tracer singleton — see perf-hud.ts.
 import { perf } from "./perf-hud";
 
@@ -2029,40 +2030,14 @@ export class DrawingState extends EventTarget {
     }
 
     if ((this.tool === "select" || this.brainstormMode) && this.selectionBox) {
+      // The marquee is just a 4-point region — same hit test the
+      // pen-mode lasso and finger marquee run (selection-region.ts),
+      // so all three agree on what "inside" means for every shape type.
       const box = normalizeBox(this.selectionBox);
-      const hiddenLayerIds = this._hiddenLayerIds();
-      const hits = this.shapes.filter((s) =>
-        !(s.layerId && hiddenLayerIds.has(s.layerId)) &&
-        boundsOverlap(getShapeBounds(s, this.fontFamily), box),
-      );
-      // Group-aware expansion: a grouped shape's members move / style
-      // together, so the marquee should always pick them up as a unit.
-      // Without this, partial overlap inside a group leaves the other
-      // members unselected and the next drag splits the group apart.
-      const hitIds = new Set<string>();
-      const touchedGroups = new Set<string>();
-      for (const s of hits) {
-        hitIds.add(s.id);
-        if (s.groupId) touchedGroups.add(s.groupId);
-      }
-      if (touchedGroups.size > 0) {
-        for (const s of this.shapes) {
-          if (s.groupId && touchedGroups.has(s.groupId) &&
-              !(s.layerId && hiddenLayerIds.has(s.layerId))) {
-            hitIds.add(s.id);
-          }
-        }
-      }
-      if (e.shiftKey) {
-        const next = new Set(this.selectedIds);
-        hitIds.forEach((id) => next.add(id));
-        this.selectedIds = next;
-      } else if (hitIds.size > 0) {
-        this.selectedIds = new Set(hitIds);
-      }
+      const poly = rectPolygon({ x: box.minX, y: box.minY }, { x: box.maxX, y: box.maxY });
       this.selectionBox = null;
       this._selectStart = null;
-      this.notify("selectedIds");
+      this.selectShapesInRegion(poly, { additive: e.shiftKey });
       this.notify("selectionBox");
     } else if (this.tool === "drag-area" && this.creatingDragArea) {
       const { start, end } = this.creatingDragArea;
@@ -2089,6 +2064,92 @@ export class DrawingState extends EventTarget {
       this.notify("shapes");
       this.notify("creatingDragArea");
     }
+  }
+
+  /** Select every shape a world-space region polygon touches — the one
+   *  entry point behind all three sweep gestures (Select-tool marquee,
+   *  pen-mode finger marquee, pen-mode lasso). Returns how many shapes
+   *  the region hit so the caller can treat "nothing" as a dismissal;
+   *  the drawing layer uses that to drop the user back into their brush.
+   *
+   *  Hit rules and group promotion live in selection-region.ts. */
+  selectShapesInRegion(poly: Point[], opts?: { additive?: boolean }): number {
+    const hits = collectShapesInPolygon(this.shapes, poly, {
+      fontFamily: this.fontFamily,
+      hiddenLayerIds: this._hiddenLayerIds(),
+    });
+    if (opts?.additive) {
+      const next = new Set(this.selectedIds);
+      for (const id of hits) next.add(id);
+      this.selectedIds = next;
+    } else {
+      this.selectedIds = hits;
+    }
+    this.notify("selectedIds");
+    return hits.size;
+  }
+
+  /** Snapshot of the non-stroke shapes an engine-driven bbox drag has
+   *  to carry. Strokes ride the engine's preview transform; everything
+   *  else is repositioned from this snapshot on each tick, so the two
+   *  halves of a mixed selection stay locked together. */
+  private _extMoveSnapshot: Map<string, Shape> | null = null;
+  private _extMoveDirty = false;
+
+  /** Begin an engine-driven move of the current selection (the user
+   *  grabbed the stroke engine's bbox in pen mode). */
+  beginExternalMove(): void {
+    const areaIds = new Set<string>();
+    for (const s of this.shapes) {
+      if (this.selectedIds.has(s.id) && s.type === "drag-area") areaIds.add(s.id);
+    }
+    const snap = new Map<string, Shape>();
+    for (const s of this.shapes) {
+      if (s.type === "draw" || s.pocketed) continue;
+      if (this.selectedIds.has(s.id) || (s.parentId && areaIds.has(s.parentId))) snap.set(s.id, s);
+    }
+    this._extMoveSnapshot = snap.size > 0 ? snap : null;
+    this._extMoveDirty = false;
+  }
+
+  /** Apply the total offset of an engine-driven move. Absolute from the
+   *  snapshot rather than incremental, so a dropped frame can't drift. */
+  updateExternalMove(dx: number, dy: number): void {
+    const snap = this._extMoveSnapshot;
+    if (!snap) return;
+    if (dx === 0 && dy === 0 && !this._extMoveDirty) return;
+    this._extMoveDirty = true;
+    this.shapes = this.shapes.map((s) => {
+      const orig = snap.get(s.id);
+      return orig ? moveShape(orig, dx, dy) : s;
+    });
+    this.notify("shapes");
+  }
+
+  /** Finish an engine-driven move. `cancelled` (a multi-touch gesture
+   *  claimed the burst mid-drag) puts the shapes back where they
+   *  started — the engine rolls its stroke preview back the same way,
+   *  and half a committed move is worse than none. */
+  endExternalMove(cancelled = false): void {
+    const snap = this._extMoveSnapshot;
+    const moved = this._extMoveDirty;
+    if (!snap) return;
+    this._extMoveSnapshot = null;
+    this._extMoveDirty = false;
+    if (!moved) return;
+    if (cancelled) {
+      this.shapes = this.shapes.map((s) => snap.get(s.id) || s);
+      this.notify("shapes");
+      return;
+    }
+    // The engine commits its own stroke transform first and records
+    // history from that callback — a second checkpoint here would cost
+    // the user two undos for one drag. Only record when the selection
+    // was pure non-stroke shapes, which the engine never touches.
+    for (const s of this.shapes) {
+      if (s.type === "draw" && this.selectedIds.has(s.id)) return;
+    }
+    this.recordHistory();
   }
 
   /** Drop any in-flight pointer interaction without committing it.

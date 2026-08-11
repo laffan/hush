@@ -11,6 +11,8 @@ src/notebook/drawing/
                          pocket-stash canvas, SVG overlay, helper blit canvas
   selection-style.ts     Retroactive styling session (snapshot → apply → one undo entry)
   selection-bridge.ts    Mirrors state.selectedIds ↔ engine selection (Select tool parity)
+  region-select.ts       Lasso / marquee → Hush's all-shape-types hit test; transient
+                         sub-tool; mixed-selection bbox drag
   sync-shim.ts           state.shapes[] ↔ engine.strokes bridge (identity diff)
   re-anchor.ts           Camera-following origin shifts — the "infinite canvas"
   selection-drag.ts      Hush↔engine select-drag controller (pause-shim, commit-on-release)
@@ -89,6 +91,17 @@ Every modification to `engine/` is tagged at the call site (`grep -rn "Hush delt
 - **#28 empty-aware overlay clears** — skip full-surface clears of the live/preview overlays when they can't hold pixels.
 - **#29 readback-free done-canvas shift** — using a canvas as its own `drawImage` source forces WebKit to snapshot the whole surface (~230 ms GPU→CPU readback even for a 1×1 dirty rect); a *detached* scratch is CPU-backed and pays the same on its first leg. The blit routes through an **attached, near-invisible (1 % opacity) helper canvas** — composited, so GPU-backed, but its writes skip the display upload.
 - **#30 ImageBitmap tinted atlases** — a canvas used as a `drawImage` *source* is mutable, so WebKit re-uploads it per draw; immutable bitmaps keep repeated stamps on the GPU (the edge-strip rebake was a ~220 ms commit stall without this).
+- **#32/#33/#34 unified region selection** — a completed lasso or marquee hands its
+  polygon to the host (`onLassoRegion`) instead of resolving it against strokes, so Hush
+  can hit-test every shape type against it (`selection-region.ts`); a single finger
+  dragging in pencil-only mode promotes into a **rectangle marquee** rather than
+  abandoning the gesture (`onFingerDragSelect` → `startMarqueeAtPointer`, drift measured
+  in client px because the hold's world-space threshold is one screen px at zoom 0.25);
+  and the bbox accepts host-supplied bounds (`setExternalBounds`) so it frames — and
+  drags — the text / images / drag-areas the engine can't see, with the resize and rotate
+  handles hidden because those transforms only reach strokes. A pen contact during a
+  finger-borrowed select hands the brush straight back (`onPenResumeDraw`) and draws.
+
 - **#31 opacity-swap double buffer** — the governing cost model: WebKit rasterizes Canvas2D CPU-side and uploads the **dirty region** of *visible* canvases at ~280 MB/s (fully dirtying a visible 4096² canvas ≈ 235 ms however cheap the JS), while ~1 %-opacity canvases skip the upload. So shifts/repaints draw into the near-invisible helper and **swap the two canvases' roles** (opacity + class flips + ctx rebind — compositor-cheap); consumers resolve the current target via `getDoneCtx()` / `getDoneCanvas()` instead of capturing references.
 
 ### Apple Pencil (iOS)
@@ -97,13 +110,21 @@ Finger touches never draw — `setPencilOnly(true)` is flipped at startup by `pe
 
 ### Tools, toolbar, brushes
 
-The drawing tools sit past a divider on the single notebook toolbar (see README-NOTEBOOK.md for the bar's drag handle / snap zones / minimize). Sub-tools: `draw` (append strokes; the active brush slot indicates it — clicking any brush exits Erase/Slice back to Draw), `erase` (pixel-test, consumes whole strokes), `slice` (splits a stroke at the cut), `select` (polygon lasso). A hold without drift during draw/erase (duration from the Lasso flyout, 500–2000 ms) cancels the in-flight stroke and promotes the gesture into a lasso; tapping empty canvas afterwards restores the previous sub-tool. Canvas rotation and background settings live in the fixed bottom-right button row (`bg-settings-fixed-button.ts`).
+The drawing tools sit past a divider on the single notebook toolbar (see README-NOTEBOOK.md for the bar's drag handle / snap zones / minimize). Sub-tools: `draw` (append strokes; the active brush slot indicates it — clicking any brush exits Erase/Slice back to Draw), `erase` (pixel-test, consumes whole strokes), `slice` (splits a stroke at the cut), `select` (polygon lasso). Two gestures borrow select mode from whatever brush is active: a **hold** without drift (duration from the Lasso flyout, 500–2000 ms) cancels the in-flight stroke and promotes into a freehand lasso, and on iPad a **single finger dragging** sweeps a rectangle marquee. Both resolve through Hush's shared region hit test, so either one selects strokes, text, images, and drag-areas together. The borrowed sub-tool is handed back when the region catches nothing, when a second finger promotes the burst into a pan, when the user taps empty canvas — or the moment the pencil touches down, which always draws. Canvas rotation and background settings live in the fixed bottom-right button row (`bg-settings-fixed-button.ts`).
 
 **Brush slots** (`state.brushSlots[0..3]`): `{ brushId, color, size, mode, streamline, spacing }`. Colors `"auto"` and `"heading"` are theme sentinels resolving at paint time (tagged on strokes for retint). Clicking the already-active slot opens its edit flyout; edits also retroactively restyle a live selection, with slider drags wrapped in one style session per gesture so a sweep is a single undo entry (`snapshotSelectedStyle` → `applyStyleToSelection` → `commitStyleHistory`).
 
 ### Selection bridging + drag performance
 
 The engine owns pen-mode lasso selection and pushes hits into `state.selectedIds`; `selection-bridge.ts` mirrors the reverse so the engine's bbox + handles also appear under Hush's regular Select tool. Three orthogonal toggles control chrome exposure per mode (`setBboxClickable`, `setChromeHidden`, `setChromeInteractive` — see deltas #15/#16). Resize is always proportional; the rotation handle tethers off the left edge (the selection toolbar kept covering a top handle); rotation bakes points on commit.
+
+A selection can now include shapes the engine has never heard of. The bridge unions their
+bounds into the engine bbox (delta #34) so pen mode — where the drawing SVG is capturing
+and the notebook canvas never sees a pointerdown — still has chrome to show and something
+to grab; dragging that bbox moves the strokes through the engine's preview transform and
+every other shape through `DrawingState.updateExternalMove`, off one drag-start snapshot.
+Resize and rotate hide for those selections rather than scaling the ink and leaving the
+text behind.
 
 **Select-drag routes through `engine.previewTransform`** instead of per-frame point mutation: begin excludes the dragged strokes from the done canvas and pauses the shim, update is a single CSS/matrix shift on the preview overlay (one composited frame, independent of N), end commits the total offset and resumes. A 500-stroke drag runs at single-stroke frame rate. Double-clicking a stroke selects just that stroke (the one way to pick a member out of a group).
 
