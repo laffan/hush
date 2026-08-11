@@ -19,7 +19,8 @@ src/notebook/drawing/
   brush-slots.ts / brush-runtime.ts / brush-urls.ts / mini-palette.ts / flyout-styles.ts
                          Brush slot row, edit flyout, quick-palette strip, shared flyout CSS
   tool-panel.ts (+ tool-panel-snap.ts)  Appends divider + drawing tools to the bottom
-                         toolbar; drag handle, snap zones, minimize
+                         toolbar (Lasso slots in beside Select instead); drag
+                         handle, snap zones, minimize
   bg-settings-fixed-button.ts  Fixed bottom-right row: rotation readout/toggle + bg settings
   pocket-blit.ts         Pocket / done-canvas blit helpers
   layers-panel.ts        Layers dropdown (notebook-level)
@@ -110,7 +111,7 @@ Finger touches never draw — `setPencilOnly(true)` is flipped at startup by `pe
 
 ### Tools, toolbar, brushes
 
-The drawing tools sit past a divider on the single notebook toolbar (see README-NOTEBOOK.md for the bar's drag handle / snap zones / minimize). Sub-tools: `draw` (append strokes; the active brush slot indicates it — clicking any brush exits Erase/Slice back to Draw), `erase` (pixel-test, consumes whole strokes), `slice` (splits a stroke at the cut), `select` (polygon lasso). Two gestures borrow select mode from whatever brush is active: a **hold** without drift (duration from the Lasso flyout, 500–2000 ms) cancels the in-flight stroke and promotes into a freehand lasso, and on iPad a **single finger dragging** sweeps a rectangle marquee. Both resolve through Hush's shared region hit test, so either one selects strokes, text, images, and drag-areas together. The borrowed sub-tool is handed back when the region catches nothing, when a second finger promotes the burst into a pan, when the user taps empty canvas — or the moment the pencil touches down, which always draws. Canvas rotation and background settings live in the fixed bottom-right button row (`bg-settings-fixed-button.ts`).
+The drawing tools sit past a divider on the single notebook toolbar (see README-NOTEBOOK.md for the bar's drag handle / snap zones / minimize) — except Lasso, which sits immediately right of the rectangle Select button at the head of the bar, because the two are the same operation with a different region shape. Sub-tools: `draw` (append strokes; the active brush slot indicates it — clicking any brush exits Erase/Slice back to Draw), `erase` (pixel-test, consumes whole strokes), `slice` (splits a stroke at the cut), `select` (polygon lasso). Two gestures borrow select mode from whatever brush is active: a **hold** without drift (duration from the Lasso flyout, 500–2000 ms) cancels the in-flight stroke and promotes into a freehand lasso, and on iPad a **single finger dragging** sweeps a rectangle marquee. Both resolve through Hush's shared region hit test, so either one selects strokes, text, images, and drag-areas together. The borrowed sub-tool is handed back when the region catches nothing, when a second finger promotes the burst into a pan, when the user taps empty canvas — or the moment the pencil touches down, which always draws. Canvas rotation and background settings live in the fixed bottom-right button row (`bg-settings-fixed-button.ts`).
 
 **Brush slots** (`state.brushSlots[0..3]`): `{ brushId, color, size, mode, streamline, spacing }`. Colors `"auto"` and `"heading"` are theme sentinels resolving at paint time (tagged on strokes for retint). Clicking the already-active slot opens its edit flyout; edits also retroactively restyle a live selection, with slider drags wrapped in one style session per gesture so a sweep is a single undo entry (`snapshotSelectedStyle` → `applyStyleToSelection` → `commitStyleHistory`).
 
