@@ -19,9 +19,18 @@
  * when the window blurs. Parked loops wake on a 4 Hz caret poll, so an
  * idle editor pays no per-frame cost.
  */
-import { linkProgram, setupQuad, QUAD_VERT, hexToVec3, clamp01, sizeCanvas } from "./webgl-utils.js";
+import { linkProgram, setupQuad, QUAD_VERT, hexToVec3, clamp01, num, sizeCanvas } from "./webgl-utils.js";
 
 const TRAIL = 16;
+
+/** How long a trail entry lives, in seconds. Underline exposes it as the
+ *  "trail length" knob; every other preset has a fixed tuned value. */
+function presetLife(preset, cfg) {
+  if (preset === "underline") {
+    return Math.max(0.3, num(cfg?.trailSeconds, UNDERLINE_DEFAULTS.trailSeconds));
+  }
+  return LIFETIMES[preset] || 2;
+}
 
 const COMMON = `#version 300 es
 precision highp float;
@@ -36,6 +45,8 @@ uniform vec2  u_caret;     // current caret (backing px, y-down)
 uniform float u_caretH;    // caret height (backing px)
 uniform float u_angle;     // accumulated rotation (radians)
 uniform float u_activity;  // typing speed, 0..1
+uniform float u_lineH;     // underline thickness (CSS px)
+uniform float u_life;      // trail lifetime (s) — how long the streak lasts
 
 float hash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 `;
@@ -116,36 +127,69 @@ void main() {
   outColor = vec4(u_color, a);
 }`;
 
-// Underline glow: each trail entry lays a short glowing underline just
-// below its baseline that takes a few seconds to fade — consecutive
-// entries overlap, so fast typing reads as one continuous streak.
+// Underline glow: a solid filled bar under the text, drawn as capsules
+// between consecutive trail entries so the stroke is continuous rather
+// than a row of separate blobs — fast typing reads as one unbroken
+// streak that drains away over u_life seconds.
+//
+// Coverage combines with max(), not +=: overlapping capsules must not
+// accumulate, or the joins would read brighter than the run and the
+// "filled" bar would look lumpy.
 const FRAG_UNDERLINE = COMMON + `
 void main() {
   vec2 frag = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
+  float halfH = max(u_lineH * 0.5 * u_px, 0.5 * u_px);
+  float edge = 0.75 * u_px;
   float acc = 0.0;
   for (int i = 0; i < ${TRAIL}; i++) {
-    vec4 tp = u_trail[i];
-    if (tp.z < 0.0) continue;
-    float age = u_time - tp.z;
-    if (age < 0.0 || age > 3.5) continue;
-    float fade = exp(-age * 0.85);
-    vec2 c = vec2(tp.x, tp.y + u_caretH * 0.42);
-    float dx = max(abs(frag.x - c.x) - 9.0 * u_px, 0.0);
-    float dy = frag.y - c.y;
-    float core = 1.6 * u_px;
-    float halo = 4.5 * u_px;
-    float d2 = dx * dx + dy * dy;
-    acc += (exp(-d2 / (core * core * 2.0)) * 0.9
-          + exp(-d2 / (halo * halo * 2.0)) * 0.5) * fade;
+    vec4 a = u_trail[i];
+    if (a.z < 0.0) continue;
+    float age = u_time - a.z;
+    if (age < 0.0 || age > u_life) continue;
+    float fade = 1.0 - age / u_life;
+    fade *= fade;
+    vec2 pa = vec2(a.x, a.y + u_caretH * 0.42);
+    vec2 pb = pa;
+    // The trail arrives oldest-first, so entry i+1 is the next position
+    // the caret took. Join them into one capsule when they share a
+    // baseline and sit close together; the distance guard is what stops
+    // a click across the document from drawing a bar spanning the jump.
+    // Gapping on *time* instead was tried and reads badly — it breaks
+    // the bar into dots the moment someone types at a human pace.
+    if (i + 1 < ${TRAIL}) {
+      vec4 b = u_trail[i + 1];
+      if (b.z >= 0.0
+          && abs(b.y - a.y) < u_caretH * 0.6
+          && abs(b.x - a.x) < 160.0 * u_px
+          && (b.z - a.z) < 2.0) {
+        pb = vec2(b.x, b.y + u_caretH * 0.42);
+      }
+    }
+    // Both endpoints sit on the same baseline, so the capsule is always
+    // horizontal — build it from the x extent and stretch each end by a
+    // few px so a lone entry reads as a short dash under its character
+    // rather than a dot.
+    float ext = 4.0 * u_px;
+    vec2 p0 = vec2(min(pa.x, pb.x) - ext, pa.y);
+    vec2 p1 = vec2(max(pa.x, pb.x) + ext, pa.y);
+    vec2 pf = frag - p0;
+    vec2 ba = p1 - p0;
+    float h = clamp(dot(pf, ba) / max(dot(ba, ba), 1e-4), 0.0, 1.0);
+    float d = length(pf - ba * h);
+    float core = 1.0 - smoothstep(halfH - edge, halfH + edge, d);
+    float glow = exp(-(d * d) / max(halfH * halfH * 7.0, 1e-4)) * 0.3;
+    acc = max(acc, (core + glow) * fade);
   }
-  float a = clamp(acc * u_intensity, 0.0, 0.9);
-  outColor = vec4(u_color, a);
+  float aOut = clamp(acc * u_intensity, 0.0, 0.9);
+  outColor = vec4(u_color, aOut);
 }`;
 
-// HUD: concentric rings of radial hash marks around the caret — an
-// old-watch-bezel crosshair. Ring rotation rides u_angle, which the JS
-// side accumulates at a typing-speed-scaled rate, and brightness leans
-// on u_activity so the whole instrument wakes up as you type.
+// HUD: counter-rotating rings of radial hash marks around the caret —
+// an old-watch-bezel crosshair. Ring rotation rides u_angle, which the
+// JS side accumulates at a typing-speed-scaled rate, and brightness
+// leans on u_activity so the whole instrument wakes up as you type.
+// The two innermost elements (a solid ring at 16px and the 8-tick ring
+// at 30px) were dropped — they crowded the caret and the text under it.
 const FRAG_HUD = COMMON + `
 float ring(vec2 d, float r, float R, float N, float rot, float tickHalf, float sharp) {
   float theta = atan(d.y, d.x) + rot;
@@ -159,10 +203,8 @@ void main() {
   float r = length(d);
   float px = u_px;
   float acc = 0.0;
-  acc += ring(d, r, 30.0 * px, 8.0,  u_angle,         5.0 * px, 12.0) * 1.15;
   acc += ring(d, r, 46.0 * px, 24.0, -u_angle * 0.62, 4.0 * px, 26.0) * 0.95;
   acc += ring(d, r, 62.0 * px, 48.0, u_angle * 0.38,  3.0 * px, 40.0) * 0.75;
-  acc += smoothstep(1.6 * px, 0.4 * px, abs(r - 16.0 * px)) * 0.6;
   acc *= 0.6 + 0.4 * u_activity;
   float a = clamp(acc * u_intensity, 0.0, 0.85);
   outColor = vec4(u_color, a);
@@ -193,7 +235,9 @@ const FRAGS = {
   hud: FRAG_HUD,
   flicker: FRAG_FLICKER,
 };
+// Underline's entry is the fallback for its user-set trail length.
 const LIFETIMES = { sparks: 1.2, bubbles: 2.2, ripples: 1.8, underline: 3.5, hud: 3.0, flicker: 3.0 };
+export const UNDERLINE_DEFAULTS = { height: 3, trailSeconds: 3.5 };
 // clear: fade out, wipe, park. freeze: park on the last-drawn frame (the
 // HUD stays parked at the caret). run: never trail-park — animate while
 // a caret exists and the window is visible.
@@ -222,6 +266,8 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
   let preset = cfg.preset;
   let color = hexToVec3(cfg.color || "#9ecbff");
   let intensity = clamp01(cfg.intensity ?? 0.6);
+  let lineH = num(cfg.height, UNDERLINE_DEFAULTS.height);
+  let life = presetLife(preset, cfg);
 
   let program = null;
   let uni = {};
@@ -245,6 +291,8 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
       caretH: gl.getUniformLocation(program, "u_caretH"),
       angle: gl.getUniformLocation(program, "u_angle"),
       activity: gl.getUniformLocation(program, "u_activity"),
+      lineH: gl.getUniformLocation(program, "u_lineH"),
+      life: gl.getUniformLocation(program, "u_life"),
     };
   }
   buildProgram();
@@ -258,6 +306,11 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
 
   // Trail ring: flat vec4 array, birth < 0 marks an empty slot.
   const trail = new Float32Array(TRAIL * 4).fill(-1);
+  // The uploaded copy, compacted and sorted oldest-first. The underline
+  // shader joins entry i to entry i+1, which only means "the next place
+  // the caret went" once the ring buffer's wraparound is unwound.
+  const trailSorted = new Float32Array(TRAIL * 4).fill(-1);
+  const sortIdx = [];
   let trailHead = 0;
   let lastPush = { x: -1e9, y: -1e9, t: 0 };
   const epoch = performance.now();
@@ -312,12 +365,27 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
 
   function anyAlive() {
     const t = now();
-    const life = LIFETIMES[preset] || 2;
     for (let i = 0; i < TRAIL; i++) {
       const birth = trail[i * 4 + 2];
       if (birth >= 0 && t - birth < life) return true;
     }
     return false;
+  }
+
+  /** Compact + sort the ring into `trailSorted`, oldest first. */
+  function buildSortedTrail() {
+    sortIdx.length = 0;
+    for (let i = 0; i < TRAIL; i++) if (trail[i * 4 + 2] >= 0) sortIdx.push(i);
+    sortIdx.sort((a, b) => trail[a * 4 + 2] - trail[b * 4 + 2]);
+    trailSorted.fill(-1);
+    for (let n = 0; n < sortIdx.length; n++) {
+      const src = sortIdx[n] * 4;
+      const dst = n * 4;
+      trailSorted[dst] = trail[src];
+      trailSorted[dst + 1] = trail[src + 1];
+      trailSorted[dst + 2] = trail[src + 2];
+      trailSorted[dst + 3] = trail[src + 3];
+    }
   }
 
   let rafId = 0;
@@ -326,12 +394,15 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
 
   function renderFrame() {
     gl.useProgram(program);
+    buildSortedTrail();
     gl.uniform2f(uni.res, canvas.width, canvas.height);
     gl.uniform1f(uni.time, now());
     gl.uniform1f(uni.px, pxScale);
-    gl.uniform4fv(uni.trail, trail);
+    gl.uniform4fv(uni.trail, trailSorted);
     gl.uniform3f(uni.color, color[0], color[1], color[2]);
     gl.uniform1f(uni.intensity, intensity);
+    gl.uniform1f(uni.lineH, lineH);
+    gl.uniform1f(uni.life, life);
     gl.uniform2f(uni.caret, lastCaret.bx, lastCaret.by);
     gl.uniform1f(uni.caretH, lastCaret.bh);
     gl.uniform1f(uni.angle, angleAccum);
@@ -393,6 +464,8 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
       const nextPreset = nextCfg.preset;
       color = hexToVec3(nextCfg.color || "#9ecbff");
       intensity = clamp01(nextCfg.intensity ?? 0.6);
+      lineH = num(nextCfg.height, UNDERLINE_DEFAULTS.height);
+      life = presetLife(nextPreset, nextCfg);
       if (nextPreset !== preset) {
         preset = nextPreset;
         buildProgram();

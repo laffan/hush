@@ -93,10 +93,36 @@ export function bindWebglOptions(container, layer, { onCommit, rerender }) {
   });
 }
 
+// Underline-glow knob bounds, shared by the renderer and the binder.
+const UNDERLINE_HEIGHT = { min: 1, max: 12, step: 0.5, default: 3 };
+const UNDERLINE_TRAIL = { min: 0.5, max: 8, step: 0.1, default: 3.5 };
+
 export function renderCaretOptions(layer) {
   const preset = layer.preset || "sparks";
-  const color = layer.color || "#9ecbff";
+  const matchCaret = !!layer.matchCaret;
+  // `color` is what caret layers carried before light and dark could
+  // diverge — it seeds both pickers so an existing layer opens on its
+  // current colour rather than the stock blue.
+  const lightColor = layer.lightColor || layer.color || "#9ecbff";
+  const darkColor = layer.darkColor || layer.color || "#9ecbff";
   const intensity = typeof layer.intensity === "number" ? layer.intensity : 0.6;
+  const height = typeof layer.height === "number" ? layer.height : UNDERLINE_HEIGHT.default;
+  const trail = typeof layer.trailSeconds === "number" ? layer.trailSeconds : UNDERLINE_TRAIL.default;
+  const underlineRows = preset !== "underline" ? "" : `
+    <div class="style-editor-row">
+      <label>Height</label>
+      <div class="style-slider-group">
+        <input type="range" id="style-caret-height" min="${UNDERLINE_HEIGHT.min}" max="${UNDERLINE_HEIGHT.max}" step="${UNDERLINE_HEIGHT.step}" value="${height}" />
+        <span class="style-slider-value">${height}px</span>
+      </div>
+    </div>
+    <div class="style-editor-row">
+      <label>Trail length</label>
+      <div class="style-slider-group">
+        <input type="range" id="style-caret-trail" min="${UNDERLINE_TRAIL.min}" max="${UNDERLINE_TRAIL.max}" step="${UNDERLINE_TRAIL.step}" value="${trail}" />
+        <span class="style-slider-value">${trail.toFixed(1)}s</span>
+      </div>
+    </div>`;
   return `
     <div class="style-editor-row">
       <label>Preset</label>
@@ -104,12 +130,25 @@ export function renderCaretOptions(layer) {
         ${CARET_PRESETS.map(c => `<option value="${escAttr(c.id)}"${c.id === preset ? " selected" : ""}>${escHtml(c.name)}</option>`).join("")}
       </select>
     </div>
-    <div class="style-editor-color-row">
-      <label>Color</label>
-      <div class="style-color-group">
-        <input type="color" id="style-caret-color" value="${escAttr(color)}" />
+    <div class="style-editor-row">
+      <label>Match caret color</label>
+      <div class="style-checkbox-group">
+        <input type="checkbox" id="style-caret-match" ${matchCaret ? "checked" : ""} />
       </div>
     </div>
+    ${matchCaret ? "" : `
+    <div class="style-editor-color-row">
+      <label>Color (Light)</label>
+      <div class="style-color-group">
+        <input type="color" id="style-caret-color-light" value="${escAttr(lightColor)}" />
+      </div>
+    </div>
+    <div class="style-editor-color-row">
+      <label>Color (Dark)</label>
+      <div class="style-color-group">
+        <input type="color" id="style-caret-color-dark" value="${escAttr(darkColor)}" />
+      </div>
+    </div>`}
     <div class="style-editor-row">
       <label>Intensity</label>
       <div class="style-slider-group">
@@ -117,6 +156,7 @@ export function renderCaretOptions(layer) {
         <span class="style-slider-value">${Math.round(intensity * 100)}%</span>
       </div>
     </div>
+    ${underlineRows}
     <p class="style-editor-hint">Follows the text cursor as you type.</p>`;
 }
 
@@ -124,22 +164,45 @@ export function bindCaretOptions(container, layer, { onCommit, rerender }) {
   const presetEl = container.querySelector("#style-caret-preset");
   if (presetEl) presetEl.addEventListener("change", () => {
     layer.preset = presetEl.value;
-    rerender(); // the row label carries the preset name
+    rerender(); // the row label carries the preset name, and the
+                // underline knobs appear / disappear with it
     onCommit();
   });
 
-  const colorEl = container.querySelector("#style-caret-color");
-  if (colorEl) {
-    const handler = () => { layer.color = colorEl.value; onCommit(); };
-    colorEl.addEventListener("input", handler);
-    colorEl.addEventListener("change", handler);
-  }
-
-  const intEl = container.querySelector("#style-caret-intensity");
-  if (intEl) intEl.addEventListener("input", () => {
-    const v = parseFloat(intEl.value);
-    layer.intensity = v;
-    if (intEl.nextElementSibling) intEl.nextElementSibling.textContent = Math.round(v * 100) + "%";
+  const matchEl = container.querySelector("#style-caret-match");
+  if (matchEl) matchEl.addEventListener("change", () => {
+    layer.matchCaret = matchEl.checked;
+    rerender(); // showing / hiding the two colour pickers
     onCommit();
   });
+
+  const bindColor = (sel, field) => {
+    const el = container.querySelector(sel);
+    if (!el) return;
+    const handler = () => {
+      layer[field] = el.value;
+      // The single legacy `color` is ambiguous once the two diverge —
+      // drop it so nothing downstream reads a stale shared value.
+      delete layer.color;
+      onCommit();
+    };
+    el.addEventListener("input", handler);
+    el.addEventListener("change", handler);
+  };
+  bindColor("#style-caret-color-light", "lightColor");
+  bindColor("#style-caret-color-dark", "darkColor");
+
+  const bindRange = (sel, field, fmt) => {
+    const el = container.querySelector(sel);
+    if (!el) return;
+    el.addEventListener("input", () => {
+      const v = parseFloat(el.value);
+      layer[field] = v;
+      if (el.nextElementSibling) el.nextElementSibling.textContent = fmt(v);
+      onCommit();
+    });
+  };
+  bindRange("#style-caret-intensity", "intensity", (v) => Math.round(v * 100) + "%");
+  bindRange("#style-caret-height", "height", (v) => v + "px");
+  bindRange("#style-caret-trail", "trailSeconds", (v) => v.toFixed(1) + "s");
 }

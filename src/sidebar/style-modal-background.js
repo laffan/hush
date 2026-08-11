@@ -272,7 +272,11 @@ function defaultLayer(type) {
     return { ...base, blend: "normal", nodes: defaultGradientNodes(), animate: false, lightOpacity: 1, darkOpacity: 1 };
   }
   if (type === "caret") {
-    return { ...base, blend: "screen", preset: "sparks", color: "#9ecbff", intensity: 0.6 };
+    return {
+      ...base, blend: "screen", preset: "sparks", intensity: 0.6,
+      matchCaret: false, lightColor: "#3b82f6", darkColor: "#9ecbff",
+      height: 3, trailSeconds: 3.5,
+    };
   }
   return {
     ...base, blend: "screen", effectId: WEBGL_BG_EFFECTS[0].id,

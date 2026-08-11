@@ -142,6 +142,12 @@ export function updatePreview(state, backdrop, draft, colorTab, previewState) {
   pane.style.fontSize = size;
   pane.style.lineHeight = lh;
 
+  // Publish the resolved caret colour on the pane so a caret background
+  // layer set to "match caret colour" reads the *draft's* caret rather
+  // than the app's — the layer picks `--cursor` up off its host, which
+  // is a child of this pane in the scoped preview.
+  pane.style.setProperty("--cursor", cursor);
+
   // The preview's light / dark switch sits outside the pane (see
   // style-modal.js), so it can't inherit the preview's colours — paint
   // it here or it goes invisible whenever the preview and the modal

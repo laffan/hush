@@ -54,6 +54,26 @@ void main() {
   gl_Position = vec4(a_pos, 0.0, 1.0);
 }`;
 
+/** Normalize any CSS colour string to `#rrggbb`. Canvas 2D's fillStyle
+ *  setter does the parsing — assigning an unparseable value leaves the
+ *  previous one in place, which is why the black seed doubles as the
+ *  fallback. Used for colours that don't come from a colour input (the
+ *  editor's resolved `--cursor`, which can be hex, rgb(), or a keyword). */
+let _colorCtx = null;
+export function normalizeColor(value, fallback = "#9ecbff") {
+  const v = String(value || "").trim();
+  if (!v) return fallback;
+  if (/^#[0-9a-f]{6}$/i.test(v)) return v;
+  if (!_colorCtx) _colorCtx = document.createElement("canvas").getContext("2d");
+  _colorCtx.fillStyle = "#000000";
+  _colorCtx.fillStyle = v;
+  const out = _colorCtx.fillStyle;
+  // A rejected value leaves the seed behind; treat that as "unparseable"
+  // unless the caller genuinely asked for black.
+  if (out === "#000000" && !/^(#000(000)?|black|rgba?\(0,\s*0,\s*0)/i.test(v)) return fallback;
+  return typeof out === "string" && out.startsWith("#") ? out : fallback;
+}
+
 export function hexToVec3(hex) {
   const h = (hex || "").replace("#", "");
   const expand = h.length === 3 ? h.split("").map(c => c + c).join("") : h;
