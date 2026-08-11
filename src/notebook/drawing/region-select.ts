@@ -28,6 +28,9 @@ type SubTool = "draw" | "erase" | "slice" | "select";
 
 interface MarqueeCapableSelection {
   startMarqueeAtPointer(pointerId: number, point: { x: number; y: number }): void;
+  /** Engine delta #35 — adopt a move for a drag that began in the
+   *  stroke engine. False when there's no bbox to move. */
+  startMoveAtPointer(pointerId: number, point: { x: number; y: number }): boolean;
 }
 
 export interface RegionSelectController {
@@ -126,20 +129,34 @@ export function createRegionSelect(deps: {
   function onFingerDragSelect(e: { pointerId: number; point: { x: number; y: number } }): void {
     const sel = selectionBox.current;
     if (!sel) return;
+    // A live selection turns the finger into a mover: dragging from
+    // anywhere on the canvas carries the whole selection, no hunting for
+    // the bbox. Sweeping a new region means tapping to clear first —
+    // which is the same tap that dismisses a selection everywhere else.
+    // Borrow select mode only once the engine has accepted the move, so
+    // a missing bbox falls through to a marquee instead of stranding the
+    // user out of their brush.
+    if (state.selectedIds.size > 0 && sel.startMoveAtPointer(e.pointerId, e.point)) {
+      enterTransientSelect();
+      return;
+    }
     beginRegionGesture();
     sel.startMarqueeAtPointer(e.pointerId, e.point);
     flashHint(e.point);
   }
 
-  /** A bare finger tap while a brush / eraser is active clears the
-   *  selection. It completes the finger's selection vocabulary in those
-   *  tools — tap clears, drag boxes, hold lassos — and matches what a
-   *  tap already does under the Select tool and the Lasso sub-tool,
-   *  where it resolves as an empty region. */
+  /** A bare finger tap clears the selection — the dismissal half of the
+   *  finger's vocabulary (tap clears, drag boxes or moves, hold lassos).
+   *  Shared by the stroke engine's tap (brush / eraser active) and the
+   *  selection engine's tap-on-a-live-selection, so both readings of
+   *  "the user tapped" land in the same place. The brush comes back
+   *  when the tap ends a select mode a gesture had borrowed. */
   function onFingerTap(): void {
-    if (state.selectedIds.size === 0) return;
-    state.selectedIds = new Set();
-    state.notify("selectedIds");
+    if (state.selectedIds.size > 0) {
+      state.selectedIds = new Set();
+      state.notify("selectedIds");
+    }
+    restoreTransientSubTool();
   }
 
   /** Pen down during a borrowed select: restore the brush in the same

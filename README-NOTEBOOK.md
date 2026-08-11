@@ -107,6 +107,11 @@ polygon** and returns Hush shape ids:
 | Pen-mode freehand lasso | engine SVG path (hold-to-lasso, or the Lasso sub-tool) |
 | Pen-mode finger marquee | engine SVG rect — one finger dragging while a brush / eraser is active (iPad) |
 
+Once something *is* selected, the finger stops sweeping and starts
+moving: on iPad a touch-drag anywhere in pen mode carries the whole
+selection, and a tap clears it. Pen and mouse keep lassoing from empty
+canvas, so desktop and a deliberately-chosen Lasso are unchanged.
+
 Hit rules: a `DrawShape` is caught when any of its points is inside the
 polygon **or** any of its segments crosses one (a sparsely sampled
 straight line swept across the middle still counts); every other type is

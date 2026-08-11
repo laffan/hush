@@ -18,12 +18,18 @@ export function createSelectionEngine(opts: {
   onDragEnd?: (cancelled?: boolean) => void;
   /** Hush delta #33 — an in-flight lasso / marquee was abandoned. */
   onRegionCancel?: () => void;
+  /** Hush delta #35 — a touch grabbed a live selection and released
+   *  without dragging it. */
+  onRegionTap?: () => void;
 }): {
   activate(): void;
   deactivate(): void;
   startLassoAtPointer(pointerId: number, point: { x: number; y: number }): void;
   /** Hush delta #33 — same handoff for the rectangle marquee. */
   startMarqueeAtPointer(pointerId: number, point: { x: number; y: number }): void;
+  /** Hush delta #35 — adopt a move that began in the stroke engine.
+   *  False when there's no bbox to move. */
+  startMoveAtPointer(pointerId: number, point: { x: number; y: number }): boolean;
   hasSelection(): boolean;
   /** True while a lasso / marquee is mid-gesture. */
   isRegionActive(): boolean;

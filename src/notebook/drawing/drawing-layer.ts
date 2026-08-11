@@ -336,6 +336,9 @@ export function createDrawingLayer({
     onDragStart: region.onEngineDragStart,
     onDragMove: region.onEngineDragMove,
     onDragEnd: region.onEngineDragEnd,
+    // Hush delta #35: a finger grabbed the selection and let go without
+    // dragging it — same tap, same dismissal as everywhere else.
+    onRegionTap: region.onFingerTap,
     // A second finger promoted the burst into a pan / pinch before the
     // region resolved — give the user back the brush the gesture
     // borrowed, or they're stuck in select mode with nothing selected.

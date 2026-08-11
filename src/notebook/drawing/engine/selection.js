@@ -41,6 +41,17 @@
  *      engine bbox so the chrome frames the whole selection and the
  *      bbox-grab move covers it; the resize / rotate handles hide,
  *      because those transforms only reach strokes.
+ *  35. A live selection makes the finger a mover. With something
+ *      selected, a *touch* landing anywhere on the canvas drags the
+ *      whole selection instead of starting a new region, and lifting
+ *      without dragging is a tap that clears it (`onRegionTap`) — so
+ *      the finger's whole vocabulary stays consistent whether or not
+ *      the contact starts on the bbox. Pen and mouse still lasso from
+ *      empty canvas, so desktop and deliberate pencil-lassos are
+ *      unchanged. `startMoveAtPointer()` is the handoff for a move that
+ *      began outside this engine (stroke.js's finger drift, which has
+ *      already crossed a larger threshold — hence the pre-satisfied
+ *      slop flag).
  * ============================================================
  *
  * selection.js — lasso + bounding box + move/resize/delete.
@@ -73,6 +84,10 @@ const MIN_SCALE = 0.05;
 // toolbar hovers there and kept hiding it.
 const ROTATE_HANDLE_R = 8;
 const ROTATE_OFFSET = 48;
+// Hush delta #35: client-px drift (squared) a move must cross before it
+// previews anything. Without it a finger tap's natural wobble nudges the
+// selection a pixel and stops reading as a tap on release.
+const MOVE_SLOP_2 = 25; // (5 CSS px)^2
 
 const HANDLE_SPEC = [
   { name: 'nw', sx: 0, sy: 0 },
@@ -130,6 +145,8 @@ export function createSelectionEngine({
   onDragEnd,       // (cancelled?: boolean) — engine-driven drag finished.
                    //   `true` = aborted by cancelActive (a gesture claimed the
                    //   burst), so the host must roll its half back too.
+  onRegionTap,     // Hush delta #35: () — a touch landed and lifted on a live
+                   //   selection without dragging it. Host clears the selection.
   onRegionCancel,  // Hush delta #33: () — an in-flight lasso / marquee was
                    //   abandoned (promoted into a multi-touch gesture). The host
                    //   uses it to hand back the brush the region gesture borrowed.
@@ -210,6 +227,9 @@ export function createSelectionEngine({
     bbox: null,                  // { x, y, w, h }
     dragPointerId: null,
     dragStart: null,             // { x, y } in SVG space
+    dragStartClient: null,       // Hush delta #35: same point in client px, for slop
+    dragWasTouch: false,         // Hush delta #35: finger gestures get tap-to-deselect
+    moveSlopOk: false,           // Hush delta #35: move has crossed MOVE_SLOP_2
     resizeHandle: null,          // 'nw' | 'n' | ... when mode==='resize'
     bboxAtDragStart: null,       // bbox snapshot for resize math
     lastTransform: null,         // last applied transform (for commit)
@@ -526,6 +546,9 @@ export function createSelectionEngine({
     const p = clientToSvg(e);
     state.dragPointerId = e.pointerId;
     state.dragStart = p;
+    state.dragStartClient = { x: e.clientX, y: e.clientY };
+    state.dragWasTouch = e.pointerType === 'touch';
+    state.moveSlopOk = false;
     state.bboxAtDragStart = state.bbox ? { ...state.bbox } : null;
 
     if (target === 'delete') {
@@ -560,6 +583,20 @@ export function createSelectionEngine({
       return;
     }
 
+    // Hush delta #35: with a live selection, a finger landing on empty
+    // canvas grabs the selection rather than starting a new region —
+    // dragging moves it from anywhere, lifting without dragging clears
+    // it (see onPointerUp). Tap-then-sweep is how you select something
+    // else. Pen and mouse fall through to the lasso, so desktop and a
+    // deliberately-chosen Lasso tool are unchanged. (Outside pen mode
+    // this branch is unreachable anyway: the SVG root doesn't capture,
+    // so only the bbox and handles ever route here.)
+    if (state.dragWasTouch && state.bbox && (state.selectedIds.size > 0 || state.extraBBox)) {
+      state.mode = 'move';
+      if (onDragStart) onDragStart('move', state.selectedIds);
+      return;
+    }
+
     // 'canvas' → start a new lasso
     clearSelection();
     state.mode = 'lasso';
@@ -586,6 +623,19 @@ export function createSelectionEngine({
       return;
     }
     if (state.mode === 'move') {
+      // Hush delta #35: hold the preview until the contact has really
+      // travelled, so a tap that wobbles neither nudges the selection
+      // nor stops reading as a tap. A move handed in via
+      // startMoveAtPointer pre-satisfies this — it only got here by
+      // crossing a larger drift threshold in the stroke engine.
+      if (!state.moveSlopOk) {
+        const c = state.dragStartClient;
+        if (c) {
+          const cdx = e.clientX - c.x, cdy = e.clientY - c.y;
+          if (cdx * cdx + cdy * cdy < MOVE_SLOP_2) return;
+        }
+        state.moveSlopOk = true;
+      }
       applyMovePreview(p.x - state.dragStart.x, p.y - state.dragStart.y);
       return;
     }
@@ -613,6 +663,11 @@ export function createSelectionEngine({
     }
     if (prevMode === 'move' || prevMode === 'resize' || prevMode === 'rotate') {
       state.mode = 'idle';
+      // Hush delta #35: a finger that grabbed the selection and let go
+      // without dragging it is a tap — the deselect gesture. Only for
+      // `move`: a stationary press on a resize / rotate handle is a
+      // mis-grab, not a request to drop the selection.
+      const wasTap = prevMode === 'move' && state.dragWasTouch && !state.lastTransform;
       commitDrag();
       state.resizeHandle = null;
       state.bboxAtDragStart = null;
@@ -622,6 +677,7 @@ export function createSelectionEngine({
       // axis-aligned.
       bboxGroup.removeAttribute('transform');
       if (onDragEnd) onDragEnd();
+      if (wasTap && onRegionTap) onRegionTap();
       return;
     }
     state.mode = 'idle';
@@ -689,6 +745,25 @@ export function createSelectionEngine({
       state.lassoPts = [[point.x, point.y]];
       updateLassoView();
       try { svg.setPointerCapture(pointerId); } catch {}
+    },
+    // Hush delta #35: adopt a move that started outside this engine —
+    // stroke.js's finger-drift promotion, where the contact is already
+    // past a drift threshold, so the slop gate starts satisfied.
+    // Returns false when there's no bbox to move (the caller falls back
+    // to sweeping a new region).
+    startMoveAtPointer(pointerId, point) {
+      if (!state.bbox) return false;
+      state.active = true;
+      state.mode = 'move';
+      state.dragPointerId = pointerId;
+      state.dragStart = point;
+      state.dragStartClient = null;
+      state.dragWasTouch = true;
+      state.moveSlopOk = true;
+      state.bboxAtDragStart = { ...state.bbox };
+      try { svg.setPointerCapture(pointerId); } catch {}
+      if (onDragStart) onDragStart('move', state.selectedIds);
+      return true;
     },
     hasSelection() {
       return state.selectedIds.size > 0;
