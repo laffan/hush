@@ -48,6 +48,9 @@ uniform float u_activity;  // typing speed, 0..1
 uniform float u_lineH;     // underline thickness (CSS px)
 uniform float u_life;      // trail lifetime (s) — how long the streak lasts
 uniform float u_rings;     // HUD ring count
+uniform float u_blobSize;  // phosphor blob scale (1 ≈ block-cursor sized)
+uniform float u_blobSpeed; // phosphor blob flow rate
+uniform float u_rainbow;   // phosphor blob: 1 = hue cycle inside the blob
 
 float hash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 `;
@@ -259,6 +262,48 @@ void main() {
   outColor = vec4(u_color, clamp(a, 0.0, 0.6));
 }`;
 
+
+// Phosphor blob: a soft cursor-sized lozenge sitting over the caret,
+// its outline breathing through a few slow polar harmonics so it reads
+// as liquid rather than as a shape being scaled. Interior shimmer keeps
+// it phosphor-ish; the optional rainbow cycles hue by angle and radius.
+//
+// Sized from the caret's own height so it tracks the font: at scale 1
+// it covers about a block cursor. This preset animates continuously
+// (PARK_MODES "run") — a blob that froze the moment you stopped typing
+// would read as a rendering glitch.
+const FRAG_BLOB = COMMON + `
+vec3 hue2rgb(float h) {
+  vec3 k = mod(vec3(5.0, 3.0, 1.0) + h * 6.0, 6.0);
+  return clamp(min(k, 4.0 - k), 0.0, 1.0);
+}
+void main() {
+  vec2 frag = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
+  vec2 d = frag - u_caret;
+  float halfH = max(u_caretH * 0.62 * u_blobSize, 1.0);
+  float halfW = max(u_caretH * 0.40 * u_blobSize, 1.0);
+  vec2 n = vec2(d.x / halfW, d.y / halfH);
+  float r = length(n);
+  if (r > 2.0) { outColor = vec4(0.0); return; }
+  float th = atan(n.y, n.x);
+  float t = u_time * u_blobSpeed;
+  // Three slow harmonics, deliberately gentle: pushed much past this the
+  // outline pinches into lobes and stops reading as one body of liquid.
+  float wob = 0.11 * sin(3.0 * th + t * 0.9)
+            + 0.07 * sin(5.0 * th - t * 0.7)
+            + 0.05 * sin(2.0 * th + t * 1.3);
+  float edge = 1.0 + wob;
+  float cov = 1.0 - smoothstep(edge - 0.30, edge + 0.05, r);
+  float shimmer = 0.80 + 0.20 * sin(r * 6.0 - t * 1.7 + th * 2.0);
+  vec3 col = u_color;
+  if (u_rainbow > 0.5) {
+    float h = fract(th / 6.2831853 + r * 0.35 + t * 0.06);
+    col = mix(u_color, hue2rgb(h), 0.85);
+  }
+  float a = clamp(cov, 0.0, 1.0) * shimmer * u_intensity * 0.8;
+  outColor = vec4(col, a);
+}`;
+
 const FRAGS = {
   sparks: FRAG_SPARKS,
   bubbles: FRAG_BUBBLES,
@@ -266,15 +311,17 @@ const FRAGS = {
   underline: FRAG_UNDERLINE,
   hud: FRAG_HUD,
   flicker: FRAG_FLICKER,
+  blob: FRAG_BLOB,
 };
 // Underline's entry is the fallback for its user-set trail length.
-const LIFETIMES = { sparks: 0.75, bubbles: 1.8, ripples: 1.1, underline: 3.5, hud: 3.0, flicker: 3.0 };
+const LIFETIMES = { sparks: 0.75, bubbles: 1.8, ripples: 1.1, underline: 3.5, hud: 3.0, flicker: 3.0, blob: 3.0 };
 export const UNDERLINE_DEFAULTS = { height: 3, trailSeconds: 3.5 };
 export const HUD_DEFAULTS = { rings: 2 };
+export const BLOB_DEFAULTS = { size: 1, speed: 1, rainbow: false };
 // clear: fade out, wipe, park. freeze: park on the last-drawn frame (the
 // HUD stays parked at the caret). run: never trail-park — animate while
 // a caret exists and the window is visible.
-const PARK_MODES = { sparks: "clear", bubbles: "clear", ripples: "clear", underline: "clear", hud: "freeze", flicker: "run" };
+const PARK_MODES = { sparks: "clear", bubbles: "clear", ripples: "clear", underline: "clear", hud: "freeze", flicker: "run", blob: "run" };
 
 /**
  * Mount a caret-effect canvas into `host`. `cfg` is `{ preset, color,
@@ -301,6 +348,9 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
   let intensity = clamp01(cfg.intensity ?? 0.6);
   let lineH = num(cfg.height, UNDERLINE_DEFAULTS.height);
   let rings = num(cfg.rings, HUD_DEFAULTS.rings);
+  let blobSize = num(cfg.blobSize, BLOB_DEFAULTS.size);
+  let blobSpeed = num(cfg.blobSpeed, BLOB_DEFAULTS.speed);
+  let rainbow = cfg.rainbow ? 1 : 0;
   let life = presetLife(preset, cfg);
 
   let program = null;
@@ -328,6 +378,9 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
       lineH: gl.getUniformLocation(program, "u_lineH"),
       life: gl.getUniformLocation(program, "u_life"),
       rings: gl.getUniformLocation(program, "u_rings"),
+      blobSize: gl.getUniformLocation(program, "u_blobSize"),
+      blobSpeed: gl.getUniformLocation(program, "u_blobSpeed"),
+      rainbow: gl.getUniformLocation(program, "u_rainbow"),
     };
   }
   buildProgram();
@@ -439,6 +492,9 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
     gl.uniform1f(uni.lineH, lineH);
     gl.uniform1f(uni.life, life);
     gl.uniform1f(uni.rings, rings);
+    gl.uniform1f(uni.blobSize, blobSize);
+    gl.uniform1f(uni.blobSpeed, blobSpeed);
+    gl.uniform1f(uni.rainbow, rainbow);
     gl.uniform2f(uni.caret, lastCaret.bx, lastCaret.by);
     gl.uniform1f(uni.caretH, lastCaret.bh);
     gl.uniform1f(uni.angle, angleAccum);
@@ -502,6 +558,9 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
       intensity = clamp01(nextCfg.intensity ?? 0.6);
       lineH = num(nextCfg.height, UNDERLINE_DEFAULTS.height);
       rings = num(nextCfg.rings, HUD_DEFAULTS.rings);
+      blobSize = num(nextCfg.blobSize, BLOB_DEFAULTS.size);
+      blobSpeed = num(nextCfg.blobSpeed, BLOB_DEFAULTS.speed);
+      rainbow = nextCfg.rainbow ? 1 : 0;
       life = presetLife(nextPreset, nextCfg);
       if (nextPreset !== preset) {
         preset = nextPreset;

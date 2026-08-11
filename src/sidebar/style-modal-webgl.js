@@ -97,6 +97,8 @@ export function bindWebglOptions(container, layer, { onCommit, rerender }) {
 const UNDERLINE_HEIGHT = { min: 1, max: 12, step: 0.5, default: 3 };
 const UNDERLINE_TRAIL = { min: 0.5, max: 8, step: 0.1, default: 3.5 };
 const HUD_RINGS = { min: 1, max: 10, step: 1, default: 2 };
+const BLOB_SIZE = { min: 0.5, max: 3, step: 0.05, default: 1 };
+const BLOB_SPEED = { min: 0.1, max: 2.5, step: 0.05, default: 1 };
 
 export function renderCaretOptions(layer) {
   const preset = layer.preset || "sparks";
@@ -110,6 +112,29 @@ export function renderCaretOptions(layer) {
   const height = typeof layer.height === "number" ? layer.height : UNDERLINE_HEIGHT.default;
   const trail = typeof layer.trailSeconds === "number" ? layer.trailSeconds : UNDERLINE_TRAIL.default;
   const rings = typeof layer.rings === "number" ? layer.rings : HUD_RINGS.default;
+  const blobSize = typeof layer.blobSize === "number" ? layer.blobSize : BLOB_SIZE.default;
+  const blobSpeed = typeof layer.blobSpeed === "number" ? layer.blobSpeed : BLOB_SPEED.default;
+  const blobRows = preset !== "blob" ? "" : `
+    <div class="style-editor-row">
+      <label>Size</label>
+      <div class="style-slider-group">
+        <input type="range" id="style-caret-blobsize" min="${BLOB_SIZE.min}" max="${BLOB_SIZE.max}" step="${BLOB_SIZE.step}" value="${blobSize}" />
+        <span class="style-slider-value">${blobSize.toFixed(2)}x</span>
+      </div>
+    </div>
+    <div class="style-editor-row">
+      <label>Flow speed</label>
+      <div class="style-slider-group">
+        <input type="range" id="style-caret-blobspeed" min="${BLOB_SPEED.min}" max="${BLOB_SPEED.max}" step="${BLOB_SPEED.step}" value="${blobSpeed}" />
+        <span class="style-slider-value">${blobSpeed.toFixed(2)}x</span>
+      </div>
+    </div>
+    <div class="style-editor-row">
+      <label>Rainbow</label>
+      <div class="style-checkbox-group">
+        <input type="checkbox" id="style-caret-rainbow" ${layer.rainbow ? "checked" : ""} />
+      </div>
+    </div>`;
   const hudRows = preset !== "hud" ? "" : `
     <div class="style-editor-row">
       <label>Rings</label>
@@ -167,6 +192,7 @@ export function renderCaretOptions(layer) {
       </div>
     </div>
     ${hudRows}
+    ${blobRows}
     ${underlineRows}
     <p class="style-editor-hint">Follows the text cursor as you type.</p>`;
 }
@@ -217,4 +243,12 @@ export function bindCaretOptions(container, layer, { onCommit, rerender }) {
   bindRange("#style-caret-height", "height", (v) => v + "px");
   bindRange("#style-caret-trail", "trailSeconds", (v) => v.toFixed(1) + "s");
   bindRange("#style-caret-rings", "rings", (v) => String(v));
+  bindRange("#style-caret-blobsize", "blobSize", (v) => v.toFixed(2) + "x");
+  bindRange("#style-caret-blobspeed", "blobSpeed", (v) => v.toFixed(2) + "x");
+
+  const rainbowEl = container.querySelector("#style-caret-rainbow");
+  if (rainbowEl) rainbowEl.addEventListener("change", () => {
+    layer.rainbow = rainbowEl.checked;
+    onCommit();
+  });
 }

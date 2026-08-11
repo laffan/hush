@@ -38,6 +38,7 @@ export const CARET_PRESETS = [
   { id: "underline", name: "Underline Glow" },
   { id: "hud", name: "HUD" },
   { id: "flicker", name: "Flicker Bar" },
+  { id: "blob", name: "Phosphor Blob" },
 ];
 
 // Seed nodes for a fresh gradient layer — three dark-friendly colours

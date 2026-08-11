@@ -274,8 +274,13 @@ function defaultLayer(type) {
   if (type === "caret") {
     return {
       ...base, blend: "screen", preset: "sparks", intensity: 0.6,
-      matchCaret: false, lightColor: "#3b82f6", darkColor: "#9ecbff",
+      // Every caret preset sits on the cursor, so tracking its colour is
+      // the sensible default; the pickers below are there for when it
+      // shouldn't. The Phosphor Blob in particular is meant to read as
+      // the cursor itself.
+      matchCaret: true, lightColor: "#3b82f6", darkColor: "#9ecbff",
       height: 3, trailSeconds: 3.5, rings: 2,
+      blobSize: 1, blobSpeed: 1, rainbow: false,
       lightOpacity: 1, darkOpacity: 1,
     };
   }
