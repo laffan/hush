@@ -305,9 +305,17 @@
   background: rgba(128, 128, 128, 0.15);
 }
 
-/* Export-style button at the bottom of the settings column. */
+/* Footer action row at the very bottom of the settings column — Export
+   and Delete side by side, set off from the sections above by extra
+   breathing room. */
+.style-modal-footer-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 26px;
+}
+
 .style-modal-export {
-  width: 100%;
+  flex: 1;
   padding: 8px;
   border: 1px solid var(--panel-border);
   background: transparent;
@@ -321,10 +329,9 @@
   background: rgba(128, 128, 128, 0.15);
 }
 
-/* Delete-style button — pinned at the very bottom of the settings column,
-   below "Export style as JSON". Tinted red so it reads as destructive. */
+/* Delete-style button — tinted red so it reads as destructive. */
 .style-modal-delete {
-  width: 100%;
+  flex: 1;
   padding: 8px;
   border: 1px solid color-mix(in srgb, #e5484d 45%, transparent);
   background: transparent;
@@ -371,6 +378,192 @@
 .style-bg-fields select {
   flex: 1;
 }
+
+/* ===== Background Layers ===== */
+.style-bg-layer-list {
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.style-bg-layer-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--fg);
+  border-bottom: 1px solid rgba(128, 128, 128, 0.12);
+  user-select: none;
+  background: var(--panel-bg, var(--bg));
+}
+.style-bg-layer-row:last-child { border-bottom: none; }
+.style-bg-layer-row:hover { background: rgba(128, 128, 128, 0.08); }
+.style-bg-layer-row.selected { background: rgba(128, 128, 128, 0.16); }
+.style-bg-layer-row.layer-off .style-bg-layer-label,
+.style-bg-layer-row.layer-off .style-bg-layer-blend,
+.style-bg-layer-row.layer-off .style-bg-layer-thumb { opacity: 0.4; }
+
+/* The row being dragged rides above its siblings so the reorder reads
+   clearly as the rows shuffle underneath it. */
+.style-bg-layer-row.dragging {
+  opacity: 0.9;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  position: relative;
+  z-index: 2;
+}
+.style-bg-layer-list.dragging-active .style-bg-layer-row:not(.dragging) {
+  transition: transform 0.12s ease;
+}
+
+.style-bg-layer-eye,
+.style-bg-layer-grip,
+.style-bg-layer-trash {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0.8;
+  flex: none;
+}
+.style-bg-layer-eye:hover,
+.style-bg-layer-trash:hover { background: rgba(128, 128, 128, 0.18); opacity: 1; }
+.style-bg-layer-eye svg,
+.style-bg-layer-grip svg,
+.style-bg-layer-trash svg { width: 13px; height: 13px; }
+.style-bg-layer-row.layer-off .style-bg-layer-eye { opacity: 0.35; }
+.style-bg-layer-trash:hover { color: #e5484d; }
+
+.style-bg-layer-grip {
+  cursor: grab;
+  opacity: 0.45;
+  touch-action: none;
+  width: 16px;
+}
+.style-bg-layer-grip:hover { opacity: 0.85; }
+.style-bg-layer-grip:active { cursor: grabbing; }
+
+.style-bg-layer-thumb {
+  width: 22px;
+  height: 15px;
+  border-radius: 3px;
+  border: 1px solid var(--panel-border);
+  background-size: cover;
+  background-position: center;
+  flex: none;
+}
+
+.style-bg-layer-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.style-bg-layer-blend {
+  font-size: 10px;
+  opacity: 0.55;
+  text-transform: capitalize;
+}
+
+.style-bg-layer-empty {
+  font-size: 12px;
+  color: var(--sidebar-fg);
+  opacity: 0.6;
+  padding: 4px 2px 8px;
+}
+
+.style-bg-layer-add {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.style-bg-layer-add button {
+  flex: 1;
+  padding: 4px 2px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.style-bg-layer-add button:hover { background: rgba(128, 128, 128, 0.15); }
+
+.style-editor-hint {
+  font-size: 11px;
+  color: var(--sidebar-fg);
+  opacity: 0.55;
+  margin: 6px 0 0;
+}
+
+.style-bg-layer-options {
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
+  padding-top: 8px;
+}
+
+.style-modal-subsection-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--sidebar-fg);
+  opacity: 0.55;
+  margin: 10px 0 6px;
+  padding: 0;
+}
+
+/* Gradient pad — the draggable RGB node field. */
+.style-grad-pad {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  touch-action: none;
+  background-color: rgba(128, 128, 128, 0.08);
+}
+
+.style-grad-node {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  background: var(--node-color, #888);
+  transform: translate(-50%, -50%);
+  cursor: grab;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+.style-grad-node.selected {
+  width: 18px;
+  height: 18px;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
+}
+.style-grad-node:active { cursor: grabbing; }
+
+.style-grad-node-btns {
+  display: flex;
+  gap: 6px;
+}
+.style-grad-node-btns button {
+  padding: 4px 10px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.style-grad-node-btns button:hover:not(:disabled) { background: rgba(128, 128, 128, 0.15); }
+.style-grad-node-btns button:disabled { opacity: 0.4; cursor: default; }
 
 .style-editor-rail-appearance {
   display: flex;
@@ -534,6 +727,23 @@
   padding: 0;
 }
 
+/* Section title + its on/off switch on one line, checkbox flush right —
+   used by the Background Layers and Post Processing sections, both of
+   which can be switched off wholesale. */
+.style-modal-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.style-modal-section-header .style-modal-section-title {
+  margin-bottom: 8px;
+}
+.style-modal-section-header input[type="checkbox"] {
+  margin: 0 0 8px;
+  flex: none;
+}
+
 /* Hides the header-scale slider row when "suppress size" is checked */
 .style-row-hidden {
   display: none !important;
@@ -555,8 +765,65 @@
   position: relative;
 }
 
+/* Light / dark switch for the preview, pinned to the modal's top-right
+   just left of the close button (which sits at right: 12px, 28px wide,
+   in both the standalone and in-host shells). Anchored to .style-modal
+   rather than to the preview pane so it never scrolls away — and the
+   preview pane's right edge is the modal's right edge in both the
+   side-by-side and the narrow stacked layout, so this is the preview's
+   corner either way. */
+.style-preview-appearance {
+  position: absolute;
+  top: 9px;
+  right: 48px;
+  z-index: var(--z-modal-content);
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.style-preview-appearance-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.4;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.style-preview-appearance-btn:hover { opacity: 0.75; }
+
+.style-preview-appearance-btn.active {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.style-preview-appearance-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+}
+
 .style-preview-content {
   max-width: 480px;
+  /* Sit above the background-layers preview host (z-index 0). */
+  position: relative;
+  z-index: 1;
+}
+
+.style-preview-cursor-demo {
+  position: relative;
+  z-index: 1;
 }
 
 .style-preview-content .preview-h1 {

@@ -6,6 +6,8 @@
  * notebook panes adopting the same style.
  */
 
+import { resolveBackgroundLayersList } from "../sidebar/styles-panel-shared.js";
+
 // Map Hush camelCase theme IDs to notebook kebab-case IDs.
 // Keys that are identical (amy, barf, bespin, cobalt, dracula, clouds) are
 // still listed for clarity.
@@ -103,7 +105,12 @@ export function computeNotebookSettings(state, lockedStyleId) {
     const style = s.styles.find((st) => st.id === s.activeStyleId);
     if (style) {
       bgColors = appearance === "dark" ? style.darkColors : style.lightColors;
-      styleBackgroundImage = style.backgroundImage || null;
+      // Styles carry background *layers* now; the canvas paints the
+      // first enabled image layer (gradient / webgl layers are
+      // editor-surface-only). Legacy styles' single backgroundImage
+      // resolves through the same helper.
+      const layers = resolveBackgroundLayersList(style);
+      styleBackgroundImage = layers.find((l) => l.type === "image" && l.enabled !== false && l.src) || null;
     }
   } else {
     bgColors = appearance === "dark" ? s.defaultDarkColors : s.defaultLightColors;
@@ -112,7 +119,7 @@ export function computeNotebookSettings(state, lockedStyleId) {
   // canvas matches the editor. Light/dark each carry their own opacity and
   // invert flag; the legacy single `opacity` is the fallback for both.
   let resolvedBackgroundImage = null;
-  if (styleBackgroundImage && styleBackgroundImage.enabled && styleBackgroundImage.src) {
+  if (styleBackgroundImage && styleBackgroundImage.src) {
     const isDark = appearance === "dark";
     const legacy = styleBackgroundImage.opacity != null ? styleBackgroundImage.opacity : 1;
     const opacity = isDark

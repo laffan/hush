@@ -162,7 +162,10 @@ export default function mount(host, ctx) {
   function resize() {
     const w = ctx.width;
     const h = ctx.height;
-    const dpr = Math.min(ctx.dpr, 1.0);
+    // Real device ratio, capped at 2. Half-resolution + compositor
+    // upscale reads as a blur here too, just a more forgiving one than
+    // on the edged caret effects.
+    const dpr = Math.min(Math.max(ctx.dpr || 1, 1), 2);
     canvas.width = Math.max(1, Math.floor(w * dpr));
     canvas.height = Math.max(1, Math.floor(h * dpr));
     canvas.style.width = w + "px";

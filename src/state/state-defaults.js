@@ -212,6 +212,11 @@ export function createDefaultSettings() {
     // Shader layer attached to the Default style. User styles carry
     // their own shaderLayer field on each Style object.
     shaderLayer: null,
+    // Background layers attached to the Default style (user styles carry
+    // their own backgroundLayers field on each Style object).
+    backgroundLayers: null,
+    // Section-level on/off for the Default style's layer stack.
+    backgroundLayersEnabled: true,
 
     // Sidebar / global tooltips (controls native browser tooltips on
     // sidebar buttons, pane headers, and notebook toolbar buttons).

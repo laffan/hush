@@ -64,6 +64,21 @@ const isArchiveId = (id) => id === AppState.ARCHIVE_ID || id?.startsWith(AppStat
 const isTrashId = (id) => id === AppState.TRASH_ID || id?.startsWith(AppState.TRASH_ID + ":");
 
 const HAMBURGER_SVG = `<svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`;
+
+// Icon-row glyphs — the flag / rename / delete trio surfaced as a strip
+// of icon buttons at the top of the row menu. Flag reuses the sidebar's
+// wavy-flag glyph; delete reuses the trash-can from typeIcons.
+const MENU_ICONS = {
+  flag: `<svg viewBox="0 0 16 16"><path d="M3 10s1-1 3-1 4 2 6 2 3-1 3-1V2s-1 1-3 1-4-2-6-2-3 1-3 1z" /><line x1="3" y1="14" x2="3" y2="10" /></svg>`,
+  rename: `<svg viewBox="0 0 16 16"><path d="M11 2l3 3-8.5 8.5L2 14l.5-3.5z" /><line x1="9.5" y1="3.5" x2="12.5" y2="6.5" /></svg>`,
+  delete: `<svg viewBox="0 0 16 16"><polyline points="2 4 4 4 14 4" /><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" /><path d="M12 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4" /></svg>`,
+};
+
+// The actions promoted from labeled entries to the icon row. Only the
+// standard single-word labels move up — context-specific delete labels
+// ("Remove from Project") stay as labeled entries so their meaning
+// isn't lost behind a trash glyph.
+const ICON_ROW_LABELS = { flag: ["Flag", "Unflag"], rename: ["Rename"], delete: ["Delete"] };
 // temp/temp-icons/shelf-icon.svg, restroked to currentColor (2×2 grid).
 const SHELF_SVG = `<svg viewBox="0 0 24 24"><path d="M14 20.4V14.6C14 14.2686 14.2686 14 14.6 14H20.4C20.7314 14 21 14.2686 21 14.6V20.4C21 20.7314 20.7314 21 20.4 21H14.6C14.2686 21 14 20.7314 14 20.4Z"/><path d="M3 20.4V14.6C3 14.2686 3.26863 14 3.6 14H9.4C9.73137 14 10 14.2686 10 14.6V20.4C10 20.7314 9.73137 21 9.4 21H3.6C3.26863 21 3 20.7314 3 20.4Z"/><path d="M14 9.4V3.6C14 3.26863 14.2686 3 14.6 3H20.4C20.7314 3 21 3.26863 21 3.6V9.4C21 9.73137 20.7314 10 20.4 10H14.6C14.2686 10 14 9.73137 14 9.4Z"/><path d="M3 9.4V3.6C3 3.26863 3.26863 3 3.6 3H9.4C9.73137 3 10 3.26863 10 3.6V9.4C10 9.73137 9.73137 10 9.4 10H3.6C3.26863 10 3 9.73137 3 9.4Z"/></svg>`;
 
@@ -265,7 +280,39 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
   const menu = document.createElement("div");
   menu.className = "tree-row-menu";
 
+  // Partition: the standard flag / rename / delete actions render as a
+  // strip of icon buttons at the top; everything else keeps its labeled
+  // list entry below.
+  const iconEntries = [];
+  const listEntries = [];
   for (const ent of entries) {
+    const iconable = ICON_ROW_LABELS[ent.action]?.includes(ent.label);
+    (iconable ? iconEntries : listEntries).push(ent);
+  }
+
+  if (iconEntries.length) {
+    const iconRow = document.createElement("div");
+    iconRow.className = "tree-row-menu-icons";
+    for (const ent of iconEntries) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `tree-row-menu-icon-btn tree-row-menu-icon-${ent.action}`;
+      if (ent.action === "flag" && ent.label === "Unflag") btn.classList.add("active");
+      btn.dataset.treeAction = ent.action;
+      btn.title = ent.label;
+      btn.setAttribute("aria-label", ent.label);
+      btn.innerHTML = MENU_ICONS[ent.action];
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        closeRowMenu();
+        dispatchRowAction(ent.action, nodeId, { anchor: anchorBtn, targetType: ent.targetType });
+      });
+      iconRow.appendChild(btn);
+    }
+    menu.appendChild(iconRow);
+  }
+
+  for (const ent of listEntries) {
     const item = document.createElement("button");
     item.type = "button";
     item.className = "tree-row-menu-item";

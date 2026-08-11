@@ -251,6 +251,93 @@ export function showPromptModal({ title, label = "", placeholder = "", initialVa
   input.select();
 }
 
+/** Collect candidate parent folders for the create-with-parent modal:
+ *  every plain folder inside the active desk, depth-first, each tagged
+ *  with its nesting depth so the picker can indent. Specials (Inbox /
+ *  Images / PDFs / Archive / Trash), synced folders, and anything inside
+ *  them are skipped — new files never land there. */
+export function collectParentFolders(state) {
+  const deskId = state.settings?.activeDeskId || null;
+  const desks = (state.fileTree || []).filter((n) => n.type === "desk");
+  const desk = desks.find((n) => n.id === deskId) || desks[0] || null;
+  const roots = desk ? desk.children || [] : state.fileTree || [];
+  const out = [];
+  const walk = (nodes, depth) => {
+    for (const n of nodes || []) {
+      if (!n || state.isSpecialNodeId?.(n.id)) continue;
+      if (n.type !== "folder" && n.type !== "project") continue;
+      if (n.syncFolderId || n.pdfFolder) continue;
+      if (n.type === "folder") {
+        out.push({ id: n.id, name: n.name, depth });
+        walk(n.children, depth + 1);
+      }
+      // Projects can't hold folders, so no descent into them.
+    }
+  };
+  walk(roots, 0);
+  return out;
+}
+
+/** Name + location prompt modal — the create flow for Projects and
+ *  Folders. Same shell as `showPromptModal` with an extra "Location"
+ *  select listing the desk root plus every folder in the active desk.
+ *  Calls `onConfirm(trimmedName, parentIdOrNull)` — null parent means
+ *  "root" (the caller resolves that to the active desk). */
+export function showCreateWithParentModal({ title, label = "Name", placeholder = "", initialValue = "", confirmLabel = "Create", parentFolders = [], onConfirm, onCancel }) {
+  document.querySelectorAll(".tree-delete-modal-backdrop").forEach((el) => el.remove());
+  const backdrop = document.createElement("div");
+  backdrop.className = "tree-delete-modal-backdrop";
+  const modal = document.createElement("div");
+  modal.className = "tree-delete-modal";
+  const folderOptions = parentFolders.map((f) =>
+    `<option value="${escAttrValue(f.id)}">${"&nbsp;&nbsp;".repeat(f.depth + 1)}${escHtml(f.name)}</option>`
+  ).join("");
+  modal.innerHTML = `
+    <div class="tree-delete-modal-title">${escHtml(title)}</div>
+    <label class="tree-prompt-modal-label" for="tree-prompt-modal-input">${escHtml(label)}</label>
+    <input id="tree-prompt-modal-input" class="tree-prompt-modal-input" type="text" autocomplete="off" spellcheck="false" />
+    <label class="tree-prompt-modal-label" for="tree-prompt-modal-parent">Location</label>
+    <select id="tree-prompt-modal-parent" class="tree-prompt-modal-select">
+      <option value="">Root</option>
+      ${folderOptions}
+    </select>
+    <div class="tree-delete-modal-btns">
+      <button class="tree-delete-cancel">Cancel</button>
+      <button class="tree-delete-confirm tree-prompt-modal-confirm">${escHtml(confirmLabel)}</button>
+    </div>`;
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+  const input = modal.querySelector("input");
+  const parentSel = modal.querySelector("#tree-prompt-modal-parent");
+  const confirmBtn = modal.querySelector(".tree-prompt-modal-confirm");
+  input.value = initialValue;
+  if (placeholder) input.placeholder = placeholder;
+  const sync = () => { confirmBtn.disabled = input.value.trim().length === 0; };
+  sync();
+  const cleanup = () => backdrop.remove();
+  const submit = () => {
+    const value = input.value.trim();
+    if (!value) return;
+    cleanup();
+    onConfirm(value, parentSel.value || null);
+  };
+  const cancel = () => { cleanup(); onCancel?.(); };
+  modal.querySelector(".tree-delete-cancel").addEventListener("click", cancel);
+  confirmBtn.addEventListener("click", submit);
+  input.addEventListener("input", sync);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); submit(); }
+    else if (e.key === "Escape") { e.preventDefault(); cancel(); }
+  });
+  parentSel.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); cancel(); }
+  });
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) cancel(); });
+  // Focus + select-all so the user can immediately overwrite the default.
+  input.focus();
+  input.select();
+}
+
 export function attachLeafHoverHandlers(li) {
   li.addEventListener("mouseenter", () => {
     let ancestor = li.parentElement?.closest(".sl-item");

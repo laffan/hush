@@ -12,7 +12,7 @@ import {
   renderCursorOptions,
 } from "./styles-panel-shared.js";
 import { renderShaderSection, bindShaderSection, endShaderPreview } from "./style-modal-shader.js";
-import { renderStyleExtras, bindStyleExtras } from "./style-modal-background.js";
+import { renderStyleExtras, bindStyleExtras, endBackgroundPreview } from "./style-modal-background.js";
 import { applyActiveStyle } from "../style-application.js";
 import { bindCustomDropdown } from "./custom-dropdown.js";
 import {
@@ -23,6 +23,8 @@ import {
   formatPreviewHtml,
   updatePreview as renderPreview,
 } from "./style-modal-preview.js";
+import appearanceLightRaw from "./sidebar_icons/appearance-light.svg?raw";
+import appearanceDarkRaw from "./sidebar_icons/appearance-dark.svg?raw";
 
 const lightThemes = themeList.filter(t => t.type === "light");
 const darkThemes = themeList.filter(t => t.type === "dark");
@@ -60,9 +62,14 @@ function buildDefaultDraftFromSettings(state) {
     blockCursor: !!s.blockCursor,
     cursorMode: s.cursorMode || (s.blockCursor ? "block" : "system"),
     lineIndicator: s.lineIndicator || "none",
-    // Default style's shader rides a top-level AppSettings field so
-    // it persists alongside the other Default-only knobs.
+    // Default style's shader + background layers ride top-level
+    // AppSettings fields so they persist alongside the other
+    // Default-only knobs.
     shaderLayer: s.shaderLayer ? { ...s.shaderLayer } : null,
+    backgroundLayers: Array.isArray(s.backgroundLayers)
+      ? JSON.parse(JSON.stringify(s.backgroundLayers))
+      : s.backgroundLayers ?? null,
+    backgroundLayersEnabled: s.backgroundLayersEnabled !== false,
   };
 }
 
@@ -84,7 +91,10 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
   const isDefault = existingStyle === "__default__";
   const isNew = !existingStyle;
   const draft = isDefault
-    ? buildDefaultDraftFromSettings(state)
+    // migrateStyle also normalizes the Default draft's legacy fields —
+    // most importantly a WebGL2 shaderLayer, which now lives on as a
+    // webgl background layer instead of a Post Processing overlay.
+    ? migrateStyle(buildDefaultDraftFromSettings(state))
     : existingStyle
       ? JSON.parse(JSON.stringify(migrateStyle(existingStyle)))
       : {
@@ -92,6 +102,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
           lightThemeId: state.settings.lightTheme || "ayuLight",
           darkThemeId: state.settings.darkTheme || "dracula",
           lightColors: {}, darkColors: {},
+          backgroundLayers: [],
         };
 
   // Pre-select the tab that matches the current appearance so editors
@@ -156,6 +167,8 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         cursorMode: draft.cursorMode || (draft.blockCursor ? "block" : "system"),
         lineIndicator: draft.lineIndicator || "none",
         shaderLayer: draft.shaderLayer || null,
+        backgroundLayers: draft.backgroundLayers || null,
+        backgroundLayersEnabled: draft.backgroundLayersEnabled !== false,
       });
     } else {
       const name = (draft.name || "").trim() || "Untitled";
@@ -198,6 +211,8 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         cursorMode: state.settings.cursorMode,
         lineIndicator: state.settings.lineIndicator || "none",
         shaderLayer: state.settings.shaderLayer || null,
+        backgroundLayers: state.settings.backgroundLayers || null,
+        backgroundLayersEnabled: state.settings.backgroundLayersEnabled,
       });
     } else {
       state.updateSettings({ styles: state.settings.styles });
@@ -221,8 +236,12 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     flushSave();
     if (ownsBackdrop) backdrop.remove();
     else backdrop.innerHTML = "";
-    // Drop any modal-driven shader preview, then re-apply the active
-    // style so its shader (if any) takes the screen back.
+    // Drop any modal-driven background-layer / shader preview, then
+    // re-apply the active style so its layers and shader (if any) take
+    // the screen back. Layer preview first: it releases the scoped-
+    // preview lock synchronously so the applyActiveStyle inside
+    // endShaderPreview can re-mount the editor-context layers.
+    endBackgroundPreview();
     endShaderPreview(applyActiveStyle, state);
   }
 
@@ -259,6 +278,18 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     backdrop.innerHTML = `
       <div class="style-modal${ownsBackdrop ? "" : " in-host"}">
         ${ownsBackdrop ? '<button class="style-modal-close">&times;</button>' : ""}
+        <!-- Light / dark switch for the preview, pinned to the modal's
+             top-right beside the close button. It lives out here rather
+             than inside the preview pane because that pane is its own
+             scroll container, and a control inside it would scroll away.
+             It drives the same colorTab state as the Colors tabs in the
+             settings column, so the two always agree on which half of
+             the style is on show; updatePreview paints it with the
+             preview's own text colour so it reads in either half. -->
+        <div class="style-preview-appearance" role="group" aria-label="Preview appearance">
+          <button type="button" class="style-preview-appearance-btn${colorTab === 'light' ? ' active' : ''}" data-preview-mode="light" title="Light" aria-label="Preview light mode" aria-pressed="${colorTab === 'light'}">${appearanceLightRaw}</button>
+          <button type="button" class="style-preview-appearance-btn${colorTab === 'dark' ? ' active' : ''}" data-preview-mode="dark" title="Dark" aria-label="Preview dark mode" aria-pressed="${colorTab === 'dark'}">${appearanceDarkRaw}</button>
+        </div>
         <div class="style-modal-body">
 
           <!-- LEFT: settings column -->
@@ -378,12 +409,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
             </div>
 
             ${renderShaderSection(draft)}
-            ${renderStyleExtras(draft)}
-
-            ${(!isDefault && !isNew && typeof options.onDelete === "function") ? `
-            <div class="style-modal-section">
-              <button type="button" class="style-modal-delete">Delete style</button>
-            </div>` : ""}
+            ${renderStyleExtras(draft, !isDefault && !isNew && typeof options.onDelete === "function")}
           </div>
 
           <!-- Draggable divider — only visible in narrow-window stack layout -->
@@ -451,6 +477,16 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     backdrop.querySelectorAll(".style-color-tab").forEach(btn => {
       btn.addEventListener("click", () => {
         colorTab = btn.dataset.mode;
+        render();
+      });
+    });
+
+    // The preview pane's own light / dark switch — same state as the
+    // Colors tabs above, so flipping either moves both.
+    backdrop.querySelectorAll("[data-preview-mode]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (colorTab === btn.dataset.previewMode) return;
+        colorTab = btn.dataset.previewMode;
         render();
       });
     });
@@ -553,7 +589,11 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     });
 
     bindShaderSection(backdrop, draft, scheduleSave);
-    bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave);
+    // `colorTab` is the preview's light / dark switch — layers resolve
+    // their per-appearance opacity and invert against it, so the preview
+    // shows the half the switch is on. Safe to pass by value: flipping
+    // the switch re-runs render(), which re-runs bind().
+    bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave, state, colorTab);
 
     const deleteBtn = backdrop.querySelector(".style-modal-delete");
     if (deleteBtn) deleteBtn.addEventListener("click", () => {

@@ -55,20 +55,9 @@ export const SHADER_LAYERS = [
       { id: "scanlineColor", label: "Scanline color", type: "color", default: "#000000" },
     ],
   },
-  {
-    id: "webgl-neon-bloom",
-    name: "Neon Bloom (WebGL2)",
-    family: "webgl2",
-    load: () => import("./layers/webgl-neon-bloom.js"),
-    settings: [
-      { id: "brightness", label: "Bloom brightness", type: "range", min: 0, max: 1, step: 0.01, default: 0.55 },
-      { id: "blobSize", label: "Blob size", type: "range", min: 0.5, max: 3, step: 0.05, default: 1 },
-      { id: "speed", label: "Drift speed", type: "range", min: 0, max: 1, step: 0.01, default: 0.4 },
-      { id: "color1", label: "Bloom color 1", type: "color", default: "#f334a6" },
-      { id: "color2", label: "Bloom color 2", type: "color", default: "#34c4f4" },
-      { id: "color3", label: "Bloom color 3", type: "color", default: "#8c4ce8" },
-    ],
-  },
+  // The WebGL2 entries (neon bloom) moved to the Background Layers
+  // registry — see background-layers/effects-registry.js. Their module
+  // files still live under ./layers/ and load lazily from there.
 ];
 
 /** Resolve full options for a layer: defaults from registry overlaid by
