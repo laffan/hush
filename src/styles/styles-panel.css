@@ -305,9 +305,17 @@
   background: rgba(128, 128, 128, 0.15);
 }
 
-/* Export-style button at the bottom of the settings column. */
+/* Footer action row at the very bottom of the settings column — Export
+   and Delete side by side, set off from the sections above by extra
+   breathing room. */
+.style-modal-footer-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 26px;
+}
+
 .style-modal-export {
-  width: 100%;
+  flex: 1;
   padding: 8px;
   border: 1px solid var(--panel-border);
   background: transparent;
@@ -321,10 +329,9 @@
   background: rgba(128, 128, 128, 0.15);
 }
 
-/* Delete-style button — pinned at the very bottom of the settings column,
-   below "Export style as JSON". Tinted red so it reads as destructive. */
+/* Delete-style button — tinted red so it reads as destructive. */
 .style-modal-delete {
-  width: 100%;
+  flex: 1;
   padding: 8px;
   border: 1px solid color-mix(in srgb, #e5484d 45%, transparent);
   background: transparent;

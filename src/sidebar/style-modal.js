@@ -409,12 +409,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
             </div>
 
             ${renderShaderSection(draft)}
-            ${renderStyleExtras(draft)}
-
-            ${(!isDefault && !isNew && typeof options.onDelete === "function") ? `
-            <div class="style-modal-section">
-              <button type="button" class="style-modal-delete">Delete style</button>
-            </div>` : ""}
+            ${renderStyleExtras(draft, !isDefault && !isNew && typeof options.onDelete === "function")}
           </div>
 
           <!-- Draggable divider — only visible in narrow-window stack layout -->

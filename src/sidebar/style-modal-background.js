@@ -250,12 +250,16 @@ function sectionInnerHtml(draft) {
     </div>`;
 }
 
-/** Background Layers section HTML + a trailing Export row. */
-export function renderStyleExtras(draft) {
+/** Background Layers section HTML + the footer action row — Export and
+ *  (when the caller allows deleting this style) Delete side by side.
+ *  The Delete button's click handler lives with the modal, which owns
+ *  the confirm flow and the onDelete callback. */
+export function renderStyleExtras(draft, showDelete) {
   return `
     <div class="style-modal-section" id="style-bg-layers-section">${sectionInnerHtml(draft)}</div>
-    <div class="style-modal-section">
-      <button type="button" class="style-modal-export">Export style as JSON</button>
+    <div class="style-modal-section style-modal-footer-actions">
+      <button type="button" class="style-modal-export">Export Style</button>
+      ${showDelete ? `<button type="button" class="style-modal-delete">Delete Style</button>` : ""}
     </div>`;
 }
 

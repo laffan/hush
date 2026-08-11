@@ -35,6 +35,9 @@ export const CARET_PRESETS = [
   { id: "sparks", name: "Sparks" },
   { id: "bubbles", name: "Bubbles" },
   { id: "ripples", name: "Ripples" },
+  { id: "underline", name: "Underline Glow" },
+  { id: "hud", name: "HUD" },
+  { id: "flicker", name: "Flicker Bar" },
 ];
 
 // Seed nodes for a fresh gradient layer — three dark-friendly colours

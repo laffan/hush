@@ -19,7 +19,7 @@ let _tracker = null;
 export function acquireCaretSource(getView) {
   if (_tracker) { _tracker.refs += 1; return _tracker.source; }
 
-  const pos = { x: 0, y: 0, t: 0, valid: false };
+  const pos = { x: 0, y: 0, h: 22, t: 0, valid: false };
   let rafId = 0;
 
   function sample() {
@@ -34,6 +34,9 @@ export function acquireCaretSource(getView) {
       if (!c) return;
       pos.x = c.left;
       pos.y = (c.top + c.bottom) / 2;
+      // Caret height feeds the line-anchored presets (underline glow's
+      // baseline offset, the flicker bar's band).
+      pos.h = Math.max(c.bottom - c.top, 8);
       pos.t = performance.now();
       pos.valid = true;
     } catch (_) { /* mid-update reads can throw; skip the sample */ }
@@ -47,7 +50,7 @@ export function acquireCaretSource(getView) {
   schedule();
 
   const source = {
-    /** Latest caret sample: `{ x, y, t, valid }` in viewport px. */
+    /** Latest caret sample: `{ x, y, h, t, valid }` in viewport px. */
     get: () => pos,
   };
 

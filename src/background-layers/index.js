@@ -106,7 +106,7 @@ function resolveBackdrop(container, backdropColor) {
  *  around the centre when the pointer has been away for a couple of
  *  seconds so caret effects stay visible in the preview pane. */
 function createSyntheticCaretSource(container) {
-  const pos = { x: 0, y: 0, t: 0, valid: true };
+  const pos = { x: 0, y: 0, h: 22, t: 0, valid: true };
   let lastPointer = 0;
   const onMove = (e) => {
     pos.x = e.clientX;
