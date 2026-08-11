@@ -21,6 +21,8 @@ export function createStrokeEngine(opts: {
   /** Hush delta #33 — pen touched down during a finger-started select;
    *  return true after restoring the brush to let the contact draw. */
   onPenResumeDraw?: () => boolean;
+  /** Hush delta #33 — a finger tapped without drifting or holding. */
+  onFingerTap?: () => void;
   onLongPress?: (e: { pointerId: number; point: { x: number; y: number } }) => void;
   onStrokeAdded?: (stroke: any, index: number) => void;
   onStrokesRemoved?: (removed: { stroke: any; index: number }[]) => void;

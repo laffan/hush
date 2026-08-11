@@ -244,6 +244,9 @@ export function createDrawingLayer({
     // Hush delta #33: the pencil always draws — a pen contact hands
     // back the brush a finger gesture borrowed and starts the stroke.
     onPenResumeDraw: region.onPenResumeDraw,
+    // Hush delta #33: a bare finger tap deselects, the same as tapping
+    // empty canvas under the Select tool or the Lasso sub-tool.
+    onFingerTap: region.onFingerTap,
     onStrokeAdded: (stroke: EngineStroke, _index: number) => {
       const shim = shimBox.current;
       if (!shim) return;

@@ -83,7 +83,10 @@
  *      without leaving the brush. Drift is measured in CLIENT px, not
  *      engine-local px: the local threshold the hold uses is world
  *      space, and at zoom 0.25 four world px is one screen px — far
- *      too twitchy to promote a gesture on.
+ *      too twitchy to promote a gesture on. A finger that neither
+ *      drifts nor holds is a tap — `onFingerTap` — and clears the
+ *      selection, so the finger owns the whole selection vocabulary
+ *      while a brush is active: tap clears, drag boxes, hold lassos.
  *   (Deltas 4 + 5 live in selection.js + gestures.js; #24 in
  *    gestures.js; #26 — the per-stroke streamline cache — in
  *    stroke-render.js; #30 — ImageBitmap tinted atlases, so stamp
@@ -165,6 +168,8 @@ export function createStrokeEngine({
                          //   finger-started select was live; host flips back to the
                          //   brush synchronously and returns true to let this
                          //   contact draw
+  onFingerTap,           // Hush delta #33: () => void — a pencil-only finger landed and
+                         //   lifted without drifting or holding long enough to lasso
   onStrokeAdded,
   onStrokesRemoved,
   onStrokesTransformed,
@@ -667,14 +672,23 @@ export function createStrokeEngine({
       eraserCursor.setAttribute('visibility', 'hidden');
       return;
     }
-    // Hush delta #19: finger lifted before the long-press fired —
-    // drop the gesture quietly. Don't fall through to the stroke
-    // commit branch (there's no active stroke to commit).
+    // Hush delta #19 / #33: finger lifted before the long-press fired
+    // and without drifting far enough to sweep a marquee — that's a
+    // tap, which clears the selection (`onFingerTap`). Don't fall
+    // through to the stroke commit branch; there's no active stroke.
+    //
+    // Reaching here already excludes every other reading of the
+    // contact: a drift cleared fingerHoldPointer on promotion, the
+    // long-press timer firing routes the lift through the
+    // suppressedPointerId branch above, and a second finger landing
+    // makes the gesture recogniser call cancelActiveStroke(), which
+    // clears the tracker — so a two-finger tap never lands here.
     if (state.fingerHoldPointer !== null && e.pointerId === state.fingerHoldPointer) {
       cancelLongPress();
       state.fingerHoldPointer = null;
       state.fingerHoldClient = null;
       try { svg.releasePointerCapture(e.pointerId); } catch {}
+      if (onFingerTap) onFingerTap();
       return;
     }
     if (!state.active) return;

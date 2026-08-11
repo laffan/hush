@@ -35,6 +35,8 @@ export interface RegionSelectController {
   onLassoRegion(poly: number[][]): void;
   /** Engine delta #33 — a finger dragged in pen mode; start a marquee. */
   onFingerDragSelect(e: { pointerId: number; point: { x: number; y: number } }): void;
+  /** Engine delta #33 — a finger tapped without drifting or holding. */
+  onFingerTap(): void;
   onEngineDragStart(kind: "move" | "resize" | "rotate"): void;
   onEngineDragMove(info: { kind: string; dx: number; dy: number }): void;
   onEngineDragEnd(cancelled?: boolean): void;
@@ -129,6 +131,17 @@ export function createRegionSelect(deps: {
     flashHint(e.point);
   }
 
+  /** A bare finger tap while a brush / eraser is active clears the
+   *  selection. It completes the finger's selection vocabulary in those
+   *  tools — tap clears, drag boxes, hold lassos — and matches what a
+   *  tap already does under the Select tool and the Lasso sub-tool,
+   *  where it resolves as an empty region. */
+  function onFingerTap(): void {
+    if (state.selectedIds.size === 0) return;
+    state.selectedIds = new Set();
+    state.notify("selectedIds");
+  }
+
   /** Pen down during a borrowed select: restore the brush in the same
    *  tick so the engine's pointerdown can fall straight through into a
    *  stroke, and stop the selection engine listening so it doesn't open
@@ -172,6 +185,7 @@ export function createRegionSelect(deps: {
   return {
     onLassoRegion,
     onFingerDragSelect,
+    onFingerTap,
     beginRegionGesture,
     onEngineDragStart,
     onEngineDragMove,
