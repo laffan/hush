@@ -191,6 +191,12 @@ export function renderCaretOptions(layer) {
         <span class="style-slider-value">${Math.round(intensity * 100)}%</span>
       </div>
     </div>
+    <div class="style-editor-row">
+      <label>Anti-alias</label>
+      <div class="style-checkbox-group">
+        <input type="checkbox" id="style-caret-antialias" ${layer.antialias !== false ? "checked" : ""} />
+      </div>
+    </div>
     ${hudRows}
     ${blobRows}
     ${underlineRows}
@@ -245,6 +251,12 @@ export function bindCaretOptions(container, layer, { onCommit, rerender }) {
   bindRange("#style-caret-rings", "rings", (v) => String(v));
   bindRange("#style-caret-blobsize", "blobSize", (v) => v.toFixed(2) + "x");
   bindRange("#style-caret-blobspeed", "blobSpeed", (v) => v.toFixed(2) + "x");
+
+  const aaEl = container.querySelector("#style-caret-antialias");
+  if (aaEl) aaEl.addEventListener("change", () => {
+    layer.antialias = aaEl.checked;
+    onCommit();
+  });
 
   const rainbowEl = container.querySelector("#style-caret-rainbow");
   if (rainbowEl) rainbowEl.addEventListener("change", () => {

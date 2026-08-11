@@ -280,7 +280,7 @@ function defaultLayer(type) {
       // the cursor itself.
       matchCaret: true, lightColor: "#3b82f6", darkColor: "#9ecbff",
       height: 3, trailSeconds: 3.5, rings: 2,
-      blobSize: 1, blobSpeed: 1, rainbow: false,
+      blobSize: 1, blobSpeed: 1, rainbow: false, antialias: true,
       lightOpacity: 1, darkOpacity: 1,
     };
   }

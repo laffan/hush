@@ -78,6 +78,10 @@ void main() {
     float fade = 1.0 - age / 0.75;
     fade *= fade;
     float baseY = tp.y + u_caretH * 0.30;
+    // Cheap bbox reject before the per-particle exp() work. Bounds the
+    // fill cost now that the canvas renders at full device resolution.
+    if (abs(frag.y - baseY) > 46.0 * u_px) continue;
+    if (abs(frag.x - tp.x) > 300.0 * u_px) continue;
     for (int j = 0; j < 3; j++) {
       float fj = float(j);
       float h1 = hash(tp.w + fj * 17.3);
@@ -113,6 +117,8 @@ void main() {
     float age = u_time - tp.z;
     if (age < 0.0 || age > 1.8) continue;
     float fade = 1.0 - age / 1.8;
+    if (abs(frag.x - tp.x) > 90.0 * u_px) continue;
+    if (frag.y > tp.y + 30.0 * u_px || frag.y < tp.y - 150.0 * u_px) continue;
     for (int j = 0; j < 2; j++) {
       float fj = float(j);
       float h1 = hash(tp.w + fj * 13.1);
@@ -141,6 +147,8 @@ void main() {
     float age = u_time - tp.z;
     if (age < 0.0 || age > 1.1) continue;
     float radius = age * 190.0 * u_px;
+    float reach = radius + 8.0 * u_px;
+    if (abs(frag.x - tp.x) > reach || abs(frag.y - tp.y) > reach) continue;
     float d = abs(length(frag - tp.xy) - radius);
     float band = (0.7 + age * 0.7) * u_px;
     acc = max(acc, exp(-(d * d) / (band * band * 2.0)) * exp(-age * 3.0));
@@ -173,6 +181,7 @@ void main() {
     float fade = 1.0 - age / u_life;
     fade *= fade;
     vec2 pa = vec2(a.x, a.y + u_caretH * 0.30);
+    if (abs(frag.y - pa.y) > halfH * 5.0 + 2.0 * u_px) continue;
     vec2 pb = pa;
     // The trail arrives oldest-first, so entry i+1 is the next position
     // the caret took. Join them into one capsule when they share a
@@ -351,6 +360,7 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
   let blobSize = num(cfg.blobSize, BLOB_DEFAULTS.size);
   let blobSpeed = num(cfg.blobSpeed, BLOB_DEFAULTS.speed);
   let rainbow = cfg.rainbow ? 1 : 0;
+  let antialias = cfg.antialias !== false;   // absent = on
   let life = presetLife(preset, cfg);
 
   let program = null;
@@ -543,8 +553,14 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
     }
   }
 
+  // Kept so a mid-session antialias toggle can re-size without waiting
+  // for the next window resize.
+  let lastW = ctx.width, lastH = ctx.height, lastDpr = ctx.dpr;
   function resize(width, height, dpr) {
-    sizeCanvas(canvas, gl, width, height, dpr);
+    lastW = width; lastH = height; lastDpr = dpr;
+    sizeCanvas(canvas, gl, width, height, dpr, antialias);
+    // Backing px per CSS px — every shader size is written in CSS px and
+    // scaled by this, so supersampling changes sharpness, not geometry.
     pxScale = width > 0 ? canvas.width / width : 1;
     rect = canvas.getBoundingClientRect();
   }
@@ -561,6 +577,11 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
       blobSize = num(nextCfg.blobSize, BLOB_DEFAULTS.size);
       blobSpeed = num(nextCfg.blobSpeed, BLOB_DEFAULTS.speed);
       rainbow = nextCfg.rainbow ? 1 : 0;
+      const nextAA = nextCfg.antialias !== false;
+      if (nextAA !== antialias) {
+        antialias = nextAA;
+        resize(lastW, lastH, lastDpr);
+      }
       life = presetLife(nextPreset, nextCfg);
       if (nextPreset !== preset) {
         preset = nextPreset;

@@ -92,12 +92,32 @@ export function num(v, fallback) {
   return (typeof v === "number" && !Number.isNaN(v)) ? v : fallback;
 }
 
-/** Size a canvas to its host, DPR-capped at 1 (these are soft decorative
- *  layers — the halved fill cost matters more than pixel crispness).
+/** Size a canvas to its host at the display's real pixel ratio, capped
+ *  at 2.
+ *
+ *  This used to cap at 1 to halve fill cost, on the theory that these
+ *  are soft decorative layers. That is true of a bloom blob and false
+ *  of everything with an edge: on a Retina display the layer rendered
+ *  at half resolution and the compositor upscaled it, so every hairline
+ *  came out blurry and about twice as thick. Shader sizes are all
+ *  expressed in CSS px via `u_px`, so raising the cap thins the strokes
+ *  back to their intended widths and antialiases them properly.
+ *
  *  Guards no-op resizes: reassigning canvas.width reallocates the
  *  backing surface even for the same value (expensive on iPad). */
-export function sizeCanvas(canvas, gl, width, height, dpr) {
-  const scale = Math.min(dpr || 1, 1.0);
+export function sizeCanvas(canvas, gl, width, height, dpr, antialias) {
+  // Baseline: the display's own ratio, so a CSS pixel maps to a real
+  // pixel. `antialias` supersamples on top of that and lets the
+  // compositor downsample — the only way to smooth a hairline on a
+  // non-Retina display, where the baseline is already 1:1.
+  const floor = Math.min(Math.max(dpr || 1, 1), 2);
+  let scale = antialias ? Math.min(floor * 2, 3) : floor;
+  // Never allocate more than ~8M backing pixels for a decorative layer,
+  // however large the window. The budget only trims the supersampling
+  // bonus: it can't push below `floor`, which would reintroduce the
+  // upscale blur this sizing exists to avoid.
+  const BUDGET = 8e6;
+  while (scale > floor && width * height * scale * scale > BUDGET) scale -= 0.25;
   const w = Math.max(1, Math.floor(width * scale));
   const h = Math.max(1, Math.floor(height * scale));
   if (canvas.width !== w) canvas.width = w;

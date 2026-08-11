@@ -59,6 +59,7 @@ export function mountCaretLayer(host, cfg, appearance, ctx, caretSource) {
     blobSize: c.blobSize,
     blobSpeed: c.blobSpeed,
     rainbow: c.rainbow,
+    antialias: c.antialias,
   });
 
   const inst = createCaretEffect(host, toEffectCfg(cfg, appearance), caretSource, ctx);
