@@ -1,4 +1,4 @@
-import type { Shape, Layer } from "./types";
+import type { GrabSession, Shape, Layer, Split } from "./types";
 import type { FlowEdge } from "./flowchart";
 
 const MAX_HISTORY = 100;
@@ -12,6 +12,15 @@ export interface NotebookCheckpoint {
   shapes: Shape[];
   flowEdges: FlowEdge[];
   layers: Layer[];
+  /** Split lines. Not shapes, so they need their own slot; without it
+   *  undoing a split-line drag would put the content back and leave the
+   *  lines where the drag left them. */
+  splits: Split[];
+  /** The in-flight grab, if any. Riding the checkpoint is what makes
+   *  ⌘Z after placing a grab step back INTO the place stage (the
+   *  checkpoint taken at Apply carries `stage: "place"`) instead of
+   *  unwinding the whole two-stage operation at once. */
+  grab: GrabSession | null;
 }
 
 /** Checkpoint copy with structural sharing.
@@ -42,6 +51,22 @@ function snapshot(cp: NotebookCheckpoint): NotebookCheckpoint {
     shapes: cp.shapes.slice(),
     flowEdges: (cp.flowEdges || []).map((e) => ({ ...e })),
     layers: (cp.layers || []).map((l) => ({ ...l })),
+    // Splits are a handful of numbers each — copy per element, like
+    // layers and edges, so an in-place line drag can't rewrite history.
+    splits: (cp.splits || []).map((s) => ({ ...s })),
+    // The grab session's arrays hold live shape references (same
+    // structural sharing as `shapes`); only the record itself and its
+    // two lists need their own identity per checkpoint.
+    grab: cp.grab
+      ? {
+        ...cp.grab,
+        buffer: cp.grab.buffer.slice(),
+        bufferSplits: cp.grab.bufferSplits.map((s) => ({ ...s })),
+        restore: cp.grab.restore
+          ? { shapes: cp.grab.restore.shapes.slice(), splits: cp.grab.restore.splits.map((s) => ({ ...s })) }
+          : null,
+      }
+      : null,
   };
 }
 

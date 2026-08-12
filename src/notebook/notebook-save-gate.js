@@ -123,4 +123,29 @@ export class NotebookSaveGate {
     this.lastSnapshotAtMs = Date.now();
     this.snapshotPending = false;
   }
+
+  /** Create a version snapshot for `fileId` when the throttle window has
+   *  elapsed (or `force` is set); otherwise flag one as pending so
+   *  unmount can flush it. Never throws — diagnostics and history must
+   *  not be able to fail the save they accompany.
+   *
+   *  `invoke` is injected rather than imported so this module stays free
+   *  of the Tauri dependency the bridge already owns, and so the caller
+   *  keeps deciding whether it is even in a Tauri context. Callers must
+   *  pass the file id explicitly (never a mutable module global): a save
+   *  spanning a lifecycle change would otherwise snapshot one notebook's
+   *  content under another notebook's id. */
+  async maybeSnapshot(invoke, fileId, content, force) {
+    if (!fileId) return;
+    if (!this.snapshotDue(force)) {
+      this.snapshotPending = true;
+      return;
+    }
+    try {
+      await invoke("create_snapshot", { documentId: fileId, content });
+      this.markSnapshotTaken();
+    } catch (e) {
+      console.error("Notebook snapshot failed:", e);
+    }
+  }
 }

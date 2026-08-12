@@ -699,3 +699,45 @@ html.ios:not(.phone) #pdf-container .pdf-zoom-toolbar::after {
   display: none !important;
 }
 body.pdf-mode .column-resizer { display: none !important; }
+
+/* Proofread PDF: full-screen progress while the pages are baked into a
+   notebook. Modal by intent — the render walks the document page by
+   page and interacting with the source PDF underneath it would only
+   invite a second run. */
+.proofread-progress {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal-top, 9999);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--theme-bg, #fff) 72%, transparent);
+  backdrop-filter: blur(3px);
+}
+.proofread-progress-box {
+  min-width: 260px;
+  padding: 18px 22px;
+  border-radius: 10px;
+  background: var(--panel-bg, #fff);
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.25));
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  font-family: var(--ui-font-family);
+  color: var(--fg, #222);
+}
+.proofread-progress-label {
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.proofread-progress-track {
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--panel-border, rgba(128, 128, 128, 0.25));
+}
+.proofread-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 2px;
+  background: var(--accent, #5a8ad8);
+  transition: width 0.15s linear;
+}

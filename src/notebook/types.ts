@@ -1,5 +1,6 @@
 // === Tools ===
-export type Tool = "select" | "text" | "drag-area" | "brainstorm" | "pen";
+export type Tool = "select" | "text" | "drag-area" | "brainstorm" | "pen"
+  | "split" | "grab";
 
 /** Sub-tool while Tool === "pen" (drawing mode). The top-level `tool`
  *  stays "pen"; `drawingSubTool` picks which pen-mode operation is
@@ -52,6 +53,13 @@ interface ShapeBase {
   /** Layer membership. Optional on read (legacy shapes default to the
    *  first layer on load); set by every shape creator going forward. */
   layerId?: string;
+  /** Wall-clock ms the shape was created. Only "clear split content"
+   *  reads it — a split remembers when it was cut, and clearing removes
+   *  the material that appeared inside it *since*. Optional because
+   *  every shape written before splits shipped lacks it; a missing
+   *  stamp counts as "older than every split", so pre-existing content
+   *  is never swept away by a clear. */
+  createdAt?: number;
 }
 
 /** Stroke points carry pressure for brush-size modulation by the
@@ -213,6 +221,101 @@ export interface DragAreaShape extends ShapeBase {
 }
 
 export type Shape = DrawShape | TextShape | ImageShape | DragAreaShape;
+
+// === Splits ===
+
+export type Axis = "horizontal" | "vertical";
+
+/**
+ * A split is a pair of parallel lines cut across the whole canvas. It is
+ * NOT a shape: it has no bounds, never joins a group or a layer, and is
+ * never selected — so it lives in its own notebook-level list
+ * (`DrawingState.splits`, persisted alongside `bookmarks` /`flowEdges`)
+ * rather than in the `Shape` union.
+ *
+ * `a` and `b` are the two lines' positions on the split's cross axis in
+ * WORLD units — y for a horizontal split, x for a vertical one. They are
+ * equal at creation (the renderer still draws them 10 screen px apart so
+ * both are grabbable) and separate as the user drags:
+ *
+ *   coordinate < a   →  the "near" side, carried by the a line
+ *   coordinate > b   →  the "far" side, carried by the b line
+ *   a ≤ coord ≤ b    →  inside the split — material that appeared in the
+ *                       gap the drag opened, and moves with neither line
+ *
+ * Because a line only ever moves together with the content on its own
+ * side, that classification stays true across any number of drags, and
+ * nesting falls out of it: a split whose lines sit on the near side of
+ * an outer split is carried by the outer split's line like anything else.
+ */
+export interface Split {
+  id: string;
+  orientation: Axis;
+  /** Near line (top for horizontal, left for vertical), world units. */
+  a: number;
+  /** Far line (bottom / right), world units. Equal to `a` at creation. */
+  b: number;
+  /** Wall-clock ms the split was cut. "Clear split content" removes
+   *  shapes inside the gap whose `createdAt` is newer than this. */
+  createdAt: number;
+}
+
+/** Which of a split's two lines a gesture is addressing. */
+export type SplitLine = "a" | "b";
+
+/**
+ * The in-flight grab. A grab is a split with a lift built in: sweep a
+ * band, apply it (the band's content moves into `buffer` and the two
+ * edges are drawn together), then place the buffer somewhere else.
+ *
+ * The session rides the undo checkpoint, which is what makes ⌘Z after a
+ * place drop the user back into the place stage rather than unwinding
+ * the whole grab.
+ */
+export interface GrabSession {
+  /** "band" while the sweep / edge adjustment is live (nothing has been
+   *  moved yet), "place" once the content is in the buffer. */
+  stage: "band" | "place";
+  orientation: Axis;
+  /** Band edges in world units on the cross axis; `a` ≤ `b`. */
+  a: number;
+  b: number;
+  /** Lifted content, positioned relative to the band's `a` edge so it
+   *  can be dropped anywhere. Empty during the band stage. */
+  buffer: Shape[];
+  /** Splits that were lifted along with the content, same convention. */
+  bufferSplits: Split[];
+  /** Canvas state captured immediately before Apply, so Cancel can put
+   *  everything back in one step at any point in the two-stage flow. */
+  restore: { shapes: Shape[]; splits: Split[] } | null;
+}
+
+// === Proofreading ===
+
+/** One page of a proofread notebook: the image shape holding the render
+ *  plus the small raster the thumbnail rail paints. `y` / `height` are
+ *  the page's world placement AT CREATION — the rail re-reads the live
+ *  shape when it can, and falls back to these once a page image has been
+ *  split into pieces (a split cut renames nothing, but it does replace
+ *  the shape id the page was created under). */
+export interface ProofPage {
+  index: number;
+  shapeId: string;
+  y: number;
+  height: number;
+  thumbDataUrl: string;
+}
+
+/** Proofread metadata carried by a notebook created from a PDF. Its
+ *  presence is what puts the canvas in proofread mode (the page
+ *  thumbnail rail). */
+export interface ProofMeta {
+  sourcePdfFileId: string | null;
+  sourceName: string;
+  /** Layer that holds the page images. Starts locked. */
+  pageLayerId: string;
+  pages: ProofPage[];
+}
 
 // === Selection ===
 export interface SelectionBox {

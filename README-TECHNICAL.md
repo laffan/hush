@@ -147,6 +147,8 @@ See [README-NOTEBOOK.md](README-NOTEBOOK.md) and [README-DRAWING.md](README-DRAW
 - The canvas is mounted/unmounted by `notebook-bridge.js` with **serialized lifecycle** and multiple guards against saving an empty canvas over a real file — don't bypass `saveNotebook`.
 - **Shapes are immutable once in `state.shapes`** — mutations replace objects. The sync shim's identity diff and the undo manager's structurally-shared checkpoints both depend on it.
 - Notebook files are a versioned JSON envelope (`notebook-content.ts`); `.hushnote` zip packing (`sync/notebook-sync.js` / Rust `hushnote.rs`) is the only wire format.
+- **Splits are not shapes.** They're a notebook-level list (`DrawingState.splits`) with their own envelope field and their own slot on the undo checkpoint, so they never touch the `Shape` union's bounds / hit-test / clipboard surface. **Grabs** ride the checkpoint too (`NotebookCheckpoint.grab`) — that's what makes ⌘Z after placing a grab return to the place stage rather than unwinding the whole two-stage operation.
+- **Proofread PDF** (`pdf/pdf-proofread.js`) produces an ordinary `.hushnote` with an extra `proof` envelope field; nothing downstream branches on it except the page thumbnail rail. Image-heavy notebooks (a proof is fifty full-page rasters) fall under `notebook/image-budget.ts`, which keeps only images near the viewport decoded.
 - Desktops (`desktop/`) reuse the whole notebook engine with per-canvas capability switches on `DrawingState` (`flowchartEnabled`, `flowEdgesLocked`, `desktopMode`, …) and store per-device layout/thumbnail caches in IndexedDB — a pattern to follow for future canvas-based takeover views.
 
 ## Multi-window

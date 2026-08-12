@@ -58,6 +58,8 @@ export interface NotebookShortcuts {
   shortcutNbGroup: string;
   shortcutNbUngroup: string;
   shortcutNbResetZoom: string;
+  shortcutNbSplit: string;
+  shortcutNbGrab: string;
 }
 
 const DEFAULTS: NotebookShortcuts = {
@@ -71,6 +73,8 @@ const DEFAULTS: NotebookShortcuts = {
   shortcutNbGroup: "Mod+G",
   shortcutNbUngroup: "Mod+Shift+G",
   shortcutNbResetZoom: "Mod+0",
+  shortcutNbSplit: "S",
+  shortcutNbGrab: "G",
 };
 
 /**
@@ -111,6 +115,16 @@ export function bindInputEvents(
 ): () => void {
   const sc = { ...DEFAULTS, ...shortcuts };
   const cleanups: (() => void)[] = [];
+
+  /** Switch tools from the keyboard the same way the toolbar does —
+   *  including abandoning anything Split / Grab had in flight. */
+  function pickTool(tool: "split" | "grab") {
+    if (state.tool !== tool) state.dismissSplits();
+    state.tool = tool;
+    state.brainstormMode = false;
+    state.notify("tool");
+    state.notify("brainstormMode");
+  }
 
   function on<K extends keyof HTMLElementEventMap>(
     el: EventTarget, type: K, handler: (e: HTMLElementEventMap[K]) => void, listenerOpts?: AddEventListenerOptions,
@@ -308,6 +322,13 @@ export function bindInputEvents(
       e.preventDefault();
       return;
     }
+    // Esc also backs out of a split-line hover or an in-flight grab —
+    // same reasoning: the user may have clicked chrome on the way here,
+    // and abandoning a grab must always be one key away.
+    if (e.key === "Escape" && state.dismissSplits()) {
+      e.preventDefault();
+      return;
+    }
     // Decide whether this canvas should handle the keystroke. The
     // tricky cases are panes: focus can be in a different pane (skip),
     // in our own pane (handle), or — for an *inline* notebook pane —
@@ -373,6 +394,8 @@ export function bindInputEvents(
         if (state.brainstormMode) { state.tool = "text"; state.notify("tool"); }
         state.notify("brainstormMode"); return;
       }
+      if (matchesKey(e, sc.shortcutNbSplit)) { preventTypingLeak(); pickTool("split"); return; }
+      if (matchesKey(e, sc.shortcutNbGrab)) { preventTypingLeak(); pickTool("grab"); return; }
     }
 
     if (matchesKey(e, sc.shortcutNbDelete)) { state.deleteSelected(); return; }
@@ -460,6 +483,7 @@ export function bindInputEvents(
     // synthesises a Meta keyup, so this listener catches both paths.
     if (e.key === "Meta" || e.key === "Control") {
       state.setDragCmdHeld(false);
+      state.setSplitVertical(false);
     }
   }) as unknown as (e: HTMLElementEventMap["keyup"]) => void);
 
@@ -470,6 +494,10 @@ export function bindInputEvents(
   on(window as unknown as HTMLElement, "keydown", ((e: KeyboardEvent) => {
     if (e.key === "Meta" || e.key === "Control") {
       state.setDragCmdHeld(true);
+      // ⌘ turns the Split / Grab rule from horizontal to vertical. Bound
+      // to the modifier itself, not to pointer state, so the preview
+      // flips under a stationary cursor.
+      state.setSplitVertical(true);
     }
   }) as unknown as (e: HTMLElementEventMap["keydown"]) => void);
 

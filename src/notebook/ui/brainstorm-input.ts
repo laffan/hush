@@ -130,6 +130,7 @@ export function createBrainstormInput(state: DrawingState): HTMLElement {
         color: state.color,
         width: state.maxTextWidth,
         layerId: state.activeLayerId,
+        createdAt: Date.now(),
       };
       const pos = findBrainstormPosition(canvasOrigin, draft, state);
       draft.position = pos;

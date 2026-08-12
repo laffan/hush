@@ -352,6 +352,9 @@ pub fn default_nb_undo() -> String { "Mod+Z".to_string() }
 pub fn default_nb_redo() -> String { "Mod+Shift+Z".to_string() }
 pub fn default_nb_group() -> String { "Mod+G".to_string() }
 pub fn default_nb_ungroup() -> String { "Mod+Shift+G".to_string() }
+pub fn default_nb_reset_zoom() -> String { "Mod+0".to_string() }
+pub fn default_nb_split() -> String { "S".to_string() }
+pub fn default_nb_grab() -> String { "G".to_string() }
 
 pub fn default_proofread_disabled_rules() -> Vec<String> {
     // LongSentences — verbosity warnings tend to be aesthetic noise for

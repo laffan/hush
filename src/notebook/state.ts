@@ -1,6 +1,7 @@
 import type {
   Bounds, Camera, CameraBookmark, DragAreaShape, DrawingSlot, DrawingSubTool,
-  ImageShape, Layer, Point, SelectionBox, Shape, TextShape, Tool,
+  GrabSession, ImageShape, Layer, Point, ProofMeta, SelectionBox, Shape, Split,
+  SplitLine, TextShape, Tool,
 } from "./types";
 import { COLOR_PALETTE } from "./types";
 import {
@@ -29,6 +30,10 @@ import {
 } from "./state-helpers";
 import { computePocketLayout, POCKET_ZONE_WIDTH } from "./utils";
 import { collectShapesInPolygon, rectPolygon } from "./selection-region";
+import {
+  type SplitDragState, type SplitHoverState, type SplitPreviewState, type SplitTapPending,
+  dismissSplitInteraction, splitPointerDown, splitPointerMove, splitPointerUp,
+} from "./state-splits";
 // PERF-HUD (temporary): tracer singleton — see perf-hud.ts.
 import { perf } from "./perf-hud";
 
@@ -60,6 +65,10 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "drawingToolbarVertical" | "drawingToolbarCollapsed"
   | "strokeEngineDragging" | "reorderDragAreaId" | "reorderMode"
   | "reorderHoverTargetId" | "reorderPreview" | "canvasRotationEnabled"
+  // "splits" is a CONTENT key like "shapes" — split lines persist in the
+  // envelope, so moving one has to mark the notebook dirty. "grab" is
+  // session-only (the popup + place bar read it) and repaint-only.
+  | "splits" | "grab"
   // Repaint-only keys. Every notify key schedules a render (the render
   // loop subscribes to all change events), but "shapes" additionally
   // means "content changed" downstream: notes-canvas forwards it as a
@@ -103,6 +112,32 @@ export class DrawingState extends EventTarget {
   selectionBox: SelectionBox | null = null;
   editingText: EditingText | null = null;
   bookmarks: CameraBookmark[] = [];
+
+  // === Splits / Grabs (see splits.ts + state-splits.ts) ===
+  /** Notebook-level cut lines. Not shapes: no bounds, no layer, never
+   *  selected — hence their own list, persisted beside `bookmarks`. */
+  splits: Split[] = [];
+  /** The in-flight grab, or null. Rides the undo checkpoint so ⌘Z after
+   *  a place returns to the place stage. */
+  grab: GrabSession | null = null;
+  /** Live split-line drag. Transient; never persisted. */
+  splitDrag: SplitDragState | null = null;
+  /** Live grab band sweep / edge-handle drag. */
+  grabBandDrag: { anchor: number; edge: SplitLine | null } | null = null;
+  /** A touch contact that would cut a split or place a grab, held until
+   *  pointer-up proves it was a tap and not the first finger of a pan. */
+  splitTapPending: SplitTapPending | null = null;
+  /** Hovered split line + its action cluster (screen px). */
+  splitHover: SplitHoverState | null = null;
+  /** Where the split / grab / place line would land, under the cursor. */
+  splitPreview: SplitPreviewState | null = null;
+  /** ⌘ held: the split / grab tools offer a vertical line instead of a
+   *  horizontal one. Mirrored from the modifier by the input handler so
+   *  the preview flips without the pointer having to move. */
+  splitVertical = false;
+  /** Proofread metadata when this notebook was built from a PDF. Drives
+   *  the page thumbnail rail; null on an ordinary notebook. */
+  proof: ProofMeta | null = null;
   brainstormMode = false;
   creatingDragArea: { start: Point; end: Point } | null = null;
 
@@ -616,6 +651,27 @@ export class DrawingState extends EventTarget {
     return s;
   }
 
+  // === Splits / Grabs ===
+  // Thin delegations; the state machine lives in state-splits.ts.
+
+  /** ⌘ / Ctrl flips the split + grab tools between a horizontal and a
+   *  vertical line. Driven from the modifier keydown/keyup rather than
+   *  from pointer state so the preview turns under a stationary cursor. */
+  setSplitVertical(on: boolean) {
+    if (this.splitVertical === on) return;
+    this.splitVertical = on;
+    if (this.splitPreview) this.splitPreview = { ...this.splitPreview, orientation: on ? "vertical" : "horizontal" };
+    this.notify("interaction");
+  }
+
+  /** Escape hatch for Esc and tool switches: cancels a grab, ends a line
+   *  drag, or drops the hover cluster. Returns true if it did anything. */
+  dismissSplits(): boolean {
+    const handled = dismissSplitInteraction(this);
+    if (this.splitPreview) { this.splitPreview = null; this.notify("interaction"); }
+    return handled;
+  }
+
   // Undo/redo
   private _undo = new UndoManager();
 
@@ -630,11 +686,23 @@ export class DrawingState extends EventTarget {
       shapes: this.shapes,
       flowEdges: this.flowEdgesLocked ? [] : this.flowchart.serialize(),
       layers: this.layers,
+      splits: this.splits,
+      grab: this.grab,
     };
   }
 
   private _applyCheckpoint(cp: NotebookCheckpoint) {
     this.shapes = cp.shapes;
+    // Splits and the grab session restore together with the shapes:
+    // undoing a line drag has to put the lines back too, and undoing a
+    // completed place has to hand the buffer back to the place stage.
+    this.splits = cp.splits || [];
+    this.grab = cp.grab || null;
+    this.splitDrag = null;
+    this.grabBandDrag = null;
+    this.splitHover = null;
+    this.notify("splits");
+    this.notify("grab");
     if (cp.flowEdges && !this.flowEdgesLocked) this.flowchart.deserialize(cp.flowEdges);
     if (cp.layers && cp.layers.length) {
       this.layers = cp.layers;
@@ -940,6 +1008,7 @@ export class DrawingState extends EventTarget {
             groupId: s.groupId,
             pocketed: s.pocketed,
             layerId: s.layerId,
+            createdAt: s.createdAt,
           };
           return img;
         }
@@ -968,6 +1037,7 @@ export class DrawingState extends EventTarget {
             name: sticker.name,
             color: editing.color,
             layerId: this.activeLayerId,
+            createdAt: Date.now(),
           } as ImageShape,
         ];
         // Pending flow parent is meaningless for an image — discard it.
@@ -979,6 +1049,7 @@ export class DrawingState extends EventTarget {
           text: trimmed, fontSize: editing.fontSize, color: editing.color,
           width: fitWidth,
           layerId: this.activeLayerId,
+          createdAt: Date.now(),
         } as TextShape];
         // Pending flowchart parent (set by startEditingFlowchartChild before
         // user typed) — wire the edge once the new shape exists.
@@ -1308,6 +1379,19 @@ export class DrawingState extends EventTarget {
       return;
     }
 
+    // Splits and grabs run ahead of the regular tool logic: a split
+    // line, a hovered action button, or a waiting place bar is chrome
+    // laid over the canvas, and a click on one must never fall through
+    // to selection. Deliberately BELOW the pan branch — space-to-pan and
+    // the middle-button pan have to keep working while a split or grab
+    // is in flight, which is how the user navigates a long proof
+    // mid-gesture. Returns false when nothing split-related was under
+    // the pointer, in which case the tool paths below take over.
+    if (splitPointerDown(this, screenPt, canvasPt, e)) {
+      canvas.setPointerCapture(e.pointerId);
+      return;
+    }
+
     if (this.tool === "text" && !this.brainstormMode) {
       // Text tool (not brainstorm — brainstorm has its own input widget)
       const hit = findShapeAtPoint(canvasPt, this.shapes, this.fontFamily);
@@ -1558,6 +1642,21 @@ export class DrawingState extends EventTarget {
       this.camera = { x: this._cameraStart.x + dx, y: this._cameraStart.y + dy, zoom: this._cameraStart.zoom, rotation: this._cameraStart.rotation };
       this.notify("camera");
       return;
+    }
+
+    // A live split-line drag, grab-band sweep, or pending touch tap owns
+    // the pointer.
+    if (this.splitDrag || this.grabBandDrag || this.splitTapPending) {
+      splitPointerMove(this, screenPt, canvasPt, { x: e.clientX, y: e.clientY });
+      return;
+    }
+    // Otherwise the same call just maintains the tool preview line and
+    // the split-line hover, both of which are meaningless while another
+    // gesture is mid-flight — so it's skipped rather than fighting for
+    // the frame.
+    if (!this._isDragging && !this._isResizing && !this._pocketDragPending
+      && !this.selectionBox && !this.creatingDragArea) {
+      splitPointerMove(this, screenPt, canvasPt, { x: e.clientX, y: e.clientY });
     }
 
     // Drag from pocket: on first movement, unpocket shapes and place at cursor
@@ -1822,6 +1921,13 @@ export class DrawingState extends EventTarget {
     // would have called cancelActiveInteraction first, which already
     // consumed and cleared the snapshot.)
     this._preTouchSelectedIds = null;
+
+    if (this.splitDrag || this.grabBandDrag || this.splitTapPending) {
+      const rect = this.canvasEl?.getBoundingClientRect();
+      const screenPt = rect ? { x: e.clientX - rect.left, y: e.clientY - rect.top } : undefined;
+      const worldPt = screenPt ? screenToCanvas(screenPt, this.camera) : undefined;
+      if (splitPointerUp(this, screenPt, worldPt, e.pointerType)) return;
+    }
 
     if (this._isPanningActive) {
       // Only the pointer that started the pan can end it. A stray
@@ -2123,6 +2229,7 @@ export class DrawingState extends EventTarget {
           width: w, height: h, color: "#6b7280", strokeColor: "#6b7280",
           backgroundColor: "rgba(107, 114, 128, 0.04)", borderRadius: 12,
           layerId: this.activeLayerId,
+          createdAt: Date.now(),
         };
         const areaBounds = getShapeBounds(newArea, this.fontFamily);
         this.shapes = [...this.shapes.map((s) => {
@@ -2327,6 +2434,18 @@ export class DrawingState extends EventTarget {
     }
     if (this._pocketDragPending) {
       this._pocketDragPending = false;
+      changed = true;
+    }
+    // A split-line drag promoted into a two-finger pan commits whatever
+    // it moved rather than snapping back — the content and the line are
+    // already consistent, and rewinding a half-finished concertina is
+    // more surprising than keeping it.
+    if (this.splitDrag || this.grabBandDrag || this.splitHover || this.splitTapPending) {
+      // A pending touch tap is abandoned outright — the second finger
+      // that triggered this is a pan, not a cut.
+      this.splitTapPending = null;
+      splitPointerUp(this);
+      if (this.splitHover) this.splitHover = null;
       changed = true;
     }
     if (this._isPanningActive) {
@@ -2936,6 +3055,7 @@ export class DrawingState extends EventTarget {
       dataUrl, name, color: "#000000",
       ...(dataUrlDark ? { dataUrlDark } : {}),
       parentId, layerId,
+      createdAt: Date.now(),
     };
     this.shapes = [
       ...this.shapes
@@ -3002,6 +3122,7 @@ export class DrawingState extends EventTarget {
       backgroundColor: "rgba(107, 114, 128, 0.04)",
       borderRadius: 12,
       layerId: this.activeLayerId,
+      createdAt: Date.now(),
     };
     const wrappedIds = new Set(selected.filter((s) => s.type !== "drag-area").map((s) => s.id));
     this.shapes = [
@@ -3245,6 +3366,7 @@ export class DrawingState extends EventTarget {
       id, type: "image", position: { x: pos.x - dw / 2, y: pos.y - dh / 2 },
       width: dw, height: dh, dataUrl, name, color: "#000000",
       layerId: this.activeLayerId,
+      createdAt: Date.now(),
     } as ImageShape];
     this.selectedIds = new Set([id]);
     this.tool = "select";
@@ -3325,7 +3447,7 @@ export class DrawingState extends EventTarget {
   }
 
   addTextShapeAtPosition(text: string, position: Point, opts?: { fontSize?: number }) {
-    this.shapes = [...this.shapes, { id: generateId(), type: "text", position, text, fontSize: opts?.fontSize ?? this.fontSize, color: "#000000", width: this.maxTextWidth, layerId: this.activeLayerId } as TextShape];
+    this.shapes = [...this.shapes, { id: generateId(), type: "text", position, text, fontSize: opts?.fontSize ?? this.fontSize, color: "#000000", width: this.maxTextWidth, layerId: this.activeLayerId, createdAt: Date.now() } as TextShape];
     this.recordHistory();
     this.notify("shapes");
   }

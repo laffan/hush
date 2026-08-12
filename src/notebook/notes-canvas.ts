@@ -11,6 +11,9 @@ import { createShelfPanel, type ShelfPanelEl } from "./ui/shelf-panel";
 import { createShelfResizer } from "./ui/shelf-resizer";
 import { createTextEditor } from "./ui/text-editor";
 import { createBrainstormInput } from "./ui/brainstorm-input";
+import { createGrabPopup } from "./ui/grab-popup";
+import { createProofThumbnails, type ProofThumbnailRail } from "./ui/proof-thumbnails";
+import { budgetNeedsRecompute, imageKeepSet } from "./image-budget";
 // @ts-ignore — JS module, no type declaration file
 import { registerNotebookDropTarget } from "../pane/text-drag.js";
 // @ts-ignore — JS module, no type declaration file
@@ -197,6 +200,17 @@ export class NotesCanvas {
   private _shelfRightInsetCleanup: (() => void) | null = null;
   private _shelfTrackRaf = 0;
   private _drawingLayer: DrawingLayer | null = null;
+  private _proofRail: ProofThumbnailRail | null = null;
+  /** Image ids currently worth holding decoded, or null when the
+   *  notebook is small enough to keep every image. See image-budget.ts. */
+  private _imageKeep: Set<string> | null = null;
+  /** Camera the keep set was computed against, so a pan only
+   *  recomputes once it has actually travelled. */
+  private _imageKeepCamera: Camera | null = null;
+  /** Shapes array the keep set was computed from. Identity, not count:
+   *  a split drag moves pages without adding or removing any, and the
+   *  budget has to follow content that slid out of range. */
+  private _imageKeepShapes: Shape[] | null = null;
 
   constructor(container: HTMLElement, shortcuts?: Partial<NotebookShortcuts>) {
     this.container = container;
@@ -232,6 +246,9 @@ export class NotesCanvas {
     // Update cursor on tool change
     const cursorMap: Record<string, string> = {
       select: "default", text: "text", "drag-area": "crosshair", brainstorm: "text",
+      // Split and Grab paint their own full-width rule under the
+      // pointer, so the cursor gets out of its way.
+      split: "crosshair", grab: "crosshair",
     };
     this.state.addEventListener("change", () => {
       // Brainstorm mode behaves like select on the canvas — keep the default cursor instead of the text I-beam.
@@ -449,6 +466,7 @@ export class NotesCanvas {
     }));
     container.appendChild(createTextEditor(this.state));
     container.appendChild(createBrainstormInput(this.state));
+    container.appendChild(createGrabPopup(this.state));
     container.appendChild(createReorderBanner(this.state));
     const bottomToolbar = createToolbar(this.state);
     container.appendChild(bottomToolbar);
@@ -491,7 +509,9 @@ export class NotesCanvas {
     // without spending a version snapshot on every pan / zoom step.
     this.state.addEventListener("change", ((e: CustomEvent) => {
       const keys: string[] = e.detail?.keys || [];
-      if (keys.includes("shapes") || keys.includes("bookmarks")) {
+      // "splits" is a content key like "shapes" — split lines persist
+      // in the envelope, so dragging one has to mark the file dirty.
+      if (keys.includes("shapes") || keys.includes("bookmarks") || keys.includes("splits")) {
         this.container.dispatchEvent(new CustomEvent("notebook-change"));
       }
       if (keys.includes("camera")) {
@@ -602,6 +622,12 @@ export class NotesCanvas {
     document.body.appendChild(shelfResizer);
     this._shelfResizer = shelfResizer;
 
+    // Proofread page rail. Mounted unconditionally but self-hiding —
+    // it shows itself the moment `state.proof` arrives, which for the
+    // main canvas is during the bridge's load, after this constructor.
+    this._proofRail = createProofThumbnails(this.state);
+    container.appendChild(this._proofRail.root);
+
     // Refresh the shelf when panes are added / removed / hidden so its
     // pane rows stay in sync without polling. Pane content edits don't
     // emit this event — they're picked up the next time the shelf
@@ -639,7 +665,18 @@ export class NotesCanvas {
 
   // === Public API ===
 
-  loadShapes(shapes: Shape[], layers?: import("./types").Layer[], activeLayerId?: string) {
+  loadShapes(
+    shapes: Shape[],
+    layers?: import("./types").Layer[],
+    activeLayerId?: string,
+    extras?: { splits?: import("./types").Split[]; proof?: import("./types").ProofMeta | null },
+  ) {
+    // Splits and proofread metadata land before the shapes so the first
+    // notify already carries a consistent canvas — the rail reads
+    // `proof` off the same change event the shapes arrive on.
+    this.state.splits = extras?.splits ? extras.splits.slice() : [];
+    this.state.proof = extras?.proof ?? null;
+    this.state.grab = null;
     // Ensure every shape has a layerId; default to the seed / first
     // layer so legacy notebooks render on a real layer.
     const nextLayers = layers && layers.length ? layers : this.state.layers;
@@ -666,6 +703,8 @@ export class NotesCanvas {
     layers?: import("./types").Layer[];
     flowEdges?: import("./flowchart").FlowEdge[];
     bookmarks?: import("./types").CameraBookmark[];
+    splits?: import("./types").Split[];
+    proof?: import("./types").ProofMeta | null;
   }) {
     // Bookmarks travel outside the undo checkpoint — apply them even
     // when the shape content turns out to be identical.
@@ -682,7 +721,11 @@ export class NotesCanvas {
       || JSON.stringify(this.state.flowchart.serialize()) === JSON.stringify(snapshot.flowEdges);
     const sameLayers = !snapshot.layers || !snapshot.layers.length
       || JSON.stringify(this.state.layers) === JSON.stringify(snapshot.layers);
-    if (sameShapes && sameEdges && sameLayers) return;
+    // Split lines are content: a remote device that only dragged one
+    // still has a change to mirror, even though every shape matches.
+    const sameSplits = !snapshot.splits
+      || JSON.stringify(this.state.splits) === JSON.stringify(snapshot.splits);
+    if (sameShapes && sameEdges && sameLayers && sameSplits) return;
 
     const nextLayers = snapshot.layers && snapshot.layers.length ? snapshot.layers : this.state.layers;
     const topLayerId = nextLayers[0]?.id ?? this.state.activeLayerId;
@@ -692,6 +735,8 @@ export class NotesCanvas {
       this.state.notify("activeLayerId");
     }
     this.state.shapes = snapshot.shapes.map((s) => s.layerId ? s : ({ ...s, layerId: topLayerId }));
+    if (snapshot.splits) this.state.splits = snapshot.splits.slice();
+    if (snapshot.proof !== undefined) this.state.proof = snapshot.proof;
     if (snapshot.flowEdges) this.state.flowchart.deserialize(snapshot.flowEdges);
     // Keep whatever part of the selection survived the mirror.
     const surviving = new Set(this.state.shapes.map((s) => s.id));
@@ -702,6 +747,7 @@ export class NotesCanvas {
     }
     this.state.recordHistory();
     this.state.notify("layers");
+    this.state.notify("splits");
     this.state.notify("shapes");
   }
 
@@ -795,6 +841,7 @@ export class NotesCanvas {
     if (this._cleanupPaneListener) { this._cleanupPaneListener(); this._cleanupPaneListener = null; }
     if (this._shelfRightInsetCleanup) { this._shelfRightInsetCleanup(); this._shelfRightInsetCleanup = null; }
     if (this._drawingLayer) { this._drawingLayer.destroy(); this._drawingLayer = null; }
+    if (this._proofRail) { this._proofRail.destroy(); this._proofRail = null; }
     if (this._shelfResizer) { this._shelfResizer.remove(); this._shelfResizer = null; }
     this.container.innerHTML = "";
     liveCanvases.delete(this);
@@ -954,7 +1001,27 @@ export class NotesCanvas {
         desktopOutlineHover: this.state.desktopOutlineHover,
         fileStickies: getFileStickiesFromHush,
         desktopStickies: getDesktopStickiesFromHush(this.state.desktopStickyTarget),
+        splitChrome: {
+          splits: this.state.splits,
+          grab: this.state.grab,
+          splitPreview: this.state.splitPreview,
+          splitHover: this.state.splitHover,
+          grabBandDragging: this.state.grabBandDrag != null,
+          grabToolActive: this.state.tool === "grab",
+        },
     });
+  }
+
+  /** Refresh the viewport-scoped image budget when it can have changed:
+   *  a different set of images, or a camera that has travelled far
+   *  enough for the margin to have moved off something. */
+  private _syncImageBudget() {
+    const w = this._canvas.clientWidth, h = this._canvas.clientHeight;
+    if (this._imageKeepShapes === this.state.shapes
+      && !budgetNeedsRecompute(this._imageKeepCamera, this.state.camera, w, h)) return;
+    this._imageKeepShapes = this.state.shapes;
+    this._imageKeepCamera = { ...this.state.camera };
+    this._imageKeep = imageKeepSet(this.state.shapes, this.state.camera, w, h);
   }
 
   private _syncImageCache() {
@@ -962,9 +1029,15 @@ export class NotesCanvas {
     // matching the active theme; a light/dark switch swaps the src in
     // place. The loaded variant is tracked on the element so the check
     // is a cheap string compare rather than a data-URL diff.
+    this._syncImageBudget();
+    const keep = this._imageKeep;
     const variant = this.state.theme.variant;
     for (const shape of this.state.shapes) {
       if (shape.type !== "image") continue;
+      // Out of budget: don't decode it. The renderer paints a
+      // placeholder card for an uncached image, and scrolling back
+      // brings the bytes in again — the dataUrl never left the shape.
+      if (keep && !keep.has(shape.id)) continue;
       const cached = this._imageCache.get(shape.id) as (HTMLImageElement & { _hushVariant?: string }) | undefined;
       // Nothing to decode yet (a Desktop pane's placeholder, mid
       // hydration). Setting `src = ""` would resolve against the
@@ -989,7 +1062,7 @@ export class NotesCanvas {
     }
     const ids = new Set(this.state.shapes.filter((s) => s.type === "image").map((s) => s.id));
     for (const id of this._imageCache.keys()) {
-      if (!ids.has(id)) this._imageCache.delete(id);
+      if (!ids.has(id) || (keep && !keep.has(id))) this._imageCache.delete(id);
     }
   }
 

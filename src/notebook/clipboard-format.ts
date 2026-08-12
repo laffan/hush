@@ -120,6 +120,10 @@ export function remapForPaste(
       points?: Point[];
     };
     cAny.id = idMap.get(s.id)!;
+    // A paste is new material on this canvas whatever the source's age,
+    // so it gets a fresh creation stamp — otherwise pasting into a split
+    // would produce content "Clear split content" refuses to remove.
+    (cAny as { createdAt?: number }).createdAt = Date.now();
     if (cAny.parentId) {
       const mapped = idMap.get(cAny.parentId);
       if (mapped) cAny.parentId = mapped;

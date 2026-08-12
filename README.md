@@ -37,6 +37,8 @@ Notebooks are infinite pan-and-zoom canvases for visual thinking: text shapes (w
 
 On iPad, only the Apple Pencil draws — fingers pan, pinch, tap to undo, and drag out a selection box without leaving the brush. Handwritten strokes can be **recognized into text** on-device (ML Kit on iPad; Apple Vision for images anywhere). Any selection can be **rasterized** into a single image that keeps tracking light/dark appearance.
 
+**Splits** and **Grabs** open the canvas up. A split is a cut all the way across it — click with the Split tool and two dashed orange lines appear where you clicked (hold ⌘ to cut vertically instead). Drag the top line and everything above it moves; drag the bottom line and everything below follows, so you can push a page apart and write in the gap. Splits nest, images they cross are divided into masked halves that look untouched until you pull them apart, and text, strokes, groups and drag boxes are never cut in two — the whole grouping lands on one side. Hovering a split line offers clear-what-I-wrote-in-here, grab, and delete. A **Grab** sweeps out a band, lifts everything inside it, closes the gap behind, and hands you a bar to place the lot somewhere else; ⌘Z after placing puts you back at the placing step.
+
 Notebooks export as `.hushnote` (lossless), PNG, JPG, or PDF.
 
 ## Organizing
@@ -54,6 +56,7 @@ Notebooks export as `.hushnote` (lossless), PNG, JPG, or PDF.
 
 - **Zotero**: connect your library, search references from the editor (`⌘⇧I` or type `[@` for inline citations), save PDFs into Hush, browse a paper's highlights in a drag-out pane, and insert page snapshots.
 - **PDF viewer**: fast, annotation-aware (Zotero highlights and ink render on the pages), with an annotation shelf, named colored **bookmarks** that work as deep links from your notes, a **folded view** that collapses a paper to just its annotated regions, and a gallery **shelf** view of any PDFs folder with full-text-ish search over titles, bookmarks, and highlight text.
+- **Proofread PDF** turns the open PDF into a `<name>-Proof` notebook: every page rendered at full size, stacked in one column, on a locked layer with a drawing layer over it. From there it's an ordinary notebook — ink, text, drag boxes, and especially Splits and Grabs, which is how you open space between paragraphs or move a section to where it belongs. A page thumbnail rail rides the edge of the shelf for jumping around.
 - **Export**: documents and projects render to PDF through an embedded Typst pipeline (styles, line spacing, numbered headings, footnotes, and a real bibliography from your citations), plus Markdown, RTF, and one-shot Google Doc export.
 
 ## Google Docs

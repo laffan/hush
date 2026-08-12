@@ -16,6 +16,10 @@ src/notebook/
   input-handler.ts        DOM events → state methods; reads shortcuts from Hush settings
   markdown.ts             Inline markdown parser for text shapes
   selection-region.ts     Region → selection hit test shared by marquee + lasso
+  splits.ts               Split geometry (pure): units, side assignment, image cuts
+  state-splits.ts         Split / Grab state machine — pointer routing + operations
+  renderer-splits.ts      Split lines, grab band, place bar, hover action cluster
+  image-budget.ts         Viewport-scoped image-cache policy for image-heavy notebooks
   themes.ts               16 canvas themes mirroring the editor set
   types.ts                Shape types, constants, palettes
   undo-manager.ts         Snapshot undo/redo (100 entries, structural sharing)
@@ -26,7 +30,9 @@ src/notebook/
   emoji-sticker.ts        Emoji-only text shapes → image stickers
   perf-hud.ts             On-canvas perf diagnostics (Settings > Debug > Performance HUD)
   ui/                     Toolbar, selection toolbar + colors menu, shelf panel, inline
-                          text editor, brainstorm input, bookmarks, status bar, icons, h()
+                          text editor, brainstorm input, bookmarks, status bar, icons, h(),
+                          grab-popup (the grab's two-stage control bar),
+                          proof-thumbnails (proofread page rail)
   drawing/                Drawing layer + stroke engine — see README-DRAWING.md
   pencil-bridge.js        iOS: pencil-only inking + Apple Pencil double-tap listener
 ```
@@ -71,10 +77,16 @@ The `content` field is a versioned JSON envelope (`notebook-content.ts`):
   "shapes": [...], "layers": [...],      // layers ordered top-first
   "flowEdges": [...],                     // flowchart edges
   "bookmarks": [...],                     // optional camera bookmarks
+  "splits": [...],                        // optional split lines
+  "proof": {...},                         // optional proofread metadata
   "camera": {...},                        // optional saved viewport
   "background": {...}                     // optional per-notebook bg settings
 }
 ```
+
+`splits` and `proof` ride the **body** half of the encode split (with
+shapes / layers / edges / bookmarks), not the camera tail: both are
+content, so a camera-only save reuses the cached fragment for them too.
 
 `decodeNotebookContent` also accepts the legacy bare `Shape[]` form; every optional field decodes as `undefined` and is skipped. Every save / load / sync / export path goes through this pair. The saved `camera` restores on main-canvas mount only — sync pulls (`reloadNotebookShapes`) and pane mounts deliberately ignore it so a remote device or a pane viewport can't yank the local one. The `.hushnote` zip (envelope + `images/`) is packed by `sync/notebook-sync.js` / Rust `hushnote.rs`.
 
@@ -90,6 +102,47 @@ All shapes extend `ShapeBase` `{ id, color, parentId?, groupId?, pocketed?, laye
 | `DrawShape` | Freehand stroke — points + brushId + size + mode; rendered by the engine |
 
 Layers are notebook-level (every shape type, ordered top-first, hidden/locked per layer); legacy shapes fall back to the bottom layer. The pocket is a right-edge stash drawn at fixed screen positions, anchored against `pocketRightInset` (right-docked pane edge, else shelf edge).
+
+Every shape also carries an optional `createdAt` stamp, written by each creator (including the sync shim's engine strokes and the clipboard's paste remap). Only "clear split content" reads it; a missing stamp counts as older than every split, so nothing predating the feature can be swept away.
+
+### Splits and Grabs
+
+A **split** is a cut across the entire canvas: two parallel lines, each carrying the content on its own side. Splits are *not* shapes — no bounds, no layer, never selected — so they live in a notebook-level `DrawingState.splits` list beside `bookmarks`, and skip the whole `Shape` union surface (bounds, hit tests, resize, clipboard, region select).
+
+`Split.a` / `.b` are world positions on the cross axis (y for a horizontal split, x for a vertical one), equal at creation. The classification is by **unit centre**, which makes near / far a partition:
+
+| region | meaning |
+|---|---|
+| `coord < a` | near side — moves with the `a` line |
+| `coord > b` | far side — moves with the `b` line |
+| `a ≤ coord ≤ b` | inside the split — material written into the gap, carried by neither |
+
+Because a line only ever moves with its own side, that stays true across any number of drags — and **nesting falls straight out of it**: `translateSplits` moves other splits' lines on the same test their side's shapes got, so a split cut inside another is carried by the outer line, while one sitting in the outer gap correctly stays put. Cross-orientation splits are never moved (a vertical line already spans the full height).
+
+Two rules govern what a cut does to content, both in `splits.ts`:
+
+1. **Only standalone images are divided.** `buildUnits` resolves the outermost grouping — union-find over `groupId` *and* `parentId`, because the two interleave (grouped strokes inside a drag box move as one thing and neither relation alone says so) — and a unit lands whole on one side. A unit that is a single ungrouped, unparented image is cut instead, into two shapes sharing the same `dataUrl` with complementary `crop` windows (the existing non-destructive crop, no re-encode), so the cut is invisible until the sides separate. The near piece keeps the original id, so anything referencing the image (a proofread page entry, a cache slot) still resolves.
+2. **Layer *locks* are ignored; hidden layers are skipped.** A lock stops the pointer picking a shape up, but a split is a cut across the document — and the headline case, a PDF proof whose pages are locked precisely so they can't be nudged, is exactly where the locked material must move.
+
+A **grab** is a split with a lift in the middle, and reuses the same machinery: Apply is a cut at each band edge, a lift of the units centred inside, and a close (`translateShapes` + `translateSplits` on the far side by `-height`). It is a two-stage flow with a live buffer between the stages, which drives two design choices:
+
+- The control bar is **DOM** (`ui/grab-popup.ts`), not canvas chrome — the place stage asks the user to pan and zoom to find a landing spot, and chrome that scrolled away with the content would be useless.
+- The session **rides the undo checkpoint** (`NotebookCheckpoint.grab`, alongside `splits`). The checkpoint recorded at Apply carries `stage: "place"`, so ⌘Z after placing lands back in the place stage instead of unwinding the whole grab. Cancel is separate: the session holds a pre-Apply `restore` snapshot so it can back out in one step from either stage.
+
+Pointer routing lives in `state-splits.ts` and is called from `DrawingState.handlePointer*`, deliberately **below** the pan branches — space-to-pan, middle-drag, wheel zoom and two-finger gestures all have to keep working mid-gesture, which is how the user navigates a long proof while a grab waits to land. Touch adds one more guard: mouse and pen cut / place on pointer-**down** ("click and it happens"), but a finger's first contact is also the first contact of a two-finger pan, so touch defers the action to pointer-up behind a slop check (`splitTapPending`) and `cancelActiveInteraction` abandons it. A touch tap on a split line that never travels reveals the hover action cluster — the same tap-to-reveal the flowchart edge badges use, and the only way a touch device reaches a hover affordance.
+
+`renderer-splits.ts` paints everything in **screen space after the camera transform is restored**, projecting each line's endpoints through `canvasToScreen` (so canvas rotation still works) rather than stroking in world units — a split line is conceptually infinite, and dash lengths, line weights and the 26 px action buttons all have to stay constant at 25 % zoom. Coincident lines are pushed apart to a fixed 10 screen px so both stay grabbable; `drawnLinePositions` is shared with the hit test so what you click is what you see.
+
+### Proofread PDF
+
+`pdf/pdf-proofread.js` bakes the open PDF into a `<name>-Proof` notebook: one `ImageShape` per page in a single column with a 50 px gutter, on a locked "Pages" layer with a "Notes" layer above it, plus a `proof` envelope entry holding per-page thumbnails. The result is an ordinary `.hushnote` — nothing downstream knows it came from a PDF.
+
+Baking rather than rendering live is forced by the feature: a proof has to survive the source PDF moving, and splits mean the canvas must be able to draw "the bottom two-thirds of page 4, shifted 200 px down", which no live renderer can express. That puts the page bytes in the envelope, and two costs follow:
+
+- **Envelope size** — pages are capped at 1400 raster px and encoded as JPEG (not WebP: `toDataURL("image/webp")` silently yields PNG on WebKit). The save gate's quiet-moment + backpressure rules cover the rest.
+- **Decoded bitmaps** — fifty full-size pages decode to hundreds of MB, past what iPadOS gives a WKWebView. `image-budget.ts` keeps only images within ~1.5 screens of the viewport decoded once a notebook passes 12 image shapes, evicting the rest (the `dataUrl` never leaves the shape, so scrolling back re-decodes). It recomputes on shapes-array identity — a split drag moves pages without changing their count — and on half-a-screen of camera travel. The thumbnail rail therefore gets its **own** small rasters baked at import time; a rail of fifty full-page `<img>`s would reintroduce exactly the problem the budget removes.
+
+The rail (`ui/proof-thumbnails.ts`) offsets from `state.rightInset` — the live canvas-right-edge → shelf-left-edge distance the canvas controller already re-measures per frame through the shelf's width transition — so it sits flush inboard of the shelf's grip when closed and is pushed left, not buried, when the shelf opens.
 
 ### Flowchart
 
@@ -175,7 +228,11 @@ Same as the main codebase (700-line cap, no frameworks), plus:
 1. `Tool` union in `types.ts`
 2. Pointer handling in `DrawingState.handlePointerDown/Move/Up`
 3. Button in `ui/toolbar.ts` (`TOOLS` array); cursor in `notes-canvas.ts`'s `cursorMap`
-4. Shortcut field in `AppSettings` (Rust) + `shortcutCategories` (settings-tabs-shortcuts.js)
+4. Shortcut field in `AppSettings` (Rust) + `state-defaults.js` + `shortcutCategories`
+   (settings-tabs-shortcuts.js) + the `shortcuts` object the bridge passes at mount.
+   All four: a field missing from the Rust struct resets every launch.
+5. Icon in `ui/icons.ts` — check the name isn't already taken. `PATHS` is a plain
+   object literal, so a duplicate key silently loses to the later entry.
 
 Drawing sub-tools (brush/erase/slice/lasso) go through the engine instead — see README-DRAWING.md.
 
