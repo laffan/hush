@@ -135,8 +135,8 @@ export function openStyleEditorModal(state) {
   }
 
   function close() {
-    // The editor's own close() flushes pending edits AND tears down any
-    // modal-scoped background-layer / shader preview, re-applying the
+    // The editor's own close() flushes pending edits AND tears down the
+    // modal-scoped background / post-processing previews, re-applying the
     // active style so its effects return to the editor surface. A bare
     // flush() here used to strand those previews on a removed DOM node.
     if (activeHandle) activeHandle.close();

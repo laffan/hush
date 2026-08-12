@@ -209,9 +209,15 @@ export function createDefaultSettings() {
     // into `styles`. Lets new presets land on next launch without
     // re-adding ones the user has already deleted.
     seededPresetFiles: [],
-    // Shader layer attached to the Default style. User styles carry
-    // their own shaderLayer field on each Style object.
+    // Retired single-overlay post processing. Kept so an install
+    // written by an older build still derives its post layers on read
+    // (see derivePostLayersFromShader); nothing writes it any more.
     shaderLayer: null,
+    // Post-processing layers attached to the Default style (user styles
+    // carry their own postLayers field on each Style object).
+    postLayers: null,
+    // Section-level on/off for the Default style's post stack.
+    postProcessingEnabled: true,
     // Background layers attached to the Default style (user styles carry
     // their own backgroundLayers field on each Style object).
     backgroundLayers: null,

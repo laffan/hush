@@ -1,10 +1,8 @@
 /**
- * Registry of WebGL2 background effects. These are the WebGL2 entries
- * that used to live in the Post Processing overlay's SHADER_LAYERS
- * registry — moved here when WebGL effects became background *layers*
- * (Post Processing keeps the CSS-family overlays). The module files
- * themselves still live under shader-layer/layers/ and are loaded
- * lazily, exactly as before; only the registry entry moved.
+ * Registry of WebGL2 background effects. These used to live in the Post
+ * Processing overlay's registry and moved here when WebGL effects became
+ * background *layers*; Post Processing now stacks CSS-family effects of
+ * its own (see post-layers/).
  *
  * Kept separate from index.js so the modal (which renders the knobs
  * from `settings`) and the per-layer mount code can both import it
@@ -15,7 +13,7 @@ export const WEBGL_BG_EFFECTS = [
   {
     id: "webgl-neon-bloom",
     name: "Neon Bloom",
-    load: () => import("../shader-layer/layers/webgl-neon-bloom.js"),
+    load: () => import("./webgl-neon-bloom.js"),
     settings: [
       { id: "brightness", label: "Bloom brightness", type: "range", min: 0, max: 1, step: 0.01, default: 0.55 },
       { id: "blobSize", label: "Blob size", type: "range", min: 0.5, max: 3, step: 0.05, default: 1 },
@@ -33,13 +31,19 @@ export const WEBGL_BG_EFFECTS = [
 // preset picker without pulling that code in.
 export const CARET_PRESETS = [
   { id: "sparks", name: "Sparks" },
-  { id: "bubbles", name: "Bubbles" },
-  { id: "ripples", name: "Ripples" },
   { id: "underline", name: "Underline Glow" },
-  { id: "hud", name: "HUD" },
   { id: "flicker", name: "Flicker Bar" },
-  { id: "blob", name: "Phosphor Blob" },
 ];
+
+// Presets that shipped and were then retired (HUD, Phosphor Blob,
+// Ripples, Bubbles). A style still naming one falls back to Sparks
+// rather than rendering nothing at all.
+const RETIRED_PRESETS = { hud: "sparks", blob: "sparks", ripples: "sparks", bubbles: "sparks" };
+
+export function resolveCaretPreset(preset) {
+  if (CARET_PRESETS.some(p => p.id === preset)) return preset;
+  return RETIRED_PRESETS[preset] || "sparks";
+}
 
 // Seed nodes for a fresh gradient layer — three dark-friendly colours
 // spread into a triangle so the mesh reads immediately.

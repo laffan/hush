@@ -176,7 +176,7 @@ export async function setupModeSwitching(state) {
   }
 
   // Apply active style — runs even when activeStyleId is null so the
-  // Default style's post-processing layer (settings.shaderLayer) mounts
+  // Default style's post-processing layers (settings.postLayers) mount
   // on startup. The no-style branch of applyActiveStyle is a near-no-op
   // for everything else (just re-asserts standard font/theme/color
   // values that are already in place from earlier init steps).

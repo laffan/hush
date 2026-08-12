@@ -6,36 +6,33 @@
  */
 import { applyAppearance } from "./settings/settings-ui.js";
 import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
-import { resolveBackgroundLayersList, resolvePostShader } from "./sidebar/styles-panel-shared.js";
+import { resolveBackgroundLayersList, resolvePostLayersList } from "./sidebar/styles-panel-shared.js";
 import { themeBackgrounds, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 
-// Tracks whether the shader-layer module has ever been loaded this session.
-// We only `import()` it when a style with shaderLayer.enabled === true is
-// applied, so users who never opt in don't pay for the chunk.
-let _shaderModulePromise = null;
-function loadShaderModule() {
-  if (!_shaderModulePromise) _shaderModulePromise = import("./shader-layer/index.js");
-  return _shaderModulePromise;
+// Tracks whether the post-layers module has ever been loaded this
+// session. We only `import()` it when a style with at least one enabled
+// post-processing layer applies, so users who never opt in don't pay for
+// the chunk.
+let _postModulePromise = null;
+function loadPostModule() {
+  if (!_postModulePromise) _postModulePromise = import("./post-layers/index.js");
+  return _postModulePromise;
 }
 
-function syncShaderLayerForStyle(style) {
-  // The WebGL2 entries render as background layers now — resolvePostShader
-  // masks them out so only the CSS-family overlays reach this path.
-  const cfg = resolvePostShader(style);
-  if (!cfg || !cfg.enabled || !cfg.layerId) {
-    // Only touch the shader subsystem if it's already been loaded this
-    // session — otherwise importing it just to call unmount would defeat
-    // the whole "free when off" premise.
-    if (_shaderModulePromise) {
-      loadShaderModule().then(m => m.unmountShaderLayer()).catch(() => {});
+function syncPostLayersForStyle(style) {
+  const layers = resolvePostLayersList(style).filter(l => l && l.enabled !== false);
+  if (!layers.length) {
+    // Only touch the subsystem if it's already been loaded this session —
+    // otherwise importing it just to call unmount would defeat the whole
+    // "free when off" premise.
+    if (_postModulePromise) {
+      loadPostModule().then(m => m.unmountPostLayers()).catch(() => {});
     }
     return;
   }
-  loadShaderModule().then(m => m.applyShaderLayer({
-    layerId: cfg.layerId,
-    intensity: typeof cfg.intensity === "number" ? cfg.intensity : 0.5,
-    options: cfg.options || {},
-  })).catch(e => console.warn("shader layer mount failed", e));
+  loadPostModule()
+    .then(m => m.applyPostLayers({ layers }))
+    .catch(e => console.warn("post layers mount failed", e));
 }
 
 // Same lazy-load discipline for the background-layers runtime: only
@@ -173,9 +170,15 @@ export function applyActiveStyle(state) {
     // the same shared chain that painted the editor above, so they
     // land in the same synchronous pass — the sidebar can't disagree.
     updatePrivateBoxColor(state);
-    // Default style's shader + background layers live at the top level
-    // of AppSettings rather than on a Style entry.
-    syncShaderLayerForStyle({ shaderLayer: state.settings.shaderLayer });
+    // Default style's post + background layers live at the top level of
+    // AppSettings rather than on a Style entry. `shaderLayer` rides
+    // along so a Default saved before Post Processing became a stack
+    // derives its layers the same way a user style does.
+    syncPostLayersForStyle({
+      postLayers: state.settings.postLayers,
+      postProcessingEnabled: state.settings.postProcessingEnabled,
+      shaderLayer: state.settings.shaderLayer,
+    });
     // shaderLayer rides along so a legacy Default with the WebGL2 post
     // effect derives a webgl background layer (same as user styles).
     syncBackgroundLayersForStyle(
@@ -196,7 +199,7 @@ export function applyActiveStyle(state) {
 
   const style = (state.settings.styles || []).find(s => s.id === styleId);
   if (!style) return;
-  syncShaderLayerForStyle(style);
+  syncPostLayersForStyle(style);
   let bgAppearance = state.settings.appearance || "dark";
   if (bgAppearance === "auto") {
     bgAppearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";

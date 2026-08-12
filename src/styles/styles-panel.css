@@ -379,15 +379,15 @@
   flex: 1;
 }
 
-/* ===== Background Layers ===== */
-.style-bg-layer-list {
+/* ===== Layer stacks (Background + Post Processing) ===== */
+.style-layer-list {
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   overflow: hidden;
   margin-bottom: 8px;
 }
 
-.style-bg-layer-row {
+.style-layer-row {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -399,28 +399,28 @@
   user-select: none;
   background: var(--panel-bg, var(--bg));
 }
-.style-bg-layer-row:last-child { border-bottom: none; }
-.style-bg-layer-row:hover { background: rgba(128, 128, 128, 0.08); }
-.style-bg-layer-row.selected { background: rgba(128, 128, 128, 0.16); }
-.style-bg-layer-row.layer-off .style-bg-layer-label,
-.style-bg-layer-row.layer-off .style-bg-layer-blend,
-.style-bg-layer-row.layer-off .style-bg-layer-thumb { opacity: 0.4; }
+.style-layer-row:last-child { border-bottom: none; }
+.style-layer-row:hover { background: rgba(128, 128, 128, 0.08); }
+.style-layer-row.selected { background: rgba(128, 128, 128, 0.16); }
+.style-layer-row.layer-off .style-layer-label,
+.style-layer-row.layer-off .style-layer-badge,
+.style-layer-row.layer-off .style-layer-thumb { opacity: 0.4; }
 
 /* The row being dragged rides above its siblings so the reorder reads
    clearly as the rows shuffle underneath it. */
-.style-bg-layer-row.dragging {
+.style-layer-row.dragging {
   opacity: 0.9;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
   position: relative;
   z-index: 2;
 }
-.style-bg-layer-list.dragging-active .style-bg-layer-row:not(.dragging) {
+.style-layer-list.dragging-active .style-layer-row:not(.dragging) {
   transition: transform 0.12s ease;
 }
 
-.style-bg-layer-eye,
-.style-bg-layer-grip,
-.style-bg-layer-trash {
+.style-layer-eye,
+.style-layer-grip,
+.style-layer-trash {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -435,24 +435,24 @@
   opacity: 0.8;
   flex: none;
 }
-.style-bg-layer-eye:hover,
-.style-bg-layer-trash:hover { background: rgba(128, 128, 128, 0.18); opacity: 1; }
-.style-bg-layer-eye svg,
-.style-bg-layer-grip svg,
-.style-bg-layer-trash svg { width: 13px; height: 13px; }
-.style-bg-layer-row.layer-off .style-bg-layer-eye { opacity: 0.35; }
-.style-bg-layer-trash:hover { color: #e5484d; }
+.style-layer-eye:hover,
+.style-layer-trash:hover { background: rgba(128, 128, 128, 0.18); opacity: 1; }
+.style-layer-eye svg,
+.style-layer-grip svg,
+.style-layer-trash svg { width: 13px; height: 13px; }
+.style-layer-row.layer-off .style-layer-eye { opacity: 0.35; }
+.style-layer-trash:hover { color: #e5484d; }
 
-.style-bg-layer-grip {
+.style-layer-grip {
   cursor: grab;
   opacity: 0.45;
   touch-action: none;
   width: 16px;
 }
-.style-bg-layer-grip:hover { opacity: 0.85; }
-.style-bg-layer-grip:active { cursor: grabbing; }
+.style-layer-grip:hover { opacity: 0.85; }
+.style-layer-grip:active { cursor: grabbing; }
 
-.style-bg-layer-thumb {
+.style-layer-thumb {
   width: 22px;
   height: 15px;
   border-radius: 3px;
@@ -462,27 +462,29 @@
   flex: none;
 }
 
-.style-bg-layer-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.style-bg-layer-blend {
+.style-layer-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.style-layer-badge {
   font-size: 10px;
   opacity: 0.55;
   text-transform: capitalize;
 }
 
-.style-bg-layer-empty {
+.style-layer-empty {
   font-size: 12px;
   color: var(--sidebar-fg);
   opacity: 0.6;
   padding: 4px 2px 8px;
 }
 
-.style-bg-layer-add {
+.style-layer-add {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 10px;
 }
-.style-bg-layer-add button {
-  flex: 1;
+.style-layer-add button {
+  flex: 1 1 auto;
+  min-width: 60px;
   padding: 4px 2px;
   border: 1px solid var(--panel-border);
   background: transparent;
@@ -492,7 +494,7 @@
   font-size: 11px;
   white-space: nowrap;
 }
-.style-bg-layer-add button:hover { background: rgba(128, 128, 128, 0.15); }
+.style-layer-add button:hover { background: rgba(128, 128, 128, 0.15); }
 
 .style-editor-hint {
   font-size: 11px;
@@ -501,7 +503,7 @@
   margin: 6px 0 0;
 }
 
-.style-bg-layer-options {
+.style-layer-options {
   border-top: 1px solid rgba(128, 128, 128, 0.15);
   padding-top: 8px;
 }
@@ -760,9 +762,14 @@
   overflow-y: auto;
   transition: background 0.15s, color 0.15s;
   border-radius: 0 12px 12px 0;
-  /* Lets the optional shader-layer host (position: absolute; inset: 0)
-     scope itself to the preview pane instead of the viewport. */
+  /* Lets the layer hosts / post-processing slots (position: absolute;
+     inset: 0) scope themselves to the preview pane instead of the
+     viewport. `isolation` makes the pane both a blend root and a
+     backdrop root, so a previewed blend mode or backdrop-filter samples
+     the preview's own content rather than reaching out into the modal
+     behind it. */
   position: relative;
+  isolation: isolate;
 }
 
 /* Light / dark switch for the preview, pinned to the modal's top-right

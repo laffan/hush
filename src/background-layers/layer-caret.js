@@ -1,12 +1,13 @@
 /**
  * Caret background layer — an effect that follows the text cursor
- * (sparks / bubbles / ripples / underline glow / HUD / flicker bar).
- * Its own layer type rather than a knob on the WebGL layer: it
- * composites, reorders, and blends exactly like any other layer, and a
- * style can carry one without carrying a WebGL effect at all.
+ * (sparks / underline glow / flicker bar). Its own layer type rather
+ * than a knob on the WebGL layer: it composites, reorders, and blends
+ * exactly like any other layer, and a style can carry one without
+ * carrying a WebGL effect at all.
  *
  * The shader work lives in caret-effects.js; this is the thin layer
- * adapter — blend mode on the slot, and colour resolution.
+ * adapter — colour, blend mode and opacity, each resolved per
+ * appearance.
  */
 import { createCaretEffect } from "./caret-effects.js";
 import { normalizeColor } from "./webgl-utils.js";
@@ -33,10 +34,26 @@ function resolveColor(host, cfg, appearance) {
   return normalizeColor(per || cfg.color || DEFAULT_COLOR, DEFAULT_COLOR);
 }
 
+/**
+ * Blend mode for the appearance being rendered. Caret effects are drawn
+ * as light on a dark ground, so screen is right in dark mode and
+ * catastrophic in light — screening anything onto white returns white,
+ * which is why the colour pickers used to look like they did nothing at
+ * all in the light half. Light therefore defaults to multiply.
+ *
+ * A pre-split layer's single `blend` seeds the dark side only; the light
+ * side starts from the multiply default regardless, because the stored
+ * value is the one that was invisible.
+ */
+function resolveBlend(cfg, appearance) {
+  if (appearance === "dark") return cfg.darkBlend || cfg.blend || "screen";
+  return cfg.lightBlend || "multiply";
+}
+
 /** Layer opacity for the appearance being rendered — the same
- *  per-appearance pair the image and gradient layers carry. Distinct
- *  from the effect's own `intensity`, which governs how bright and
- *  dense the effect draws itself before the layer is composited. */
+ *  per-appearance pair the image and gradient layers carry, and the only
+ *  brightness control a caret layer has (the old `intensity` knob folded
+ *  into it; see normalizeCaretLayer). */
 function resolveOpacity(cfg, appearance) {
   const v = appearance === "dark" ? cfg.darkOpacity : cfg.lightOpacity;
   return v != null ? v : 1;
@@ -44,7 +61,7 @@ function resolveOpacity(cfg, appearance) {
 
 export function mountCaretLayer(host, cfg, appearance, ctx, caretSource) {
   const applyChrome = (c, app) => {
-    host.style.mixBlendMode = c.blend || "screen";
+    host.style.mixBlendMode = resolveBlend(c, app);
     host.style.opacity = String(resolveOpacity(c, app));
   };
   applyChrome(cfg, appearance);
@@ -52,15 +69,10 @@ export function mountCaretLayer(host, cfg, appearance, ctx, caretSource) {
   const toEffectCfg = (c, app) => ({
     preset: c.preset || "sparks",
     color: resolveColor(host, c, app),
-    intensity: c.intensity,
     height: c.height,
+    sparkHeight: c.sparkHeight,
     trailSeconds: c.trailSeconds,
     offsetY: c.offsetY,
-    rings: c.rings,
-    blobSize: c.blobSize,
-    blobSpeed: c.blobSpeed,
-    blobOffsetX: c.blobOffsetX,
-    rainbow: c.rainbow,
     antialias: c.antialias,
   });
 

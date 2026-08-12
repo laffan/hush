@@ -1,8 +1,8 @@
 /**
  * WebGL2 background layer — hosts one effect from the effects registry
- * (the modules under shader-layer/layers/, unchanged).
+ * (the effect modules named by the effects registry, unchanged).
  *
- * The effect modules were written against shader-layer's ctx contract
+ * The effect modules were written against the old shader layer's ctx contract
  * (width/height/dpr + onResize / onVisible setters), so this builds a
  * compatible per-layer ctx rather than teaching the modules a new one.
  */

@@ -255,10 +255,19 @@ pub struct AppSettings {
     // Filenames of bundled style presets already seeded into `styles`.
     #[serde(default)] pub seeded_preset_files: Vec<String>,
 
-    // Shader layer attached to the Default style. User styles carry
-    // their own shaderLayer field on the Style struct itself.
+    // Retired single-overlay post processing for the Default style.
+    // Kept so an older install still derives its post layers on read.
     #[serde(default)]
     pub shader_layer: Option<ShaderLayer>,
+
+    // Post-processing layers attached to the Default style (user styles
+    // carry their own postLayers field). Opaque JSON — JS owns the shape.
+    #[serde(default)]
+    pub post_layers: Option<serde_json::Value>,
+    // Section-level on/off for the Default style's post stack. `None`
+    // reads as enabled.
+    #[serde(default)]
+    pub post_processing_enabled: Option<bool>,
 
     // Background layers attached to the Default style (user styles carry
     // their own backgroundLayers field). Opaque JSON — JS owns the shape.
@@ -634,6 +643,8 @@ impl Default for AppSettings {
             global_style_id: None,
             seeded_preset_files: Vec::new(),
             shader_layer: None,
+            post_layers: None,
+            post_processing_enabled: None,
             background_layers: None,
             background_layers_enabled: None,
             longview_show_paragraphs: true,

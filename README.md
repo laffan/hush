@@ -6,7 +6,12 @@ Under the minimal surface is a full writing system: a Markdown editor, canvas-ba
 
 ## Writing
 
-**The editor** is Markdown with inline rendering — headings, bold/italic, links, tables, images, footnotes, callouts, YAML properties, and `[[wikilinks]]` between notes. Sixteen color themes across light, dark, and sepia, and **Styles** that bundle theme + font + colors + optional post-processing effects (scanlines, glow) into presets you can switch, share, and import as JSON. Each style can also stack **Background Layers** — images, animatable multi-node gradients, WebGL effects, and caret effects that follow your cursor as you type (sparks, bubbles, ripples, a fading underline glow, a rotating sci-fi HUD, a phosphor flicker bar, and a liquid phosphor blob that sits on the cursor — each with its own light and dark colour, or set to match your caret, and an anti-alias toggle) — into a composite backdrop, each layer with its own blend mode, dragged into whatever order you like.
+**The editor** is Markdown with inline rendering — headings, bold/italic, links, tables, images, footnotes, callouts, YAML properties, and `[[wikilinks]]` between notes. Sixteen color themes across light, dark, and sepia, and **Styles** that bundle theme + font + colors into presets you can switch, share, and import as JSON.
+
+A style also carries two stacks of layers, both built the same way — add, reorder by dragging, hide, delete:
+
+- **Background** sits behind the text: images, animatable multi-node gradients, WebGL effects, and caret effects that follow your cursor as you type (sparks, a fading underline glow, a phosphor flicker bar). Every caret effect has its own colour, blend mode and opacity for light and for dark — or set it to match your caret — plus an anti-alias toggle and its own shape controls (spark height, underline thickness, trail length, vertical offset).
+- **Post Processing** sits over the whole window: vignette, text glow, scan lines, tint, grayscale, sepia, and a window-opacity slider that makes Hush itself translucent so whatever is behind it shows through. Mix as many as you like, in any order.
 
 **Focus tools** keep you in the text:
 
@@ -41,7 +46,7 @@ Notebooks export as `.hushnote` (lossless), PNG, JPG, or PDF.
 - **Stacks** lay out docs, notebooks, PDFs, and projects as side-by-side columns on one scrolling surface.
 - **Desktops** show a project as a canvas of live file thumbnails you can arrange, pile, annotate, and connect — reading order drawn as arrows.
 - **Floating panes** open any file as a reference window over your work: dock them to an edge, pin them across documents, attach them to canvas positions, or embed them inline under a wikilink. A **Gutter** docks a notebook beside a document, scroll-locked to it, for marginalia.
-- **Sticky notes** are small scoped reminders (per file, project, desk, or global) that float above everything and never appear in the file tree.
+- **Sticky notes** are small scoped reminders (per file, project, desk, or global) that float above everything and never appear in the file tree. They keep their paper colours whatever theme you're in, but switch to a dark-paper palette in a dark appearance so a bright sticky isn't the only thing glowing on the screen.
 - **YOU ARE HERE** — type `YOUAREHERE` anywhere and the sidebar pins a red resume-reading row that jumps straight back to the marker. One per desk.
 - **Find** (`⌘F` in-document, `⌘⇧F` across the desk) with regex, whole-word, and replace; **Versions** keeps automatic snapshots of every doc and notebook with a diff view and one-click restore; flags, color tints, multi-select batch actions, and a per-desk Recent Files list round out the sidebar.
 

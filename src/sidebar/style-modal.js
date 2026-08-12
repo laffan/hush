@@ -11,7 +11,7 @@ import {
   resolveCursorMode,
   renderCursorOptions,
 } from "./styles-panel-shared.js";
-import { renderShaderSection, bindShaderSection, endShaderPreview } from "./style-modal-shader.js";
+import { renderPostSection, bindPostSection, endPostPreview } from "./style-modal-post.js";
 import { renderStyleExtras, bindStyleExtras, endBackgroundPreview } from "./style-modal-background.js";
 import { applyActiveStyle } from "../style-application.js";
 import { bindCustomDropdown } from "./custom-dropdown.js";
@@ -62,10 +62,17 @@ function buildDefaultDraftFromSettings(state) {
     blockCursor: !!s.blockCursor,
     cursorMode: s.cursorMode || (s.blockCursor ? "block" : "system"),
     lineIndicator: s.lineIndicator || "none",
-    // Default style's shader + background layers ride top-level
+    // Default style's post + background layers ride top-level
     // AppSettings fields so they persist alongside the other
-    // Default-only knobs.
+    // Default-only knobs. `shaderLayer` is the retired single-overlay
+    // shape; it comes along so migrateStyle can derive from it.
     shaderLayer: s.shaderLayer ? { ...s.shaderLayer } : null,
+    postLayers: Array.isArray(s.postLayers)
+      ? JSON.parse(JSON.stringify(s.postLayers))
+      : s.postLayers ?? null,
+    // Left raw (possibly undefined) so migrateStyle can seed it from a
+    // legacy `shaderLayer.enabled` rather than reading absent as "on".
+    postProcessingEnabled: s.postProcessingEnabled,
     backgroundLayers: Array.isArray(s.backgroundLayers)
       ? JSON.parse(JSON.stringify(s.backgroundLayers))
       : s.backgroundLayers ?? null,
@@ -167,6 +174,8 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         cursorMode: draft.cursorMode || (draft.blockCursor ? "block" : "system"),
         lineIndicator: draft.lineIndicator || "none",
         shaderLayer: draft.shaderLayer || null,
+        postLayers: draft.postLayers || null,
+        postProcessingEnabled: draft.postProcessingEnabled !== false,
         backgroundLayers: draft.backgroundLayers || null,
         backgroundLayersEnabled: draft.backgroundLayersEnabled !== false,
       });
@@ -211,6 +220,8 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         cursorMode: state.settings.cursorMode,
         lineIndicator: state.settings.lineIndicator || "none",
         shaderLayer: state.settings.shaderLayer || null,
+        postLayers: state.settings.postLayers || null,
+        postProcessingEnabled: state.settings.postProcessingEnabled,
         backgroundLayers: state.settings.backgroundLayers || null,
         backgroundLayersEnabled: state.settings.backgroundLayersEnabled,
       });
@@ -236,13 +247,12 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     flushSave();
     if (ownsBackdrop) backdrop.remove();
     else backdrop.innerHTML = "";
-    // Drop any modal-driven background-layer / shader preview, then
-    // re-apply the active style so its layers and shader (if any) take
-    // the screen back. Layer preview first: it releases the scoped-
-    // preview lock synchronously so the applyActiveStyle inside
-    // endShaderPreview can re-mount the editor-context layers.
+    // Drop both modal-driven previews, then re-apply the active style
+    // so its own layers take the screen back. Background first: each
+    // releases its scoped-preview lock synchronously, so the
+    // applyActiveStyle inside endPostPreview can re-mount everything.
     endBackgroundPreview();
-    endShaderPreview(applyActiveStyle, state);
+    endPostPreview(applyActiveStyle, state);
   }
 
   // Backdrop-click closes only when this function owns the backdrop —
@@ -408,7 +418,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
               }).join("")}
             </div>
 
-            ${renderShaderSection(draft)}
+            ${renderPostSection(draft)}
             ${renderStyleExtras(draft, !isDefault && !isNew && typeof options.onDelete === "function")}
           </div>
 
@@ -588,7 +598,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
       scheduleSave();
     });
 
-    bindShaderSection(backdrop, draft, scheduleSave);
+    bindPostSection(backdrop, draft, scheduleSave);
     // `colorTab` is the preview's light / dark switch — layers resolve
     // their per-appearance opacity and invert against it, so the preview
     // shows the half the switch is on. Safe to pass by value: flipping

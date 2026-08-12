@@ -4,6 +4,7 @@
  * circular import with styles-panel.js.
  */
 import { getThemeById } from "../themes/index.js";
+import { resolveCaretPreset } from "../background-layers/effects-registry.js";
 
 export function escAttr(str) {
   return (str || "").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -54,7 +55,7 @@ export function resolveBackgroundLayersList(style) {
   // The section-level Enable switch. Absent = on, so styles saved
   // before the switch existed keep their layers.
   if (style.backgroundLayersEnabled === false) return [];
-  if (Array.isArray(style.backgroundLayers)) return splitCaretLayers(style.backgroundLayers);
+  if (Array.isArray(style.backgroundLayers)) return normalizeLayers(style.backgroundLayers);
   const out = [];
   const bi = style.backgroundImage;
   if (bi && bi.src) {
@@ -72,23 +73,29 @@ export function resolveBackgroundLayersList(style) {
   return out;
 }
 
-/** Caret effects began life as knobs on the WebGL layer and are their
- *  own layer type now. A WebGL layer still carrying `caretEffect` emits
- *  a caret layer directly above it, so styles saved under the old shape
- *  render identically without being rewritten. */
-function splitCaretLayers(layers) {
-  if (!layers.some(l => l && l.type === "webgl" && l.caretEffect && l.caretEffect !== "none")) return layers;
+/**
+ * Bring a saved layer list up to the current shape. Two conversions,
+ * both applied on read so un-migrated styles render correctly without
+ * being rewritten on disk:
+ *
+ *  - a WebGL layer still carrying the first-cut `caretEffect` knobs emits
+ *    a caret layer directly above it;
+ *  - every caret layer is normalized (see normalizeCaretLayer).
+ */
+function normalizeLayers(layers) {
   const out = [];
   for (const l of layers) {
     if (l && l.type === "webgl" && l.caretEffect && l.caretEffect !== "none") {
       const { caretEffect, caretColor, caretIntensity, ...webgl } = l;
       out.push(webgl);
-      out.push({
+      out.push(normalizeCaretLayer({
         id: l.id + "_caret", type: "caret", enabled: l.enabled !== false,
         blend: "screen", preset: caretEffect,
         color: caretColor || "#9ecbff",
         intensity: typeof caretIntensity === "number" ? caretIntensity : 0.6,
-      });
+      }));
+    } else if (l && l.type === "caret") {
+      out.push(normalizeCaretLayer(l));
     } else {
       out.push(l);
     }
@@ -96,13 +103,87 @@ function splitCaretLayers(layers) {
   return out;
 }
 
-/** The style's Post Processing overlay config, with the WebGL2 entry
- *  masked out — that one now renders as a background layer (see
- *  resolveBackgroundLayersList), not as the fullscreen overlay. */
-export function resolvePostShader(style) {
-  const sl = style?.shaderLayer;
-  if (!sl || sl.layerId === "webgl-neon-bloom") return null;
-  return sl;
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
+/**
+ * A caret layer in its current shape. Three things changed under it:
+ *
+ *  - Retired presets (HUD, Phosphor Blob, Ripples, Bubbles) resolve to a
+ *    surviving one instead of failing to link a shader.
+ *  - `intensity` — the effect's own brightness, which only ever
+ *    multiplied the layer's opacity — folds into the per-appearance
+ *    opacity pair, so the two controls that did the same job become one
+ *    and an existing style renders at exactly the brightness it did.
+ *  - The single `blend` splits per appearance. It seeds the dark side
+ *    only: the stored value is almost always `screen`, which returns
+ *    white when composited onto a light page, so light starts from
+ *    `multiply` instead.
+ */
+export function normalizeCaretLayer(l) {
+  const out = { ...l };
+  out.preset = resolveCaretPreset(l.preset);
+  if (typeof l.intensity === "number") {
+    const legacy = l.opacity != null ? l.opacity : 1;
+    out.lightOpacity = clamp01((l.lightOpacity != null ? l.lightOpacity : legacy) * l.intensity);
+    out.darkOpacity = clamp01((l.darkOpacity != null ? l.darkOpacity : legacy) * l.intensity);
+    delete out.intensity;
+  }
+  if (!out.darkBlend) out.darkBlend = l.blend || "screen";
+  if (!out.lightBlend) out.lightBlend = "multiply";
+  delete out.blend;
+  return out;
+}
+
+/**
+ * The style's Post Processing stack. Post processing used to be a single
+ * picked overlay (`shaderLayer`) bundling two or three looks together;
+ * it's a layer stack now, so a style that predates the change derives
+ * one layer per look on the fly.
+ */
+export function resolvePostLayersList(style) {
+  if (!style) return [];
+  if (Array.isArray(style.postLayers)) {
+    return style.postProcessingEnabled === false ? [] : style.postLayers;
+  }
+  const sl = style.shaderLayer;
+  if (!sl || !sl.enabled) return [];
+  return derivePostLayersFromShader(sl);
+}
+
+/** The per-look split of a legacy `shaderLayer`, ignoring its enabled
+ *  flag — the caller owns that (see resolvePostLayersList / migrateStyle),
+ *  or turning the section back on would find an empty stack. The old
+ *  master intensity is baked into each knob it scaled, since the stack
+ *  has no master. The WebGL2 entry isn't here: it became a *background*
+ *  layer (see resolveBackgroundLayersList). */
+export function derivePostLayersFromShader(sl) {
+  if (!sl || !sl.layerId || sl.layerId === "webgl-neon-bloom") return [];
+  const i = typeof sl.intensity === "number" ? sl.intensity : 0.5;
+  const o = sl.options || {};
+  const n = (v, d) => (typeof v === "number" && !Number.isNaN(v)) ? v : d;
+  const scanlines = (opacity, spacing) => ({
+    id: "post_legacy_scanlines", type: "scanlines", enabled: true, blend: "multiply",
+    opacity: clamp01(opacity * i), spacing, color: o.scanlineColor || "#000000",
+  });
+  if (sl.layerId === "css-vignette-scanlines") {
+    return [
+      {
+        id: "post_legacy_vignette", type: "vignette", enabled: true, blend: "multiply",
+        strength: clamp01(n(o.vignetteStrength, 0.5) * i), spread: 0.45, color: "#000000",
+      },
+      scanlines(n(o.scanlineOpacity, 0.15), 2),
+    ];
+  }
+  if (sl.layerId === "css-phosphor-scanlines") {
+    return [
+      {
+        id: "post_legacy_glow", type: "glow", enabled: true, blend: "normal",
+        glow: clamp01(n(o.glow, 0.4) * i), halo: clamp01(n(o.halo, 0.6) * i),
+      },
+      scanlines(n(o.scanlineOpacity, 0.2), 3),
+    ];
+  }
+  return [];
 }
 
 /** Migrate old single-mode styles to dual light/dark format. */
@@ -147,8 +228,27 @@ export function migrateStyle(st) {
     delete st.backgroundImage;
     if (st.shaderLayer && st.shaderLayer.layerId === "webgl-neon-bloom") st.shaderLayer = null;
   } else {
-    // Caret knobs on a WebGL layer become their own caret layer.
-    st.backgroundLayers = splitCaretLayers(st.backgroundLayers);
+    // Caret knobs on a WebGL layer become their own caret layer, and
+    // caret layers pick up their current shape.
+    st.backgroundLayers = normalizeLayers(st.backgroundLayers);
+  }
+  // Legacy single-overlay post processing → a post-processing layer
+  // stack. Same derivation the application-side resolver performs,
+  // baked on once the style is opened for editing.
+  if (!Array.isArray(st.postLayers)) {
+    st.postLayers = derivePostLayersFromShader(st.shaderLayer);
+    if (st.postProcessingEnabled == null) {
+      // Nothing to carry over → leave the section switched on with an
+      // empty stack, so its add buttons are reachable. Something to
+      // carry over → honour whether the old overlay was actually on.
+      st.postProcessingEnabled = st.postLayers.length
+        ? !!(st.shaderLayer && st.shaderLayer.enabled)
+        : true;
+    }
+    // The WebGL2 entry is the one `shaderLayer` value that doesn't
+    // describe post processing at all — it's a background layer, and
+    // the block above owns retiring it.
+    if (st.shaderLayer && st.shaderLayer.layerId !== "webgl-neon-bloom") st.shaderLayer = null;
   }
   return st;
 }

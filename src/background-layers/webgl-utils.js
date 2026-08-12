@@ -1,8 +1,8 @@
 /**
  * Tiny WebGL2 helpers shared by the background-layer renderers (gradient
  * layer, caret effects). Mirrors the helpers that live inside
- * shader-layer/layers/webgl-neon-bloom.js — kept separate so that layer
- * module stays self-contained and lazily loadable on its own.
+ * webgl-neon-bloom.js — kept separate so that layer module stays
+ * self-contained and lazily loadable on its own.
  */
 
 export function compileShader(gl, type, src) {

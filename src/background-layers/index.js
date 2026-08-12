@@ -5,7 +5,7 @@
  * layer carries its own blend mode; array order is paint order (index 0
  * at the back).
  *
- * Like shader-layer/, the whole module tree is `import()`ed lazily from
+ * Like post-layers/, the whole module tree is `import()`ed lazily from
  * style-application.js only when a style actually has enabled layers,
  * so users without them pay nothing.
  *

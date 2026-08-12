@@ -51,8 +51,20 @@ pub struct Style {
     /// `light_colors` / `dark_colors` under the `lineIndicator` key.
     #[serde(default)]
     pub line_indicator: Option<String>,
+    /// Retired single-overlay post processing. Kept so styles written by
+    /// an older build still round-trip and can derive their post layers
+    /// on read; nothing writes it any more.
     #[serde(default)]
     pub shader_layer: Option<ShaderLayer>,
+    /// Post-processing layers (vignette / glow / scan lines / opacity /
+    /// tint / grayscale / sepia, each with its knobs and blend mode).
+    /// Opaque JSON — the JS side owns the shape.
+    #[serde(default)]
+    pub post_layers: Option<serde_json::Value>,
+    /// Section-level on/off for the whole post stack. `None` reads as
+    /// enabled.
+    #[serde(default)]
+    pub post_processing_enabled: Option<bool>,
     /// Optional decorative background image config (src data-URL, fit,
     /// repeat, blend mode, opacity). Stored opaquely as JSON so the shape
     /// can evolve without a Rust schema change. Legacy — superseded by
