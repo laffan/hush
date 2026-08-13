@@ -1,7 +1,8 @@
 /**
  * Proofread PDF — build a notebook from the open PDF.
  *
- * Every page is rasterised once, at import time, into an `ImageShape`
+ * The chosen pages (a range picker runs first; the default is all of
+ * them) are rasterised once, at import time, into an `ImageShape` each,
  * laid out in a single vertical column with a fixed gutter between
  * pages. The result is an ordinary `.hushnote`: the pages are shapes on
  * a locked bottom layer, the annotation layer above it is a normal
@@ -83,11 +84,6 @@ const PAGE_QUALITY = 0.8;
 const THUMB_RASTER_WIDTH = 480;
 const THUMB_QUALITY = 0.6;
 
-/** Above this many pages we ask first: the bake is linear in page count
- *  and the notebook it produces is linear in size, and a user who hit
- *  ⌘P on a 400-page book deserves the chance to say no. */
-const CONFIRM_ABOVE_PAGES = 60;
-
 async function tauriInvoke(cmd, args) {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke(cmd, args);
@@ -110,9 +106,11 @@ function makeProgressOverlay(total) {
   const label = el.querySelector(".proofread-progress-label");
   const fill = el.querySelector(".proofread-progress-fill");
   return {
-    step(n) {
-      label.textContent = `Rendering page ${n} of ${total}…`;
-      fill.style.width = `${Math.round((n / total) * 100)}%`;
+    step(done, pageNumber) {
+      label.textContent = pageNumber && pageNumber !== done
+        ? `Rendering page ${pageNumber} (${done} of ${total})…`
+        : `Rendering page ${done} of ${total}…`;
+      fill.style.width = `${Math.round((done / total) * 100)}%`;
     },
     done() { el.remove(); },
   };
@@ -175,10 +173,12 @@ function makeId(prefix, i) {
  * layer lock, so the layers panel can unlock it whenever the user does
  * want to move a page.
  */
-export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFileId, onProgress) {
+export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFileId, pageNumbers, onProgress) {
   const pdfjs = await getPdfjs();
   const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise;
   try {
+    const wanted = (pageNumbers && pageNumbers.length ? pageNumbers : null)
+      || Array.from({ length: doc.numPages }, (_, i) => i + 1);
     const pageLayerId = makeId("layer", 0);
     const inkLayerId = makeId("layer", 1);
     const shapes = [];
@@ -186,10 +186,11 @@ export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFile
     let y = 0;
     const createdAt = Date.now();
 
-    for (let i = 0; i < doc.numPages; i++) {
-      onProgress?.(i + 1);
+    for (let i = 0; i < wanted.length; i++) {
+      const pageNumber = wanted[i];
+      onProgress?.(i + 1, pageNumber);
       await nextFrame();
-      const page = await doc.getPage(i + 1);
+      const page = await doc.getPage(pageNumber);
       const raster = await rasterizePage(page);
       // pdfjs caches per-page render state; the proof never revisits a
       // page, so hand it back immediately.
@@ -202,10 +203,13 @@ export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFile
         width: raster.width,
         height: raster.height,
         dataUrl: raster.dataUrl,
-        name: `Page ${i + 1}`,
+        name: `Page ${pageNumber}`,
         color: "#000000",
         layerId: pageLayerId,
         createdAt,
+        // Index into `proof.pages`, NOT the source PDF's page number —
+        // a proof of "5-8" has four pages indexed 0..3, and the rail
+        // resolves thumbnails through this.
         proofPageIndex: i,
       });
       pages.push({
@@ -240,8 +244,8 @@ export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFile
   }
 }
 
-/** Page count without paying for a full render — used for the
- *  are-you-sure gate on very long documents. */
+/** Page count without paying for a full render — the page picker needs
+ *  it before anything is rasterised. */
 async function pageCountOf(bytes) {
   const pdfjs = await getPdfjs();
   const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise;
@@ -251,11 +255,17 @@ async function pageCountOf(bytes) {
 }
 
 /**
- * Command-palette entry point: turn the currently open PDF into a
- * `<name>-Proof` notebook in the desk's Inbox and open it.
+ * Turn a PDF into a `<name>-Proof` notebook in the desk's Inbox and open
+ * it. Takes the file id explicitly so the same path serves the command
+ * palette (the open PDF) and the file tree's row menu (any PDF, open or
+ * not).
+ *
+ * The page picker runs first and is also the only confirmation step: a
+ * 400-page book no longer needs an are-you-sure, because the honest
+ * answer to "this will be enormous" is usually "then just do chapter
+ * three", which is what the modal asks for.
  */
-export async function proofreadCurrentPdf(state) {
-  const fileId = state.currentPdfFileId;
+export async function createProofNotebook(state, fileId) {
   if (!fileId || !IS_TAURI) return null;
 
   const { findNodeByFileId } = await import("../state/tree-helpers.js");
@@ -266,7 +276,7 @@ export async function proofreadCurrentPdf(state) {
   try {
     bytes = await tauriInvoke("load_pdf", { fileId });
   } catch (e) {
-    console.error("Proofread PDF: failed to load the PDF:", e);
+    console.error("Create Proofread Notebook: failed to load the PDF:", e);
     window.alert("Could not read that PDF.");
     return null;
   }
@@ -276,40 +286,69 @@ export async function proofreadCurrentPdf(state) {
   try {
     total = await pageCountOf(data);
   } catch (e) {
-    console.error("Proofread PDF: failed to parse the PDF:", e);
+    console.error("Create Proofread Notebook: failed to parse the PDF:", e);
     window.alert("Could not read that PDF.");
     return null;
   }
-  if (total > CONFIRM_ABOVE_PAGES) {
-    const ok = await confirmLongProof(total);
-    if (!ok) return null;
-  }
 
-  const progress = makeProgressOverlay(total);
+  const { openProofreadPagesModal } = await import("./pdf-proofread-modal.js");
+  const pageNumbers = await openProofreadPagesModal({ name: sourceName, total });
+  if (!pageNumbers || !pageNumbers.length) return null;
+
+  const progress = makeProgressOverlay(pageNumbers.length);
   let content;
   try {
-    content = await buildProofNotebookContent(data, sourceName, fileId, (n) => progress.step(n));
+    content = await buildProofNotebookContent(
+      data, sourceName, fileId, pageNumbers,
+      (done, pageNumber) => progress.step(done, pageNumber),
+    );
   } catch (e) {
-    console.error("Proofread PDF: render failed:", e);
+    console.error("Create Proofread Notebook: render failed:", e);
     window.alert("Rendering the proof failed partway through. Nothing was created.");
     return null;
   } finally {
     progress.done();
   }
 
-  return state.createNotebook(`${sourceName}-Proof`, null, { initialContent: content });
+  // Name the notebook after the slice when it isn't the whole document,
+  // so a desk holding three passes over one paper stays legible. A
+  // scattered selection would spell out every page, which is worse than
+  // saying nothing — fall back to a count past a readable length.
+  let slice = pageNumbers.length === total ? "" : describeRange(pageNumbers);
+  if (slice.length > 16) slice = `${pageNumbers.length}pp`;
+  const suffix = slice ? `Proof ${slice}` : "Proof";
+  const created = await state.createNotebook(`${sourceName}-${suffix}`, null, { initialContent: content });
+  if (created) await markProofreadNode(state, created.fileId);
+  return created;
 }
 
-function confirmLongProof(total) {
-  return new Promise((resolve) => {
-    import("../sidebar/files-panel-shared.js").then(({ showConfirmModal }) => {
-      showConfirmModal({
-        title: "Proofread PDF",
-        message: `This PDF has ${total} pages. Every page is rendered into the notebook, which will take a while and produce a large file.`,
-        confirmLabel: "Proofread anyway",
-        onConfirm: () => resolve(true),
-        onCancel: () => resolve(false),
-      });
-    }).catch(() => resolve(true));
-  });
+/** Flag the tree node so the file panel can show the proofread glyph.
+ *  The notebook is created by the Rust side, so this is a follow-up
+ *  patch + tree save rather than something `create_notebook` knows. */
+async function markProofreadNode(state, fileId) {
+  try {
+    const { findNodeByFileId } = await import("../state/tree-helpers.js");
+    const node = findNodeByFileId(state.fileTree, fileId);
+    if (!node || node.proofread) return;
+    node.proofread = true;
+    await state.saveFileTree();
+    state.emit("files-changed");
+  } catch (e) {
+    // Cosmetic only — a proof that renders with the plain notebook icon
+    // is still a working proof.
+    console.warn("Could not mark the proofread notebook:", e);
+  }
+}
+
+/** Collapse a page list back into "1-3, 7" for the notebook name. */
+function describeRange(pages) {
+  const parts = [];
+  let start = pages[0], prev = pages[0];
+  for (let i = 1; i <= pages.length; i++) {
+    const p = pages[i];
+    if (p === prev + 1) { prev = p; continue; }
+    parts.push(start === prev ? `${start}` : `${start}-${prev}`);
+    start = p; prev = p;
+  }
+  return parts.join(",");
 }

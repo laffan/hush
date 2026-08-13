@@ -32,7 +32,7 @@ src/notebook/
   ui/                     Toolbar, selection toolbar + colors menu, shelf panel, inline
                           text editor, brainstorm input, bookmarks, status bar, icons, h(),
                           grab-popup (the grab's two-stage control bar),
-                          proof-thumbnails (proofread page rail)
+                          proof-thumbnails + proof-rail-ink (proofread page rail)
   drawing/                Drawing layer + stroke engine — see README-DRAWING.md
   pencil-bridge.js        iOS: pencil-only inking + Apple Pencil double-tap listener
 ```
@@ -143,7 +143,7 @@ The grab band is the exception, and deliberately so: it *selects content*, so it
 
 ### Proofread PDF
 
-`pdf/pdf-proofread.js` bakes the open PDF into a `<name>-Proof` notebook: one `ImageShape` per page in a single column with a 50 px gutter, on a locked "Pages" layer with a "Notes" layer above it, plus a `proof` envelope entry holding per-page thumbnails and a per-notebook `background: { pattern: "blank" }` (a dot grid showing through the gaps between pages reads as noise on paper). The result is an ordinary `.hushnote` — nothing downstream knows it came from a PDF.
+`pdf/pdf-proofread.js` bakes a PDF into a `<name>-Proof` notebook. `pdf-proofread-modal.js` runs first and asks which pages (print-dialog notation — `1-3, 5-8`; empty means all), which is also the only confirmation step: the honest answer to "this will be enormous" is usually "then just do chapter three". A partial proof is named for its slice (`Paper-Proof 1-3`), and `ImageShape.proofPageIndex` indexes into `proof.pages`, **not** the source PDF's page numbers. The build itself is: one `ImageShape` per page in a single column with a 50 px gutter, on a locked "Pages" layer with a "Notes" layer above it, plus a `proof` envelope entry holding per-page thumbnails and a per-notebook `background: { pattern: "blank" }` (a dot grid showing through the gaps between pages reads as noise on paper). The result is an ordinary `.hushnote` — nothing downstream knows it came from a PDF.
 
 Pages are placed at **twice** their PDF point size (`PAGE_WORLD_SCALE`). At 1× a page would be "100 % = actual size", which sounds right and reads too small — the notebook camera clamps zoom at 1, so there is no way to magnify it afterwards.
 
@@ -157,6 +157,10 @@ Baking rather than rendering live is forced by the feature: a proof has to survi
 The rail (`ui/proof-thumbnails.ts`) is a **live minimap of the page layer**, not a list of the pages the PDF had: split a page and it shows two pieces with the gap between them, drag the split open and the gap grows to scale (capped, so one big drag can't push the running order off the bottom). Only the page layer is drawn — ink and text are annotations on the document, not the document, and at rail scale they'd be smudges over the thing you're reading. For the same reason the shelf goes the other way and filters the page layer *out*: one locked, unactionable "Page 7" row per page (several, after a few splits) buries the notes the panel exists for.
 
 Pieces are painted **without decoding a page**. Each is an `<img>` of its source page's small thumbnail raster, blown up to what the whole page would measure at rail scale and clipped by an `overflow: hidden` wrapper to the piece's `crop` window — sound because a cut is a crop of the same bytes, so the same fractions index into the thumbnail exactly as they index into the full raster. `ImageShape.proofPageIndex` ties a piece back to its page and rides every cut for free (a cut spreads the original shape); proofs baked before that field existed fall back to `ProofPage.shapeId`.
+
+Annotations are drawn on top by `proof-rail-ink.ts` — strokes as polylines, text as one bar per line, drag boxes as outlines, pasted images as blocks. Deliberately a *sketch*, not a flatten: rasterising the real canvas at rail scale would force every page image to decode, which is exactly what the image budget exists to prevent, and it would do it on every change. Sketching reads shapes already in memory and costs a few hundred `lineTo`s, so it can run on a 180 ms trailing debounce that skips entirely while a stroke, drag or split gesture is in flight. Strokes subsample to 160 points — past that the rail has no pixels to show the difference.
+
+The projection is piecewise: each piece is its own linear segment and the fixed gaps compress whatever world space falls between them. `railToWorld` inverts it, which is what lets a click anywhere on the rail — including in a gap — resolve to a real world point, and the camera then *glides* there (280 ms ease-out) rather than cutting. A jump-cut across a fifty-page document costs the reader their place; the travel is what tells them how far they went.
 
 Piece *sizes* are to scale against each other; the space between them is a fixed 6 px. Rendering the gaps to scale as well was the first cut and was wrong: an opened split dominated the rail and pushed the pages either side of it out of view, so the reader lost the sequence in order to be told something the canvas was already showing them. The rail's job is the running order and the shape each cut left a page in. Its foot also stops 62 px short so the fixed rotation / background buttons in the bottom-right corner stay reachable underneath it.
 

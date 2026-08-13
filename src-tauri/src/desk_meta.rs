@@ -168,6 +168,7 @@ mod tests {
             bg_color: None,
             show_numbers: false,
             gutter: false,
+            proofread: false,
             ..Default::default()
         };
         let desk = TreeNode { id: "d1".into(), name: "Personal".into(), node_type: "desk".into(), children: vec![doc], ..doc_defaults() };
@@ -190,6 +191,7 @@ mod tests {
             bg_color: None,
             show_numbers: false,
             gutter: false,
+            proofread: false,
             ..Default::default()
         }
     }

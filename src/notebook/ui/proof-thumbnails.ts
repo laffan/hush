@@ -37,6 +37,7 @@
 import type { DrawingState } from "../state";
 import type { ImageShape } from "../types";
 import { h } from "./dom-helpers";
+import { type RailSegment, drawProofRailInk, railToWorld } from "./proof-rail-ink";
 
 export const RAIL_MIN_WIDTH = 60;
 export const RAIL_MAX_WIDTH = 300;
@@ -56,6 +57,12 @@ const RAIL_PAD = 8;
  *  something they can already see on the canvas. A fixed rule keeps
  *  every piece on screen and still reads as "these are separate". */
 const PIECE_GAP_PX = 6;
+
+/** Trailing debounce before the annotation overlay repaints. */
+const INK_DEBOUNCE_MS = 180;
+
+/** Duration of the click-to-navigate glide. */
+const GLIDE_MS = 280;
 
 /** Vertical clearance at the rail's foot for the fixed canvas-rotation
  *  and background-settings buttons, which park in the bottom-right
@@ -107,12 +114,21 @@ function collectPieces(state: DrawingState): Piece[] {
 }
 
 export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
+  // Cells stack inside `column`; the ink canvas overlays it. The canvas
+  // has to share the column's coordinate space (not the scroller's) so
+  // the projection stays valid as the rail scrolls.
+  const column = h("div", { style: { position: "relative", width: "100%" } });
+  const ink = h("canvas", {
+    style: { position: "absolute", left: "0", top: "0", pointerEvents: "none" },
+  }) as HTMLCanvasElement;
+  column.appendChild(ink);
+
   const scroller = h("div", {
     style: {
       flex: "1", overflowY: "auto", overflowX: "hidden",
-      display: "flex", flexDirection: "column", alignItems: "flex-start",
       padding: `${RAIL_PAD}px ${RAIL_PAD}px`, boxSizing: "border-box",
     },
+    children: [column],
   });
 
   const resizer = h("div", {
@@ -144,6 +160,11 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
   let activeEl: HTMLElement | null = null;
   let lastSkin = "";
   let lastRight = -1;
+  /** Piecewise world → rail projection, rebuilt by `layout`. */
+  let segments: RailSegment[] = [];
+  let inkTimer: ReturnType<typeof setTimeout> | null = null;
+  let inkShapes: unknown = null;
+  let tweenRaf = 0;
 
   // ── layout ──
 
@@ -169,7 +190,10 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
   }
 
   function rebuild(pieces: Piece[]) {
-    scroller.innerHTML = "";
+    // Remove only what we added — the ink canvas is a permanent child of
+    // `column` and must survive a rebuild (wiping the container took it
+    // out and left the overlay drawing into a detached node).
+    for (const { el } of cells) el.remove();
     cells = [];
     activeEl = null;
     for (const piece of pieces) {
@@ -186,17 +210,8 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
         children: [img],
         onClick: (e) => { e.stopPropagation(); },
       });
-      // The rail is a DOM sibling above the canvas, so a tap here never
-      // reaches the canvas's own pointer handlers — which is what lets a
-      // grab waiting in its place stage survive a page jump. The
-      // stopPropagation is belt-and-braces for hosts that reparent us.
-      cell.addEventListener("pointerdown", (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        jumpTo(piece);
-      });
       cells.push({ el: cell, piece });
-      scroller.appendChild(cell);
+      column.appendChild(cell);
     }
   }
 
@@ -209,15 +224,20 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
     for (const p of pieces) if (p.x < minX) minX = p.x;
     if (!isFinite(minX)) minX = 0;
 
+    const segs: RailSegment[] = [];
+    let railY = 0;
     for (let i = 0; i < cells.length; i++) {
       const { el, piece } = cells[i];
       const crop = piece.shape.crop || { x: 0, y: 0, w: 1, h: 1 };
       const cw = Math.max(1, piece.w * scale);
       const ch = Math.max(1, piece.h * scale);
+      const railX = Math.max(0, (piece.x - minX) * scale);
+      const gap = i === 0 ? 0 : PIECE_GAP_PX;
+      railY += gap;
       el.style.width = `${cw}px`;
       el.style.height = `${ch}px`;
-      el.style.marginLeft = `${Math.max(0, (piece.x - minX) * scale)}px`;
-      el.style.marginTop = `${i === 0 ? 0 : PIECE_GAP_PX}px`;
+      el.style.marginLeft = `${railX}px`;
+      el.style.marginTop = `${gap}px`;
 
       const img = el.firstElementChild as HTMLImageElement;
       // Blow the page's thumbnail up to the size the WHOLE page would be
@@ -229,22 +249,97 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
       img.style.height = `${fullH}px`;
       img.style.left = `${-crop.x * fullW}px`;
       img.style.top = `${-crop.y * fullH}px`;
+
+      segs.push({
+        wTop: piece.y, wBot: piece.y + piece.h,
+        rTop: railY, rBot: railY + ch,
+        scale, wLeft: piece.x, rLeft: railX,
+      });
+      railY += ch;
     }
+    segments = segs;
+
+    // The overlay canvas spans the whole stacked column. One canvas
+    // rather than one per cell: annotations cross piece boundaries (that
+    // is what a split through a paragraph looks like), and a per-cell
+    // canvas would clip them at every seam.
+    const w = Math.max(1, Math.round(contentWidth()));
+    const hgt = Math.max(1, Math.round(railY));
+    if (ink.width !== w || ink.height !== hgt) {
+      ink.width = w;
+      ink.height = hgt;
+      ink.style.width = `${w}px`;
+      ink.style.height = `${hgt}px`;
+    }
+    scheduleInk();
   }
 
-  /** Centre a piece in the viewport at the current zoom. */
-  function jumpTo(piece: Piece) {
-    const zoom = state.camera.zoom;
-    const w = state.canvasEl?.clientWidth || window.innerWidth;
-    const usableLeft = state.leftInset || 0;
-    const usableW = Math.max(0, w - usableLeft - (state.rightInset || 0) - width);
-    state.camera = {
-      ...state.camera,
-      x: usableLeft + usableW / 2 - (piece.x + piece.w / 2) * zoom,
-      y: 40 - piece.y * zoom,
-    };
-    state.notify("camera");
+  // ── annotations ──
+
+  /** Repaint the overlay on a trailing debounce, and never mid-gesture.
+   *  A stroke in progress changes `state.shapes` on every pen-up and a
+   *  split drag on every frame; the rail is peripheral vision, so it
+   *  waits for the pause rather than competing for the frame. */
+  function scheduleInk() {
+    if (inkTimer) clearTimeout(inkTimer);
+    inkTimer = setTimeout(() => {
+      inkTimer = null;
+      if (state.splitDrag || state.grabBandDrag || state.isActiveDrag || state.strokeEngineDragging) {
+        scheduleInk();
+        return;
+      }
+      inkShapes = state.shapes;
+      drawProofRailInk(ink, {
+        shapes: state.shapes,
+        segments,
+        theme: state.theme,
+        pageLayerId: state.proof?.pageLayerId || null,
+        hiddenLayerIds: state._hiddenLayerIds(),
+      });
+    }, INK_DEBOUNCE_MS);
   }
+
+  // ── navigation ──
+
+  /** Smoothly centre a world point in the visible canvas area. */
+  function glideTo(worldX: number, worldY: number) {
+    const el = state.canvasEl;
+    const vw = el?.clientWidth || window.innerWidth;
+    const vh = el?.clientHeight || window.innerHeight;
+    const zoom = state.camera.zoom;
+    const usableLeft = state.leftInset || 0;
+    const usableW = Math.max(0, vw - usableLeft - (state.rightInset || 0) - width);
+    const from = { x: state.camera.x, y: state.camera.y };
+    const to = {
+      x: usableLeft + usableW / 2 - worldX * zoom,
+      y: vh / 2 - worldY * zoom,
+    };
+    if (tweenRaf) cancelAnimationFrame(tweenRaf);
+    const start = performance.now();
+    const step = () => {
+      const t = Math.min(1, (performance.now() - start) / GLIDE_MS);
+      // Ease-out cubic: leaves fast, settles gently. A jump-cut across a
+      // fifty-page document costs the reader their place; the travel is
+      // what tells them how far they went.
+      const k = 1 - Math.pow(1 - t, 3);
+      state.camera = { ...state.camera, x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k };
+      state.notify("camera");
+      tweenRaf = t < 1 ? requestAnimationFrame(step) : 0;
+    };
+    tweenRaf = requestAnimationFrame(step);
+  }
+
+  // One handler on the column rather than one per cell: the rail is a
+  // map, and clicking the gap between two pages should still take you
+  // there. `railToWorld` resolves gaps as well as pieces.
+  column.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!segments.length) return;
+    const r = column.getBoundingClientRect();
+    const world = railToWorld(segments, e.clientX - r.left, e.clientY - r.top);
+    glideTo(world.x, world.y);
+  });
 
   /** Outline whichever piece owns the viewport's vertical centre. */
   function syncActive() {
@@ -368,6 +463,8 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
     root,
     destroy() {
       state.removeEventListener("change", onChange);
+      if (inkTimer) { clearTimeout(inkTimer); inkTimer = null; }
+      if (tweenRaf) { cancelAnimationFrame(tweenRaf); tweenRaf = 0; }
       root.remove();
     },
   };

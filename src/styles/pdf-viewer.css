@@ -741,3 +741,91 @@ body.pdf-mode .column-resizer { display: none !important; }
   background: var(--accent, #5a8ad8);
   transition: width 0.15s linear;
 }
+
+/* Create Proofread Notebook — page-range picker. Sized and coloured off
+   the same tokens as the delete-confirm modal so the two read as one
+   family. */
+.ppm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: var(--z-modal, 500);
+}
+.proofread-pages-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: calc(var(--z-modal, 500) + 10);
+  width: 90%;
+  max-width: 380px;
+  padding: 20px;
+  border-radius: 10px;
+  background: var(--panel-bg, var(--bg));
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  font-family: var(--ui-font-family, system-ui, sans-serif);
+  color: var(--fg);
+}
+.ppm-title { font-size: 15px; font-weight: 600; }
+.ppm-sub {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ppm-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+  margin: 16px 0 6px;
+}
+.ppm-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  font-size: 13px;
+  font-family: inherit;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  outline: none;
+}
+.ppm-input:focus { border-color: var(--accent, #5a8ad8); }
+.proofread-pages-modal.ppm-invalid .ppm-input { border-color: #e5484d; }
+.ppm-status {
+  min-height: 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+.proofread-pages-modal.ppm-invalid .ppm-status { color: #e5484d; opacity: 1; }
+.ppm-status.ppm-warn { opacity: 1; }
+.ppm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+.ppm-actions button {
+  padding: 6px 16px;
+  font-size: 12px;
+  font-family: inherit;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.ppm-actions .ppm-confirm {
+  background: var(--accent, #5a8ad8);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+}
+.ppm-actions .ppm-confirm:disabled { opacity: 0.45; cursor: default; }
