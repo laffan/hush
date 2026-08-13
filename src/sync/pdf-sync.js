@@ -22,7 +22,10 @@
  *       "addedAt": 1716825600,
  *       "openedAt": 1716825600,          // last time the PDF was opened (any surface)
  *       "bookmarks": [                    // user deep-links into the document
- *         { "id": "...", "name": "...", "color": "#ef5350", "page": 12, "addedAt": 1716825600 }
+ *         { "id": "...", "name": "...", "color": "#ef5350", "page": 12, "addedAt": 1716825600 },
+ *         // …with "x"/"y" (0–1 page fractions) it's a *clip*: a point
+ *         // on the page rather than the page as a whole.
+ *         { "id": "...", "name": "...", "color": "#42a5f5", "page": 12, "x": 0.61, "y": 0.32, "addedAt": 1716825600 }
  *       ]
  *     }
  *   }
@@ -164,7 +167,7 @@ function _bookmarkItem(fileId) {
   return item;
 }
 
-export async function addPdfBookmark(fileId, { name, color, page }) {
+export async function addPdfBookmark(fileId, { name, color, page, x, y }) {
   const item = _bookmarkItem(fileId);
   const bookmark = {
     id: crypto.randomUUID(),
@@ -173,6 +176,14 @@ export async function addPdfBookmark(fileId, { name, color, page }) {
     page: Math.max(1, page | 0),
     addedAt: Math.floor(Date.now() / 1000),
   };
+  // A clip bookmark also carries where on the page it points, as
+  // fractions of the page box (0–1, y down) so it survives zoom and
+  // re-render. Absent on a plain page bookmark — the presence of the
+  // pair is what makes a bookmark a clip.
+  if (Number.isFinite(x) && Number.isFinite(y)) {
+    bookmark.x = Math.min(1, Math.max(0, x));
+    bookmark.y = Math.min(1, Math.max(0, y));
+  }
   item.bookmarks.push(bookmark);
   await persistRegistry();
   _state?.emit("pdf-bookmarks-changed", fileId);

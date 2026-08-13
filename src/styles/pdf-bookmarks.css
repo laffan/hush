@@ -287,3 +287,80 @@
   background: var(--theme-bg, var(--bg));
   color: var(--fg);
 }
+
+/* ===== Clip bookmarks (a point on a page) =====
+ *
+ * A dot at the clipped point, a dashed line running left, and a clip
+ * tab — an elongated triangle pointing back in at the dot — riding the
+ * page's left edge. Everything is positioned in page fractions
+ * (--clip-x / --clip-y), so zoom and re-layout carry the mark along
+ * with the page.
+ */
+
+.pdf-clip-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none; /* the marks themselves opt back in */
+  z-index: 3;
+}
+
+.pdf-clip-mark {
+  position: absolute;
+  left: 0;
+  top: var(--clip-y);
+  width: var(--clip-x);
+  height: 14px;
+  transform: translateY(-50%);
+}
+
+.pdf-clip-tab {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 20px;
+  height: 11px;
+  transform: translateY(-50%);
+  background: var(--bm-color, #ef5350);
+  /* Elongated triangle, flat against the left edge, apex pointing in
+     towards the dot. */
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.pdf-clip-line {
+  position: absolute;
+  left: 20px;
+  right: 5px;
+  top: 50%;
+  border-top: 1px dashed var(--bm-color, #ef5350);
+  opacity: 0.85;
+}
+
+.pdf-clip-dot {
+  position: absolute;
+  right: -5px;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--bm-color, #ef5350);
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.pdf-clip-mark:hover .pdf-clip-tab,
+.pdf-clip-mark:hover .pdf-clip-dot {
+  filter: brightness(1.15);
+}
+
+/* A clip's row in the bookmark list wears the tab shape instead of the
+   round page-bookmark dot. */
+.pdf-bm-dot.is-clip {
+  width: 12px;
+  height: 9px;
+  border-radius: 0;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}

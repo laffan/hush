@@ -529,16 +529,19 @@ body.text-drag-active .floating-pane:not(.active) .floating-pane-content {
 .floating-pane.docked.docked-left   .fp-resize.fp-resize-e { display: block; }
 .floating-pane.docked.docked-right  .fp-resize.fp-resize-w { display: block; }
 
-/* iPadOS 26: a left/right-docked pane sits flush against the top edge, so
-   its full-width title bar lands under the system menu band and its
-   buttons become unreachable. Float the title bar as a compact centred
-   pill below the safe zone instead — mirroring the Google Docs sync pill.
-   Taking the title bar out of the flex flow lets the content fill the
-   whole pane, with the pill floating over its top. Reverts to the normal
-   bar the moment the pane is undragged out of the dock (`.docked` drops).
+/* iPadOS 26: a pane docked to the left, right, or top sits flush against
+   the top edge, so its full-width title bar lands under the system menu
+   band and its buttons become unreachable. Float the title bar as a
+   compact centred pill below the safe zone instead — mirroring the
+   Google Docs sync pill. Taking the title bar out of the flex flow lets
+   the content fill the whole pane, with the pill floating over its top.
+   Reverts to the normal bar the moment the pane is undragged out of the
+   dock (`.docked` drops). A bottom-docked pane's title bar is nowhere
+   near the band, so it keeps the ordinary bar.
    Off iPad the tokens are 0 and these rules never match. */
 html.ios:not(.phone) .floating-pane.docked.docked-left .floating-pane-titlebar,
-html.ios:not(.phone) .floating-pane.docked.docked-right .floating-pane-titlebar {
+html.ios:not(.phone) .floating-pane.docked.docked-right .floating-pane-titlebar,
+html.ios:not(.phone) .floating-pane.docked.docked-top .floating-pane-titlebar {
   position: absolute;
   top: calc(max(var(--ipad-safe-top, 0px), env(safe-area-inset-top, 0px)) + 6px);
   left: 50%;

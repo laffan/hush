@@ -5,7 +5,9 @@ import { createThumbnailManager } from "./pdf-viewer-thumbnails.js";
 import { createPageRenderer } from "./pdf-viewer-render.js";
 import { createLinkLayerManager } from "./pdf-viewer-links.js";
 import { buildPdfToolbar, applyToolbarInfo } from "./pdf-toolbar-build.js";
-import { attachPageHoverButtons, createToolbarBookmarkButton } from "./pdf-bookmarks.js";
+import {
+  attachPageHoverButtons, attachPageClipBookmarks, createToolbarBookmarkButton,
+} from "./pdf-bookmarks.js";
 import { getPdfjs } from "./pdfjs-loader.js";
 
 // Re-exported for existing consumers (doc-export-render.js).
@@ -440,6 +442,8 @@ export function createPdfViewer(container, opts = {}) {
       // Hover buttons: bookmark (upper-right) + Zotero pop-out
       // (bottom-right, Zotero-backed PDFs only).
       attachPageHoverButtons(wrapper, i + 1, { zoteroAttKey: _zoteroAttKey, fileId: _fileId });
+      // Double-click anywhere on the page to clip that point.
+      attachPageClipBookmarks(wrapper, i + 1, { fileId: _fileId });
 
       scrollArea.appendChild(wrapper);
       pages.push({

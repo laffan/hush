@@ -7,6 +7,9 @@
  *
  *  - the per-page hover button (upper-right; the Zotero pop-out's
  *    bottom-right twin — both wired here via attachPageHoverButtons)
+ *  - clip bookmarks: double-click anywhere on a page to bookmark that
+ *    *point*, drawn as a dot with a dashed line running out to a clip
+ *    tab on the page's left edge
  *  - the fold-mode button beside each fold's expand toggle
  *  - the create / edit popover (name + color)
  *  - the bookmark list popup (view / edit / delete rows) used by the
@@ -37,9 +40,18 @@ let _state = null;
 // changes. One listener + isConnected pruning keeps it leak-free
 // through viewer reloads and suspend/resume cycles.
 const _pageButtons = new Set();
+// Clip-bookmark overlays, same lifecycle as the page buttons above.
+const _clipLayers = new Set();
 // The open list popup, so registry changes rebuild it in place (a
 // bookmark added from a pane appears in an already-open menu).
 let _openList = null;
+
+/** A bookmark that points at a spot on the page rather than the page as
+ *  a whole. `x` / `y` are fractions of the page box (0–1, y down), so
+ *  they survive zoom and re-render untouched. */
+export function isClipBookmark(bm) {
+  return Number.isFinite(bm?.x) && Number.isFinite(bm?.y);
+}
 
 function paintPageBookmarkButton(entry) {
   const marks = getPdfBookmarks(entry.fileId).filter((b) => b.page === entry.page);
@@ -59,6 +71,10 @@ function onBookmarksChanged(fileId) {
   for (const entry of [..._pageButtons]) {
     if (!entry.btn.isConnected) { _pageButtons.delete(entry); continue; }
     if (entry.fileId === fileId) paintPageBookmarkButton(entry);
+  }
+  for (const entry of [..._clipLayers]) {
+    if (!entry.layer.isConnected) { _clipLayers.delete(entry); continue; }
+    if (entry.fileId === fileId) paintClipLayer(entry);
   }
   if (_openList && _openList.fileId === fileId) _openList.rebuild();
 }
@@ -145,12 +161,16 @@ function mountPopup(el, anchor) {
     if (e.key === "Escape") { e.stopPropagation(); closeBookmarkPopup(); }
   };
   // Defer one frame so the opening click doesn't instantly close it.
+  // `pointerdown`, not `mousedown`: iOS delivers the synthetic
+  // `mousedown` hundreds of ms after `touchend`, well past that frame,
+  // so a touch-opened popup would dismiss itself on the very tap that
+  // opened it (README-TECHNICAL, Platform gotchas).
   requestAnimationFrame(() => {
-    document.addEventListener("mousedown", onDown, true);
+    document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("keydown", onKey, true);
   });
   _popupCleanup = () => {
-    document.removeEventListener("mousedown", onDown, true);
+    document.removeEventListener("pointerdown", onDown, true);
     document.removeEventListener("keydown", onKey, true);
   };
 }
@@ -169,15 +189,21 @@ function escHtml(str) {
  * @param {string}  opts.fileId
  * @param {number}  [opts.page]      Required when creating.
  * @param {object}  [opts.bookmark]  Existing bookmark → edit mode.
+ * @param {{x: number, y: number}} [opts.point]  Creating a clip
+ *        bookmark: page-relative fractions of the double-clicked spot.
  * @param {Function} [opts.onDone]   Called after save / delete.
  */
-export function openBookmarkEditor({ anchor, fileId, page, bookmark, onDone }) {
+export function openBookmarkEditor({ anchor, fileId, page, bookmark, point, onDone }) {
   const isEdit = !!bookmark;
+  const isClip = isEdit ? isClipBookmark(bookmark) : !!point;
   const el = document.createElement("div");
   el.className = "pdf-bm-popover";
   let color = bookmark?.color || BOOKMARK_COLORS[0];
+  const title = isEdit
+    ? (isClip ? "Edit clip" : "Edit bookmark")
+    : (isClip ? `Clip on page ${page}` : `Bookmark page ${page}`);
   el.innerHTML = `
-    <div class="pdf-bm-popover-title">${isEdit ? "Edit bookmark" : `Bookmark page ${page}`}</div>
+    <div class="pdf-bm-popover-title">${title}</div>
     <input type="text" class="pdf-bm-name" placeholder="Bookmark name" value="${escHtml(bookmark?.name || "")}" />
     <div class="pdf-bm-colors">
       ${BOOKMARK_COLORS.map((c) => `<button type="button" class="pdf-bm-swatch${c === color ? " active" : ""}" data-color="${c}" style="--bm-color:${c}"></button>`).join("")}
@@ -186,7 +212,7 @@ export function openBookmarkEditor({ anchor, fileId, page, bookmark, onDone }) {
       ${isEdit ? `<button type="button" class="pdf-bm-btn pdf-bm-delete">Delete</button>` : ""}
       <span class="pdf-bm-actions-spacer"></span>
       <button type="button" class="pdf-bm-btn pdf-bm-cancel">Cancel</button>
-      <button type="button" class="pdf-bm-btn pdf-bm-save">${isEdit ? "Save" : "Add bookmark"}</button>
+      <button type="button" class="pdf-bm-btn pdf-bm-save">${isEdit ? "Save" : (isClip ? "Add clip" : "Add bookmark")}</button>
     </div>
   `;
   mountPopup(el, anchor);
@@ -203,7 +229,7 @@ export function openBookmarkEditor({ anchor, fileId, page, bookmark, onDone }) {
     const name = nameInput.value;
     closeBookmarkPopup();
     if (isEdit) await updatePdfBookmark(fileId, bookmark.id, { name, color });
-    else await addPdfBookmark(fileId, { name, color, page });
+    else await addPdfBookmark(fileId, { name, color, page, x: point?.x, y: point?.y });
     onDone?.();
   };
   el.querySelector(".pdf-bm-save").addEventListener("click", save);
@@ -243,7 +269,7 @@ export function openBookmarkListPopup({ anchor, fileId, onPick, onChanged }) {
     }
     el.innerHTML = bookmarks.map((bm) => `
       <div class="pdf-bm-row" data-bm-id="${escHtml(bm.id)}">
-        <span class="pdf-bm-dot" style="--bm-color:${escHtml(bm.color)}"></span>
+        <span class="pdf-bm-dot${isClipBookmark(bm) ? " is-clip" : ""}" style="--bm-color:${escHtml(bm.color)}"></span>
         <span class="pdf-bm-row-name">${escHtml(bm.name)}</span>
         <span class="pdf-bm-row-page">p. ${bm.page}</span>
         <button type="button" class="pdf-bm-row-btn pdf-bm-row-edit" title="Edit bookmark">${EDIT_ICON}</button>
@@ -349,6 +375,131 @@ export function attachPageHoverButtons(wrapper, pageNum, { zoteroAttKey, fileId 
   wrapper.addEventListener("mouseleave", () => {
     zBtn?.classList.remove("visible");
     bmBtn?.classList.remove("visible");
+  });
+}
+
+// ===== Clip bookmarks (a point on a page) =====
+
+/**
+ * Double-click anywhere on a page to bookmark that point, and draw the
+ * clips already on it.
+ *
+ * The overlay is positioned in page fractions rather than pixels, so
+ * zooming, re-rendering, or resizing the pane moves the marks with the
+ * page for free — the wrapper is the page box at every zoom level, and
+ * percentages ride it.
+ */
+export function attachPageClipBookmarks(wrapper, pageNum, { fileId }) {
+  if (!fileId) return;
+  const layer = document.createElement("div");
+  layer.className = "pdf-clip-layer";
+  wrapper.appendChild(layer);
+  const entry = { layer, fileId, page: pageNum };
+  _clipLayers.add(entry);
+  paintClipLayer(entry);
+
+  /** Open the create popover for a double-click/tap at a screen point. */
+  const clipAt = (clientX, clientY, target) => {
+    // Anything with its own double-click meaning keeps it: the page's
+    // own link annotations, the hover buttons, and the clip marks
+    // (which open their own editor on a single click).
+    if (target?.closest?.(".pdf-clip-mark, .pdf-page-bookmark-btn, .pdf-page-zotero-btn, .pdf-link-layer")) return false;
+    const r = wrapper.getBoundingClientRect();
+    if (!r.width || !r.height) return false;
+    openBookmarkEditor({
+      anchor: pointAnchor(clientX, clientY),
+      fileId,
+      page: pageNum,
+      point: {
+        x: clamp01((clientX - r.left) / r.width),
+        y: clamp01((clientY - r.top) / r.height),
+      },
+    });
+    return true;
+  };
+
+  let lastTouchClip = 0;
+  wrapper.addEventListener("dblclick", (e) => {
+    // iOS synthesises a click pair after a double tap the detector
+    // below has already acted on — don't open the popover twice.
+    if (Date.now() - lastTouchClip < 700) return;
+    if (clipAt(e.clientX, e.clientY, e.target)) e.preventDefault();
+  });
+
+  // Touch double-tap. iPadOS doesn't reliably deliver `dblclick` for a
+  // two-finger-free double tap inside the webview, and this is the
+  // platform the gesture is for. Concurrent contacts poison the
+  // gesture: a pinch ends as two `pointerup`s milliseconds apart, which
+  // otherwise reads as a double tap (see README-TECHNICAL, Platform
+  // gotchas). `pointercancel` feeds the same bookkeeping so the active
+  // set can't leak and wedge the detector.
+  const active = new Set();
+  let poisoned = false;
+  let lastTap = null;
+  wrapper.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "touch") return;
+    active.add(e.pointerId);
+    if (active.size > 1) { poisoned = true; lastTap = null; }
+  });
+  const endTouch = (e, cancelled) => {
+    if (e.pointerType !== "touch") return;
+    active.delete(e.pointerId);
+    if (active.size === 0 && poisoned) { poisoned = false; return; }
+    if (cancelled || poisoned) return;
+    const now = Date.now();
+    const near = lastTap
+      && now - lastTap.t < 400
+      && Math.abs(e.clientX - lastTap.x) < 30
+      && Math.abs(e.clientY - lastTap.y) < 30;
+    if (near) {
+      lastTap = null;
+      if (clipAt(e.clientX, e.clientY, e.target)) lastTouchClip = now;
+      return;
+    }
+    lastTap = { t: now, x: e.clientX, y: e.clientY };
+  };
+  wrapper.addEventListener("pointerup", (e) => endTouch(e, false));
+  wrapper.addEventListener("pointercancel", (e) => endTouch(e, true));
+}
+
+function clamp01(n) { return n < 0 ? 0 : n > 1 ? 1 : n; }
+
+/** A zero-size anchor at a screen point, for popups that open at the
+ *  pointer rather than off an element. */
+function pointAnchor(x, y) {
+  return {
+    getBoundingClientRect: () => ({
+      left: x, right: x, top: y, bottom: y, width: 0, height: 0, x, y,
+    }),
+  };
+}
+
+function paintClipLayer(entry) {
+  const clips = getPdfBookmarks(entry.fileId)
+    .filter((b) => b.page === entry.page && isClipBookmark(b));
+  entry.layer.innerHTML = clips.map((bm) => `
+    <div class="pdf-clip-mark" data-bm-id="${escHtml(bm.id)}"
+         style="--bm-color:${escHtml(bm.color || "#ef5350")};
+                --clip-x:${(bm.x * 100).toFixed(3)}%;
+                --clip-y:${(bm.y * 100).toFixed(3)}%">
+      <span class="pdf-clip-tab" title="${escHtml(bm.name || "Clip")}"></span>
+      <span class="pdf-clip-line"></span>
+      <span class="pdf-clip-dot" title="${escHtml(bm.name || "Clip")}"></span>
+    </div>
+  `).join("");
+
+  entry.layer.querySelectorAll(".pdf-clip-mark").forEach((markEl) => {
+    const bm = clips.find((b) => b.id === markEl.dataset.bmId);
+    if (!bm) return;
+    markEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openBookmarkEditor({
+        anchor: pointAnchor(e.clientX, e.clientY),
+        fileId: entry.fileId,
+        page: entry.page,
+        bookmark: bm,
+      });
+    });
   });
 }
 

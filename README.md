@@ -6,7 +6,7 @@ Under the minimal surface is a full writing system: a Markdown editor, canvas-ba
 
 ## Writing
 
-**The editor** is Markdown with inline rendering — headings, bold/italic, links, tables, images, footnotes, callouts, YAML properties, and `[[wikilinks]]` between notes. Sixteen color themes across light, dark, and sepia, and **Styles** that bundle theme + font + colors into presets you can switch, share, and import as JSON.
+**The editor** is Markdown with inline rendering — headings, bold/italic, links, tables, images, footnotes, callouts, YAML properties, and `[[wikilinks]]` between notes. Sixteen color themes across light, dark, and sepia, and **Styles** that bundle theme + font + colors into presets you can switch, share, and import as JSON. Every colour in the style editor opens an in-app picker — a rainbow hue slider over a saturation/brightness field — so the live preview stays visible while you tune.
 
 A style also carries two stacks of layers, both built the same way — add, reorder by dragging, hide, delete:
 
@@ -52,9 +52,9 @@ Notebooks export as `.hushnote` (lossless), PNG, JPG, or PDF.
 
 ## Research
 
-- **Zotero**: connect your library, search references from the editor (`⌘⇧I` or type `[@` for inline citations), save PDFs into Hush, browse a paper's highlights in a drag-out pane, and insert page snapshots.
-- **PDF viewer**: fast, annotation-aware (Zotero highlights and ink render on the pages), with an annotation shelf, named colored **bookmarks** that work as deep links from your notes, a **folded view** that collapses a paper to just its annotated regions, and a gallery **shelf** view of any PDFs folder with full-text-ish search over titles, bookmarks, and highlight text.
-- **Export**: documents and projects render to PDF through an embedded Typst pipeline (styles, line spacing, numbered headings, footnotes, and a real bibliography from your citations), plus Markdown, RTF, and one-shot Google Doc export.
+- **Zotero**: connect your library, search references from the editor (`⌘⇧I` or type `[@` for inline citations), save PDFs into Hush, browse a paper's highlights in a drag-out pane, and insert page snapshots. Every library picker shows your collections as a folder tree beside the search results, so you can narrow to a folder instead of remembering a title.
+- **PDF viewer**: fast, annotation-aware (Zotero highlights and ink render on the pages), with an annotation shelf, named colored **bookmarks** that work as deep links from your notes, a **folded view** that collapses a paper to just its annotated regions, and a gallery **shelf** view of any PDFs folder with full-text-ish search over titles, bookmarks, and highlight text. Double-click anywhere on a page for a **clip** — a bookmark that points at that exact spot, drawn as a dot with a dashed line out to a clip tab on the page's edge.
+- **Export**: documents and projects render to PDF through an embedded Typst pipeline (styles, line spacing, numbered headings, heading top margin, footnotes, and a real bibliography from your citations), plus Markdown, RTF, and one-shot Google Doc export. An image the export can't find prints as its markdown in red rather than taking the whole render down with it.
 
 ## Google Docs
 

@@ -192,7 +192,17 @@
    height + a 5px gap. Scoped to #pdf-container: floating PDF panes sit
    mid-screen and stack columns already reserve their own bottom band,
    so neither should grow this padding. */
-html.ios:not(.phone) #pdf-container .pdf-zoom-toolbar {
+html.ios:not(.phone) #pdf-container .pdf-zoom-toolbar,
+/* A pane docked to the left, right, or bottom reaches the same screen
+   edge the main viewer does, so its toolbar lands in the same reserved
+   band and needs the same lift. Floating (undocked) panes sit mid-screen
+   and top-docked panes end mid-screen, so both keep the compact bar.
+   With a bottom-dock present a left/right dock stops above it and the
+   padding is only extra room — cheaper than making the rule conditional
+   on the other dock's presence, which CSS can't see. */
+html.ios:not(.phone) .floating-pane.docked.docked-left .pdf-zoom-toolbar,
+html.ios:not(.phone) .floating-pane.docked.docked-right .pdf-zoom-toolbar,
+html.ios:not(.phone) .floating-pane.docked.docked-bottom .pdf-zoom-toolbar {
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 52px);
   position: relative;
 }
@@ -200,7 +210,10 @@ html.ios:not(.phone) #pdf-container .pdf-zoom-toolbar {
    stays, so the bar reads as solid rather than floating). Sits 6px under
    the buttons to mirror the 6px top padding, so the top and bottom
    borders are equidistant from the button row. */
-html.ios:not(.phone) #pdf-container .pdf-zoom-toolbar::after {
+html.ios:not(.phone) #pdf-container .pdf-zoom-toolbar::after,
+html.ios:not(.phone) .floating-pane.docked.docked-left .pdf-zoom-toolbar::after,
+html.ios:not(.phone) .floating-pane.docked.docked-right .pdf-zoom-toolbar::after,
+html.ios:not(.phone) .floating-pane.docked.docked-bottom .pdf-zoom-toolbar::after {
   content: "";
   position: absolute;
   left: 0;
