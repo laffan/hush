@@ -1,151 +1,37 @@
 /**
- * Zotero integration — search modal, API client, reference management.
- * Fetches references via Zotero Web API and stores them locally for offline use.
+ * Zotero integration — local reference store, fuzzy search, and the
+ * Insert Reference modal. The Web API client lives in `zotero/api.js`;
+ * this module owns the caches on top of it and the UI that reads them.
  * Triggered by Cmd+Shift+L or the sidebar book icon.
  */
 
+import { fetchCollections, fetchReferences, testZoteroConnection } from "./zotero/api.js";
+
+// Re-exported so the settings window and the sidebar's background
+// updater keep importing the Zotero surface from one place.
+export { testZoteroConnection };
+
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
-const ZOTERO_API = "https://api.zotero.org";
 
 let cachedReferences = null;
+let cachedCollections = null;
 let zoteroModal = null;
 
-// ===== API Client =====
+// ===== Download =====
 
-export async function testZoteroConnection(userId, apiKey) {
-  const url = `${ZOTERO_API}/users/${userId}/items?key=${apiKey}&format=json&limit=1`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  return true;
-}
-
-/** Fetch a Zotero API page, retrying transient failures (the API rate-
- *  limits with 429/503 and can hiccup on large libraries). Returns the
- *  Response so callers can read headers; throws only after exhausting
- *  retries so an incomplete fetch surfaces instead of silently dropping
- *  data. */
-async function zoteroFetch(url, tries = 4) {
-  let lastErr = null;
-  for (let i = 0; i < tries; i++) {
-    try {
-      const resp = await fetch(url);
-      if (resp.ok) return resp;
-      // 429 / 5xx are transient; 4xx (bad key etc.) won't improve.
-      if (resp.status !== 429 && resp.status < 500) throw new Error(`HTTP ${resp.status}`);
-      lastErr = new Error(`HTTP ${resp.status}`);
-    } catch (e) { lastErr = e; }
-    await new Promise((r) => setTimeout(r, 400 * Math.pow(2, i))); // 0.4s, 0.8s, 1.6s
-  }
-  throw lastErr || new Error("Zotero fetch failed");
-}
-
-/** Whether a Zotero attachment's data describes a PDF. Prefers the
- *  content type but falls back to the filename / title extension, since
- *  older imports and linked files sometimes carry an empty or unexpected
- *  `contentType`. */
-function isPdfAttachment(d) {
-  const ct = (d?.contentType || "").toLowerCase();
-  if (ct.includes("pdf")) return true;
-  const name = (d?.filename || d?.title || "").toLowerCase();
-  return name.endsWith(".pdf");
-}
-
+/** Refresh the local caches from the library. References are returned
+ *  (both callers persist them alongside their own bookkeeping); the
+ *  collection tree is saved here, since nothing outside this module has
+ *  a reason to hold it. A collections failure is non-fatal — the
+ *  library browser falls back to a flat list. */
 export async function downloadZoteroReferences(userId, apiKey, onProgress) {
-  // Step 1: Get total count of top-level items
-  onProgress("Checking library size...", 0);
-  const countUrl = `${ZOTERO_API}/users/${userId}/items/top?key=${apiKey}&format=json&limit=1`;
-  const countResp = await fetch(countUrl);
-  if (!countResp.ok) throw new Error(`HTTP ${countResp.status}`);
-  const totalItems = parseInt(countResp.headers.get("Total-Results") || "0", 10);
-
-  // Step 2: Fetch all top-level items (paginated, 100 per page)
-  const items = [];
-  const pageSize = 100;
-  const totalPages = Math.ceil(totalItems / pageSize) || 1;
-  for (let page = 0; page < totalPages; page++) {
-    const start = page * pageSize;
-    onProgress(`Fetching items (${start + 1}–${Math.min(start + pageSize, totalItems)} of ${totalItems})...`, (page / totalPages) * 0.6);
-    const url = `${ZOTERO_API}/users/${userId}/items/top?key=${apiKey}&format=json&limit=${pageSize}&start=${start}`;
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status} at page ${page}`);
-    const batch = await resp.json();
-    items.push(...batch);
+  const references = await fetchReferences(userId, apiKey, onProgress);
+  try {
+    onProgress("Fetching collections...", 0.95);
+    await saveCollections(await fetchCollections(userId, apiKey));
+  } catch (e) {
+    console.warn("Zotero collections fetch failed:", e);
   }
-
-  // Step 3: Fetch all attachment items
-  onProgress("Fetching attachments...", 0.6);
-  const attachments = [];
-  const attUrl = `${ZOTERO_API}/users/${userId}/items?key=${apiKey}&format=json&itemType=attachment&limit=1`;
-  const attCountResp = await zoteroFetch(attUrl);
-  const totalAtt = parseInt(attCountResp.headers.get("Total-Results") || "0", 10);
-  const attPages = Math.ceil(totalAtt / pageSize) || 1;
-  for (let page = 0; page < attPages; page++) {
-    const start = page * pageSize;
-    onProgress(`Fetching attachments (${start + 1}–${Math.min(start + pageSize, totalAtt)} of ${totalAtt})...`, 0.6 + (page / attPages) * 0.2);
-    const url = `${ZOTERO_API}/users/${userId}/items?key=${apiKey}&format=json&itemType=attachment&limit=${pageSize}&start=${start}`;
-    // Retry rather than `break` — a single transient page failure used to
-    // silently drop every attachment after it, so items further down the
-    // library lost their PDFs and the menu couldn't offer "Download to Hush".
-    const resp = await zoteroFetch(url);
-    attachments.push(...(await resp.json()));
-  }
-
-  // Step 4: Build reference objects
-  onProgress("Processing references...", 0.85);
-  const attByParent = {};
-  for (const att of attachments) {
-    const parent = att.data?.parentItem;
-    if (!parent) continue;
-    if (!attByParent[parent]) attByParent[parent] = [];
-    attByParent[parent].push({
-      key: att.key,
-      title: att.data.title || "Attachment",
-      filename: att.data.filename || "",
-      contentType: att.data.contentType || "",
-      isPdf: isPdfAttachment(att.data),
-    });
-  }
-
-  const references = items
-    .filter(item => item.data && item.data.itemType !== "attachment" && item.data.itemType !== "note")
-    .map(item => {
-      const d = item.data;
-      const creators = (d.creators || [])
-        .map(c => c.lastName ? `${c.lastName}, ${(c.firstName || "")[0] || ""}`.trim() : c.name || "")
-        .filter(Boolean)
-        .join("; ");
-      const year = (d.date || "").match(/\d{4}/)?.[0] || "";
-      // First author's last name powers the `title (author)` format and the
-      // citekey fallback when Better BibTeX hasn't supplied one.
-      const firstCreator = (d.creators || []).find(c => c.lastName || c.name);
-      const firstAuthor = firstCreator
-        ? (firstCreator.lastName || firstCreator.name || "")
-        : "";
-      // Better BibTeX surfaces the citation key either as a top-level
-      // `citationKey` field on newer Zotero APIs or stuffed into `extra`
-      // as `Citation Key: foo2020`. Fall back to a slug otherwise.
-      let citekey = item.data.citationKey || d.citationKey || "";
-      if (!citekey && d.extra) {
-        const m = /(?:^|\n)\s*Citation Key\s*:\s*(\S+)/i.exec(d.extra);
-        if (m) citekey = m[1];
-      }
-      if (!citekey) {
-        const slug = (firstAuthor || "ref").toLowerCase().replace(/[^a-z0-9]+/g, "");
-        citekey = slug + (year || "");
-      }
-      return {
-        key: item.key,
-        title: d.title || "Untitled",
-        shortTitle: d.shortTitle || "",
-        authors: creators,
-        firstAuthor,
-        citekey,
-        year,
-        itemType: d.itemType,
-        attachments: attByParent[item.key] || [],
-      };
-    });
-
   onProgress("Done!", 1);
   return references;
 }
@@ -169,8 +55,36 @@ export async function loadReferences() {
   return cachedReferences;
 }
 
+/** The library's folder tree, `[{ key, name, parentKey }]`. Empty when
+ *  references were downloaded by a build that didn't fetch collections
+ *  (or by a library that has none) — callers treat that as "no tree,
+ *  show a flat list". */
+export async function loadCollections() {
+  if (cachedCollections) return cachedCollections;
+  try {
+    if (IS_TAURI) {
+      cachedCollections = JSON.parse(await tauriInvoke("load_zotero_collections"));
+    } else {
+      const stored = localStorage.getItem("hush_zotero_collections");
+      cachedCollections = stored ? JSON.parse(stored) : [];
+    }
+  } catch (e) {
+    console.warn("Failed to load Zotero collections:", e);
+    cachedCollections = [];
+  }
+  return cachedCollections;
+}
+
+async function saveCollections(collections) {
+  const data = JSON.stringify(collections || []);
+  if (IS_TAURI) await tauriInvoke("save_zotero_collections", { data });
+  else localStorage.setItem("hush_zotero_collections", data);
+  cachedCollections = collections || [];
+}
+
 export function clearCache() {
   cachedReferences = null;
+  cachedCollections = null;
 }
 
 // ===== Fuzzy Search =====
@@ -247,9 +161,20 @@ export async function openZoteroModal(view, state) {
   const resultsEl = zoteroModal.querySelector(".zotero-results");
   const detailEl = zoteroModal.querySelector(".zotero-detail");
 
+  // Same folder-tree browser the import surfaces use — this modal shares
+  // their shell, and having one of the three search the library a
+  // different way would be the odd one out.
+  const { createLibraryBrowser } = await import("./zotero/library-browser.js");
+  const browser = createLibraryBrowser({
+    host: resultsEl,
+    refs,
+    collections: await loadCollections(),
+    onChange: () => renderResults(input.value),
+  });
+
   function renderResults(query) {
-    const results = fuzzySearch(refs, query);
-    resultsEl.innerHTML = results.map(r => `
+    const results = fuzzySearch(browser.scopedRefs(), query);
+    browser.itemsEl.innerHTML = results.map(r => `
       <div class="zotero-result" data-key="${r.key}">
         <span class="zotero-result-title">${escHtml(r.shortTitle || r.title)}</span>
         <span class="zotero-result-meta">${escHtml(r.year)}${r.authors ? " — " + escHtml(r.authors) : ""}</span>

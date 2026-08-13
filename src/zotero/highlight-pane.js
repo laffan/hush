@@ -17,7 +17,8 @@
 import { createPane, getInitialPanePosition } from "../pane/pane-manager.js";
 import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "../pane/pane-state.js";
 import { schedulePersist } from "../pane/pane-persistence.js";
-import { loadReferences, fuzzySearch } from "../zotero.js";
+import { loadReferences, loadCollections, fuzzySearch } from "../zotero.js";
+import { createLibraryBrowser } from "./library-browser.js";
 import { getAnnotations, groupByColor } from "../zotero-annotations.js";
 import { startTextDrag } from "../pane/text-drag.js";
 
@@ -115,11 +116,21 @@ async function renderSearchView(pane) {
     return;
   }
 
+  // Folder tree + item list, same widget the Save PDF modal uses. Built
+  // after the refs load because it needs them for its per-folder counts.
+  const browser = createLibraryBrowser({
+    host: list,
+    refs,
+    collections: await loadCollections(),
+    onChange: () => paint(input.value),
+  });
+
   function paint(query) {
-    const results = fuzzySearch(refs, query);
-    list.innerHTML = "";
+    const results = fuzzySearch(browser.scopedRefs(), query);
+    const items = browser.itemsEl;
+    items.innerHTML = "";
     if (results.length === 0) {
-      list.appendChild(h("div", "zh-empty", "No matches."));
+      items.appendChild(h("div", "zh-empty", "No matches."));
       return;
     }
     for (const ref of results) {
@@ -135,7 +146,7 @@ async function renderSearchView(pane) {
       if (meta) m.textContent = meta;
       row.appendChild(m);
       row.addEventListener("click", () => onPickItem(pane, ref));
-      list.appendChild(row);
+      items.appendChild(row);
     }
   }
 

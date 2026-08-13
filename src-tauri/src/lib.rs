@@ -508,6 +508,8 @@ pub fn run() {
             commands::pdfs::load_pdf_registry,
             commands::zotero::save_zotero_references,
             commands::zotero::load_zotero_references,
+            commands::zotero::save_zotero_collections,
+            commands::zotero::load_zotero_collections,
             commands::zotero::save_zotero_pdf,
             commands::zotero::load_zotero_pdf,
             commands::zotero::zotero_pdf_exists,

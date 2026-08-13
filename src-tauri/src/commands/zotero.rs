@@ -16,6 +16,20 @@ pub fn load_zotero_references(state: State<AppState>) -> Result<String, String> 
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn save_zotero_collections(state: State<AppState>, data: String) -> Result<(), String> {
+    state.zotero_manager.lock().unwrap()
+        .save_collections(&data)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn load_zotero_collections(state: State<AppState>) -> Result<String, String> {
+    state.zotero_manager.lock().unwrap()
+        .load_collections()
+        .map_err(|e| e.to_string())
+}
+
 /// Persist a downloaded Zotero PDF locally, keyed by attachment id.
 /// PDFs live under `{data_dir}/zotero_pdfs/{itemKey}.pdf` and are not
 /// part of any sync folder — they're a local cache for snapshot

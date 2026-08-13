@@ -32,6 +32,28 @@ impl ZoteroManager {
         }
     }
 
+    /// Save the collection (folder) list JSON blob to disk. Kept beside
+    /// the references rather than inside them: the two are fetched
+    /// together but a library with no collections still has references,
+    /// and an older cache has no collections at all — a separate file
+    /// lets the picker tell "no folders" from "not downloaded yet"
+    /// without reshaping the references blob every client parses.
+    pub fn save_collections(&self, data: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let path = self.data_dir.join("zotero_collections.json");
+        write_atomic_str(&path, data)?;
+        Ok(())
+    }
+
+    /// Load the collection list JSON blob. `[]` when never downloaded.
+    pub fn load_collections(&self) -> Result<String, Box<dyn std::error::Error>> {
+        let path = self.data_dir.join("zotero_collections.json");
+        if path.exists() {
+            Ok(fs::read_to_string(path)?)
+        } else {
+            Ok("[]".to_string())
+        }
+    }
+
     /// Save a downloaded PDF binary keyed by Zotero attachment key.
     /// Filenames are sanitised (alphanumeric + dash + underscore only) so
     /// callers can't escape the `zotero_pdfs/` directory.

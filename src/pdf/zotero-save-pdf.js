@@ -7,7 +7,8 @@
  * PDF attachments are shown with "Back" and "Save PDF" buttons.
  */
 
-import { loadReferences, fuzzySearch, clearCache } from "../zotero.js";
+import { loadReferences, loadCollections, fuzzySearch, clearCache } from "../zotero.js";
+import { createLibraryBrowser } from "../zotero/library-browser.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -27,6 +28,7 @@ export async function openZoteroSavePdfModal(state) {
     showNoRefsMessage();
     return;
   }
+  const collections = await loadCollections();
 
   modal = document.createElement("div");
   modal.className = "zotero-modal";
@@ -45,6 +47,16 @@ export async function openZoteroSavePdfModal(state) {
   const resultsEl = modal.querySelector(".zotero-results");
   const detailEl = modal.querySelector(".zotero-detail");
   const batchBar = modal.querySelector(".zotero-batch-bar");
+
+  // Folder tree on the left, this folder's items on the right. The
+  // browser owns `resultsEl`'s layout; rows still render (and are still
+  // clicked) exactly as before, just into its items column.
+  const browser = createLibraryBrowser({
+    host: resultsEl,
+    refs,
+    collections,
+    onChange: () => renderResults(input.value),
+  });
 
   const checked = new Map();
 
@@ -82,14 +94,14 @@ export async function openZoteroSavePdfModal(state) {
   }
 
   function updateCheckboxStates() {
-    resultsEl.querySelectorAll(".zotero-save-cb").forEach(cb => {
+    browser.itemsEl.querySelectorAll(".zotero-save-cb").forEach(cb => {
       cb.checked = checked.has(cb.dataset.key);
     });
   }
 
   function renderResults(query) {
-    const results = fuzzySearch(refs, query);
-    resultsEl.innerHTML = results.map(r => {
+    const results = fuzzySearch(browser.scopedRefs(), query);
+    browser.itemsEl.innerHTML = results.map(r => {
       const hasPdf = r.attachments?.some(a => a.isPdf);
       return `
         <div class="zotero-result${hasPdf ? "" : " no-pdf"}" data-key="${r.key}">
@@ -104,7 +116,7 @@ export async function openZoteroSavePdfModal(state) {
     resultsEl.classList.remove("hidden");
     detailEl.classList.add("hidden");
 
-    resultsEl.querySelectorAll(".zotero-save-cb").forEach(cb => {
+    browser.itemsEl.querySelectorAll(".zotero-save-cb").forEach(cb => {
       cb.addEventListener("click", (e) => e.stopPropagation());
       cb.addEventListener("change", () => {
         const key = cb.dataset.key;
