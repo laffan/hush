@@ -23,6 +23,7 @@ pipeline deterministic and avoids tempfile permissions issues on iOS.
 pub mod bibliography;
 pub mod citations;
 pub mod csl;
+pub mod images;
 pub mod markdown;
 pub mod notes;
 pub mod preprocess;
@@ -101,6 +102,10 @@ pub struct ExportRequest {
     /// every heading level by the same factor — see `styles::WrapOptions`.
     #[serde(default = "default_header_scale")]
     pub header_scale: f32,
+    /// Extra space above every heading, in `em` (modal slider, 0 = the
+    /// style's own spacing). See `styles::WrapOptions::heading_space`.
+    #[serde(default)]
+    pub heading_space: f32,
     #[serde(default)]
     pub references: Vec<ZoteroRef>,
     #[serde(default)]
@@ -158,7 +163,17 @@ pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
         markdown::CitationMode::Inline { formatted }
     };
 
-    let body = markdown::to_typst(&cleaned_md, cite_mode);
+    // The images that actually made it into the request are the ones
+    // the World will be able to serve — `collect_images` drops the rest
+    // — so this set is exactly what the converter needs to tell a live
+    // reference from a dead one.
+    let available_images: std::collections::HashSet<String> = req
+        .images
+        .iter()
+        .map(|i| images::normalize_path(&i.filename))
+        .collect();
+
+    let body = markdown::to_typst(&cleaned_md, cite_mode, &available_images);
     let bib_yaml = if render_bibliography {
         Some(bibliography::to_hayagriva_yaml(&req.references))
     } else {
@@ -183,6 +198,7 @@ pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
         page_numbers: req.page_numbers,
         line_spacing: req.line_spacing,
         header_scale: req.header_scale,
+        heading_space: req.heading_space,
     };
     let main_source = styles::wrap(style, &body, &wrap_opts);
 
@@ -256,12 +272,87 @@ mod tests {
             include_tabs: true,
             line_spacing: 1.5,
             header_scale: 1.0,
+            heading_space: 0.0,
             references: vec![],
             images: vec![],
         };
         let pdf = render_pdf(&req).expect("render");
         assert!(pdf.len() > 1000, "PDF unexpectedly small: {} bytes", pdf.len());
         assert_eq!(&pdf[..4], b"%PDF", "missing PDF magic");
+    }
+
+    /// Lay out `markdown` through the Formal style and report how many
+    /// pages it came to — the only way to assert that a spacing knob
+    /// actually moved anything.
+    fn formal_page_count(markdown: &str, heading_space: f32) -> usize {
+        let style = styles::lookup("formal").unwrap();
+        let body = markdown::to_typst(
+            markdown,
+            markdown::CitationMode::Strip,
+            &std::collections::HashSet::new(),
+        );
+        let source = styles::wrap(
+            style,
+            &body,
+            &styles::WrapOptions {
+                bibliography: None,
+                number_headings: false,
+                page_numbers: false,
+                line_spacing: 1.5,
+                header_scale: 1.0,
+                heading_space,
+            },
+        );
+        let world = world::ExportWorld::new(source, None, None, vec![]);
+        typst::compile::<typst::layout::PagedDocument>(&world)
+            .output
+            .expect("compile")
+            .pages
+            .len()
+    }
+
+    /// The heading-space knob has to survive the styles' own per-level
+    /// `heading.where(level: N)` show rules — a rule that got shadowed
+    /// instead of composing would compile perfectly and change nothing.
+    #[test]
+    fn heading_space_pushes_content_down() {
+        let doc: String = (1..=20)
+            .map(|n| format!("## Section {n}\n\nA paragraph of body text under the heading.\n\n"))
+            .collect();
+        let tight = formal_page_count(&doc, 0.0);
+        let airy = formal_page_count(&doc, 5.0);
+        assert!(
+            airy > tight,
+            "heading space changed nothing: {tight} pages either way"
+        );
+    }
+
+    /// Regression: a doc referencing an image the store couldn't
+    /// produce failed the whole compile with Typst's "file not found",
+    /// so the user got no PDF (and no preview) at all. The reference now
+    /// prints as red markdown and the rest of the document renders.
+    #[test]
+    fn renders_doc_with_missing_image() {
+        let req = ExportRequest {
+            markdown: "# Title\n\n![ecosystem-diagram.png](ecosystem-diagram.png)\n\nBody after."
+                .into(),
+            style_id: "formal".into(),
+            include_citations: false,
+            citation_style: "numbered".into(),
+            strip_comments: true,
+            strip_flags: true,
+            number_headings: false,
+            page_numbers: true,
+            include_tabs: true,
+            line_spacing: 1.5,
+            header_scale: 1.0,
+            heading_space: 0.0,
+            references: vec![],
+            images: vec![],
+        };
+        let pdf = render_pdf(&req).expect("missing image must not fail the export");
+        assert!(pdf.len() > 1000);
+        assert_eq!(&pdf[..4], b"%PDF");
     }
 
     #[test]
@@ -278,6 +369,7 @@ mod tests {
             include_tabs: true,
             line_spacing: 1.5,
             header_scale: 1.0,
+            heading_space: 0.0,
             references: vec![ZoteroRef {
                 key: "ABC".into(),
                 citekey: "halbwachs1992".into(),
@@ -311,6 +403,7 @@ mod tests {
             include_tabs: true,
             line_spacing: 1.5,
             header_scale: 1.0,
+            heading_space: 0.0,
             references: vec![],
             images: vec![],
         };
@@ -336,6 +429,7 @@ mod tests {
             include_tabs: true,
             line_spacing: 1.5,
             header_scale: 1.0,
+            heading_space: 0.0,
             references: vec![ZoteroRef {
                 key: "ABC".into(),
                 citekey: "halbwachs1992".into(),
@@ -367,6 +461,7 @@ mod tests {
             include_tabs: true,
             line_spacing: 1.5,
             header_scale: 1.0,
+            heading_space: 0.0,
             references: vec![],
             images: vec![],
         };
@@ -394,6 +489,7 @@ mod tests {
             include_tabs: true,
             line_spacing: 1.5,
             header_scale: 1.0,
+            heading_space: 0.0,
             references: vec![],
             images: vec![],
         };

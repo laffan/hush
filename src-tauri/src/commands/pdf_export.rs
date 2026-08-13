@@ -40,6 +40,10 @@ pub struct PdfExportArgs {
     pub line_spacing: f32,
     #[serde(default = "default_header_scale")]
     pub header_scale: f32,
+    /// Extra space above every heading, in `em`. 0 (the default) leaves
+    /// the chosen document style's own heading spacing alone.
+    #[serde(default)]
+    pub heading_space: f32,
     #[serde(default)]
     pub references: Vec<ZoteroRef>,
     /// Filenames of images referenced in the markdown. We load their
@@ -70,6 +74,7 @@ pub fn render_doc_pdf(state: State<'_, AppState>, args: PdfExportArgs) -> Result
         include_tabs: args.include_tabs,
         line_spacing: args.line_spacing,
         header_scale: args.header_scale,
+        heading_space: args.heading_space,
         references: args.references,
         images,
     };

@@ -48,6 +48,11 @@ pub struct WrapOptions {
     /// body text* tracks the slider. `1.0` leaves the style's design
     /// sizes untouched.
     pub header_scale: f32,
+    /// Extra breathing room above every heading, in `em`, from the
+    /// modal's slider. `0.0` (the default) emits nothing at all, so an
+    /// export that doesn't touch the knob renders exactly as it did
+    /// before the option existed.
+    pub heading_space: f32,
 }
 
 pub fn lookup(id: &str) -> Option<&'static Style> {
@@ -111,6 +116,30 @@ pub fn wrap(style: &Style, body: &str, opts: &WrapOptions) -> String {
         out.push_str("#set heading(numbering: \"1.1\")\n");
     }
 
+    // Heading top margin. Emitted as *weak* spacing, which gives the
+    // knob the semantics people expect from a margin: it collapses at
+    // the top of a page (no stranded gap above a heading that opens a
+    // page) and merges with the spacing the style already puts above
+    // its headings by taking the larger of the two rather than summing
+    // them — so the slider reads as "at least this much room", not "add
+    // this much to whatever the style did".
+    //
+    // Deliberately a `#show` on the bare `heading` selector: the styles
+    // set their per-level spacing with `heading.where(level: N)` rules,
+    // and this composes with all of them (and with any style added
+    // later) instead of having to be threaded through each preamble.
+    let heading_space = if opts.heading_space.is_finite() {
+        opts.heading_space.clamp(0.0, 6.0)
+    } else {
+        0.0
+    };
+    if heading_space > 0.0 {
+        out.push_str(&format!(
+            "#show heading: it => {{ v({}em, weak: true); it }}\n",
+            heading_space
+        ));
+    }
+
     // Override the preamble's default leading with whatever the modal
     // dropdown selected. Mapped to concrete em values that match the
     // visual feel of "single / 1.5 / double" spaced text at 11pt.
@@ -158,7 +187,19 @@ mod tests {
             page_numbers: false,
             line_spacing: 1.5,
             header_scale: 1.0,
+            heading_space: 0.0,
         }
+    }
+
+    #[test]
+    fn heading_space_directive_only_when_set() {
+        let off = wrap(formal(), "body", &base());
+        assert!(!off.contains("#show heading: it =>"), "got: {}", off);
+        let on = wrap(formal(), "body", &WrapOptions { heading_space: 1.5, ..base() });
+        assert!(on.contains("#show heading: it => { v(1.5em, weak: true); it }"), "got: {}", on);
+        // Out-of-range values clamp rather than passing through raw.
+        let huge = wrap(formal(), "body", &WrapOptions { heading_space: 99.0, ..base() });
+        assert!(huge.contains("v(6em, weak: true)"), "got: {}", huge);
     }
 
     #[test]

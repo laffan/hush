@@ -22,14 +22,27 @@ full CommonMark surface. The strategy:
 When in doubt: a slightly degraded rendering beats refusing to compile.
 */
 
+use std::collections::HashSet;
+
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 use super::citations::{expand_cite_sentinels, preprocess_cites};
+use super::images;
 use super::preprocess::{TAB_MARKER_CLOSE, TAB_MARKER_OPEN};
 
 pub use super::citations::CitationMode;
 
-pub fn to_typst(markdown: &str, cite_mode: CitationMode) -> String {
+/// `available_images` holds the normalized paths the World can actually
+/// serve (see `images::normalize_path`). A reference to anything else —
+/// a stale filename, an image the store no longer has, an `http(s)` URL
+/// the offline World can't fetch — renders as red markdown instead of
+/// an `#image(...)` call. Typst treats a missing file as a hard compile
+/// error, so one dead reference used to cost the whole export.
+pub fn to_typst(
+    markdown: &str,
+    cite_mode: CitationMode,
+    available_images: &HashSet<String>,
+) -> String {
     let mut opts = Options::empty();
     opts.insert(Options::ENABLE_TABLES);
     opts.insert(Options::ENABLE_STRIKETHROUGH);
@@ -54,7 +67,7 @@ pub fn to_typst(markdown: &str, cite_mode: CitationMode) -> String {
     let with_sentinels = preprocess_cites(&cleaned);
 
     let parser = Parser::new_ext(&with_sentinels, opts);
-    let mut emitter = Emitter::new();
+    let mut emitter = Emitter::new(available_images);
     let mut out = String::with_capacity(with_sentinels.len() + 128);
     for event in parser {
         emitter.handle(event, &mut out);
@@ -104,7 +117,7 @@ inset: (x: 0.9em, y: 0.3em))[#text(size: 0.85em, fill: luma(80))[",
     out
 }
 
-struct Emitter {
+struct Emitter<'a> {
     list_stack: Vec<ListKind>,
     /// Set while inside a Link so Text events accumulate into a buffer
     /// the link handler can sniff before deciding how to emit.
@@ -113,6 +126,8 @@ struct Emitter {
     /// buffer; the figure (with caption) is emitted on image end.
     image: Option<PendingImage>,
     code_block: Option<String>,
+    /// Normalized paths the World can serve — see `to_typst`.
+    available_images: &'a HashSet<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -129,19 +144,23 @@ struct PendingLink {
 
 struct PendingImage {
     path: String,
+    /// The URL exactly as the author wrote it — what the red fallback
+    /// prints when `path` doesn't resolve.
+    raw_url: String,
     /// Markdown title (`![alt](url "title")`) — wins as the caption when present.
     title: String,
     /// Bracket contents (`alt` or `alt|caption`), accumulated raw.
     alt: String,
 }
 
-impl Emitter {
-    fn new() -> Self {
+impl<'a> Emitter<'a> {
+    fn new(available_images: &'a HashSet<String>) -> Self {
         Self {
             list_stack: Vec::new(),
             pending: None,
             image: None,
             code_block: None,
+            available_images,
         }
     }
 
@@ -258,18 +277,19 @@ impl Emitter {
                 });
             }
             Tag::Image { dest_url, title, .. } => {
-                // Resolve image URL to one of:
-                //  - /<filename>  for refs we have bytes for (Typst
-                //    will read via World::file).
-                //  - http(s)://...  passed through; will fail inside
-                //    Typst (no network) and surface as a diagnostic.
+                // Resolve image URL to `/<filename>` for refs we have
+                // bytes for (Typst reads them via World::file). Anything
+                // else — an http(s) URL, or a filename the store didn't
+                // hand us — has no readable file behind it and takes the
+                // red-markdown path on image end.
                 // Defer the figure to TagEnd::Image so the alt text (which
                 // arrives as Text events between start and end) can be
                 // captured. Hush images carry the caption after a pipe
                 // (`![alt|caption](url)`); the figure caption shows that
                 // caption, not the alt text.
                 self.image = Some(PendingImage {
-                    path: image_path(&dest_url),
+                    path: images::resolve_path(&dest_url),
+                    raw_url: dest_url.to_string(),
                     title: title.to_string(),
                     alt: String::new(),
                 });
@@ -321,27 +341,14 @@ impl Emitter {
             }
             TagEnd::Image => {
                 if let Some(img) = self.image.take() {
-                    // Caption precedence: an explicit markdown title wins;
-                    // otherwise the text after the first `|` in the alt
-                    // (Hush's `![alt|caption](url)` form). A bare alt with
-                    // no caption shows no caption at all — the alt is
-                    // typically just the image id/filename.
-                    let caption_text = if !img.title.is_empty() {
-                        img.title.clone()
-                    } else if let Some(idx) = img.alt.find('|') {
-                        img.alt[idx + 1..].trim().to_string()
-                    } else {
-                        String::new()
-                    };
-                    let caption = if caption_text.is_empty() {
-                        String::new()
-                    } else {
-                        format!(", caption: [{}]", escape_typst_text(&caption_text))
-                    };
-                    out.push_str(&format!(
-                        "\n#figure(image(\"{}\", width: 80%){})\n\n",
-                        escape_string(&img.path),
-                        caption
+                    out.push_str(&images::emit(
+                        &images::ImageRef {
+                            path: &img.path,
+                            raw_url: &img.raw_url,
+                            title: &img.title,
+                            alt: &img.alt,
+                        },
+                        self.available_images,
                     ));
                 }
             }
@@ -402,7 +409,7 @@ pub(super) fn escape_string(s: &str) -> String {
 /// Escape arbitrary text so it renders verbatim inside Typst markup.
 /// `=` is in the list so a `==FLAG==` line that the user opted not to
 /// strip doesn't accidentally turn into a Typst heading.
-fn escape_typst_text(s: &str) -> String {
+pub(super) fn escape_typst_text(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for ch in s.chars() {
         match ch {
@@ -416,22 +423,17 @@ fn escape_typst_text(s: &str) -> String {
     out
 }
 
-fn image_path(dest_url: &str) -> String {
-    if dest_url.starts_with("http://") || dest_url.starts_with("https://") {
-        return dest_url.to_string();
-    }
-    let trimmed = dest_url.trim_start_matches("./");
-    let trimmed = trimmed.trim_start_matches("images/");
-    if trimmed.starts_with('/') {
-        trimmed.to_string()
-    } else {
-        format!("/{}", trimmed)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The two-argument shape the cases below were written against.
+    /// They're image-free, so "no images available" is the same output
+    /// as any other set; image behaviour has its own tests that call
+    /// `super::to_typst` with a real one.
+    fn to_typst(markdown: &str, cite_mode: CitationMode) -> String {
+        super::to_typst(markdown, cite_mode, &HashSet::new())
+    }
 
     fn resolve_with(keys: &[&str]) -> CitationMode {
         CitationMode::Resolve {

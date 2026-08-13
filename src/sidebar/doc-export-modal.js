@@ -111,6 +111,9 @@ export async function openDocExportModal(state) {
     // factor so they keep their relationship while shifting relative to
     // the body text. 1.0 = the style's design sizes.
     headerScale: 1.0,
+    // Extra room above every heading, in em. 0 = whatever spacing the
+    // chosen document style designed for itself.
+    headingSpace: 0,
     // Whether to append a bibliography section. Inline citations are
     // formatted regardless (see renderPdfBytes / the Rust side).
     includeBibliography: showCiteControls,
@@ -167,6 +170,11 @@ export async function openDocExportModal(state) {
         <div class="nxm-section" data-visible-when="format=pdf">
           <div class="nxm-label">Header size <span class="nxm-header-scale-val">100%</span></div>
           <input type="range" class="nxm-header-scale" min="60" max="180" step="5" value="100" />
+        </div>
+
+        <div class="nxm-section" data-visible-when="format=pdf">
+          <div class="nxm-label">Header top margin <span class="nxm-heading-space-val">Style default</span></div>
+          <input type="range" class="nxm-heading-space" min="0" max="12" step="1" value="0" />
         </div>
 
         <div class="nxm-section" data-visible-when="format=pdf">
@@ -300,6 +308,19 @@ export async function openDocExportModal(state) {
     headerScaleVal.textContent = `${pct}%`;
     // `input` fires continuously while dragging; the preview is already
     // debounced (350 ms) so a quick drag only renders once it settles.
+    markChanged();
+  });
+
+  // Quarter-em steps up to 3em, so the slider's integer positions map
+  // to round typographic values rather than arbitrary decimals.
+  const headingSpaceInput = modal.querySelector(".nxm-heading-space");
+  const headingSpaceVal = modal.querySelector(".nxm-heading-space-val");
+  headingSpaceInput.addEventListener("input", () => {
+    const em = (parseInt(headingSpaceInput.value, 10) || 0) * 0.25;
+    choices.headingSpace = em;
+    // 0 isn't "no margin" — it's "leave the style's own spacing alone",
+    // which is a different enough thing to say in words.
+    headingSpaceVal.textContent = em === 0 ? "Style default" : `${em}em`;
     markChanged();
   });
 

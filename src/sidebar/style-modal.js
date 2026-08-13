@@ -15,6 +15,7 @@ import { renderPostSection, bindPostSection, endPostPreview } from "./style-moda
 import { renderStyleExtras, bindStyleExtras, endBackgroundPreview } from "./style-modal-background.js";
 import { applyActiveStyle } from "../style-application.js";
 import { bindCustomDropdown } from "./custom-dropdown.js";
+import { installColorPickers } from "../ui/color-picker.js";
 import {
   PREVIEW_MD,
   fontFallback,
@@ -140,6 +141,11 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     backdrop.className = "style-modal-backdrop";
     document.body.appendChild(backdrop);
   }
+  // Every colour swatch in here — theme colours, gradient nodes, caret
+  // and post-layer options — opens the in-app picker instead of the
+  // platform colour panel. Installed on the root so re-rendered
+  // sections are picked up without each one re-wiring anything.
+  const disposeColorPickers = installColorPickers(backdrop);
 
   // ── autosave ────────────────────────────────────────────────────────────
   // Edits flush to settings on a short debounce — there are no Save /
@@ -245,6 +251,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
 
   function close() {
     flushSave();
+    disposeColorPickers();
     if (ownsBackdrop) backdrop.remove();
     else backdrop.innerHTML = "";
     // Drop both modal-driven previews, then re-apply the active style

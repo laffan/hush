@@ -121,6 +121,7 @@ export async function renderPdfBytes(state, content, choices, name) {
       pageNumbers: !!choices.pageNumbers,
       lineSpacing: Number.isFinite(choices.lineSpacing) ? choices.lineSpacing : 1.5,
       headerScale: Number.isFinite(choices.headerScale) ? choices.headerScale : 1.0,
+      headingSpace: Number.isFinite(choices.headingSpace) ? choices.headingSpace : 0,
       references,
       imageFilenames,
     },
