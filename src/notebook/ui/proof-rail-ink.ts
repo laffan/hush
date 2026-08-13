@@ -4,8 +4,9 @@
  * The rail paints pages out of small pre-baked thumbnails, which is what
  * keeps a fifty-page proof affordable. Everything the user *adds* —
  * strokes, text, drag boxes, pasted images — has no thumbnail and never
- * will, so it is drawn here as a live sketch: strokes as polylines, text
- * as one bar per line, boxes as outlines.
+ * will, so it is drawn here as a live sketch: strokes as polylines,
+ * prose as one bar per wrapped line, headings as real (scaled) text,
+ * boxes as outlines.
  *
  * ### Why sketch rather than flatten
  *
@@ -28,8 +29,10 @@
  */
 
 import type { DrawShape, Shape, TextShape } from "../types";
-import { LINE_HEIGHT_RATIO } from "../types";
+import { FONT_FAMILY, LINE_HEIGHT_RATIO } from "../types";
 import type { CanvasTheme } from "../themes";
+import { parseText } from "../markdown";
+import { getMeasureCtx } from "../utils";
 
 /** One page piece's slice of the projection. */
 export interface RailSegment {
@@ -108,15 +111,19 @@ function strokeColor(s: DrawShape, theme: CanvasTheme): string {
  *  annotated proof in the low single-digit milliseconds. */
 const MAX_STROKE_POINTS = 160;
 
-/** Rail px per text line below which per-line bars stop being rows and
- *  start being a smudge — under this the shape draws as one block. */
-const MIN_LINE_PITCH_PX = 2.2;
-
 /** Floors for a text bar. Anything the user can see on the canvas has to
  *  be findable on the rail, and a correctly-scaled half-pixel bar is
- *  indistinguishable from not drawing it at all. */
+ *  indistinguishable from not drawing it at all. Below the line pitch
+ *  the floor makes consecutive bars touch, which reads as a solid block
+ *  of prose — the right answer at that size anyway. */
 const MIN_BAR_W_PX = 3;
 const MIN_BAR_H_PX = 1.5;
+
+/** Smallest size a heading is drawn at. Its true scaled size is often
+ *  a pixel or two, which is no text at all; the floor buys legibility as
+ *  the rail is widened, and `fillText`'s maxWidth argument condenses the
+ *  glyphs so a floored heading still can't escape its own block. */
+const MIN_HEADING_PX = 5;
 
 export interface RailInkOptions {
   shapes: Shape[];
@@ -127,6 +134,9 @@ export interface RailInkOptions {
   pageLayerId: string | null;
   /** Layer ids whose contents are hidden on the canvas. */
   hiddenLayerIds: Set<string>;
+  /** Canvas font stack, so heading text measures and paints the same
+   *  way it does on the canvas itself. */
+  fontFamily: string;
 }
 
 /**
@@ -138,7 +148,7 @@ export function drawProofRailInk(canvas: HTMLCanvasElement, opts: RailInkOptions
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const { shapes, segments, theme, pageLayerId, hiddenLayerIds } = opts;
+  const { shapes, segments, theme, pageLayerId, hiddenLayerIds, fontFamily } = opts;
   if (!segments.length) return;
 
   const map = (x: number, y: number) => worldToRail(segments, x, y);
@@ -178,7 +188,7 @@ export function drawProofRailInk(canvas: HTMLCanvasElement, opts: RailInkOptions
     }
 
     if (s.type === "text") {
-      drawTextBars(ctx, s as TextShape, map, baseScale, theme);
+      drawTextPreview(ctx, s as TextShape, map, baseScale, theme, fontFamily);
       continue;
     }
 
@@ -208,72 +218,78 @@ export function drawProofRailInk(canvas: HTMLCanvasElement, opts: RailInkOptions
 }
 
 /**
- * Text as bars — one per line where there is room for lines, one block
- * for the whole shape where there isn't.
+ * Text preview: stripes for prose, real glyphs for headings.
  *
- * Real glyphs at rail scale are illegible mush, so bars are the right
- * idiom. The catch is how small "rail scale" gets: a 16 pt note on a
- * page 1600 world px tall projects to about one pixel per line at the
- * default rail width. Per-line bars there would be a row of hairlines
- * that merge into a smudge anyway, so below a legibility floor the whole
- * block is filled once instead — same reading ("there is writing here"),
- * without depending on sub-pixel rows surviving.
+ * Two things make this more than a row of rectangles.
  *
- * Both modes enforce a minimum size. A note the user can see on the
- * canvas has to be findable on the rail; a mathematically correct
- * half-pixel bar is the same as not drawing it.
+ * **The block has to be the right height.** Counting `\n`s undercounts
+ * badly — a paragraph that wraps to six visual lines is one newline —
+ * so the shape is run through the same `parseText` the renderer uses,
+ * with the same measurer and the same constraint width. The rail then
+ * shows a note occupying the space it really occupies, which is most of
+ * what makes a minimap trustworthy.
+ *
+ * **Headings are drawn as text.** They are the landmarks — the thing a
+ * reader scans a minimap *for* — and a stripe is a landmark you can't
+ * read. Body text stays striped: real glyphs at this scale are mush,
+ * and pretending otherwise costs a `fillText` per line for nothing.
  */
-function drawTextBars(
+function drawTextPreview(
   ctx: CanvasRenderingContext2D,
   t: TextShape,
   map: (x: number, y: number) => { x: number; y: number },
   scale: number,
   theme: CanvasTheme,
+  fontFamily: string,
 ): void {
-  const lines = (t.text || "").split("\n");
-  const lineH = t.fontSize * LINE_HEIGHT_RATIO;
-  // Rough character width for bar lengths. Precision doesn't matter —
-  // this is a texture, not a layout — and guessing costs nothing next to
-  // running the real text measurer over every shape on every redraw.
-  const charW = t.fontSize * 0.5;
-  const blockW = t.width && t.width > 0 ? t.width : 350;
+  const ff = `${fontFamily}, ${FONT_FAMILY}`;
+  const measureCtx = getMeasureCtx();
+  const measure = (text: string, fs: number): number => {
+    measureCtx.font = `${fs}px ${ff}`;
+    return measureCtx.measureText(text).width;
+  };
+  const parsed = parseText(
+    t.text || "",
+    t.width && t.width > 0 ? t.width : undefined,
+    t.fontSize,
+    measure,
+  );
+  if (!parsed.length) return;
 
   // `t.color` may hold the theme sentinels ("auto" / "heading"), which
-  // Canvas would silently reject and leave the previous fill in place.
+  // Canvas would silently reject, leaving the previous fill in place.
   const col = t.color;
-  ctx.fillStyle = col && col !== "#000000" && col !== "auto" && col !== "heading"
+  const resolved = col && col !== "#000000" && col !== "auto" && col !== "heading"
     ? col
     : theme.foreground;
 
-  const pitch = lineH * scale;
-  if (pitch < MIN_LINE_PITCH_PX) {
-    // Too small for rows: one block covering the shape's real extent.
-    let widest = 0;
-    for (const line of lines) {
-      const raw = line.replace(/^#+\s*/, "");
-      if (raw.trim()) widest = Math.max(widest, Math.min(blockW, raw.length * charW));
-    }
-    if (!widest) return;
-    const a = map(t.position.x, t.position.y);
-    const b = map(t.position.x + widest, t.position.y + lines.length * lineH);
-    ctx.globalAlpha = 0.5;
-    ctx.fillRect(a.x, a.y, Math.max(MIN_BAR_W_PX, b.x - a.x), Math.max(MIN_BAR_H_PX, b.y - a.y));
-    ctx.globalAlpha = 1;
-    return;
-  }
+  ctx.textBaseline = "top";
+  let yWorld = t.position.y;
+  for (const line of parsed) {
+    const lineFontSize = t.fontSize * line.sizeScale;
+    const lineH = lineFontSize * LINE_HEIGHT_RATIO;
+    const text = line.runs.map((r) => r.text).join("");
+    if (!text.trim()) { yWorld += lineH; continue; }
 
-  ctx.globalAlpha = 0.7;
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i].replace(/^#+\s*/, "");
-    if (!raw.trim()) continue;
-    const wWorld = Math.min(blockW, raw.length * charW);
-    const a = map(t.position.x, t.position.y + i * lineH);
-    const b = map(t.position.x + wWorld, t.position.y + i * lineH + t.fontSize * 0.72);
-    ctx.fillRect(
-      a.x, a.y,
-      Math.max(MIN_BAR_W_PX, b.x - a.x),
-      Math.max(MIN_BAR_H_PX, b.y - a.y),
-    );
+    const wWorld = Math.min(t.width && t.width > 0 ? t.width : Infinity, measure(text, lineFontSize));
+    const a = map(t.position.x, yWorld);
+    const b = map(t.position.x + wWorld, yWorld + lineFontSize);
+    const wRail = Math.max(MIN_BAR_W_PX, b.x - a.x);
+
+    if (line.sizeScale > 1) {
+      // Heading — paint it. maxWidth condenses rather than overflowing,
+      // which is what keeps a floored size inside the block it belongs to.
+      const size = Math.max(MIN_HEADING_PX, lineFontSize * scale);
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = theme.headingColor || resolved;
+      ctx.font = `600 ${size}px ${ff}`;
+      ctx.fillText(text, a.x, a.y, wRail);
+    } else {
+      ctx.globalAlpha = 0.7;
+      ctx.fillStyle = resolved;
+      ctx.fillRect(a.x, a.y, wRail, Math.max(MIN_BAR_H_PX, b.y - a.y));
+    }
+    yWorld += lineH;
   }
   ctx.globalAlpha = 1;
 }

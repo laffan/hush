@@ -310,6 +310,7 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
         theme: state.theme,
         pageLayerId: state.proof?.pageLayerId || null,
         hiddenLayerIds: state._hiddenLayerIds(),
+        fontFamily: state.fontFamily,
       });
     }, INK_DEBOUNCE_MS);
   }
