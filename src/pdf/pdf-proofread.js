@@ -39,20 +39,41 @@ const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 /** Vertical space between pages, in canvas world units. */
 const PAGE_GAP = 50;
 
-/** Longest edge, in raster px, any page is rendered at. A US-Letter page
- *  is 612 pt wide, so this is a little over 4× — the page raster is what
- *  the user zooms into to read small print and check kerning, so it is
- *  worth the bytes. Pages wider than this (A3, posters) fall back to
- *  whatever scale fits, which is what the cap is for. */
+/** World size of a page relative to its own point size.
+ *
+ *  A page at 1× would be its PDF point size on the canvas — "100 % =
+ *  actual size" — which sounds right and reads too small, because the
+ *  notebook camera clamps zoom at 1 and so cannot magnify it any
+ *  further. Baking the pages at 2× is the only way to give a proof
+ *  room to be read and written on. The raster above is sized
+ *  independently, so this costs nothing in bytes: it just spends the
+ *  same pixels over twice the world area (a US-Letter page ends up at
+ *  ~2.3 device px per world px, still comfortably sharp at zoom 1). */
+const PAGE_WORLD_SCALE = 2;
+
+/** Longest edge, in raster px, any page is rendered at.
+ *
+ *  This and `PAGE_WORLD_SCALE` together set how sharp a page looks: a
+ *  US-Letter page lands at 2800 raster px over 1224 world px, so ~2.3
+ *  device px per world px — crisp at the camera's maximum zoom of 1 on a
+ *  Retina display, with a little headroom. It is also the single
+ *  largest term in the notebook's file size (base64, inside JSON that is
+ *  re-serialised on content saves), and it grows with the SQUARE of this
+ *  number, so raising it is not free. Pages wider than this in points
+ *  fall back to whatever scale fits, which is what the cap is for. */
 const MAX_PAGE_RASTER_WIDTH = 2800;
 
 /** Ceiling on the render scale itself, so a page that is already tiny
  *  in points doesn't get blown up past what its content can support. */
 const MAX_PAGE_RASTER_SCALE = 4;
 
-/** JPEG quality for page rasters. Tuned down from the 0.9 the Zotero
- *  snapshot path uses: a snapshot is one image, a proof is fifty. */
-const PAGE_QUALITY = 0.72;
+/** JPEG quality for page rasters. Still below the 0.9 the Zotero
+ *  snapshot path uses — a snapshot is one image, a proof is fifty — but
+ *  high enough that compression noise isn't what limits how sharp a page
+ *  looks. Once the raster is past the display's pixel density, quality
+ *  buys more visible fidelity per byte than resolution does, and this is
+ *  the knob to reach for first if pages ever look soft. */
+const PAGE_QUALITY = 0.8;
 
 /** Thumbnail raster width. The rail is resizable up to 300 CSS px and
  *  draws page *pieces* out of these rasters (see `ui/proof-thumbnails`),
@@ -133,11 +154,8 @@ async function rasterizePage(page) {
   return {
     dataUrl,
     thumbDataUrl,
-    // World size is the page's own point size, so a proof opens at
-    // "100 % = actual size" and text measures the same as it would in
-    // the viewer.
-    width: base.width,
-    height: base.height,
+    width: base.width * PAGE_WORLD_SCALE,
+    height: base.height * PAGE_WORLD_SCALE,
   };
 }
 
@@ -211,6 +229,10 @@ export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFile
       // Open at the top of page 1 with a little breathing room, rather
       // than at the world origin.
       camera: { x: 40, y: 40, zoom: 1 },
+      // A proof is a stack of pages, and a dot grid showing through the
+      // gaps between them just reads as noise on paper. Per-notebook, so
+      // it doesn't touch the user's default for ordinary notebooks.
+      background: { pattern: "blank" },
       proof: { sourcePdfFileId, sourceName, pageLayerId, pages },
     });
   } finally {

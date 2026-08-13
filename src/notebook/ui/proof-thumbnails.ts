@@ -3,12 +3,14 @@
  * page layer.
  *
  * It is NOT a list of the pages the PDF had. It is a picture of the
- * document as it stands: split a page and the rail shows two pieces with
- * the gap between them; drag a split open and the gap grows; grab a
- * band out and the rail loses it. That is the whole point of having it
- * next to a proof — the canvas shows you one page at a time, and the
- * rail is where you see what the surgery did to the shape of the
- * document.
+ * document as it stands: split a page and the rail shows two pieces,
+ * each the shape the cut left it; grab a band out and the rail loses
+ * it. That is the whole point of having it next to a proof — the canvas
+ * shows you one page at a time, and the rail is where you see what the
+ * surgery did to the shape of the document.
+ *
+ * Piece *sizes* are to scale against each other; the space between them
+ * is not (see `PIECE_GAP_PX`).
  *
  * Only the page layer is drawn. Ink, text and drag boxes are the
  * annotations, not the document, and at rail scale they would be
@@ -43,10 +45,22 @@ export const RAIL_DEFAULT_WIDTH = 92;
 /** Horizontal padding inside the rail, each side. */
 const RAIL_PAD = 8;
 
-/** Ceiling on how tall a gap between two pieces may render. A split
- *  dragged a whole screen open would otherwise push every later page off
- *  the bottom of a rail whose job is showing you the running order. */
-const MAX_GAP_PX = 120;
+/** Space between two pieces, in rail px — a constant, not the world gap
+ *  to scale.
+ *
+ *  The rail's job is the running order and the *shape* of each piece:
+ *  which pages have been cut, where the cut fell, how much of a page is
+ *  left. Rendering the space between pieces to scale as well makes an
+ *  opened split dominate the rail, pushing the pages either side of it
+ *  out of view — the reader loses the sequence in order to be told
+ *  something they can already see on the canvas. A fixed rule keeps
+ *  every piece on screen and still reads as "these are separate". */
+const PIECE_GAP_PX = 6;
+
+/** Vertical clearance at the rail's foot for the fixed canvas-rotation
+ *  and background-settings buttons, which park in the bottom-right
+ *  corner just inboard of the shelf — directly under the rail. */
+const BOTTOM_CHROME_PX = 62;
 
 export interface ProofThumbnailRail {
   root: HTMLElement;
@@ -112,7 +126,7 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
   const root = h("div", {
     style: {
       position: "absolute", top: "calc(env(safe-area-inset-top) + 20px + var(--pane-dock-top-height, 0px))",
-      bottom: "calc(env(safe-area-inset-bottom) + 20px + var(--pane-dock-bottom-height, 0px))",
+      bottom: `calc(env(safe-area-inset-bottom) + ${BOTTOM_CHROME_PX}px + var(--pane-dock-bottom-height, 0px))`,
       display: "none", flexDirection: "column", boxSizing: "border-box",
       // Below the shelf (150) so the shelf's rounded edge stays on top,
       // above the toolbar (100) so a centred bar can't cover the rail.
@@ -186,15 +200,14 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
     }
   }
 
-  /** Write every piece's size, crop offset and inter-piece gap. Split
-   *  from `rebuild` because a split drag changes all of these on every
-   *  frame while the element set stays identical. */
+  /** Write every piece's size, crop offset and stacking. Split from
+   *  `rebuild` because a split drag changes all of these on every frame
+   *  while the element set stays identical. */
   function layout(pieces: Piece[]) {
     const scale = contentWidth() / documentWidth(pieces);
     let minX = Infinity;
     for (const p of pieces) if (p.x < minX) minX = p.x;
     if (!isFinite(minX)) minX = 0;
-    let prevBottom: number | null = null;
 
     for (let i = 0; i < cells.length; i++) {
       const { el, piece } = cells[i];
@@ -204,11 +217,7 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
       el.style.width = `${cw}px`;
       el.style.height = `${ch}px`;
       el.style.marginLeft = `${Math.max(0, (piece.x - minX) * scale)}px`;
-      // Gap = the real world distance from the previous piece, to scale,
-      // so an opened split reads as an opened split.
-      const gap = prevBottom == null ? 0 : Math.max(0, Math.min(MAX_GAP_PX, (piece.y - prevBottom) * scale));
-      el.style.marginTop = `${gap}px`;
-      prevBottom = piece.y + piece.h;
+      el.style.marginTop = `${i === 0 ? 0 : PIECE_GAP_PX}px`;
 
       const img = el.firstElementChild as HTMLImageElement;
       // Blow the page's thumbnail up to the size the WHOLE page would be

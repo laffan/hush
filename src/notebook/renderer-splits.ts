@@ -28,8 +28,10 @@ const GRAB_FILL = "rgba(37, 99, 235, 0.10)";
  *  hand. Roughly twice `SPLIT_HIT_PX` either side, so the padding shows
  *  the user the target they are actually clicking. */
 const SPLIT_LINE_BAND_PX = 15;
-/** How faint a split's lines go once nobody is dealing with them. */
-const IDLE_SPLIT_ALPHA = 0.4;
+/** How faint a split's lines go once nobody is dealing with them. A
+ *  proof can carry dozens of splits at once; at rest they have to read
+ *  as a hint of structure, not as a second layer of content. */
+const IDLE_SPLIT_ALPHA = 0.2;
 const UI_FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
 export interface SplitRenderState {

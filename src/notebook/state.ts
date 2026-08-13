@@ -2491,6 +2491,23 @@ export class DrawingState extends EventTarget {
       this.notify("camera");
       return;
     }
+    // The wheel scrolls; ⌘ (or a trackpad pinch, which WebKit reports as
+    // a ctrl-wheel) zooms. A canvas is still a document to read, and the
+    // reflex a mouse wheel carries in from every other surface in the
+    // app — including the PDF this proof came from — is "move down the
+    // page". Zoom stays on the modifier, where the rest of the platform
+    // puts it. Deltas apply 1:1 like a doc scroller, with the line /
+    // page delta modes converted so a notched wheel moves a sane amount.
+    if (!e.metaKey && !e.ctrlKey) {
+      const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? (this.canvasEl.clientHeight || 800) : 1;
+      this.camera = {
+        ...this.camera,
+        x: this.camera.x - e.deltaX * k,
+        y: this.camera.y - e.deltaY * k,
+      };
+      this.notify("camera");
+      return;
+    }
     const rect = this.canvasEl.getBoundingClientRect();
     const mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top;
     const zoomFactor = e.ctrlKey ? 0.01 : 0.001;

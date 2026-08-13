@@ -43,6 +43,8 @@ The notebook mounts into the same `#app` DOM as the editor (visibility swapped v
 
 `DrawingState` extends `EventTarget`; all mutations go through its methods or `notify(key)`. Notifications batch via `queueMicrotask` into a single `"change"` event carrying `{ keys }`.
 
+The wheel **scrolls**; ⌘ (or a trackpad pinch, which WebKit reports as a ctrl-wheel) **zooms**. Deltas apply 1:1 like a doc scroller, with `deltaMode` line / page units converted so a notched wheel moves a sane amount. Gutter mode is unchanged — it redirects the wheel into the host doc's scroller and has no zoom to offer.
+
 The render loop is **dirty-driven, not free-running**: it renders on change events or during an in-flight interaction, then parks (stops rescheduling rAF) until the next change. An idle canvas does zero redraws — multiplied across every live canvas (main view, panes, stack columns, gutters). Async-loaded images schedule a one-off repaint on decode. All renderer functions are pure — they take a context + data; `dpr` is injected by the render loop rather than read from `window`.
 
 **Repaint-only notify keys** (`"interaction"`, `"flowHoveredEdgeId"`, …) exist so transient visuals never mark the notebook content-dirty — a pan-only session must not trigger content saves.
@@ -141,7 +143,11 @@ The grab band is the exception, and deliberately so: it *selects content*, so it
 
 ### Proofread PDF
 
-`pdf/pdf-proofread.js` bakes the open PDF into a `<name>-Proof` notebook: one `ImageShape` per page in a single column with a 50 px gutter, on a locked "Pages" layer with a "Notes" layer above it, plus a `proof` envelope entry holding per-page thumbnails. The result is an ordinary `.hushnote` — nothing downstream knows it came from a PDF.
+`pdf/pdf-proofread.js` bakes the open PDF into a `<name>-Proof` notebook: one `ImageShape` per page in a single column with a 50 px gutter, on a locked "Pages" layer with a "Notes" layer above it, plus a `proof` envelope entry holding per-page thumbnails and a per-notebook `background: { pattern: "blank" }` (a dot grid showing through the gaps between pages reads as noise on paper). The result is an ordinary `.hushnote` — nothing downstream knows it came from a PDF.
+
+Pages are placed at **twice** their PDF point size (`PAGE_WORLD_SCALE`). At 1× a page would be "100 % = actual size", which sounds right and reads too small — the notebook camera clamps zoom at 1, so there is no way to magnify it afterwards.
+
+`PAGE_WORLD_SCALE` and `MAX_PAGE_RASTER_WIDTH` together decide how sharp a page looks, and they pull against file size: a US-Letter page is 2800 raster px over 1224 world px, ~2.3 device px per world px, which is crisp at zoom 1 on a Retina display with a little headroom. Raising the raster is expensive — bytes grow with its square, and the base64 rides inside JSON that is re-serialised on content saves — so `PAGE_QUALITY` is the knob to reach for first when pages look soft. Past the display's pixel density, JPEG fidelity buys more visible sharpness per byte than resolution does.
 
 Baking rather than rendering live is forced by the feature: a proof has to survive the source PDF moving, and splits mean the canvas must be able to draw "the bottom two-thirds of page 4, shifted 200 px down", which no live renderer can express. That puts the page bytes in the envelope, and two costs follow:
 
@@ -151,6 +157,8 @@ Baking rather than rendering live is forced by the feature: a proof has to survi
 The rail (`ui/proof-thumbnails.ts`) is a **live minimap of the page layer**, not a list of the pages the PDF had: split a page and it shows two pieces with the gap between them, drag the split open and the gap grows to scale (capped, so one big drag can't push the running order off the bottom). Only the page layer is drawn — ink and text are annotations on the document, not the document, and at rail scale they'd be smudges over the thing you're reading. For the same reason the shelf goes the other way and filters the page layer *out*: one locked, unactionable "Page 7" row per page (several, after a few splits) buries the notes the panel exists for.
 
 Pieces are painted **without decoding a page**. Each is an `<img>` of its source page's small thumbnail raster, blown up to what the whole page would measure at rail scale and clipped by an `overflow: hidden` wrapper to the piece's `crop` window — sound because a cut is a crop of the same bytes, so the same fractions index into the thumbnail exactly as they index into the full raster. `ImageShape.proofPageIndex` ties a piece back to its page and rides every cut for free (a cut spreads the original shape); proofs baked before that field existed fall back to `ProofPage.shapeId`.
+
+Piece *sizes* are to scale against each other; the space between them is a fixed 6 px. Rendering the gaps to scale as well was the first cut and was wrong: an opened split dominated the rail and pushed the pages either side of it out of view, so the reader lost the sequence in order to be told something the canvas was already showing them. The rail's job is the running order and the shape each cut left a page in. Its foot also stops 62 px short so the fixed rotation / background buttons in the bottom-right corner stay reachable underneath it.
 
 Two update clocks, kept apart: *structure* (which pieces exist) changes only when a cut is made or content is grabbed, *geometry* (where they are) changes on every frame of a split drag. Rebuilding a hundred elements per drag frame would make the rail the slowest thing on screen, so a rebuild only follows a structure change and the geometry pass is skipped outright mid-drag — the user is watching the canvas, and release re-syncs.
 
