@@ -304,7 +304,17 @@ export function createShelfPanel(
     applySearchTheme();
     clearChildren(body);
 
-    const nodes = buildNodes(state.shapes);
+    // A proofread notebook's page layer is the paper, not the notes. It
+    // is one image shape per page — and, after a few splits, several per
+    // page — so listing it drowns the shelf in "Page 7" rows that say
+    // nothing and can't be acted on (the layer is locked). The page rail
+    // is where the document's structure is shown; this panel is for what
+    // the user wrote on it.
+    const pageLayerId = state.proof?.pageLayerId;
+    const shelfShapes = pageLayerId
+      ? state.shapes.filter((s) => s.layerId !== pageLayerId)
+      : state.shapes;
+    const nodes = buildNodes(shelfShapes);
 
     // Tags
     const tags = new Set<string>();

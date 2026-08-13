@@ -53,6 +53,7 @@ export function createDefaultSettings() {
     zenColumnWidth: null,
     sidebarPanelWidth: 300,
     notebookShelfWidth: 280,
+    notebookProofRailWidth: 92,
     // App-wide saved text-style presets for notebook text shapes.
     // Each entry: { id, color, backgroundColor, fontSize }.
     notebookTextStyles: [],

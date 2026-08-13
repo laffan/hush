@@ -252,8 +252,16 @@ export class NotesCanvas {
     };
     this.state.addEventListener("change", () => {
       // Brainstorm mode behaves like select on the canvas — keep the default cursor instead of the text I-beam.
-      if (this.state.isPanning) this._canvas.style.cursor = "grab";
-      else this._canvas.style.cursor = this.state.brainstormMode ? "default" : (cursorMap[this.state.tool] || "default");
+      // Split chrome outranks the tool: a split line is grabbable from
+      // any tool that can drag it, and the cursor is the only thing that
+      // says so before the user tries.
+      const s = this.state;
+      let cursor: string;
+      if (s.splitDrag) cursor = "grabbing";
+      else if (s.splitHover) cursor = s.splitHover.active ? "pointer" : "grab";
+      else if (s.isPanning) cursor = "grab";
+      else cursor = s.brainstormMode ? "default" : (cursorMap[s.tool] || "default");
+      if (this._canvas.style.cursor !== cursor) this._canvas.style.cursor = cursor;
     });
 
     // Image cache management
@@ -1008,6 +1016,8 @@ export class NotesCanvas {
           splitHover: this.state.splitHover,
           grabBandDragging: this.state.grabBandDrag != null,
           grabToolActive: this.state.tool === "grab",
+          splitDragId: this.state.splitDrag?.splitId ?? null,
+          splitDragLine: this.state.splitDrag?.line ?? null,
         },
     });
   }

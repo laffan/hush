@@ -27,8 +27,8 @@ import { generateId, computePocketLayout } from "./utils";
 import {
   type ContentUnit, type SplitAction, type SplitActionRect,
   buildUnits, cutImagesAt, drawnLinePositions, hitTestSplitActions, hitTestSplits,
-  idsAfter, idsBefore, idsBetween, splitActionRects, translateShapes, translateSplits,
-  withinActionCluster,
+  idsAfter, idsBefore, idsBetween, mergeImagesAt, splitActionRects,
+  translateShapes, translateSplits, withinActionCluster,
 } from "./splits";
 
 /** A split line being dragged. `carried` is resolved once, at
@@ -156,32 +156,59 @@ export function deleteSplit(state: DrawingState, splitId: string): void {
 }
 
 /**
- * Delete the material that appeared inside the split's gap since it was
- * cut. Units are removed whole, and only when EVERY member is newer than
- * the split — a group that predates the split but drifted into the gap
- * is left alone, because "clear" means "undo the writing I did in here",
- * not "delete whatever is in this band".
+ * Undo the split entirely: throw away what was written in the gap, draw
+ * the two edges back together, drop the lines, and re-fuse any image the
+ * split had cut.
+ *
+ * The clearing half is conservative. Units are removed whole, and only
+ * when EVERY member is newer than the split — a group that predates the
+ * split but has drifted into the gap is left alone, because this means
+ * "undo the writing I did in here", not "delete whatever is in this
+ * band". Anything older is carried across with the far side instead.
+ *
+ * The re-fusing half is what makes a collapse leave no trace: pieces of
+ * one image, drawn back into contact, become that image again
+ * (`mergeImagesAt`), so a split can be cut and collapsed any number of
+ * times without accumulating shape records.
  */
-export function clearSplitContent(state: DrawingState, splitId: string): void {
+export function collapseSplit(state: DrawingState, splitId: string): void {
   const split = state.splits.find((s) => s.id === splitId);
   if (!split) return;
-  const units = unitsFor(state, split.orientation);
+  const { orientation, a, b } = split;
+  const gap = b - a;
+
+  const units = unitsFor(state, orientation);
   const byId = new Map(state.shapes.map((s) => [s.id, s]));
   const doomed = new Set<string>();
   for (const u of units) {
-    if (u.center < split.a || u.center > split.b) continue;
+    if (u.center < a || u.center > b) continue;
     const allNewer = u.ids.every((id) => {
       const created = byId.get(id)?.createdAt;
       return typeof created === "number" && created > split.createdAt;
     });
     if (allNewer) for (const id of u.ids) doomed.add(id);
   }
-  if (!doomed.size) return;
-  state.shapes = state.shapes.filter((s) => !doomed.has(s.id));
-  state.selectedIds = new Set([...state.selectedIds].filter((id) => !doomed.has(id)));
+
+  let shapes = doomed.size ? state.shapes.filter((s) => !doomed.has(s.id)) : state.shapes;
+  let splits = state.splits.filter((s) => s.id !== splitId);
+  if (gap > 0) {
+    const remaining = buildUnits(shapes, orientation, state.fontFamily, splittableSkipIds(state));
+    shapes = translateShapes(shapes, idsAfter(remaining, b), orientation, -gap);
+    splits = translateSplits(splits, orientation, -gap, (p) => p > b);
+  }
+  // The two cut faces now meet at `a` — that junction is the only place
+  // a merge can possibly apply.
+  shapes = mergeImagesAt(shapes, orientation, a);
+
+  state.shapes = shapes;
+  state.splits = splits;
+  if (doomed.size) {
+    state.selectedIds = new Set([...state.selectedIds].filter((id) => !doomed.has(id)));
+    state.notify("selectedIds");
+  }
   state.recordHistory();
   state.notify("shapes");
-  state.notify("selectedIds");
+  state.notify("splits");
 }
 
 // ───────────────────────── line dragging ─────────────────────────
@@ -461,7 +488,7 @@ export function splitPointerDown(
   if (action && state.splitHover) {
     const id = state.splitHover.splitId;
     state.splitHover = null;
-    if (action === "clear") clearSplitContent(state, id);
+    if (action === "collapse") collapseSplit(state, id);
     else if (action === "delete") deleteSplit(state, id);
     else grabSplit(state, id);
     return true;

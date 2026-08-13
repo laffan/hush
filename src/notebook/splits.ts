@@ -26,7 +26,7 @@
  *     behind, however many times the canvas has been split.
  */
 
-import type { Axis, Bounds, ImageShape, Shape, Split } from "./types";
+import type { Axis, Bounds, ImageCrop, ImageShape, Shape, Split } from "./types";
 import { getShapeBounds, generateId } from "./utils";
 import { moveShape } from "./state-helpers";
 
@@ -171,7 +171,7 @@ export function idsAfter(units: ContentUnit[], pos: number): Set<string> {
 }
 
 /** Shape ids whose unit centre lies inside `[lo, hi]` — what a grab
- *  lifts, and what "clear split content" considers for removal. */
+ *  lifts, and what a collapse considers for removal. */
 export function idsBetween(units: ContentUnit[], lo: number, hi: number): Set<string> {
   const out = new Set<string>();
   for (const u of units) if (u.center >= lo && u.center <= hi) for (const id of u.ids) out.add(id);
@@ -264,6 +264,81 @@ export function cutImagesAt(
   return changed ? out : shapes;
 }
 
+/** Fractional tolerance for matching two crop windows, and world-unit
+ *  tolerance for matching two edges. Both sides of a cut come from the
+ *  same arithmetic, so the drift is float noise, not real. */
+const CROP_EPS = 1e-4;
+const WORLD_EPS = 0.5;
+
+function sameCropAcross(a: ImageCrop, b: ImageCrop, orientation: Axis): boolean {
+  // Across the cut the two pieces must span the same window; along it
+  // they must meet exactly where the cut fell.
+  return orientation === "horizontal"
+    ? Math.abs(a.x - b.x) < CROP_EPS && Math.abs(a.w - b.w) < CROP_EPS
+      && Math.abs(a.y + a.h - b.y) < CROP_EPS
+    : Math.abs(a.y - b.y) < CROP_EPS && Math.abs(a.h - b.h) < CROP_EPS
+      && Math.abs(a.x + a.w - b.x) < CROP_EPS;
+}
+
+/**
+ * Undo a cut: where two masked halves of the same image have been drawn
+ * back together, fuse them into one shape again.
+ *
+ * This is `cutImage` run backwards, and it is why a collapse leaves no
+ * trace. A pair qualifies only when it could actually have come from one
+ * image — same bytes, same extent across the cut, and crop windows that
+ * are contiguous and complementary — so two genuinely different images
+ * that happen to abut are never welded together.
+ *
+ * `pos` scopes the search to the junction the collapse just created;
+ * scanning the whole canvas would be both slower and more surprising.
+ * The near piece's id survives, matching `cutImage`.
+ */
+export function mergeImagesAt(shapes: Shape[], orientation: Axis, pos: number): Shape[] {
+  const horiz = orientation === "horizontal";
+  const near: ImageShape[] = [];
+  const far: ImageShape[] = [];
+  for (const s of shapes) {
+    if (s.type !== "image" || s.pocketed || s.groupId || s.parentId) continue;
+    const img = s as ImageShape;
+    const start = horiz ? img.position.y : img.position.x;
+    const size = horiz ? img.height : img.width;
+    if (Math.abs(start + size - pos) < WORLD_EPS) near.push(img);
+    else if (Math.abs(start - pos) < WORLD_EPS) far.push(img);
+  }
+  if (!near.length || !far.length) return shapes;
+
+  const absorbed = new Set<string>();
+  const merged = new Map<string, ImageShape>();
+  for (const a of near) {
+    const ac = a.crop || { x: 0, y: 0, w: 1, h: 1 };
+    const b = far.find((cand) => {
+      if (absorbed.has(cand.id)) return false;
+      if (cand.dataUrl !== a.dataUrl || cand.dataUrlDark !== a.dataUrlDark) return false;
+      if (cand.layerId !== a.layerId) return false;
+      const across = horiz
+        ? Math.abs(cand.position.x - a.position.x) < WORLD_EPS && Math.abs(cand.width - a.width) < WORLD_EPS
+        : Math.abs(cand.position.y - a.position.y) < WORLD_EPS && Math.abs(cand.height - a.height) < WORLD_EPS;
+      if (!across) return false;
+      return sameCropAcross(ac, cand.crop || { x: 0, y: 0, w: 1, h: 1 }, orientation);
+    });
+    if (!b) continue;
+    absorbed.add(b.id);
+    const bc = b.crop || { x: 0, y: 0, w: 1, h: 1 };
+    merged.set(a.id, horiz
+      ? { ...a, height: a.height + b.height, crop: { ...ac, h: ac.h + bc.h } }
+      : { ...a, width: a.width + b.width, crop: { ...ac, w: ac.w + bc.w } });
+  }
+  if (!merged.size) return shapes;
+
+  const out: Shape[] = [];
+  for (const s of shapes) {
+    if (absorbed.has(s.id)) continue;
+    out.push(merged.get(s.id) || s);
+  }
+  return out;
+}
+
 // ───────────────────────── translation ─────────────────────────
 
 /** Translate the named shapes along the split's cross axis. Untouched
@@ -328,11 +403,11 @@ export function drawnLinePositions(split: Split, zoom: number): { a: number; b: 
 
 /** The three things a hovered split line offers. Order is the drawn
  *  order, left-to-right (or top-to-bottom on a vertical split). */
-export const SPLIT_ACTIONS = ["clear", "grab", "delete"] as const;
+export const SPLIT_ACTIONS = ["collapse", "grab", "delete"] as const;
 export type SplitAction = (typeof SPLIT_ACTIONS)[number];
 
 export const SPLIT_ACTION_LABELS: Record<SplitAction, string> = {
-  clear: "Clear split content",
+  collapse: "Collapse split",
   grab: "Grab split",
   delete: "Delete split",
 };

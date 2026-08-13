@@ -164,8 +164,8 @@ export function createSyncShim({
       // hush DrawShape so all downstream Hush code (box-select,
       // bounds, file I/O) sees true world coords.
       points: engineStroke.points.map(localToWorld),
-      // Creation stamp — "clear split content" uses it to tell ink laid
-      // down inside a split from ink that was already there.
+      // Creation stamp — collapsing a split uses it to tell ink laid
+      // down inside the split from ink that was already there.
       createdAt: Date.now(),
       ...(engineStroke.colorIsAuto ? { colorIsAuto: true } : {}),
       ...(engineStroke.colorIsHeading ? { colorIsHeading: true } : {}),

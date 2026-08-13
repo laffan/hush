@@ -40,18 +40,26 @@ const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 const PAGE_GAP = 50;
 
 /** Longest edge, in raster px, any page is rendered at. A US-Letter page
- *  is 612 pt wide, so this is a little over 2× — crisp at 100 % zoom and
- *  still legible zoomed in, without the file size of a full 2× bake on
- *  A3 or poster-sized pages. */
-const MAX_PAGE_RASTER_WIDTH = 1400;
+ *  is 612 pt wide, so this is a little over 4× — the page raster is what
+ *  the user zooms into to read small print and check kerning, so it is
+ *  worth the bytes. Pages wider than this (A3, posters) fall back to
+ *  whatever scale fits, which is what the cap is for. */
+const MAX_PAGE_RASTER_WIDTH = 2800;
+
+/** Ceiling on the render scale itself, so a page that is already tiny
+ *  in points doesn't get blown up past what its content can support. */
+const MAX_PAGE_RASTER_SCALE = 4;
 
 /** JPEG quality for page rasters. Tuned down from the 0.9 the Zotero
  *  snapshot path uses: a snapshot is one image, a proof is fifty. */
 const PAGE_QUALITY = 0.72;
 
-/** Thumbnail raster width — 2× the rail's 76 px cell so it stays sharp
- *  on a Retina display. */
-const THUMB_RASTER_WIDTH = 152;
+/** Thumbnail raster width. The rail is resizable up to 300 CSS px and
+ *  draws page *pieces* out of these rasters (see `ui/proof-thumbnails`),
+ *  so they have to stay legible at the widest setting — but they are also
+ *  the one part of the proof that is decoded all at once, so this is
+ *  deliberately far below the page rasters above. */
+const THUMB_RASTER_WIDTH = 480;
 const THUMB_QUALITY = 0.6;
 
 /** Above this many pages we ask first: the bake is linear in page count
@@ -95,7 +103,7 @@ function makeProgressOverlay(total) {
  *  arranged to avoid. */
 async function rasterizePage(page) {
   const base = page.getViewport({ scale: 1 });
-  const scale = Math.min(2, MAX_PAGE_RASTER_WIDTH / Math.max(base.width, 1));
+  const scale = Math.min(MAX_PAGE_RASTER_SCALE, MAX_PAGE_RASTER_WIDTH / Math.max(base.width, 1));
   const viewport = page.getViewport({ scale });
 
   const canvas = document.createElement("canvas");
@@ -180,12 +188,14 @@ export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFile
         color: "#000000",
         layerId: pageLayerId,
         createdAt,
+        proofPageIndex: i,
       });
       pages.push({
         index: i,
         shapeId,
         y,
         height: raster.height,
+        width: raster.width,
         thumbDataUrl: raster.thumbDataUrl,
       });
       y += raster.height + PAGE_GAP;

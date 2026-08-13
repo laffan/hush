@@ -53,12 +53,12 @@ interface ShapeBase {
   /** Layer membership. Optional on read (legacy shapes default to the
    *  first layer on load); set by every shape creator going forward. */
   layerId?: string;
-  /** Wall-clock ms the shape was created. Only "clear split content"
-   *  reads it — a split remembers when it was cut, and clearing removes
-   *  the material that appeared inside it *since*. Optional because
-   *  every shape written before splits shipped lacks it; a missing
-   *  stamp counts as "older than every split", so pre-existing content
-   *  is never swept away by a clear. */
+  /** Wall-clock ms the shape was created. Only collapsing a split reads
+   *  it — a split remembers when it was cut, and a collapse discards the
+   *  material that appeared inside it *since*. Optional because every
+   *  shape written before splits shipped lacks it; a missing stamp counts
+   *  as "older than every split", so pre-existing content is carried
+   *  across a collapse rather than swept away by it. */
   createdAt?: number;
 }
 
@@ -202,6 +202,13 @@ export interface ImageShape extends ShapeBase {
   crop?: ImageCrop;
   /** Present only on Desktop file-thumbnail shapes. */
   fileRef?: DesktopFileRef;
+  /** Proofread notebooks: which source page this image (or, after a
+   *  split, this piece of it) came from. Survives cuts for free — every
+   *  cut spreads the original shape — which is what lets the page rail
+   *  draw a live minimap: a piece's `crop` window indexes into the same
+   *  page it indexes into on the full raster, so the rail can paint the
+   *  piece out of that page's small thumbnail. */
+  proofPageIndex?: number;
 }
 
 export interface DragAreaShape extends ShapeBase {
@@ -303,6 +310,9 @@ export interface ProofPage {
   shapeId: string;
   y: number;
   height: number;
+  /** Page size in world units, so the rail can lay pieces out against
+   *  the page they came from without consulting the live shapes. */
+  width: number;
   thumbDataUrl: string;
 }
 

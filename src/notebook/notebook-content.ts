@@ -153,6 +153,7 @@ function parseProof(v: unknown): ProofMeta | undefined {
       shapeId: pg.shapeId as string,
       y: typeof pg.y === "number" ? pg.y : 0,
       height: typeof pg.height === "number" ? pg.height : 0,
+      width: typeof pg.width === "number" ? pg.width : 0,
       thumbDataUrl: typeof pg.thumbDataUrl === "string" ? pg.thumbDataUrl : "",
     }));
   if (!pages.length) return undefined;
