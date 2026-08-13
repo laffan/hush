@@ -108,6 +108,16 @@ function strokeColor(s: DrawShape, theme: CanvasTheme): string {
  *  annotated proof in the low single-digit milliseconds. */
 const MAX_STROKE_POINTS = 160;
 
+/** Rail px per text line below which per-line bars stop being rows and
+ *  start being a smudge — under this the shape draws as one block. */
+const MIN_LINE_PITCH_PX = 2.2;
+
+/** Floors for a text bar. Anything the user can see on the canvas has to
+ *  be findable on the rail, and a correctly-scaled half-pixel bar is
+ *  indistinguishable from not drawing it at all. */
+const MIN_BAR_W_PX = 3;
+const MIN_BAR_H_PX = 1.5;
+
 export interface RailInkOptions {
   shapes: Shape[];
   segments: RailSegment[];
@@ -198,9 +208,20 @@ export function drawProofRailInk(canvas: HTMLCanvasElement, opts: RailInkOptions
 }
 
 /**
- * Text as a stack of bars, one per line, each as long as its line is.
- * Actual glyphs at this scale are illegible mush; bars are the classic
- * minimap idiom and read instantly as "there is writing here".
+ * Text as bars — one per line where there is room for lines, one block
+ * for the whole shape where there isn't.
+ *
+ * Real glyphs at rail scale are illegible mush, so bars are the right
+ * idiom. The catch is how small "rail scale" gets: a 16 pt note on a
+ * page 1600 world px tall projects to about one pixel per line at the
+ * default rail width. Per-line bars there would be a row of hairlines
+ * that merge into a smudge anyway, so below a legibility floor the whole
+ * block is filled once instead — same reading ("there is writing here"),
+ * without depending on sub-pixel rows surviving.
+ *
+ * Both modes enforce a minimum size. A note the user can see on the
+ * canvas has to be findable on the rail; a mathematically correct
+ * half-pixel bar is the same as not drawing it.
  */
 function drawTextBars(
   ctx: CanvasRenderingContext2D,
@@ -210,23 +231,49 @@ function drawTextBars(
   theme: CanvasTheme,
 ): void {
   const lines = (t.text || "").split("\n");
-  if (!lines.length) return;
   const lineH = t.fontSize * LINE_HEIGHT_RATIO;
-  const maxW = t.width || 350;
-  // Rough character width for the bar length. Precision doesn't matter —
+  // Rough character width for bar lengths. Precision doesn't matter —
   // this is a texture, not a layout — and guessing costs nothing next to
   // running the real text measurer over every shape on every redraw.
   const charW = t.fontSize * 0.5;
-  ctx.globalAlpha = 0.55;
-  ctx.fillStyle = t.color && t.color !== "#000000" ? t.color : theme.foreground;
+  const blockW = t.width && t.width > 0 ? t.width : 350;
+
+  // `t.color` may hold the theme sentinels ("auto" / "heading"), which
+  // Canvas would silently reject and leave the previous fill in place.
+  const col = t.color;
+  ctx.fillStyle = col && col !== "#000000" && col !== "auto" && col !== "heading"
+    ? col
+    : theme.foreground;
+
+  const pitch = lineH * scale;
+  if (pitch < MIN_LINE_PITCH_PX) {
+    // Too small for rows: one block covering the shape's real extent.
+    let widest = 0;
+    for (const line of lines) {
+      const raw = line.replace(/^#+\s*/, "");
+      if (raw.trim()) widest = Math.max(widest, Math.min(blockW, raw.length * charW));
+    }
+    if (!widest) return;
+    const a = map(t.position.x, t.position.y);
+    const b = map(t.position.x + widest, t.position.y + lines.length * lineH);
+    ctx.globalAlpha = 0.5;
+    ctx.fillRect(a.x, a.y, Math.max(MIN_BAR_W_PX, b.x - a.x), Math.max(MIN_BAR_H_PX, b.y - a.y));
+    ctx.globalAlpha = 1;
+    return;
+  }
+
+  ctx.globalAlpha = 0.7;
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i].replace(/^#+\s*/, "");
     if (!raw.trim()) continue;
-    const wWorld = Math.min(maxW, raw.length * charW);
+    const wWorld = Math.min(blockW, raw.length * charW);
     const a = map(t.position.x, t.position.y + i * lineH);
-    const b = map(t.position.x + wWorld, t.position.y + i * lineH + t.fontSize * 0.7);
-    const h = Math.max(1, b.y - a.y);
-    ctx.fillRect(a.x, a.y, Math.max(1, b.x - a.x), h);
+    const b = map(t.position.x + wWorld, t.position.y + i * lineH + t.fontSize * 0.72);
+    ctx.fillRect(
+      a.x, a.y,
+      Math.max(MIN_BAR_W_PX, b.x - a.x),
+      Math.max(MIN_BAR_H_PX, b.y - a.y),
+    );
   }
   ctx.globalAlpha = 1;
 }

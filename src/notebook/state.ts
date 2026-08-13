@@ -135,6 +135,12 @@ export class DrawingState extends EventTarget {
    *  horizontal one. Mirrored from the modifier by the input handler so
    *  the preview flips without the pointer having to move. */
   splitVertical = false;
+  /** Axis a shift-held wheel gesture is pinned to, or null. Decided once
+   *  by the first shift-held event and held until shift comes back up —
+   *  re-deciding per event let a wobbling trackpad swipe flip axes
+   *  mid-gesture, which is exactly the drift the modifier is meant to
+   *  suppress. Cleared by the input handler on Shift keyup. */
+  private _wheelAxisLock: "x" | "y" | null = null;
   /** Proofread metadata when this notebook was built from a PDF. Drives
    *  the page thumbnail rail; null on an ordinary notebook. */
   proof: ProofMeta | null = null;
@@ -663,6 +669,10 @@ export class DrawingState extends EventTarget {
     if (this.splitPreview) this.splitPreview = { ...this.splitPreview, orientation: on ? "vertical" : "horizontal" };
     this.notify("interaction");
   }
+
+  /** Shift came up — the next shift-held wheel gesture picks its own
+   *  axis afresh. */
+  clearWheelAxisLock() { this._wheelAxisLock = null; }
 
   /** Escape hatch for Esc and tool switches: cancels a grab, ends a line
    *  drag, or drops the hover cluster. Returns true if it did anything. */
@@ -2502,14 +2512,24 @@ export class DrawingState extends EventTarget {
     if (!e.metaKey && !e.ctrlKey) {
       const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? (this.canvasEl.clientHeight || 800) : 1;
       let dx = e.deltaX, dy = e.deltaY;
-      // Shift constrains the pan to one axis — the dominant one, so a
-      // trackpad swipe that drifts a few degrees off true still runs
-      // straight. (Browsers already remap a shift-held mouse wheel from
-      // deltaY to deltaX, so this reads as "shift = horizontal" on a
-      // wheel and as "shift = don't drift" on a trackpad, which is what
-      // each input leads the user to expect.)
+      // Shift constrains the pan to one axis, chosen once at the start of
+      // the gesture and held until shift is released — deciding per
+      // event let a wobbling swipe flip axes halfway through, which is
+      // the drift the modifier exists to suppress. (Browsers already
+      // remap a shift-held mouse wheel from deltaY to deltaX, so this
+      // reads as "shift = horizontal" on a wheel and "shift = don't
+      // drift" on a trackpad, which is what each input leads the user to
+      // expect.)
       if (e.shiftKey) {
-        if (Math.abs(dx) >= Math.abs(dy)) dy = 0; else dx = 0;
+        if (!this._wheelAxisLock && (dx !== 0 || dy !== 0)) {
+          this._wheelAxisLock = Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+        }
+        if (this._wheelAxisLock === "x") dy = 0;
+        else if (this._wheelAxisLock === "y") dx = 0;
+      } else if (this._wheelAxisLock) {
+        // Belt and braces: a keyup missed while the window was unfocused
+        // would otherwise strand the lock.
+        this._wheelAxisLock = null;
       }
       this.camera = {
         ...this.camera,

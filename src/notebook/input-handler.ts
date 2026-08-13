@@ -485,6 +485,9 @@ export function bindInputEvents(
       state.setDragCmdHeld(false);
       state.setSplitVertical(false);
     }
+    // Releasing Shift ends the wheel's axis lock, so the next
+    // shift-held gesture is free to pick a different axis.
+    if (e.key === "Shift") state.clearWheelAxisLock();
   }) as unknown as (e: HTMLElementEventMap["keyup"]) => void);
 
   // Cmd / Ctrl press during a drag — expands every parent drag-area to

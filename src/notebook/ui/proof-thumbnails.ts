@@ -121,7 +121,15 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
   // the projection stays valid as the rail scrolls.
   const column = h("div", { style: { position: "relative", width: "100%" } });
   const ink = h("canvas", {
-    style: { position: "absolute", left: "0", top: "0", pointerEvents: "none" },
+    style: {
+      position: "absolute", left: "0", top: "0", pointerEvents: "none",
+      // Above the page cells. Both are positioned siblings with auto
+      // z-index, so DOM order would otherwise decide — and the cells are
+      // appended after, which buried every annotation that fell on a
+      // page. Only ink in the gaps and margins showed, which is a
+      // confusing way to be broken.
+      zIndex: "1",
+    },
   }) as HTMLCanvasElement;
   column.appendChild(ink);
 
