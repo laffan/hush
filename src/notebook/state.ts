@@ -2469,9 +2469,10 @@ export class DrawingState extends EventTarget {
   }
 
   handleWheel(e: WheelEvent) {
-    // Let horizontal-dominant scrolls pass through to parent containers
-    // (e.g. the stack's horizontal scroll area).
-    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && !this.gutterScrollDOM) return;
+    // A horizontal-dominant scroll belongs to the host when this canvas
+    // is one column of something scrollable — a stack, a pane. On the
+    // main canvas there is no host to give it to, so it pans instead.
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && !this.gutterScrollDOM && this.paneHosted) return;
     e.preventDefault();
     if (!this.canvasEl) return;
     // Gutter mode: redirect the wheel into the host doc's scroller so
@@ -2500,10 +2501,20 @@ export class DrawingState extends EventTarget {
     // page delta modes converted so a notched wheel moves a sane amount.
     if (!e.metaKey && !e.ctrlKey) {
       const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? (this.canvasEl.clientHeight || 800) : 1;
+      let dx = e.deltaX, dy = e.deltaY;
+      // Shift constrains the pan to one axis — the dominant one, so a
+      // trackpad swipe that drifts a few degrees off true still runs
+      // straight. (Browsers already remap a shift-held mouse wheel from
+      // deltaY to deltaX, so this reads as "shift = horizontal" on a
+      // wheel and as "shift = don't drift" on a trackpad, which is what
+      // each input leads the user to expect.)
+      if (e.shiftKey) {
+        if (Math.abs(dx) >= Math.abs(dy)) dy = 0; else dx = 0;
+      }
       this.camera = {
         ...this.camera,
-        x: this.camera.x - e.deltaX * k,
-        y: this.camera.y - e.deltaY * k,
+        x: this.camera.x - dx * k,
+        y: this.camera.y - dy * k,
       };
       this.notify("camera");
       return;

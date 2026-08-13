@@ -10,7 +10,7 @@
  * surgery did to the shape of the document.
  *
  * Piece *sizes* are to scale against each other; the space between them
- * is not (see `PIECE_GAP_PX`).
+ * is to scale too, but clamped at both ends (see `MIN_GAP_PX`).
  *
  * Only the page layer is drawn. Ink, text and drag boxes are the
  * annotations, not the document, and at rail scale they would be
@@ -46,17 +46,19 @@ export const RAIL_DEFAULT_WIDTH = 92;
 /** Horizontal padding inside the rail, each side. */
 const RAIL_PAD = 8;
 
-/** Space between two pieces, in rail px — a constant, not the world gap
- *  to scale.
+/** Space between two pieces, in rail px: the world gap to scale, but
+ *  clamped hard at both ends.
  *
- *  The rail's job is the running order and the *shape* of each piece:
- *  which pages have been cut, where the cut fell, how much of a page is
- *  left. Rendering the space between pieces to scale as well makes an
- *  opened split dominate the rail, pushing the pages either side of it
- *  out of view — the reader loses the sequence in order to be told
- *  something they can already see on the canvas. A fixed rule keeps
- *  every piece on screen and still reads as "these are separate". */
-const PIECE_GAP_PX = 6;
+ *  Neither extreme works on its own. Fully to scale, one split dragged
+ *  wide open dominates the rail and pushes the pages either side of it
+ *  out of view. Fully fixed, opening a split changes nothing here at
+ *  all — and since making room and then writing into it is the whole
+ *  proofreading gesture, the rail would go quiet exactly when the user
+ *  most wants to see what they did. Clamping keeps the page gutters
+ *  tidy, shows an opened split as a real band with room for the notes
+ *  written into it, and stops a runaway drag from taking over. */
+const MIN_GAP_PX = 4;
+const MAX_GAP_PX = 40;
 
 /** Trailing debounce before the annotation overlay repaints. */
 const INK_DEBOUNCE_MS = 180;
@@ -226,13 +228,18 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
 
     const segs: RailSegment[] = [];
     let railY = 0;
+    let prevBottom: number | null = null;
     for (let i = 0; i < cells.length; i++) {
       const { el, piece } = cells[i];
       const crop = piece.shape.crop || { x: 0, y: 0, w: 1, h: 1 };
       const cw = Math.max(1, piece.w * scale);
       const ch = Math.max(1, piece.h * scale);
       const railX = Math.max(0, (piece.x - minX) * scale);
-      const gap = i === 0 ? 0 : PIECE_GAP_PX;
+      const worldGap = prevBottom == null ? 0 : Math.max(0, piece.y - prevBottom);
+      const gap = prevBottom == null
+        ? 0
+        : Math.max(MIN_GAP_PX, Math.min(MAX_GAP_PX, worldGap * scale));
+      prevBottom = piece.y + piece.h;
       railY += gap;
       el.style.width = `${cw}px`;
       el.style.height = `${ch}px`;
@@ -433,6 +440,12 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
         layout(pieces);
       }
     }
+
+    // Annotations are not part of the page layout, so nothing above
+    // notices when a stroke or a text shape is added — this is what
+    // keeps the overlay live. Identity, not deep compare: every
+    // DrawingState mutation replaces the shapes array.
+    if (inkShapes !== state.shapes) scheduleInk();
 
     const theme = state.theme;
     // Only touch style properties that changed — this runs on every

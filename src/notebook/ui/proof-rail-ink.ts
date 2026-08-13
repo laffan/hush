@@ -20,10 +20,11 @@
  * ### Coordinates
  *
  * The rail is a piecewise projection of the canvas: each page piece is
- * its own linear segment, and the fixed gaps between them compress
- * whatever world space lies between. `worldToRail` / `railToWorld` are
- * that projection and its inverse — the inverse is what makes a click
- * anywhere on the rail, gaps included, resolve to a real world point.
+ * its own linear segment, and the clamped gaps between them compress (or
+ * stretch) whatever world space lies between. `worldToRail` /
+ * `railToWorld` are that projection and its inverse — the inverse is
+ * what makes a click anywhere on the rail, gaps included, resolve to a
+ * real world point.
  */
 
 import type { DrawShape, Shape, TextShape } from "../types";
@@ -139,6 +140,11 @@ export function drawProofRailInk(canvas: HTMLCanvasElement, opts: RailInkOptions
   for (const s of shapes) {
     if (s.pocketed) continue;
     if (s.layerId && s.layerId === pageLayerId) continue;
+    // Belt and braces for the layer check: a proof baked before
+    // `pageLayerId` was recorded has none to match against, and painting
+    // a grey block over every page thumbnail would be a spectacular way
+    // to fail. The page marker rides the shape itself.
+    if (s.type === "image" && typeof s.proofPageIndex === "number") continue;
     if (s.layerId && hiddenLayerIds.has(s.layerId)) continue;
 
     if (s.type === "draw") {
