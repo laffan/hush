@@ -163,21 +163,23 @@ export function openColorPicker(input, anchorEl) {
     if (document.activeElement !== hexInput) hexInput.value = hex;
   }
 
+  function flush() {
+    frame = 0;
+    const wasFinal = pendingFinal;
+    pendingFinal = false;
+    const hex = hsvToHex(hsv);
+    const changed = input.value.toLowerCase() !== hex;
+    input.value = hex;
+    if (changed) input.dispatchEvent(new Event("input", { bubbles: true }));
+    if (wasFinal) input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
   /** Push the current HSV onto the host input. `final` also fires
    *  `change`, which is what a drag release / hex commit counts as. */
   function push(final) {
     pendingFinal = pendingFinal || !!final;
     if (frame) return;
-    frame = requestAnimationFrame(() => {
-      frame = 0;
-      const wasFinal = pendingFinal;
-      pendingFinal = false;
-      const hex = hsvToHex(hsv);
-      const changed = input.value.toLowerCase() !== hex;
-      input.value = hex;
-      if (changed) input.dispatchEvent(new Event("input", { bubbles: true }));
-      if (wasFinal) input.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    frame = requestAnimationFrame(flush);
   }
 
   /** Shared pointer-drag plumbing for both surfaces. `read(e, rect)`
@@ -266,7 +268,10 @@ export function openColorPicker(input, anchorEl) {
   function close() {
     if (openPicker?.el !== el) return;
     openPicker = null;
-    if (frame) { cancelAnimationFrame(frame); frame = 0; }
+    // Land the last coalesced write rather than dropping it — closing
+    // right after a drag release would otherwise lose the final few
+    // milliseconds of movement and the `change` that commits it.
+    if (frame) { cancelAnimationFrame(frame); flush(); }
     document.removeEventListener("pointerdown", onOutside, true);
     document.removeEventListener("keydown", onKey, true);
     window.removeEventListener("resize", onReflow);

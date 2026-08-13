@@ -78,13 +78,18 @@ export function createLibraryBrowser({ host, refs, collections, onChange }) {
 
   /** How many items are in a collection and everything under it —
    *  drawn beside the folder name so an empty branch reads as empty
-   *  before you click it. */
+   *  before you click it. Memoized: the tree re-renders on every
+   *  expand and select, and this walks the whole library per row. */
+  const counts = new Map();
   function countFor(key) {
+    let n = counts.get(key);
+    if (n !== undefined) return n;
     const scope = descendants(key);
-    let n = 0;
+    n = 0;
     for (const r of refs) {
       if ((r.collections || []).some((c) => scope.has(c))) n++;
     }
+    counts.set(key, n);
     return n;
   }
 
