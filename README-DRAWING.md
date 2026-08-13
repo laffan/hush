@@ -23,6 +23,8 @@ src/notebook/drawing/
                          handle, snap zones, minimize
   bg-settings-fixed-button.ts  Fixed bottom-right row: rotation readout/toggle + bg settings
   pocket-blit.ts         Pocket / done-canvas blit helpers
+  stroke-paint.ts        Per-stroke re-render into a foreign ctx (selection
+                         rasterizer, export pipeline)
   layers-panel.ts        Layers dropdown (notebook-level)
   engine/                The stroke engine (ported; every Hush modification is tagged —
                          `grep -rn "Hush delta #" src/notebook/drawing/engine/`)
@@ -75,7 +77,7 @@ Before the blit-forward path (delta #25), every re-anchor repainted all visible 
 
 Every modification to `engine/` is tagged at the call site (`grep -rn "Hush delta #"`) and listed here so a diff against the reference demo has a known shape. Deltas #1–#9 are integration plumbing (host-supplied `pointToLocal` / DPR / atlas URLs, exposed `fullRebake`, square handles, `pocketed` → hidden, delete badge suppressed). The rest are behavioural or perf, and several document non-obvious WebKit cost models:
 
-- **#10–#13 touch**: two-finger pan + pinch recognized in `gestures.js` (the SVG overlay owns touches in pen mode), promotion works mid-stroke (the active stroke is cancelled; palm contacts rejected by size; stale contacts swept after 5 s).
+- **#10–#13 touch**: two-finger pan + pinch recognized in `gestures.js` (the SVG overlay owns touches in pen mode), promotion works mid-stroke (the active stroke is cancelled; palm contacts rejected by size; stale contacts swept after 5 s). Every burst teardown goes through one `endPanPinch()` so the host always gets its end callbacks: the notebook rebuilds its gesture frame from those alone, and `pointercancel` — which iPadOS fires readily — used to skip them and wedge two-finger pan permanently.
 - **#14 theme-tracking colors**: strokes carry `colorIsAuto` / `colorIsHeading` flags so theme switches retint them en masse.
 - **#15 `setEventActive(false)`** — disable engine event capture without clearing the selection (brush-slot taps must not wipe a retroactive selection).
 - **#16 `setChromeInteractive(false)`** — keep the selection bbox painted but `pointer-events: none` during draw/erase/slice so an invisible handle can't intercept the next stroke.

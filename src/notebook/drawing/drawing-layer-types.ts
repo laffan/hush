@@ -92,6 +92,14 @@ export interface DrawingLayer {
     hushIds: Iterable<string>,
     colorOverrides?: { foreground: string; headingColor: string },
   ): void;
+  /** Render every stroke the done canvas would show (all layers that
+   *  aren't hidden, minus pocketed strokes) into `ctx`, whose transform
+   *  must already map world coords → target pixels. The export path uses
+   *  this instead of `blitDoneCanvasAtWorldOrigin` because the done
+   *  canvas only backs a viewport-sized world rect — a tall document
+   *  exported at "all content" scope would otherwise lose every stroke
+   *  outside the current screen. */
+  renderAllStrokesTo(ctx: CanvasRenderingContext2D): void;
 
   /** True while a stroke is in flight. The autosave pipeline defers
    *  writes until pen-up so the IPC marshal can't starve pointer

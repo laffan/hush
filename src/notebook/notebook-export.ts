@@ -16,8 +16,9 @@
  *   2. Allocate an offscreen canvas at dims × scale.
  *   3. Call `renderForExport()` in renderer-export.ts to paint shapes
  *      (optional background).
- *   4. Blit the drawing layer's done canvas so engine strokes appear
- *      on top of the shape layer (matching the live DOM z-order).
+ *   4. Re-render every engine stroke on top of the shape layer
+ *      (matching the live DOM z-order). Deliberately not a done-canvas
+ *      blit — that canvas only covers a viewport-sized world rect.
  *   5. Hand back a canvas or encoded bytes depending on format.
  */
 
@@ -147,10 +148,10 @@ function buildExportRaster(canvas: NotesCanvas, opts: ExportOptions, omitTextGly
     }
   }
 
-  const scale = opts.scale;
+  const scale = fitRasterScale(cssW, cssH, opts.scale);
   const out = document.createElement("canvas");
-  out.width = cssW * scale;
-  out.height = cssH * scale;
+  out.width = Math.max(1, Math.round(cssW * scale));
+  out.height = Math.max(1, Math.round(cssH * scale));
   const ctx = out.getContext("2d");
   if (!ctx) throw new Error("Failed to acquire 2D context");
 
@@ -176,16 +177,41 @@ function buildExportRaster(canvas: NotesCanvas, opts: ExportOptions, omitTextGly
   // Strokes sit above shapes in the live view (drawing wrapper is a
   // sibling appended after the main canvas). Match that z-order here
   // by painting after shapes, under the same camera transform.
+  //
+  // Re-render every stroke rather than blitting the done canvas: that
+  // canvas only backs a viewport-sized world rect that follows the
+  // camera, so an "all content" export of anything taller than a screen
+  // — a proofread notebook is tens of thousands of world px — would come
+  // out with the ink from wherever the camera happened to be and nothing
+  // else.
   const dl = canvas.getDrawingLayer();
   if (dl) {
     ctx.save();
     ctx.translate(camera.x, camera.y);
     ctx.scale(camera.zoom, camera.zoom);
-    dl.blitDoneCanvasAtWorldOrigin(ctx);
+    dl.renderAllStrokesTo(ctx);
     ctx.restore();
   }
 
   return { canvas: out, cssW, cssH, camera };
+}
+
+/** Browser canvas ceilings. WebKit on iPad is the tight one: a canvas
+ *  past roughly 16 M device pixels, or with either side past 8192,
+ *  allocates without complaint and then never paints. Both limits are
+ *  easy to cross on an "all content" export of a proofread notebook,
+ *  whose world is one tall column of full-size pages — and the failure
+ *  mode is a blank file rather than an error. */
+const MAX_RASTER_SIDE = 8192;
+const MAX_RASTER_AREA = 16_777_216;
+
+/** Largest scale at or below `wanted` that keeps the raster inside both
+ *  ceilings. Trimming resolution costs sharpness; crossing the ceiling
+ *  costs the whole export. */
+function fitRasterScale(cssW: number, cssH: number, wanted: number): number {
+  const bySide = MAX_RASTER_SIDE / Math.max(cssW, cssH);
+  const byArea = Math.sqrt(MAX_RASTER_AREA / Math.max(1, cssW * cssH));
+  return Math.max(0.02, Math.min(wanted, bySide, byArea));
 }
 
 function computeContentBounds(shapes: { pocketed?: boolean }[], fontFamily: string): Bounds | null {

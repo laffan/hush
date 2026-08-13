@@ -32,8 +32,10 @@ import { getShapeBounds } from "./utils";
 
 export interface RegionSelectOptions {
   fontFamily?: string;
-  /** Shapes on these layers are invisible, so they can't be swept up. */
-  hiddenLayerIds?: Set<string> | null;
+  /** Shapes on these layers are inert to the pointer — hidden (nothing
+   *  to sweep up) or locked (deliberately out of reach) — so a region
+   *  never selects them. */
+  inertLayerIds?: Set<string> | null;
   /** Extra ids to skip (e.g. shapes currently drawn in the pocket
    *  tray, whose world position is stale). */
   skipIds?: Set<string> | null;
@@ -171,12 +173,12 @@ export function collectShapesInPolygon(
   const pb = polygonBounds(poly);
   if (pb.maxX - pb.minX < 1 && pb.maxY - pb.minY < 1) return out;
 
-  const hidden = opts.hiddenLayerIds;
+  const inert = opts.inertLayerIds;
   const skip = opts.skipIds;
   const touchedGroups = new Set<string>();
   for (const s of shapes) {
     if (s.pocketed) continue;
-    if (hidden && s.layerId && hidden.has(s.layerId)) continue;
+    if (inert && s.layerId && inert.has(s.layerId)) continue;
     if (skip && skip.has(s.id)) continue;
     if (!shapeIntersectsPolygon(s, poly, pb, opts.fontFamily)) continue;
     out.add(s.id);
@@ -186,7 +188,7 @@ export function collectShapesInPolygon(
     for (const s of shapes) {
       if (!s.groupId || !touchedGroups.has(s.groupId)) continue;
       if (s.pocketed) continue;
-      if (hidden && s.layerId && hidden.has(s.layerId)) continue;
+      if (inert && s.layerId && inert.has(s.layerId)) continue;
       out.add(s.id);
     }
   }

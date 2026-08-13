@@ -13,6 +13,7 @@ import { createTextEditor } from "./ui/text-editor";
 import { createBrainstormInput } from "./ui/brainstorm-input";
 import { createGrabPopup } from "./ui/grab-popup";
 import { createProofThumbnails, type ProofThumbnailRail } from "./ui/proof-thumbnails";
+import { createProofScrollWheel, type ProofScrollWheel } from "./ui/proof-scrollwheel";
 import { budgetNeedsRecompute, imageKeepSet } from "./image-budget";
 // @ts-ignore — JS module, no type declaration file
 import { registerNotebookDropTarget } from "../pane/text-drag.js";
@@ -201,6 +202,7 @@ export class NotesCanvas {
   private _shelfTrackRaf = 0;
   private _drawingLayer: DrawingLayer | null = null;
   private _proofRail: ProofThumbnailRail | null = null;
+  private _proofWheel: ProofScrollWheel | null = null;
   /** Image ids currently worth holding decoded, or null when the
    *  notebook is small enough to keep every image. See image-budget.ts. */
   private _imageKeep: Set<string> | null = null;
@@ -636,6 +638,11 @@ export class NotesCanvas {
     this._proofRail = createProofThumbnails(this.state);
     container.appendChild(this._proofRail.root);
 
+    // Virtual scroll wheel — same deal, plus an iPad-only gate of its
+    // own (see proof-scrollwheel.ts).
+    this._proofWheel = createProofScrollWheel(this.state);
+    container.appendChild(this._proofWheel.root);
+
     // Refresh the shelf when panes are added / removed / hidden so its
     // pane rows stay in sync without polling. Pane content edits don't
     // emit this event — they're picked up the next time the shelf
@@ -850,6 +857,7 @@ export class NotesCanvas {
     if (this._shelfRightInsetCleanup) { this._shelfRightInsetCleanup(); this._shelfRightInsetCleanup = null; }
     if (this._drawingLayer) { this._drawingLayer.destroy(); this._drawingLayer = null; }
     if (this._proofRail) { this._proofRail.destroy(); this._proofRail = null; }
+    if (this._proofWheel) { this._proofWheel.destroy(); this._proofWheel = null; }
     if (this._shelfResizer) { this._shelfResizer.remove(); this._shelfResizer = null; }
     this.container.innerHTML = "";
     liveCanvases.delete(this);
