@@ -317,19 +317,18 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
 
   // ── navigation ──
 
-  /** Smoothly centre a world point in the visible canvas area. */
-  function glideTo(worldX: number, worldY: number) {
-    const el = state.canvasEl;
-    const vw = el?.clientWidth || window.innerWidth;
-    const vh = el?.clientHeight || window.innerHeight;
-    const zoom = state.camera.zoom;
-    const usableLeft = state.leftInset || 0;
-    const usableW = Math.max(0, vw - usableLeft - (state.rightInset || 0) - width);
-    const from = { x: state.camera.x, y: state.camera.y };
-    const to = {
-      x: usableLeft + usableW / 2 - worldX * zoom,
-      y: vh / 2 - worldY * zoom,
-    };
+  /** Smoothly bring a world y to the vertical centre of the canvas.
+   *
+   *  Vertical only, deliberately. The rail is a map of the *document*,
+   *  which runs down the page — where the reader has scrolled sideways
+   *  to (a margin they're writing in, a page they've pulled out with a
+   *  vertical split) is their own working position, and yanking it back
+   *  every time they navigate would undo it. So the horizontal camera is
+   *  left exactly where they put it. */
+  function glideToY(worldY: number) {
+    const vh = state.canvasEl?.clientHeight || window.innerHeight;
+    const fromY = state.camera.y;
+    const toY = vh / 2 - worldY * state.camera.zoom;
     if (tweenRaf) cancelAnimationFrame(tweenRaf);
     const start = performance.now();
     const step = () => {
@@ -338,7 +337,7 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
       // fifty-page document costs the reader their place; the travel is
       // what tells them how far they went.
       const k = 1 - Math.pow(1 - t, 3);
-      state.camera = { ...state.camera, x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k };
+      state.camera = { ...state.camera, y: fromY + (toY - fromY) * k };
       state.notify("camera");
       tweenRaf = t < 1 ? requestAnimationFrame(step) : 0;
     };
@@ -354,7 +353,7 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
     if (!segments.length) return;
     const r = column.getBoundingClientRect();
     const world = railToWorld(segments, e.clientX - r.left, e.clientY - r.top);
-    glideTo(world.x, world.y);
+    glideToY(world.y);
   });
 
   /** Outline whichever piece owns the viewport's vertical centre. */
