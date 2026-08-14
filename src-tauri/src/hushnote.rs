@@ -239,6 +239,23 @@ mod tests {
         assert_eq!(v["shapes"][0]["id"], "t2");
     }
 
+    /// A proofread notebook's envelope carries `proof` (page rasters +
+    /// thumbnails) alongside splits and bookmarks. The codec must not
+    /// know or care what those fields are.
+    #[test]
+    fn round_trips_unknown_envelope_fields() {
+        let png = "data:image/png;base64,iVBORw0KGgo=";
+        let content = format!(
+            r#"{{"format":"hushnote","version":1,"shapes":[{{"id":"s1","type":"image","dataUrl":"{png}"}}],"layers":[{{"id":"l1"}}],"splits":[{{"id":"sp1","orientation":"horizontal","a":10,"b":20}}],"bookmarks":[{{"id":"b1"}}],"proof":{{"sourceName":"Paper","pageLayerId":"l1","pages":[{{"index":0,"shapeId":"s1","thumbDataUrl":"{png}"}}]}}}}"#
+        );
+        let packed = pack(&content).unwrap();
+        let back: Value = serde_json::from_str(&unpack(&packed).unwrap()).unwrap();
+        assert!(back.get("proof").is_some(), "proof lost: {back}");
+        assert_eq!(back["proof"]["pages"][0]["shapeId"], "s1");
+        assert!(back.get("splits").is_some(), "splits lost: {back}");
+        assert!(back.get("bookmarks").is_some(), "bookmarks lost: {back}");
+    }
+
     #[test]
     fn accepts_legacy_bare_array_and_plain_bytes() {
         let zipped = pack("[]").unwrap();

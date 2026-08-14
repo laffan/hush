@@ -391,6 +391,26 @@ fn desk_with_id(id: &str, children: Vec<TreeNode>) -> TreeNode {
 // Local-desk-root tests — Make Local / Make Internal / Open Folder as
 // Desk / the disk-wins reconcile. A child module so `use super::*` there
 // picks up the helpers above (node, tmp, seed_simple_desk, desk_with_id)
+/// Node decorations that aren't structure — the proofread marker being
+/// the newest — have to survive the tree.json round trip: the tree is
+/// rewritten on every structural change, and a field the store forgot
+/// would come back as a plain notebook on the next launch.
+#[test]
+fn proofread_flag_survives_forest_round_trip() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = DeskStore::new(dir.path());
+    store.stage_new("nb1").unwrap();
+    store.write_by_id("nb1", "{\"format\":\"hushnote\",\"version\":1,\"shapes\":[]}").unwrap();
+    let mut nb = node("n1", "notebook", "Paper-Proof", Some("nb1"), vec![]);
+    nb.proofread = true;
+    let desk = node("d1", "desk", "Personal", None, vec![nb]);
+    store.save_forest(&[desk]).unwrap();
+
+    let forest = store.load_forest().unwrap();
+    let loaded = &forest[0].children[0];
+    assert!(loaded.proofread, "proofread flag lost in the tree round trip");
+}
+
 // along with everything desk_store.rs pulls into scope.
 #[path = "desk_roots_tests.rs"]
 mod roots_tests;
@@ -409,3 +429,4 @@ mod identity_tests;
 // the placement rebase, and the relocate that makes a row follow its file.
 #[path = "desk_index_tests.rs"]
 mod index_tests;
+

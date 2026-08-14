@@ -240,12 +240,27 @@ async function encodeHushnote(canvas: NotesCanvas): Promise<Uint8Array> {
   // single thing — a zip with data.json + an images/ folder. Image
   // data URLs get extracted into the zip so big binaries don't live
   // inline.
-  const envelope = JSON.stringify({
-    format: "hushnote",
-    version: 1,
+  //
+  // The envelope is built by the same encoder the autosave uses, over
+  // the same fields: an export that hand-rolled its own envelope was an
+  // export that quietly dropped whatever the hand-rolled list didn't
+  // mention (camera, background, bookmarks, splits, and the `proof`
+  // metadata a proofread notebook is defined by).
+  const { encodeNotebookContent } = await import("./notebook-content");
+  const envelope = encodeNotebookContent({
     shapes: canvas.getShapes(),
     layers: canvas.state.layers,
     flowEdges: canvas.state.flowchart.serialize(),
+    bookmarks: canvas.state.bookmarks,
+    camera: canvas.state.camera,
+    background: {
+      pattern: canvas.state.backgroundPattern,
+      spacing: canvas.state.gridSpacing,
+      opacity: canvas.state.gridOpacity,
+      rotationEnabled: canvas.state.canvasRotationEnabled,
+    },
+    splits: canvas.state.splits,
+    proof: canvas.state.proof ?? undefined,
   });
   const { packNotebook } = await import("../sync/notebook-sync.js");
   return await packNotebook(envelope);
