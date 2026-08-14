@@ -10,15 +10,17 @@
  *
  * It is modelled on the physical object rather than on a scrollbar:
  *
- *   - Dragging the face down rolls the wheel toward you, which advances
- *     the document downward — the same direction a notched wheel sends
- *     the page, and the opposite of a drag-to-scroll surface where the
- *     content follows the finger.
  *   - Letting go of a flick leaves the flywheel spinning, decaying under
  *     friction rather than stopping dead.
  *   - Touching a spinning wheel stops it, exactly like putting a finger
  *     on one that's still coasting. That press is also the start of the
  *     next drag, so grab-and-reposition works in one gesture.
+ *   - The ridges turn with the throw, so the wheel's own state is
+ *     visible even when the document underneath has nowhere left to go.
+ *
+ * The one place it deliberately breaks the model is direction: it
+ * follows the platform's "natural" scrolling (content tracks the finger)
+ * rather than a notched wheel's opposite convention — see `DIRECTION`.
  *
  * iPad / iPhone only, and only on a proofread notebook: everywhere else
  * the platform already has an answer and the corner is better left
@@ -35,7 +37,7 @@ export const WHEEL_HEIGHT = 200;
 
 /** Offset from the top of the window / left edge, before safe-area and
  *  docked-pane insets are folded in. */
-const WHEEL_TOP = 30;
+const WHEEL_TOP = 0;
 const WHEEL_LEFT = 10;
 
 /** Document px travelled per px of finger travel. A real wheel's face
@@ -44,22 +46,30 @@ const WHEEL_LEFT = 10;
  *  the proof several pages. */
 const GAIN = 2.4;
 
+/** Sign relating face travel to document travel. Negative = "natural"
+ *  scrolling: the content follows the finger, so dragging the face DOWN
+ *  moves you back up the document. That contradicts a physical wheel,
+ *  where rolling the face toward you sends the page down — but the
+ *  platform's own direction is the one the hand already knows, and the
+ *  wheel is being used alongside trackpad scrolling that obeys it. */
+const DIRECTION = -1;
+
 /** Velocity retained per 60 Hz frame while coasting. 0.94 gives a flick
  *  roughly two seconds of travel — long enough to read as a flywheel,
  *  short enough not to feel out of control on a 50-page proof. */
 const FRICTION = 0.94;
 
-/** Below this (document px per ms) the flywheel has stopped. */
-const MIN_VELOCITY = 0.02;
+/** Below this (face px per ms) the flywheel has stopped. */
+const MIN_VELOCITY = 0.01;
 
 /** Ignore samples older than this when estimating release velocity, so
  *  the throw reflects the end of the gesture and not its average. */
 const VELOCITY_WINDOW_MS = 90;
 
-/** Cap on release velocity (document px per ms) — a fast fling on a
+/** Cap on release velocity (face px per ms) — a fast fling on a
  *  high-rate display can otherwise report a spike that sends the camera
  *  most of a document away in one coast. */
-const MAX_VELOCITY = 6;
+const MAX_VELOCITY = 2.5;
 
 /** Spacing of the drum's ridges, in px of wheel face. */
 const RIDGE_PERIOD = 13;
@@ -74,25 +84,13 @@ const FRAME_MS = 1000 / 60;
 
 export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
   // The drum carries the ridges; sliding its background position is what
-  // makes the wheel look like it is turning. Shading sits in a separate
-  // non-interactive overlay so the ridge gradient can move underneath a
-  // fixed cylinder highlight.
+  // makes the wheel look like it is turning. No cylinder shading over
+  // them — the ridges moving is the whole read, and the gradient only
+  // muddied it.
   const drum = h("div", {
     style: {
       position: "absolute", left: "0", top: "0", right: "0", bottom: "0",
       borderRadius: "9px",
-    },
-  });
-  const shade = h("div", {
-    style: {
-      position: "absolute", left: "0", top: "0", right: "0", bottom: "0",
-      borderRadius: "9px", pointerEvents: "none",
-      // Cylinder: dark at both edges, bright down the middle. Overlaid on
-      // the ridges so they dim into the wheel's shoulders instead of
-      // running flat across it.
-      background:
-        "linear-gradient(to right, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0.05) 22%,"
-        + " rgba(255,255,255,0.16) 50%, rgba(0,0,0,0.05) 78%, rgba(0,0,0,0.28) 100%)",
     },
   });
 
@@ -113,7 +111,7 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
       touchAction: "none", userSelect: "none", webkitUserSelect: "none",
       cursor: "ns-resize",
     } as Partial<CSSStyleDeclaration>,
-    children: [drum, shade],
+    children: [drum],
   });
   root.classList.add("notebook-proof-wheel");
 
@@ -121,7 +119,7 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
    *  RIDGE_PERIOD is ever used, but keeping the running total means the
    *  ridges never jump when a drag and a coast hand off to each other. */
   let facePos = 0;
-  /** Document px per ms while coasting; 0 when at rest. */
+  /** Face px per ms while coasting; 0 when at rest. */
   let velocity = 0;
   let coastRaf = 0;
   let coastLast = 0;
@@ -134,14 +132,17 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
 
   // ── motion ──
 
-  /** Advance the document by `docDy` px (positive = further down the
-   *  page) and turn the wheel by the matching amount of face travel. */
-  function advance(docDy: number) {
-    if (!docDy) return;
+  /** Turn the wheel by `faceDy` px of face travel and move the document
+   *  the matching distance. Everything upstream — drag deltas, coast
+   *  velocity, the release samples — is in face px, so `DIRECTION` and
+   *  `GAIN` are applied in exactly one place. */
+  function turn(faceDy: number) {
+    if (!faceDy) return;
+    facePos += faceDy;
+    drum.style.backgroundPositionY = `${facePos % RIDGE_PERIOD}px`;
+    const docDy = faceDy * GAIN * DIRECTION;
     state.camera = { ...state.camera, y: state.camera.y - docDy };
     state.notify("camera");
-    facePos += docDy / GAIN;
-    drum.style.backgroundPositionY = `${facePos % RIDGE_PERIOD}px`;
   }
 
   function stopCoast() {
@@ -155,7 +156,7 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     // un-clamped one would teleport the camera on the first frame back.
     const dt = Math.min(64, Math.max(1, now - coastLast));
     coastLast = now;
-    advance(velocity * dt);
+    turn(velocity * dt);
     velocity *= Math.pow(FRICTION, dt / FRAME_MS);
     if (Math.abs(velocity) < MIN_VELOCITY) { velocity = 0; return; }
     coastRaf = requestAnimationFrame(coast);
@@ -180,7 +181,13 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     dragPointer = e.pointerId;
     dragLastY = e.clientY;
     samples.length = 0;
-    samples.push({ t: performance.now(), y: 0 });
+    // Seed with the CURRENT face position, not zero. `facePos` is a
+    // running total that never resets, so a zero here made the release
+    // velocity read as "the wheel travelled its whole lifetime's
+    // distance during this flick" — huge, and signed by wherever the
+    // document happened to be. Catching a coast and nudging it could
+    // therefore fling it off in the opposite direction.
+    samples.push({ t: performance.now(), y: facePos });
     root.setPointerCapture(e.pointerId);
   }
 
@@ -189,7 +196,7 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     e.preventDefault();
     const faceDy = e.clientY - dragLastY;
     dragLastY = e.clientY;
-    if (faceDy) advance(faceDy * GAIN);
+    if (faceDy) turn(faceDy);
     const t = performance.now();
     samples.push({ t, y: facePos });
     // Keep one sample older than the window so a slow final frame still
@@ -203,10 +210,11 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     if (root.hasPointerCapture(e.pointerId)) root.releasePointerCapture(e.pointerId);
     const last = samples[samples.length - 1];
     const first = samples[0];
+    // A release with no travel since the press (a tap to stop a coast)
+    // leaves first === last, so no throw is started — which is what makes
+    // "press to stop" stick.
     if (last && first && last.t > first.t) {
-      // Face velocity over the tail of the gesture, converted back into
-      // document px so the coast continues at the speed the drag ended.
-      startCoast(((last.y - first.y) / (last.t - first.t)) * GAIN);
+      startCoast((last.y - first.y) / (last.t - first.t));
     }
     samples.length = 0;
   }

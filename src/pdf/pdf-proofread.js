@@ -34,6 +34,7 @@
  */
 
 import { getPdfjs } from "./pdfjs-loader.js";
+import { drawAnnotationsOnPage, loadPdfAnnotations } from "./pdf-annot-raster.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -120,7 +121,7 @@ function makeProgressOverlay(total) {
  *  both canvases. Nothing but the two strings survives the call — a
  *  retained canvas per page is the memory leak this whole module is
  *  arranged to avoid. */
-async function rasterizePage(page) {
+async function rasterizePage(page, annots, pageIndex) {
   const base = page.getViewport({ scale: 1 });
   const scale = Math.min(MAX_PAGE_RASTER_SCALE, MAX_PAGE_RASTER_WIDTH / Math.max(base.width, 1));
   const viewport = page.getViewport({ scale });
@@ -129,6 +130,12 @@ async function rasterizePage(page) {
   canvas.width = Math.max(1, Math.round(viewport.width));
   canvas.height = Math.max(1, Math.round(viewport.height));
   await page.render({ canvas, viewport, background: "#ffffff" }).promise;
+  // Zotero's highlights and ink live outside the PDF — the viewer draws
+  // them as a DOM overlay, so pdfjs renders a clean page and the proof
+  // would silently lose every mark the user made while reading. Bake
+  // them in before anything is encoded (the thumbnail is taken from this
+  // same canvas, so the rail gets them too).
+  drawAnnotationsOnPage(canvas.getContext("2d"), viewport, scale, annots, pageIndex);
   // JPEG, not WebP: `toDataURL("image/webp")` silently falls back to PNG
   // on WebKit (see README-TECHNICAL's platform gotchas), which would
   // quietly triple the envelope on macOS and iPad.
@@ -172,8 +179,13 @@ function makeId(prefix, i) {
  * session is aimed at the ink, not at the paper — but it is an ordinary
  * layer lock, so the layers panel can unlock it whenever the user does
  * want to move a page.
+ *
+ * `opts.annotations` is a normalized Zotero annotation list for the
+ * source PDF; its marks are baked into the page rasters. Callers that
+ * don't have one pass nothing and get clean pages.
  */
-export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFileId, pageNumbers, onProgress) {
+export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFileId, pageNumbers, opts = {}) {
+  const { onProgress, annotations = [] } = opts;
   const pdfjs = await getPdfjs();
   const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise;
   try {
@@ -191,7 +203,8 @@ export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFile
       onProgress?.(i + 1, pageNumber);
       await nextFrame();
       const page = await doc.getPage(pageNumber);
-      const raster = await rasterizePage(page);
+      // Zotero indexes pages from 0; `pageNumber` is pdfjs's 1-based one.
+      const raster = await rasterizePage(page, annotations, pageNumber - 1);
       // pdfjs caches per-page render state; the proof never revisits a
       // page, so hand it back immediately.
       page.cleanup();
@@ -295,12 +308,22 @@ export async function createProofNotebook(state, fileId) {
   const pageNumbers = await openProofreadPagesModal({ name: sourceName, total });
   if (!pageNumbers || !pageNumbers.length) return null;
 
+  // Read before the overlay goes up. Cache-first, but credentials are
+  // passed so a proof of a PDF the user has never opened in the viewer
+  // — the file-tree row menu reaches any PDF, open or not — still gets
+  // its marks instead of silently baking clean pages. A PDF with no
+  // Zotero attachment yields an empty list rather than an error.
+  const annotations = await loadPdfAnnotations(fileId, {
+    userId: state.settings?.zoteroUserId,
+    apiKey: state.settings?.zoteroApiKey,
+  });
+
   const progress = makeProgressOverlay(pageNumbers.length);
   let content;
   try {
     content = await buildProofNotebookContent(
       data, sourceName, fileId, pageNumbers,
-      (done, pageNumber) => progress.step(done, pageNumber),
+      { onProgress: (done, pageNumber) => progress.step(done, pageNumber), annotations },
     );
   } catch (e) {
     console.error("Create Proofread Notebook: render failed:", e);

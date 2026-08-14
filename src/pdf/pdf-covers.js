@@ -24,6 +24,7 @@
  */
 
 import { parseAnnotationPosition } from "./pdf-viewer-annotations.js";
+import { drawAnnotationsOnPage, loadPdfAnnotations } from "./pdf-annot-raster.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -81,46 +82,6 @@ function dataUrlToBytes(dataUrl) {
   return out;
 }
 
-/** Draw page-1 annotation marks onto the cover canvas — same painting
- *  the thumbnail overlay uses: translucent fills for highlight rects,
- *  stroked paths for ink. `viewport` maps PDF user space → canvas px
- *  (honouring crop-box origins / rotation). */
-function drawCoverAnnotations(ctx, viewport, scale, annots) {
-  for (const ann of annots) {
-    const pos = parseAnnotationPosition(ann);
-    if (!pos || pos.pageIndex !== 0) continue;
-
-    if (pos.rects?.length && ann.type !== "ink") {
-      ctx.fillStyle = ann.color || "#ffff00";
-      ctx.globalAlpha = 0.3;
-      for (const rect of pos.rects) {
-        if (!Array.isArray(rect) || rect.length < 4) continue;
-        const [ax, ay] = viewport.convertToViewportPoint(rect[0], rect[1]);
-        const [bx, by] = viewport.convertToViewportPoint(rect[2], rect[3]);
-        ctx.fillRect(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay));
-      }
-      ctx.globalAlpha = 1.0;
-    }
-
-    if (ann.type === "ink" && pos.paths?.length) {
-      ctx.strokeStyle = ann.color || "#ff0000";
-      ctx.lineWidth = Math.max(0.5, scale);
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      for (const pathPoints of pos.paths) {
-        if (!pathPoints || pathPoints.length < 4) continue;
-        ctx.beginPath();
-        for (let i = 0; i < pathPoints.length; i += 2) {
-          const [px, py] = viewport.convertToViewportPoint(pathPoints[i], pathPoints[i + 1]);
-          if (i === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
-        }
-        ctx.stroke();
-      }
-    }
-  }
-}
-
 /** Rasterize page 1 of `bytes` and return encoded image bytes (WebP
  *  where the platform canvas supports it, PNG otherwise). `annots` is a
  *  normalized annotation list (zotero-annotations.js) whose page-1
@@ -140,7 +101,7 @@ export async function renderCoverFromPdfBytes(bytes, annots = []) {
     canvas.width = Math.round(viewport.width);
     canvas.height = Math.round(viewport.height);
     await page.render({ canvas, viewport, background: "#ffffff" }).promise;
-    if (annots.length) drawCoverAnnotations(canvas.getContext("2d"), viewport, scale, annots);
+    if (annots.length) drawAnnotationsOnPage(canvas.getContext("2d"), viewport, scale, annots, 0);
     return dataUrlToBytes(canvas.toDataURL("image/webp", COVER_QUALITY));
   } finally {
     await doc.destroy();
@@ -170,20 +131,6 @@ function annotSig(annots) {
     if (pos && pos.pageIndex === 0) keys.push(`${a.key}:${a.color}`);
   }
   return keys.sort().join("|");
-}
-
-/** Load the cached annotation list for a PDF's Zotero attachment —
- *  local disk only, never the network. Empty for non-Zotero PDFs. */
-async function loadCoverAnnotations(fileId) {
-  try {
-    const { getPdfMeta } = await import("../sync/pdf-sync.js");
-    const attKey = getPdfMeta(fileId)?.zoteroAttKey;
-    if (!attKey) return [];
-    const { getCachedAnnotations } = await import("../zotero-annotations.js");
-    return await getCachedAnnotations(attKey);
-  } catch {
-    return [];
-  }
 }
 
 /** Return the cover's object URL if one is already stored (session
@@ -234,7 +181,7 @@ async function renderAndStoreCover(fileId, bytes) {
       }
     }
     if (!bytes || !bytes.length) return null;
-    const annots = await loadCoverAnnotations(fileId);
+    const annots = await loadPdfAnnotations(fileId);
     const coverBytes = await renderCoverFromPdfBytes(
       bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes),
       annots,
@@ -274,7 +221,7 @@ export async function refreshPdfCoverIfStale(fileId) {
     const url = await ensurePdfCover(fileId);
     return { url, changed: !!url };
   }
-  const annots = await loadCoverAnnotations(fileId);
+  const annots = await loadPdfAnnotations(fileId);
   const sig = annotSig(annots);
   if ((readSigMap()[fileId] || "") === sig) return { url: existing, changed: false };
   if (_inFlight.has(fileId)) return { url: await _inFlight.get(fileId), changed: true };
