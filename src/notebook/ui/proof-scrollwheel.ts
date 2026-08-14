@@ -35,9 +35,14 @@ import { isIOS } from "../../settings/settings-ui.js";
 export const WHEEL_WIDTH = 50;
 export const WHEEL_HEIGHT = 200;
 
-/** Offset from the top of the window / left edge, before safe-area and
- *  docked-pane insets are folded in. */
+/** Offset from the top of the window, before safe-area and docked-pane
+ *  insets are folded in. */
 const WHEEL_TOP = 0;
+
+/** Clearance from the left, measured from the *inside* edge of the file
+ *  sidebar's always-present grip strip rather than from the window —
+ *  otherwise the closed sidebar's grip clips the wheel's first 10 px and
+ *  takes those touches with it. */
 const WHEEL_LEFT = 10;
 
 /** Document px travelled per px of finger travel. A real wheel's face
@@ -98,13 +103,24 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     style: {
       position: "absolute",
       top: `calc(env(safe-area-inset-top) + ${WHEEL_TOP}px + var(--pane-dock-top-height, 0px))`,
-      left: `calc(env(safe-area-inset-left) + ${WHEEL_LEFT}px + var(--pane-dock-left-width, 0px))`,
+      // `--sidebar-grip-width` is also the file sidebar's collapsed
+      // width, so this clears the grip when the sidebar is closed and
+      // lands squarely underneath the sidebar when it's open — which,
+      // with the z-index below, is how the wheel gets covered instead of
+      // floating over the file tree.
+      left: `calc(env(safe-area-inset-left) + var(--sidebar-grip-width, 20px) + ${WHEEL_LEFT}px`
+        + ` + var(--pane-dock-left-width, 0px))`,
       width: `${WHEEL_WIDTH}px`, height: `${WHEEL_HEIGHT}px`,
       display: "none", boxSizing: "border-box",
       borderRadius: "10px", overflow: "hidden",
-      // Above the toolbar (100) so a centred bar can't bury it, below the
-      // shelf (150) which lives on the opposite edge anyway.
-      zIndex: "120",
+      // Below the file sidebar (100) on purpose: an open sidebar should
+      // bury the wheel rather than have it sitting on top of the file
+      // tree. `#notebook-container` deliberately creates no stacking
+      // context, so this number really is compared against the
+      // sidebar's. Still above floating panes (90) — and a left-docked
+      // pane pushes the wheel clear of itself via `--pane-dock-left-width`
+      // anyway. Nothing else in the notebook shares this corner.
+      zIndex: "95",
       boxShadow: "0 2px 12px rgba(0,0,0,0.18)",
       // The wheel owns its touches outright — no browser panning, no
       // synthetic scroll, no long-press callout.
