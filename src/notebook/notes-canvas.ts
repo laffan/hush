@@ -328,6 +328,21 @@ export class NotesCanvas {
       state: this.state as unknown as import("./drawing/sync-shim").ShimState,
       theme: this.state.theme,
       camera: this.state.camera,
+      onTouchGestureStart: () => {
+        // Every burst starts from a clean frame. The pan and pinch
+        // handlers below share `touchGestureCamStart` and `touchPinching`,
+        // and the pan handler defers to the pinch outright — so a
+        // `touchPinching` left standing by a burst that ended without its
+        // end callback (iPadOS has several such paths: palm rejection, a
+        // system edge swipe, a cancelled contact) silently killed
+        // two-finger panning from then on. Tying the frame's lifetime to
+        // the burst rather than to matched start/end pairs caps the cost
+        // of any such leak at the gesture it happened in.
+        touchGestureCamStart = null;
+        touchPinching = false;
+        touchZoomEngaged = false;
+        touchRotateEngaged = false;
+      },
       onTouchPanStart: () => {
         if (!touchGestureCamStart) touchGestureCamStart = { ...this.state.camera };
         touchGestureScrollTop = this.state.gutterScrollDOM?.scrollTop || 0;

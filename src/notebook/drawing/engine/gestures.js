@@ -38,6 +38,14 @@
  *      (not the burst-start latch) so callers ratio from ~1 with no
  *      zoom jump, and both pinch callbacks carry the finger-pair
  *      angle so the notebook can drive opt-in canvas rotation.
+ *  36. `onGestureStart` fires the moment a burst is recognised as a
+ *      gesture, ahead of any pan / pinch start. The host keeps its own
+ *      frame of reference for these gestures and used to rebuild it
+ *      purely from matched start/end pairs; iPadOS can end a burst
+ *      through paths that fire no end callback, and one leaked "a
+ *      pinch owns the camera" flag then suppressed two-finger panning
+ *      for the life of the canvas. A per-burst reset caps any such
+ *      leak at the gesture it happened in.
  * ============================================================
  *
  * gestures.js — two-/three-finger tap recogniser + two-finger pan.
@@ -108,6 +116,9 @@ export function createGestures({
   selectionEngine,
   onUndo,
   onRedo,
+  onGestureStart,  // Hush delta #36: () => void — the burst has been recognised as a
+                   //   gesture, ahead of any pan / pinch start. Lets the host reset its
+                   //   own gesture frame per burst instead of trusting matched end calls.
   onPanStart,      // Hush delta #10: () => void — two-finger drift crossed PAN_START_2
   onPanMove,       // Hush delta #10: (dx, dy) => void — midpoint delta from pan-start, in client px
   onPanEnd,        // Hush delta #10: () => void — every touch has lifted after a pan
@@ -354,6 +365,11 @@ export function createGestures({
       e.stopImmediatePropagation();
       if (!gestureMode) {
         gestureMode = true;
+        onGestureStart && onGestureStart();
+        // Also hands back the pointer capture the first contact took —
+        // see stroke.js delta #35. A captured touch pointer that is
+        // still held when the gesture starts can be cancelled outright
+        // by iPadOS, which drops us below the two contacts a pan needs.
         strokeEngine.cancelActiveStroke();
         if (selectionEngine && selectionEngine.cancelActive) selectionEngine.cancelActive();
       } else {

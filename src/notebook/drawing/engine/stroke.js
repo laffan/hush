@@ -87,6 +87,15 @@
  *      drifts nor holds is a tap — `onFingerTap` — and clears the
  *      selection, so the finger owns the whole selection vocabulary
  *      while a brush is active: tap clears, drag boxes, hold lassos.
+ *  35. `cancelActiveStroke()` releases the SVG's pointer capture as
+ *      well as clearing stroke / finger-hold state. Both pointerdown
+ *      paths capture (delta #19's finger-hold arm, and a normal
+ *      stroke), and the gesture recogniser calls this the moment a
+ *      second finger promotes the burst. Leaving the first contact
+ *      captured let iPadOS cancel it outright as the multi-touch
+ *      gesture began, dropping the recogniser to one tracked contact —
+ *      below the two a pan or pinch needs — so two-finger navigation
+ *      intermittently died in pen mode and nowhere else.
  *   (Deltas 4 + 5 live in selection.js + gestures.js; #24 in
  *    gestures.js; #26 — the per-stroke streamline cache — in
  *    stroke-render.js; #30 — ImageBitmap tinted atlases, so stamp
@@ -437,6 +446,17 @@ export function createStrokeEngine({
     }
     state.longPressAnchor = null;
     state.longPressPointer = null;
+  }
+
+  /** Give back the SVG's pointer capture for `pid`, if it holds one.
+   *  Both guards matter: `hasPointerCapture` keeps this from throwing on
+   *  a pointer we never captured, and the try/catch covers a pointer the
+   *  browser has already retired. */
+  function releaseCapture(pid) {
+    if (pid === null || pid === undefined) return;
+    try {
+      if (svg.hasPointerCapture(pid)) svg.releasePointerCapture(pid);
+    } catch { /* pointer already gone */ }
   }
 
   // --------- pointer handlers ---------
@@ -887,6 +907,23 @@ export function createStrokeEngine({
     // recogniser when a second finger lands to promote the burst into a
     // multi-touch gesture.
     cancelActiveStroke() {
+      // Hush delta #35: hand back the pointer capture the first contact
+      // took, not just the stroke state.
+      //
+      // Both pointerdown paths call `svg.setPointerCapture()` — the
+      // pencil-only finger-hold arm (delta #19) and a normal stroke. When
+      // the second finger promotes the burst into a gesture, releasing
+      // that capture is what keeps iPadOS from cancelling the first
+      // contact outright: a captured touch pointer that is still held
+      // when a multi-touch gesture begins gets a `pointercancel`, which
+      // drops the recogniser to one tracked contact and so below the two
+      // it needs — two-finger pan and pinch then simply never engage.
+      // It reads as intermittent because it depends on whether the first
+      // finger's landing armed a capture before the second arrived, and
+      // it never appeared outside pen mode because everywhere else the
+      // SVG is non-capturing and the canvas's own touch handlers run.
+      releaseCapture(state.fingerHoldPointer);
+      releaseCapture(state.activePointerId);
       // Hush delta #19: a second finger landing also kills any
       // pending finger-hold so the multi-touch gesture (pan / pinch /
       // tap) wins over the lasso handoff.

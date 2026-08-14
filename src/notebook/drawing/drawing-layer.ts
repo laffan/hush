@@ -65,6 +65,7 @@ export function createDrawingLayer({
   state,
   theme,
   camera,
+  onTouchGestureStart,
   onTouchPanStart,
   onTouchPanMove,
   onTouchPanEnd,
@@ -76,6 +77,14 @@ export function createDrawingLayer({
   state: ShimState;
   theme: CanvasTheme;
   camera: Camera;
+  /** Fired once when a touch burst is recognised as a gesture, ahead of
+   *  any pan / pinch start. The host keeps its own frame of reference
+   *  for these gestures (camera at gesture start, and which of pan /
+   *  pinch owns it); rebuilding that frame from matched start/end pairs
+   *  alone is fragile, because iPadOS can end a burst through paths that
+   *  fire no end callback at all. Resetting on burst start means a leak
+   *  can cost at most the gesture it happened in. */
+  onTouchGestureStart?: () => void;
   /** Two-finger pan hooks — fired by the engine's gesture recogniser
    *  when the user drags two fingers inside the drawing surface. The
    *  notebook wires these into `state.camera` so iPad users can pan
@@ -386,6 +395,7 @@ export function createDrawingLayer({
     selectionEngine,
     onUndo: () => state.undo(),
     onRedo: () => state.redo(),
+    onGestureStart: () => { onTouchGestureStart && onTouchGestureStart(); },
     onPanStart: () => { onTouchPanStart && onTouchPanStart(); },
     onPanMove: (dx: number, dy: number) => { onTouchPanMove && onTouchPanMove(dx, dy); },
     onPanEnd: () => { onTouchPanEnd && onTouchPanEnd(); },

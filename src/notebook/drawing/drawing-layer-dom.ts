@@ -154,6 +154,10 @@ export function createDrawingDom(container: HTMLElement, worldSize: number): Dra
     borderRadius: "999px",
     background: "rgba(17,17,17,0.85)",
     color: "#fff",
+    // App UI font, not the notebook's content font — this is chrome, and
+    // it sat inside `#notebook-container`, which inherits the active
+    // style's font from `body`.
+    fontFamily: "var(--ui-font-family, system-ui, sans-serif)",
     fontSize: "11px",
     fontWeight: "500",
     letterSpacing: "0.03em",
