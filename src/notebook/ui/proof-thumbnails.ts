@@ -151,8 +151,10 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
 
   const root = h("div", {
     style: {
-      position: "absolute", top: "calc(env(safe-area-inset-top) + 20px + var(--pane-dock-top-height, 0px))",
-      bottom: `calc(env(safe-area-inset-bottom) + ${BOTTOM_CHROME_PX}px + var(--pane-dock-bottom-height, 0px))`,
+      // Vertical placement is written by `applyPlacement` on the first
+      // update: it depends on `state.paneHosted`, which a pane / stack
+      // host sets after this constructor has already run.
+      position: "absolute",
       display: "none", flexDirection: "column", boxSizing: "border-box",
       // Below the shelf (150) so the shelf's rounded edge stays on top,
       // above the toolbar (100) so a centred bar can't cover the rail.
@@ -473,7 +475,28 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
       lastRight = right;
       root.style.right = `${right}px`;
     }
+    applyPlacement();
     syncActive();
+  }
+
+  /** Top and bottom offsets, against whichever box the canvas fills.
+   *  Window safe-area bands and dock footprints belong to the window
+   *  form only: a pane's edges are interior, already carved out by the
+   *  host, and folding the window's insets in again would push the rail
+   *  down inside its own pane (and, with a bottom dock, off the end of
+   *  it). The 62 px foot stays either way — the canvas-rotation and
+   *  background buttons park in that corner in a pane too. */
+  let lastTop = "";
+  let lastBottom = "";
+  function applyPlacement() {
+    const top = state.paneHosted
+      ? "20px"
+      : "calc(env(safe-area-inset-top) + 20px + var(--pane-dock-top-height, 0px))";
+    const bottom = state.paneHosted
+      ? `${BOTTOM_CHROME_PX}px`
+      : `calc(env(safe-area-inset-bottom) + ${BOTTOM_CHROME_PX}px + var(--pane-dock-bottom-height, 0px))`;
+    if (top !== lastTop) { root.style.top = top; lastTop = top; }
+    if (bottom !== lastBottom) { root.style.bottom = bottom; lastBottom = bottom; }
   }
 
   const onChange = () => update();

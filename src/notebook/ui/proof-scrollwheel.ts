@@ -35,8 +35,8 @@ import { isIOS } from "../../settings/settings-ui.js";
 export const WHEEL_WIDTH = 50;
 export const WHEEL_HEIGHT = 200;
 
-/** Offset from the top of the window, before safe-area and docked-pane
- *  insets are folded in. */
+/** Offset from the top of the host box, before safe-area and
+ *  docked-pane insets are folded in. */
 const WHEEL_TOP = 0;
 
 /** Clearance from the left, measured from the *inside* edge of the file
@@ -44,6 +44,20 @@ const WHEEL_TOP = 0;
  *  otherwise the closed sidebar's grip clips the wheel's first 10 px and
  *  takes those touches with it. */
 const WHEEL_LEFT = 10;
+
+/** Clearance from the host's own corner when the canvas is hosted in a
+ *  pane or stack column: there's no safe-area band or sidebar grip to
+ *  measure from there, just the box. Applied on both axes so the wheel
+ *  clears a docked pane's floating title pill as well as its edge. */
+const WHEEL_PANE_INSET = 10;
+
+/** The wheel is a fixed 50 × 200 control, and a host box that can't
+ *  spare the room for it doesn't want one: it would sit across the
+ *  document it exists to travel. Panes go down to 60 px tall, so this
+ *  is the difference between a proof pane growing a wheel and a proof
+ *  pane being covered by one. */
+const MIN_HOST_HEIGHT = WHEEL_PANE_INSET + WHEEL_HEIGHT + 24;
+const MIN_HOST_WIDTH = WHEEL_PANE_INSET + WHEEL_WIDTH + 120;
 
 /** Document px travelled per px of finger travel. A real wheel's face
  *  moves a fraction of the distance the page does; below ~2 the wheel
@@ -101,15 +115,10 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
 
   const root = h("div", {
     style: {
+      // Placement is written by `applyPlacement` on the first update:
+      // it depends on `state.paneHosted`, which the host sets after this
+      // constructor has already run.
       position: "absolute",
-      top: `calc(env(safe-area-inset-top) + ${WHEEL_TOP}px + var(--pane-dock-top-height, 0px))`,
-      // `--sidebar-grip-width` is also the file sidebar's collapsed
-      // width, so this clears the grip when the sidebar is closed and
-      // lands squarely underneath the sidebar when it's open — which,
-      // with the z-index below, is how the wheel gets covered instead of
-      // floating over the file tree.
-      left: `calc(env(safe-area-inset-left) + var(--sidebar-grip-width, 20px) + ${WHEEL_LEFT}px`
-        + ` + var(--pane-dock-left-width, 0px))`,
       width: `${WHEEL_WIDTH}px`, height: `${WHEEL_HEIGHT}px`,
       display: "none", boxSizing: "border-box",
       borderRadius: "10px", overflow: "hidden",
@@ -268,16 +277,59 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
 
   // ── visibility ──
 
+  /** Park the wheel against the host's own top-left corner.
+   *
+   *  Window chrome is only the wheel's business when the canvas owns the
+   *  window. Inside a pane or a stack column the host box *is* the
+   *  screen as far as this control is concerned — its left edge is the
+   *  edge to park against, and the sidebar grip, safe-area bands and
+   *  dock footprints have already been carved out of the box by whoever
+   *  laid the host out. Folding them in a second time would push the
+   *  wheel across the pane it's sitting in. */
+  let lastTop = "";
+  let lastLeft = "";
+  function applyPlacement() {
+    const top = state.paneHosted
+      ? `${WHEEL_PANE_INSET}px`
+      : `calc(env(safe-area-inset-top) + ${WHEEL_TOP}px + var(--pane-dock-top-height, 0px))`;
+    // `--sidebar-grip-width` is also the file sidebar's collapsed width,
+    // so the window form clears the grip when the sidebar is closed and
+    // lands squarely underneath the sidebar when it's open — which, with
+    // the z-index above, is how the wheel gets covered instead of
+    // floating over the file tree.
+    const left = state.paneHosted
+      ? `${WHEEL_PANE_INSET}px`
+      : `calc(env(safe-area-inset-left) + var(--sidebar-grip-width, 20px) + ${WHEEL_LEFT}px`
+        + ` + var(--pane-dock-left-width, 0px))`;
+    // Guarded writes: `update` runs on every state change, and an
+    // unconditional style write costs a style recalc each time.
+    if (top !== lastTop) { root.style.top = top; lastTop = top; }
+    if (left !== lastLeft) { root.style.left = left; lastLeft = left; }
+  }
+
+  /** Whether the host box has room for the control. An unmounted or
+   *  zero-size host (an inactive pane is `display: none`) reads as
+   *  roomy: there's nothing to measure, and hiding on a hidden host
+   *  would only make the wheel flicker back on when it reappears. */
+  function hostFits(): boolean {
+    const host = root.parentElement;
+    if (!host) return true;
+    const r = host.getBoundingClientRect();
+    if (!r.width || !r.height) return true;
+    return r.height >= MIN_HOST_HEIGHT && r.width >= MIN_HOST_WIDTH;
+  }
+
   /** The wheel exists to replace hardware the device doesn't have. A
-   *  desktop already has a wheel; a pane-hosted or gutter-docked canvas
-   *  scrolls with its host; a notebook that isn't a proof isn't the long
-   *  document this was built for. */
+   *  desktop already has a wheel; a gutter-docked canvas is scroll-locked
+   *  to the document beside it, so its camera isn't the wheel's to
+   *  drive; a notebook that isn't a proof isn't the long document this
+   *  was built for. A pane *is* in scope — a proof read in a pane
+   *  travels exactly like a proof read full-screen. */
   function shouldShow(): boolean {
     if (!isIOS()) return false;
     if (!state.proof) return false;
-    if (state.paneHosted) return false;
     if (state.gutterScrollDOM) return false;
-    return true;
+    return hostFits();
   }
 
   function update() {
@@ -287,17 +339,28 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
       root.style.display = next ? "block" : "none";
       if (!next) stopCoast();
     }
-    if (visible) applySkin();
+    if (visible) { applyPlacement(); applySkin(); }
   }
 
   const onChange = () => update();
   state.addEventListener("change", onChange);
+
+  // A pane resize changes whether the wheel fits, and emits no canvas
+  // state change to ride on.
+  let ro: ResizeObserver | null = null;
+  if (typeof ResizeObserver !== "undefined") {
+    ro = new ResizeObserver(() => update());
+    // The host appends `root` right after this constructor returns.
+    requestAnimationFrame(() => { if (root.parentElement) ro?.observe(root.parentElement); });
+  }
+
   update();
 
   return {
     root,
     destroy() {
       state.removeEventListener("change", onChange);
+      ro?.disconnect();
       stopCoast();
       root.remove();
     },

@@ -206,7 +206,13 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
 
     const snapshot = fileContent ? decodeNotebookContent(fileContent) : null;
     if (snapshot) {
-      canvas.loadShapes(snapshot.shapes, snapshot.layers);
+      // Content, not viewport: a column that dropped splits and proof
+      // metadata on load would write them out of the file on its first
+      // autosave. Mirrors the main canvas and the pane path.
+      canvas.loadShapes(snapshot.shapes, snapshot.layers, undefined, {
+        splits: snapshot.splits,
+        proof: snapshot.proof || null,
+      });
       canvas.state.flowchart.deserialize(snapshot.flowEdges);
       if (Array.isArray(snapshot.bookmarks)) {
         canvas.state.bookmarks = snapshot.bookmarks;
@@ -244,6 +250,8 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
         flowEdges: canvas.state.flowchart.serialize(),
         bookmarks: canvas.state.bookmarks,
         camera: canvas.state.camera,
+        splits: canvas.state.splits,
+        proof: canvas.state.proof ?? undefined,
       });
       if (IS_TAURI) {
         try { await tauriInvoke("save_file", { id: item.fileId, content }); }
