@@ -20,6 +20,7 @@ fn node(id: &str, node_type: &str, name: &str, file_id: Option<&str>, children: 
         bg_color: None,
         show_numbers: false,
         gutter: false,
+        proofread: false,
         ..Default::default()
     }
 }

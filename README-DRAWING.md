@@ -23,6 +23,8 @@ src/notebook/drawing/
                          handle, snap zones, minimize
   bg-settings-fixed-button.ts  Fixed bottom-right row: rotation readout/toggle + bg settings
   pocket-blit.ts         Pocket / done-canvas blit helpers
+  stroke-paint.ts        Per-stroke re-render into a foreign ctx (selection
+                         rasterizer, export pipeline)
   layers-panel.ts        Layers dropdown (notebook-level)
   engine/                The stroke engine (ported; every Hush modification is tagged —
                          `grep -rn "Hush delta #" src/notebook/drawing/engine/`)
@@ -76,6 +78,8 @@ Before the blit-forward path (delta #25), every re-anchor repainted all visible 
 Every modification to `engine/` is tagged at the call site (`grep -rn "Hush delta #"`) and listed here so a diff against the reference demo has a known shape. Deltas #1–#9 are integration plumbing (host-supplied `pointToLocal` / DPR / atlas URLs, exposed `fullRebake`, square handles, `pocketed` → hidden, delete badge suppressed). The rest are behavioural or perf, and several document non-obvious WebKit cost models:
 
 - **#10–#13 touch**: two-finger pan + pinch recognized in `gestures.js` (the SVG overlay owns touches in pen mode), promotion works mid-stroke (the active stroke is cancelled; palm contacts rejected by size; stale contacts swept after 5 s).
+- **#35 capture handback on gesture promotion**: `cancelActiveStroke()` releases the SVG's pointer capture, not just the stroke / finger-hold state. Both pointerdown paths capture — delta #19's finger-hold arm and an ordinary stroke — and leaving the first contact captured let iPadOS cancel it as the multi-touch gesture began, dropping the recognizer to one tracked contact, below the two a pan or pinch needs. That is why two-finger navigation died intermittently in pen mode and nowhere else: everywhere else the SVG is non-capturing and the canvas's own touch handlers run.
+- **#36 `onGestureStart` + one `endPanPinch()`**: the host keeps its own gesture frame (camera at gesture start, and which of pan / pinch owns it) and used to rebuild it purely from matched start/end pairs. Every teardown path now funnels through `endPanPinch()` so the end callbacks actually fire — `pointercancel` and the stale-contact prune both skipped them — and, belt and braces, `onGestureStart` fires at burst recognition so the host resets the frame per burst. A leaked "a pinch owns the camera" flag otherwise suppressed two-finger panning for the life of the canvas; now it can cost at most one gesture.
 - **#14 theme-tracking colors**: strokes carry `colorIsAuto` / `colorIsHeading` flags so theme switches retint them en masse.
 - **#15 `setEventActive(false)`** — disable engine event capture without clearing the selection (brush-slot taps must not wipe a retroactive selection).
 - **#16 `setChromeInteractive(false)`** — keep the selection bbox painted but `pointer-events: none` during draw/erase/slice so an invisible handle can't intercept the next stroke.

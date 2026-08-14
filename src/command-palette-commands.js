@@ -145,6 +145,10 @@ const icons = {
   sticky: `<svg viewBox="0 0 24 24"><path d="M4 4 h16 v10 l-6 6 H4 z"/><path d="M20 14 h-6 v6"/></svg>`,
   // Calendar grid — Insert Date / Date-Time.
   calendar: `<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg>`,
+  // Proofread notebook — the notebook dot-grid with its middle row of
+  // dots replaced by a solid rule, matching the file tree's glyph for
+  // the same thing.
+  proofreadPdf: `<svg viewBox="0 0 24 24"><circle cx="5" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="5" cy="19" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="19" r="1.4" fill="currentColor" stroke="none"/><line x1="3" y1="12" x2="21" y2="12"/></svg>`,
 };
 
 /** Build the per-style "Use Style: <name>" command rows. Mirrors the
@@ -325,6 +329,13 @@ function buildCommands(state) {
       action: async (s) => {
         const { openZoteroSavePdfModal } = await import("./pdf/zotero-save-pdf.js");
         openZoteroSavePdfModal(s);
+      } },
+    { id: "proofread-pdf", label: "Create Proofread Notebook", icon: icons.proofreadPdf, shortcutKey: null, ctx: "shared",
+      keywords: "proofread pdf proof annotate mark up pages notebook split grab",
+      hiddenIf: (s) => !s.currentPdfFileId,
+      action: async (s) => {
+        const { createProofNotebook } = await import("./pdf/pdf-proofread.js");
+        await createProofNotebook(s, s.currentPdfFileId);
       } },
     { id: "pdf-update-annotations", label: "PDF: Update Annotations", icon: icons.zotero, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => {

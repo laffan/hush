@@ -293,3 +293,14 @@
     min-height: 200px;
   }
 }
+
+/* "Save to Desk" — the secondary action beside Export, shown only for
+   PDF output. Deliberately not accent-filled: Export is still the
+   primary verb, this is the alternative destination. */
+.notebook-export-modal .nxm-alt {
+  font-weight: 600;
+}
+.notebook-export-modal .nxm-alt:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

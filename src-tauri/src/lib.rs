@@ -114,6 +114,11 @@ pub struct TreeNode {
     // must survive the save_file_tree / get_file_tree round trip.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub gutter: bool,
+    // Notebook-only — built from a PDF by Create Proofread Notebook. Only
+    // the sidebar reads it (the proofread glyph); the notebook itself
+    // carries the real metadata in its `proof` envelope field.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub proofread: bool,
     // PDF-only — this node is an alias into a project's own PDFs folder:
     // it shares the original's fileId (binary + registry metadata) but is
     // just a reference, so deleting it never touches the desk copy.

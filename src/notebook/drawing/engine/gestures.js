@@ -38,6 +38,14 @@
  *      (not the burst-start latch) so callers ratio from ~1 with no
  *      zoom jump, and both pinch callbacks carry the finger-pair
  *      angle so the notebook can drive opt-in canvas rotation.
+ *  36. `onGestureStart` fires the moment a burst is recognised as a
+ *      gesture, ahead of any pan / pinch start. The host keeps its own
+ *      frame of reference for these gestures and used to rebuild it
+ *      purely from matched start/end pairs; iPadOS can end a burst
+ *      through paths that fire no end callback, and one leaked "a
+ *      pinch owns the camera" flag then suppressed two-finger panning
+ *      for the life of the canvas. A per-burst reset caps any such
+ *      leak at the gesture it happened in.
  * ============================================================
  *
  * gestures.js — two-/three-finger tap recogniser + two-finger pan.
@@ -108,6 +116,9 @@ export function createGestures({
   selectionEngine,
   onUndo,
   onRedo,
+  onGestureStart,  // Hush delta #36: () => void — the burst has been recognised as a
+                   //   gesture, ahead of any pan / pinch start. Lets the host reset its
+                   //   own gesture frame per burst instead of trusting matched end calls.
   onPanStart,      // Hush delta #10: () => void — two-finger drift crossed PAN_START_2
   onPanMove,       // Hush delta #10: (dx, dy) => void — midpoint delta from pan-start, in client px
   onPanEnd,        // Hush delta #10: () => void — every touch has lifted after a pan
@@ -159,14 +170,36 @@ export function createGestures({
 
   function isTouch(e) { return e.pointerType === 'touch'; }
 
+  /** Close out a pan / pinch that is still in flight, firing the host's
+   *  end callbacks. EVERY path that tears a burst down has to come
+   *  through here: the host keeps its own gesture frame (camera at
+   *  gesture start, "a pinch owns the camera" flag) and rebuilds it from
+   *  these callbacks, so a burst that ends without them leaves that
+   *  frame half-open. On iPadOS that is not a corner case — palm
+   *  rejection and system gestures fire pointercancel readily, and a
+   *  leaked pinch flag suppressed every subsequent two-finger pan for
+   *  the life of the canvas. */
+  function endPanPinch() {
+    if (panning) {
+      panning = false;
+      panStartMid = null;
+      onPanEnd && onPanEnd();
+    }
+    if (pinching) {
+      pinching = false;
+      pinchStartDist = 0;
+      pinchStartAngle = 0;
+      onPinchEnd && onPinchEnd();
+    }
+  }
+
   function resetBurst() {
+    endPanPinch();
     active.clear();
     endedTaps.length = 0;
     windowStart = 0;
     gestureMode = false;
-    panning = false;
     panStartMid = null;
-    pinching = false;
     pinchStartDist = 0;
     pinchStartAngle = 0;
     cancelFlush();
@@ -277,11 +310,12 @@ export function createGestures({
       }
       if (active.size === 0) {
         // Whole map was stale — fall through to the fresh-burst reset
-        // below as if nothing had been tracked.
+        // below as if nothing had been tracked. Routed through
+        // endPanPinch so a pan / pinch stranded by the dropped
+        // pointerup still hands the host its end callbacks.
+        endPanPinch();
         gestureMode = false;
-        panning = false;
         panStartMid = null;
-        pinching = false;
         pinchStartDist = 0;
         endedTaps.length = 0;
       }
@@ -331,6 +365,11 @@ export function createGestures({
       e.stopImmediatePropagation();
       if (!gestureMode) {
         gestureMode = true;
+        onGestureStart && onGestureStart();
+        // Also hands back the pointer capture the first contact took —
+        // see stroke.js delta #35. A captured touch pointer that is
+        // still held when the gesture starts can be cancelled outright
+        // by iPadOS, which drops us below the two contacts a pan needs.
         strokeEngine.cancelActiveStroke();
         if (selectionEngine && selectionEngine.cancelActive) selectionEngine.cancelActive();
       } else {
@@ -444,17 +483,7 @@ export function createGestures({
     // mid-burst because stroke.js keys off its own pointerdown, which
     // we've already swallowed). The user can start a new pan/pinch by
     // lifting all fingers and re-landing two.
-    if (panning) {
-      panning = false;
-      panStartMid = null;
-      onPanEnd && onPanEnd();
-    }
-    if (pinching) {
-      pinching = false;
-      pinchStartDist = 0;
-      pinchStartAngle = 0;
-      onPinchEnd && onPinchEnd();
-    }
+    endPanPinch();
     // Don't let a queued flush fire a stray move after the end
     // callbacks above.
     cancelFlush();
@@ -468,6 +497,12 @@ export function createGestures({
   function onPointerCancel(e) {
     if (!isTouch(e)) return;
     active.delete(e.pointerId);
+    // A cancelled contact ends the gesture for the host exactly like a
+    // lift does — iPadOS cancels touches often enough (palm rejection,
+    // a system edge swipe) that skipping the end callbacks here left
+    // the notebook's gesture frame permanently wedged.
+    endPanPinch();
+    cancelFlush();
     if (active.size === 0) resetBurst();
   }
 

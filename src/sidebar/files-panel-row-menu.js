@@ -179,6 +179,9 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
     entries.push({ action: "new-notebook-here", label: "New Notebook" });
   }
 
+  if (isPdf && !item?.pdfAlias) {
+    entries.push({ action: "proofread-pdf", label: "Create Proofread Notebook" });
+  }
   if (!isSpecial && !isImage) {
     entries.push({ action: "flag", label: item?.flagged ? "Unflag" : "Flag" });
   }

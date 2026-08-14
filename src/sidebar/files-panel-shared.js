@@ -44,6 +44,9 @@ export const typeIcons = {
   projectFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><polygon points="8,1 15,15 1,15" /></svg>`,
   notebook: `<svg viewBox="0 0 16 16" class="tree-type-icon notebook-icon"><circle cx="4" cy="4" r="1" /><circle cx="8" cy="4" r="1" /><circle cx="12" cy="4" r="1" /><circle cx="4" cy="8" r="1" /><circle cx="8" cy="8" r="1" /><circle cx="12" cy="8" r="1" /><circle cx="4" cy="12" r="1" /><circle cx="8" cy="12" r="1" /><circle cx="12" cy="12" r="1" /></svg>`,
   notebookFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon notebook-icon flagged-icon"><circle cx="4" cy="4" r="1" /><circle cx="8" cy="4" r="1" /><circle cx="12" cy="4" r="1" /><circle cx="4" cy="8" r="1" /><circle cx="8" cy="8" r="1" /><circle cx="12" cy="8" r="1" /><circle cx="4" cy="12" r="1" /><circle cx="8" cy="12" r="1" /><circle cx="12" cy="12" r="1" /></svg>`,
+  // Proofread notebook: the notebook dot-grid with its middle row of
+  // dots replaced by a solid rule — the page the proof is cut across.
+  proofNotebook: `<svg viewBox="0 0 16 16" class="tree-type-icon notebook-icon"><circle cx="4" cy="4" r="1" /><circle cx="8" cy="4" r="1" /><circle cx="12" cy="4" r="1" /><circle cx="4" cy="12" r="1" /><circle cx="8" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><line x1="2.5" y1="8" x2="13.5" y2="8" /></svg>`,
   // Gutter notebook: the notebook dot-grid with its left and right dot columns
   // replaced by vertical rules, echoing the lines that bracket the docked canvas.
   gutter: `<svg viewBox="0 0 16 16" class="tree-type-icon notebook-icon gutter-icon"><line x1="4" y1="3" x2="4" y2="13" /><circle cx="8" cy="4" r="1" /><circle cx="8" cy="8" r="1" /><circle cx="8" cy="12" r="1" /><line x1="12" y1="3" x2="12" y2="13" /></svg>`,

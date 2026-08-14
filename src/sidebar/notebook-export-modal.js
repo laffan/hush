@@ -83,6 +83,7 @@ export async function openNotebookExportModal(state) {
 
     <div class="nxm-actions">
       <button class="nxm-cancel">Cancel</button>
+      <button class="nxm-alt" data-visible-when="format=pdf">Save to Desk</button>
       <button class="nxm-confirm">Export</button>
     </div>
   `;
@@ -133,6 +134,7 @@ export async function openNotebookExportModal(state) {
   // Buttons
   modal.querySelector(".nxm-cancel").addEventListener("click", cleanup);
   modal.querySelector(".nxm-confirm").addEventListener("click", () => { void runExport(); });
+  modal.querySelector(".nxm-alt").addEventListener("click", () => { void runSaveToDesk(); });
 
   applyConditionalVisibility();
 
@@ -144,6 +146,32 @@ export async function openNotebookExportModal(state) {
     for (const el of modal.querySelectorAll("[data-hide-when]")) {
       const [key, val] = el.dataset.hideWhen.split("=");
       el.style.display = choices[key] === val ? "none" : "";
+    }
+  }
+
+  /** Land the exported PDF in the desk's PDFs folder instead of on
+   *  disk. For a notebook this closes a loop the app otherwise can't:
+   *  mark up a proof, export it, and have the result back in the desk
+   *  ready to read — or to proofread again — without a trip through the
+   *  file system. */
+  async function runSaveToDesk() {
+    const btn = modal.querySelector(".nxm-alt");
+    const original = btn.textContent;
+    btn.disabled = true;
+    try {
+      const name = deriveNotebookName(state) || "notebook-export";
+      const { exportNotebook } = await import("../notebook/notebook-export.ts");
+      btn.textContent = "Rendering…";
+      const bytes = await exportNotebook(canvasInstance, choices);
+      btn.textContent = "Saving…";
+      const { savePdfBytesToDesk } = await import("../pdf/save-pdf-to-desk.js");
+      await savePdfBytesToDesk(state, bytes, name);
+      cleanup();
+    } catch (err) {
+      console.error("Save to Desk failed:", err);
+      btn.textContent = "Save failed";
+      btn.disabled = false;
+      setTimeout(() => { btn.textContent = original; }, 2200);
     }
   }
 

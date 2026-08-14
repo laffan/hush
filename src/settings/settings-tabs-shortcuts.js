@@ -85,6 +85,8 @@ export const shortcutCategories = [
       { key: "shortcutNbGroup", label: "Group shapes" },
       { key: "shortcutNbUngroup", label: "Ungroup shapes" },
       { key: "shortcutNbResetZoom", label: "Reset zoom to 100%" },
+      { key: "shortcutNbSplit", label: "Split tool" },
+      { key: "shortcutNbGrab", label: "Grab tool" },
     ],
   },
 ];

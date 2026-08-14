@@ -402,6 +402,8 @@ pub struct AppSettings {
     pub notebook_text_max_width: u32,
     #[serde(default = "default_notebook_shelf_width")]
     pub notebook_shelf_width: u32,
+    #[serde(default = "default_notebook_proof_rail_width")]
+    pub notebook_proof_rail_width: u32,
     /// Routing mode for flowchart arrows on the notebook canvas. Either
     /// "closest" (pick the nearest pair of cardinal edges) or "horizontal"
     /// (always exit the parent's right side and enter the child's left).
@@ -480,6 +482,12 @@ pub struct AppSettings {
     pub shortcut_nb_group: String,
     #[serde(default = "default_nb_ungroup")]
     pub shortcut_nb_ungroup: String,
+    #[serde(default = "default_nb_reset_zoom")]
+    pub shortcut_nb_reset_zoom: String,
+    #[serde(default = "default_nb_split")]
+    pub shortcut_nb_split: String,
+    #[serde(default = "default_nb_grab")]
+    pub shortcut_nb_grab: String,
 
     // Persisted panes — restored on app open. Shape is opaque to Rust;
     // JS serializes/deserializes the list of pane objects.
@@ -713,6 +721,7 @@ impl Default for AppSettings {
             notebook_font_size: default_notebook_font_size(),
             notebook_text_max_width: default_notebook_text_max_width(),
             notebook_shelf_width: default_notebook_shelf_width(),
+            notebook_proof_rail_width: default_notebook_proof_rail_width(),
             flow_connect_mode: default_flow_connect_mode(),
             notebook_text_styles: Vec::new(),
             last_notebook_id: None,
@@ -736,6 +745,9 @@ impl Default for AppSettings {
             shortcut_nb_redo: default_nb_redo(),
             shortcut_nb_group: default_nb_group(),
             shortcut_nb_ungroup: default_nb_ungroup(),
+            shortcut_nb_reset_zoom: default_nb_reset_zoom(),
+            shortcut_nb_split: default_nb_split(),
+            shortcut_nb_grab: default_nb_grab(),
             data_dir: PathBuf::new(),
         }
     }

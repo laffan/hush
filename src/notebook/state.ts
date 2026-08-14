@@ -1,6 +1,7 @@
 import type {
   Bounds, Camera, CameraBookmark, DragAreaShape, DrawingSlot, DrawingSubTool,
-  ImageShape, Layer, Point, SelectionBox, Shape, TextShape, Tool,
+  GrabSession, ImageShape, Layer, Point, ProofMeta, SelectionBox, Shape, Split,
+  SplitLine, TextShape, Tool,
 } from "./types";
 import { COLOR_PALETTE } from "./types";
 import {
@@ -29,6 +30,10 @@ import {
 } from "./state-helpers";
 import { computePocketLayout, POCKET_ZONE_WIDTH } from "./utils";
 import { collectShapesInPolygon, rectPolygon } from "./selection-region";
+import {
+  type SplitDragState, type SplitHoverState, type SplitPreviewState, type SplitTapPending,
+  dismissSplitInteraction, splitPointerDown, splitPointerMove, splitPointerUp,
+} from "./state-splits";
 // PERF-HUD (temporary): tracer singleton — see perf-hud.ts.
 import { perf } from "./perf-hud";
 
@@ -60,6 +65,10 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "drawingToolbarVertical" | "drawingToolbarCollapsed"
   | "strokeEngineDragging" | "reorderDragAreaId" | "reorderMode"
   | "reorderHoverTargetId" | "reorderPreview" | "canvasRotationEnabled"
+  // "splits" is a CONTENT key like "shapes" — split lines persist in the
+  // envelope, so moving one has to mark the notebook dirty. "grab" is
+  // session-only (the popup + place bar read it) and repaint-only.
+  | "splits" | "grab"
   // Repaint-only keys. Every notify key schedules a render (the render
   // loop subscribes to all change events), but "shapes" additionally
   // means "content changed" downstream: notes-canvas forwards it as a
@@ -103,6 +112,48 @@ export class DrawingState extends EventTarget {
   selectionBox: SelectionBox | null = null;
   editingText: EditingText | null = null;
   bookmarks: CameraBookmark[] = [];
+
+  // === Splits / Grabs (see splits.ts + state-splits.ts) ===
+  /** Notebook-level cut lines. Not shapes: no bounds, no layer, never
+   *  selected — hence their own list, persisted beside `bookmarks`. */
+  splits: Split[] = [];
+  /** The in-flight grab, or null. Rides the undo checkpoint so ⌘Z after
+   *  a place returns to the place stage. */
+  grab: GrabSession | null = null;
+  /** Live split-line drag. Transient; never persisted. */
+  splitDrag: SplitDragState | null = null;
+  /** Live grab band sweep / edge-handle drag. */
+  grabBandDrag: { anchor: number; edge: SplitLine | null } | null = null;
+  /** A touch contact that would cut a split or place a grab, held until
+   *  pointer-up proves it was a tap and not the first finger of a pan. */
+  splitTapPending: SplitTapPending | null = null;
+  /** Hovered split line + its action cluster (screen px). */
+  splitHover: SplitHoverState | null = null;
+  /** Where the split / grab / place line would land, under the cursor. */
+  splitPreview: SplitPreviewState | null = null;
+  /** ⌘ held: the split / grab tools offer a vertical line instead of a
+   *  horizontal one. Mirrored from the modifier by the input handler so
+   *  the preview flips without the pointer having to move. */
+  splitVertical = false;
+  /** Axis a shift-held wheel gesture is pinned to, or null. Latched from
+   *  `_lastScrollAxis` on the first shift-held event and held until
+   *  shift comes back up — re-deciding per event let a wobbling trackpad
+   *  swipe flip axes mid-gesture, which is exactly the drift the
+   *  modifier is meant to suppress. Cleared by the input handler on
+   *  Shift keyup. */
+  private _wheelAxisLock: "x" | "y" | null = null;
+  /** Axis the user's un-modified scrolling is currently travelling on.
+   *  Shift pins to THIS rather than to whichever delta component happens
+   *  to be larger, because the delta components are not a reliable read
+   *  of intent while shift is down: every platform remaps a shift-held
+   *  wheel from deltaY to deltaX, so "pick the dominant axis" turns a
+   *  vertical swipe into a horizontal one — the modifier ends up
+   *  *switching* axes, which is the opposite of pinning. Seeded to "y":
+   *  a fresh canvas reads like a document. */
+  private _lastScrollAxis: "x" | "y" = "y";
+  /** Proofread metadata when this notebook was built from a PDF. Drives
+   *  the page thumbnail rail; null on an ordinary notebook. */
+  proof: ProofMeta | null = null;
   brainstormMode = false;
   creatingDragArea: { start: Point; end: Point } | null = null;
 
@@ -616,6 +667,62 @@ export class DrawingState extends EventTarget {
     return s;
   }
 
+  /** Set of layer ids whose contents can't be picked up by the pointer
+   *  at all: hidden (invisible → unclickable) plus locked (visible, but
+   *  the lock exists precisely so a click lands on whatever is above).
+   *  This is the set every selection / drag / resize / text-edit hit
+   *  test filters against.
+   *
+   *  Splits deliberately do NOT consult this — a split is a cut across
+   *  the whole canvas and has to divide the locked page images that a
+   *  proofread notebook is built on. See `splittableSkipIds` in
+   *  state-splits.ts, which skips only pocketed and hidden shapes. */
+  _inertLayerIds(): Set<string> {
+    const s = new Set<string>();
+    for (const l of this.layers) if (l.hidden || l.locked) s.add(l.id);
+    return s;
+  }
+
+  /** True when `shape` sits on a hidden or locked layer. */
+  _isShapeInert(shape: { layerId?: string }, inert?: Set<string>): boolean {
+    if (!shape.layerId) return false;
+    return (inert ?? this._inertLayerIds()).has(shape.layerId);
+  }
+
+  /** `this.shapes` minus anything on a hidden or locked layer. Returns
+   *  the live array untouched in the common case (no locked or hidden
+   *  layers) so the hot hit-test paths don't allocate. */
+  _interactableShapes(): Shape[] {
+    const inert = this._inertLayerIds();
+    if (!inert.size) return this.shapes;
+    return this.shapes.filter((s) => !this._isShapeInert(s, inert));
+  }
+
+  // === Splits / Grabs ===
+  // Thin delegations; the state machine lives in state-splits.ts.
+
+  /** ⌘ / Ctrl flips the split + grab tools between a horizontal and a
+   *  vertical line. Driven from the modifier keydown/keyup rather than
+   *  from pointer state so the preview turns under a stationary cursor. */
+  setSplitVertical(on: boolean) {
+    if (this.splitVertical === on) return;
+    this.splitVertical = on;
+    if (this.splitPreview) this.splitPreview = { ...this.splitPreview, orientation: on ? "vertical" : "horizontal" };
+    this.notify("interaction");
+  }
+
+  /** Shift came up — the next shift-held wheel gesture picks its own
+   *  axis afresh. */
+  clearWheelAxisLock() { this._wheelAxisLock = null; }
+
+  /** Escape hatch for Esc and tool switches: cancels a grab, ends a line
+   *  drag, or drops the hover cluster. Returns true if it did anything. */
+  dismissSplits(): boolean {
+    const handled = dismissSplitInteraction(this);
+    if (this.splitPreview) { this.splitPreview = null; this.notify("interaction"); }
+    return handled;
+  }
+
   // Undo/redo
   private _undo = new UndoManager();
 
@@ -630,11 +737,23 @@ export class DrawingState extends EventTarget {
       shapes: this.shapes,
       flowEdges: this.flowEdgesLocked ? [] : this.flowchart.serialize(),
       layers: this.layers,
+      splits: this.splits,
+      grab: this.grab,
     };
   }
 
   private _applyCheckpoint(cp: NotebookCheckpoint) {
     this.shapes = cp.shapes;
+    // Splits and the grab session restore together with the shapes:
+    // undoing a line drag has to put the lines back too, and undoing a
+    // completed place has to hand the buffer back to the place stage.
+    this.splits = cp.splits || [];
+    this.grab = cp.grab || null;
+    this.splitDrag = null;
+    this.grabBandDrag = null;
+    this.splitHover = null;
+    this.notify("splits");
+    this.notify("grab");
     if (cp.flowEdges && !this.flowEdgesLocked) this.flowchart.deserialize(cp.flowEdges);
     if (cp.layers && cp.layers.length) {
       this.layers = cp.layers;
@@ -940,6 +1059,7 @@ export class DrawingState extends EventTarget {
             groupId: s.groupId,
             pocketed: s.pocketed,
             layerId: s.layerId,
+            createdAt: s.createdAt,
           };
           return img;
         }
@@ -968,6 +1088,7 @@ export class DrawingState extends EventTarget {
             name: sticker.name,
             color: editing.color,
             layerId: this.activeLayerId,
+            createdAt: Date.now(),
           } as ImageShape,
         ];
         // Pending flow parent is meaningless for an image — discard it.
@@ -979,6 +1100,7 @@ export class DrawingState extends EventTarget {
           text: trimmed, fontSize: editing.fontSize, color: editing.color,
           width: fitWidth,
           layerId: this.activeLayerId,
+          createdAt: Date.now(),
         } as TextShape];
         // Pending flowchart parent (set by startEditingFlowchartChild before
         // user typed) — wire the edge once the new shape exists.
@@ -1193,9 +1315,14 @@ export class DrawingState extends EventTarget {
   // === Resize handle hit test ===
   hitTestResizeHandles(canvasPt: Point): { shapeId: string; handle: ResizeHandle } | null {
     const handleRadius = (HANDLE_SIZE / 2) / this.camera.zoom + 2;
+    const inert = this._inertLayerIds();
     for (const shape of this.shapes) {
       if (!this.selectedIds.has(shape.id)) continue;
       if (shape.type === "draw") continue;
+      // A locked layer's shapes are never resizable, even if they
+      // somehow made it into the selection (loaded from disk, or the
+      // layer was locked while they were selected).
+      if (this._isShapeInert(shape, inert)) continue;
       // Desktop file thumbnails aren't resizable — their size is the
       // thumbnail's natural size (drag / group still work as normal).
       if ((shape as ImageShape).fileRef) continue;
@@ -1308,9 +1435,22 @@ export class DrawingState extends EventTarget {
       return;
     }
 
+    // Splits and grabs run ahead of the regular tool logic: a split
+    // line, a hovered action button, or a waiting place bar is chrome
+    // laid over the canvas, and a click on one must never fall through
+    // to selection. Deliberately BELOW the pan branch — space-to-pan and
+    // the middle-button pan have to keep working while a split or grab
+    // is in flight, which is how the user navigates a long proof
+    // mid-gesture. Returns false when nothing split-related was under
+    // the pointer, in which case the tool paths below take over.
+    if (splitPointerDown(this, screenPt, canvasPt, e)) {
+      canvas.setPointerCapture(e.pointerId);
+      return;
+    }
+
     if (this.tool === "text" && !this.brainstormMode) {
       // Text tool (not brainstorm — brainstorm has its own input widget)
-      const hit = findShapeAtPoint(canvasPt, this.shapes, this.fontFamily);
+      const hit = findShapeAtPoint(canvasPt, this._interactableShapes(), this.fontFamily);
       if (hit && hit.type === "text") {
         this.startEditingExistingText(hit);
       } else {
@@ -1354,11 +1494,11 @@ export class DrawingState extends EventTarget {
       }
       const { pocketedIds } = computePocketLayout(this.shapes, canvas.clientWidth, this.fontFamily, this.pocketRightInset);
       // Exclude pocketed shapes (rendered elsewhere) and shapes on
-      // hidden layers (invisible → unclickable).
-      const hiddenLayerIds = this._hiddenLayerIds();
+      // hidden or locked layers.
+      const inert = this._inertLayerIds();
       const hitShape = findShapeAtPoint(
         canvasPt,
-        this.shapes.filter((s) => !pocketedIds.has(s.id) && !(s.layerId && hiddenLayerIds.has(s.layerId))),
+        this.shapes.filter((s) => !pocketedIds.has(s.id) && !this._isShapeInert(s, inert)),
         this.fontFamily,
       );
 
@@ -1507,7 +1647,7 @@ export class DrawingState extends EventTarget {
     const rect = this.canvasEl.getBoundingClientRect();
     const screenPt: Point = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     const canvasPt = screenToCanvas(screenPt, this.camera);
-    const hit = findShapeAtPoint(canvasPt, this.shapes, this.fontFamily);
+    const hit = findShapeAtPoint(canvasPt, this._interactableShapes(), this.fontFamily);
     if (hit && hit.type === "draw") {
       // Double-click on a stroke selects only that stroke. For a
       // grouped stroke this lets the user reposition the individual
@@ -1558,6 +1698,21 @@ export class DrawingState extends EventTarget {
       this.camera = { x: this._cameraStart.x + dx, y: this._cameraStart.y + dy, zoom: this._cameraStart.zoom, rotation: this._cameraStart.rotation };
       this.notify("camera");
       return;
+    }
+
+    // A live split-line drag, grab-band sweep, or pending touch tap owns
+    // the pointer.
+    if (this.splitDrag || this.grabBandDrag || this.splitTapPending) {
+      splitPointerMove(this, screenPt, canvasPt, { x: e.clientX, y: e.clientY });
+      return;
+    }
+    // Otherwise the same call just maintains the tool preview line and
+    // the split-line hover, both of which are meaningless while another
+    // gesture is mid-flight — so it's skipped rather than fighting for
+    // the frame.
+    if (!this._isDragging && !this._isResizing && !this._pocketDragPending
+      && !this.selectionBox && !this.creatingDragArea) {
+      splitPointerMove(this, screenPt, canvasPt, { x: e.clientX, y: e.clientY });
     }
 
     // Drag from pocket: on first movement, unpocket shapes and place at cursor
@@ -1822,6 +1977,13 @@ export class DrawingState extends EventTarget {
     // would have called cancelActiveInteraction first, which already
     // consumed and cleared the snapshot.)
     this._preTouchSelectedIds = null;
+
+    if (this.splitDrag || this.grabBandDrag || this.splitTapPending) {
+      const rect = this.canvasEl?.getBoundingClientRect();
+      const screenPt = rect ? { x: e.clientX - rect.left, y: e.clientY - rect.top } : undefined;
+      const worldPt = screenPt ? screenToCanvas(screenPt, this.camera) : undefined;
+      if (splitPointerUp(this, screenPt, worldPt, e.pointerType)) return;
+    }
 
     if (this._isPanningActive) {
       // Only the pointer that started the pan can end it. A stray
@@ -2123,6 +2285,7 @@ export class DrawingState extends EventTarget {
           width: w, height: h, color: "#6b7280", strokeColor: "#6b7280",
           backgroundColor: "rgba(107, 114, 128, 0.04)", borderRadius: 12,
           layerId: this.activeLayerId,
+          createdAt: Date.now(),
         };
         const areaBounds = getShapeBounds(newArea, this.fontFamily);
         this.shapes = [...this.shapes.map((s) => {
@@ -2150,7 +2313,7 @@ export class DrawingState extends EventTarget {
   selectShapesInRegion(poly: Point[], opts?: { additive?: boolean }): number {
     const hits = collectShapesInPolygon(this.shapes, poly, {
       fontFamily: this.fontFamily,
-      hiddenLayerIds: this._hiddenLayerIds(),
+      inertLayerIds: this._inertLayerIds(),
     });
     if (opts?.additive) {
       const next = new Set(this.selectedIds);
@@ -2329,6 +2492,18 @@ export class DrawingState extends EventTarget {
       this._pocketDragPending = false;
       changed = true;
     }
+    // A split-line drag promoted into a two-finger pan commits whatever
+    // it moved rather than snapping back — the content and the line are
+    // already consistent, and rewinding a half-finished concertina is
+    // more surprising than keeping it.
+    if (this.splitDrag || this.grabBandDrag || this.splitHover || this.splitTapPending) {
+      // A pending touch tap is abandoned outright — the second finger
+      // that triggered this is a pan, not a cut.
+      this.splitTapPending = null;
+      splitPointerUp(this);
+      if (this.splitHover) this.splitHover = null;
+      changed = true;
+    }
     if (this._isPanningActive) {
       this._isPanningActive = false;
       this._panPointerId = null;
@@ -2350,9 +2525,13 @@ export class DrawingState extends EventTarget {
   }
 
   handleWheel(e: WheelEvent) {
-    // Let horizontal-dominant scrolls pass through to parent containers
-    // (e.g. the stack's horizontal scroll area).
-    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && !this.gutterScrollDOM) return;
+    // A horizontal-dominant scroll belongs to the host when this canvas
+    // is one column of something scrollable — a stack, a pane. On the
+    // main canvas there is no host to give it to, so it pans instead.
+    // Shift is exempt: it means "pin this canvas to its current axis",
+    // and the platform's deltaY→deltaX remap would otherwise hand every
+    // shift-held vertical swipe straight to the host.
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && !e.shiftKey && !this.gutterScrollDOM && this.paneHosted) return;
     e.preventDefault();
     if (!this.canvasEl) return;
     // Gutter mode: redirect the wheel into the host doc's scroller so
@@ -2369,6 +2548,47 @@ export class DrawingState extends EventTarget {
       // Atomic update — read the live scrollTop after our write (it
       // may have been clamped) so camera.y matches the visible slice.
       this.camera = { x: camX, y: this.gutterCameraOffset - this.gutterScrollDOM.scrollTop, zoom: 1 };
+      this.notify("camera");
+      return;
+    }
+    // The wheel scrolls; ⌘ (or a trackpad pinch, which WebKit reports as
+    // a ctrl-wheel) zooms. A canvas is still a document to read, and the
+    // reflex a mouse wheel carries in from every other surface in the
+    // app — including the PDF this proof came from — is "move down the
+    // page". Zoom stays on the modifier, where the rest of the platform
+    // puts it. Deltas apply 1:1 like a doc scroller, with the line /
+    // page delta modes converted so a notched wheel moves a sane amount.
+    if (!e.metaKey && !e.ctrlKey) {
+      const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? (this.canvasEl.clientHeight || 800) : 1;
+      let dx = e.deltaX, dy = e.deltaY;
+      // Shift pins the pan to the axis the user is already travelling on
+      // and holds it there until shift comes back up.
+      //
+      // The axis comes from the last un-modified scroll, NOT from
+      // whichever delta component is larger right now. Platforms remap a
+      // shift-held scroll from deltaY into deltaX — iPadOS does it for
+      // trackpad swipes as well as wheels — so reading the live deltas
+      // makes shift *switch* the axis instead of pinning it: a vertical
+      // swipe starts running sideways the moment the modifier goes down.
+      // Whichever component carries the magnitude is fed to the locked
+      // axis, so the remap is transparent.
+      if (e.shiftKey) {
+        if (!this._wheelAxisLock) this._wheelAxisLock = this._lastScrollAxis;
+        const mag = Math.abs(dx) >= Math.abs(dy) ? dx : dy;
+        if (this._wheelAxisLock === "x") { dx = mag; dy = 0; }
+        else { dy = mag; dx = 0; }
+      } else {
+        // Belt and braces: a keyup missed while the window was unfocused
+        // would otherwise strand the lock.
+        if (this._wheelAxisLock) this._wheelAxisLock = null;
+        if (Math.abs(dx) > Math.abs(dy)) this._lastScrollAxis = "x";
+        else if (Math.abs(dy) > Math.abs(dx)) this._lastScrollAxis = "y";
+      }
+      this.camera = {
+        ...this.camera,
+        x: this.camera.x - dx * k,
+        y: this.camera.y - dy * k,
+      };
       this.notify("camera");
       return;
     }
@@ -2936,6 +3156,7 @@ export class DrawingState extends EventTarget {
       dataUrl, name, color: "#000000",
       ...(dataUrlDark ? { dataUrlDark } : {}),
       parentId, layerId,
+      createdAt: Date.now(),
     };
     this.shapes = [
       ...this.shapes
@@ -3002,6 +3223,7 @@ export class DrawingState extends EventTarget {
       backgroundColor: "rgba(107, 114, 128, 0.04)",
       borderRadius: 12,
       layerId: this.activeLayerId,
+      createdAt: Date.now(),
     };
     const wrappedIds = new Set(selected.filter((s) => s.type !== "drag-area").map((s) => s.id));
     this.shapes = [
@@ -3245,6 +3467,7 @@ export class DrawingState extends EventTarget {
       id, type: "image", position: { x: pos.x - dw / 2, y: pos.y - dh / 2 },
       width: dw, height: dh, dataUrl, name, color: "#000000",
       layerId: this.activeLayerId,
+      createdAt: Date.now(),
     } as ImageShape];
     this.selectedIds = new Set([id]);
     this.tool = "select";
@@ -3325,7 +3548,7 @@ export class DrawingState extends EventTarget {
   }
 
   addTextShapeAtPosition(text: string, position: Point, opts?: { fontSize?: number }) {
-    this.shapes = [...this.shapes, { id: generateId(), type: "text", position, text, fontSize: opts?.fontSize ?? this.fontSize, color: "#000000", width: this.maxTextWidth, layerId: this.activeLayerId } as TextShape];
+    this.shapes = [...this.shapes, { id: generateId(), type: "text", position, text, fontSize: opts?.fontSize ?? this.fontSize, color: "#000000", width: this.maxTextWidth, layerId: this.activeLayerId, createdAt: Date.now() } as TextShape];
     this.recordHistory();
     this.notify("shapes");
   }

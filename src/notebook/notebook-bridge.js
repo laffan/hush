@@ -51,27 +51,6 @@ let _saveInFlight = null;
 let _loadedShapeCount = -1;
 let _emptySaveGuardTripped = false;
 
-/** Create a version snapshot for `fileId` if the throttle window has
- *  elapsed (or `force` is set). Never throws. Used by the Local Folder
- *  save branch and the unmount pending-flush; the main save path folds
- *  the snapshot into save_file_raw instead. Takes the file id
- *  explicitly (never the mutable module global) so a save spanning a
- *  lifecycle change can't snapshot one notebook's content under
- *  another notebook's id. */
-async function _maybeSnapshot(fileId, content, force) {
-  if (!IS_TAURI || !fileId) return;
-  if (!_saveGate.snapshotDue(force)) {
-    _saveGate.snapshotPending = true;
-    return;
-  }
-  try {
-    await tauriInvoke("create_snapshot", { documentId: fileId, content });
-    _saveGate.markSnapshotTaken();
-  } catch (e) {
-    console.error("Notebook snapshot failed:", e);
-  }
-}
-
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 async function tauriInvoke(cmd, args, options) {
@@ -164,6 +143,8 @@ async function _mountNotebookImpl(container, fileId, state) {
     shortcutNbRedo: s.shortcutNbRedo,
     shortcutNbGroup: s.shortcutNbGroup,
     shortcutNbUngroup: s.shortcutNbUngroup,
+    shortcutNbSplit: s.shortcutNbSplit,
+    shortcutNbGrab: s.shortcutNbGrab,
   };
   canvasInstance = new NotesCanvas(container, shortcuts);
 
@@ -192,7 +173,10 @@ async function _mountNotebookImpl(container, fileId, state) {
       _mountLoadingOverlay(container);
       await _nextPaint();
     }
-    canvasInstance.loadShapes(snapshot.shapes, snapshot.layers);
+    canvasInstance.loadShapes(snapshot.shapes, snapshot.layers, undefined, {
+      splits: snapshot.splits,
+      proof: snapshot.proof || null,
+    });
     canvasInstance.state.flowchart.deserialize(snapshot.flowEdges);
     if (Array.isArray(snapshot.bookmarks)) {
       canvasInstance.state.bookmarks = snapshot.bookmarks;
@@ -493,6 +477,8 @@ async function _saveNotebookInner(opts) {
       layers: canvas.state.layers,
       flowEdges: canvas.state.flowchart.serialize(),
       bookmarks: canvas.state.bookmarks,
+      splits: canvas.state.splits,
+      proof: canvas.state.proof,
     });
     perf.end("save:encodeBody"); // PERF-HUD (temporary)
     _lastEncodedBody = body;
@@ -530,10 +516,10 @@ async function _saveNotebookInner(opts) {
       if (!mountSwapped()) _lastSavedContent = content;
       // Version snapshots key on the `ls:` sentinel id, so Local Folder
       // notebooks get the same content history internal ones do.
-      // Throttled — see _maybeSnapshot; camera-only saves never earn
-      // a version slot.
+      // Throttled — see NotebookSaveGate#maybeSnapshot; camera-only
+      // saves never earn a version slot.
       if (IS_TAURI && wasContentDirty) {
-        await _maybeSnapshot(fileId, content, !!opts.forceSnapshot);
+        await _saveGate.maybeSnapshot(tauriInvoke, fileId, content, !!opts.forceSnapshot);
       }
       return null;
     }
@@ -602,7 +588,7 @@ async function _unmountNotebookImpl() {
     // Everything is already on disk but the last save(s) fell inside
     // the snapshot throttle window — flush the pending version slot
     // from the cached content without re-encoding.
-    await _maybeSnapshot(currentNotebookFileId, _lastSavedContent, true);
+    await _saveGate.maybeSnapshot(tauriInvoke, currentNotebookFileId, _lastSavedContent, true);
   }
   if (_perfHud) { _perfHud.destroy(); _perfHud = null; } // PERF-HUD (temporary)
   if (canvasInstance) {
@@ -674,6 +660,8 @@ export async function reloadNotebookShapes(jsonContent) {
         layers: snapshot.layers,
         flowEdges: snapshot.flowEdges,
         bookmarks: Array.isArray(snapshot.bookmarks) ? snapshot.bookmarks : undefined,
+        splits: snapshot.splits,
+        proof: snapshot.proof || null,
       });
       // Deliberately skip applying snapshot.camera here — viewports differ
       // across devices, and an incoming sync nudging the local pan / zoom

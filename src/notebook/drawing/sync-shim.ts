@@ -164,6 +164,9 @@ export function createSyncShim({
       // hush DrawShape so all downstream Hush code (box-select,
       // bounds, file I/O) sees true world coords.
       points: engineStroke.points.map(localToWorld),
+      // Creation stamp — collapsing a split uses it to tell ink laid
+      // down inside the split from ink that was already there.
+      createdAt: Date.now(),
       ...(engineStroke.colorIsAuto ? { colorIsAuto: true } : {}),
       ...(engineStroke.colorIsHeading ? { colorIsHeading: true } : {}),
       ...(engineStroke.groupId ? { groupId: engineStroke.groupId } : {}),
@@ -223,6 +226,9 @@ export function createSyncShim({
         mode: engineStroke.mode,
         layerId: findHushLayerIdForEngineLayer(engineStroke.layerId),
         points: engineStroke.points.map(localToWorld),
+        // A transform rebuilds the record; carry the original creation
+        // stamp through rather than re-dating the stroke.
+        ...(lastSeen.get(hid)?.createdAt !== undefined ? { createdAt: lastSeen.get(hid)!.createdAt } : {}),
         ...(engineStroke.colorIsAuto ? { colorIsAuto: true } : {}),
         ...(engineStroke.colorIsHeading ? { colorIsHeading: true } : {}),
         ...(engineStroke.groupId ? { groupId: engineStroke.groupId } : {}),

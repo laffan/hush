@@ -34,6 +34,11 @@ const TOOLS: ToolDef[] = [
   { iconName: "text", label: "Text", tool: "text", shortcut: "T" },
   { iconName: "drag-area", label: "Drag Area", tool: "drag-area", shortcut: "A" },
   { iconName: "brainstorm", label: "Brainstorm", tool: "brainstorm", shortcut: "B" },
+  // Split and Grab are the same operation at two scales — cut the page
+  // open, or cut a band out and move it — so they sit together, after
+  // the content tools and before the drawing divider.
+  { iconName: "split", label: "Split", tool: "split", shortcut: "S" },
+  { iconName: "grab-tool", label: "Grab", tool: "grab", shortcut: "G" },
 ];
 
 const EDGE_PAD = 20;
@@ -57,6 +62,10 @@ export function createToolbar(state: DrawingState): HTMLElement {
         if (def.tool === "drag-area" && state.wrapSelectionInDragArea()) {
           return;
         }
+        // Leaving Split / Grab abandons whatever they had in flight —
+        // an orphaned grab buffer with no bar to place it would be
+        // unreachable content.
+        if (state.tool !== def.tool) state.dismissSplits();
         state.tool = def.tool;
         state.brainstormMode = false;
         state.notify("tool");

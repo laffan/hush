@@ -33,6 +33,7 @@ import { createSelectionBridge } from "./selection-bridge";
 import { createRegionSelect } from "./region-select";
 import type { DrawingLayer, EngineTool, SelectionStyleEntry, SelectionStylePatch } from "./drawing-layer-types";
 import { createPocketBlit } from "./pocket-blit";
+import { createStrokePaint, type StrokePaintEngine } from "./stroke-paint";
 import { createSelectionDragController } from "./selection-drag";
 import { createReanchor, WORLD_SIZE_MIN } from "./re-anchor";
 import type { AnchorState } from "./re-anchor";
@@ -64,6 +65,7 @@ export function createDrawingLayer({
   state,
   theme,
   camera,
+  onTouchGestureStart,
   onTouchPanStart,
   onTouchPanMove,
   onTouchPanEnd,
@@ -75,6 +77,14 @@ export function createDrawingLayer({
   state: ShimState;
   theme: CanvasTheme;
   camera: Camera;
+  /** Fired once when a touch burst is recognised as a gesture, ahead of
+   *  any pan / pinch start. The host keeps its own frame of reference
+   *  for these gestures (camera at gesture start, and which of pan /
+   *  pinch owns it); rebuilding that frame from matched start/end pairs
+   *  alone is fragile, because iPadOS can end a burst through paths that
+   *  fire no end callback at all. Resetting on burst start means a leak
+   *  can cost at most the gesture it happened in. */
+  onTouchGestureStart?: () => void;
   /** Two-finger pan hooks — fired by the engine's gesture recogniser
    *  when the user drags two fingers inside the drawing surface. The
    *  notebook wires these into `state.camera` so iPad users can pan
@@ -385,6 +395,7 @@ export function createDrawingLayer({
     selectionEngine,
     onUndo: () => state.undo(),
     onRedo: () => state.redo(),
+    onGestureStart: () => { onTouchGestureStart && onTouchGestureStart(); },
     onPanStart: () => { onTouchPanStart && onTouchPanStart(); },
     onPanMove: (dx: number, dy: number) => { onTouchPanMove && onTouchPanMove(dx, dy); },
     onPanEnd: () => { onTouchPanEnd && onTouchPanEnd(); },
@@ -526,48 +537,13 @@ export function createDrawingLayer({
     strokeEngine.fullRebake();
   }
 
-  // Re-render just the strokes matching `hushIds` into an arbitrary
-  // ctx whose transform maps world → target pixels. The strokes are
-  // walked in the engine's canonical order so z-stacking matches the
-  // done canvas; the origin translate converts engine-local coords
-  // back to world. Unlike blitWorldRegion / blitDoneCanvasAtWorldOrigin
-  // this paints through the atlas renderer, so strokes that merely
-  // overlap the same region don't leak into the output — that's what
-  // the selection rasterizer needs.
-  function renderStrokesTo(
-    ctx: CanvasRenderingContext2D,
-    hushIds: Iterable<string>,
-    colorOverrides?: { foreground: string; headingColor: string },
-  ): void {
-    const wanted = new Set<number>();
-    for (const hid of hushIds) {
-      const eid = shim.getEngineStrokeId(hid);
-      if (eid !== undefined) wanted.add(eid);
-    }
-    if (!wanted.size) return;
-    // renderStrokeTo (Hush delta #20) postdates the inferred engine
-    // surface — same cast pattern as cancelActiveStroke above.
-    const engine = strokeEngine as unknown as {
-      renderStrokeTo: (ctx: CanvasRenderingContext2D, s: EngineStroke) => void;
-    };
-    ctx.save();
-    ctx.translate(anchor.originX, anchor.originY);
-    for (const s of strokeEngine.getStrokes() as EngineStroke[]) {
-      if (!wanted.has(s.id)) continue;
-      // Theme-tracking strokes can be retinted for a specific
-      // appearance (the dual light/dark rasterizer); a shallow copy
-      // keeps the engine's stored colour untouched.
-      if (colorOverrides && (s.colorIsAuto || s.colorIsHeading)) {
-        engine.renderStrokeTo(ctx, {
-          ...s,
-          color: s.colorIsHeading ? colorOverrides.headingColor : colorOverrides.foreground,
-        });
-      } else {
-        engine.renderStrokeTo(ctx, s);
-      }
-    }
-    ctx.restore();
-  }
+  // Paint strokes into an arbitrary ctx (selection rasterizer, export
+  // pipeline) — see stroke-paint.ts for why neither can use the blits.
+  const { renderStrokesTo, renderAllStrokesTo } = createStrokePaint({
+    engine: strokeEngine as unknown as StrokePaintEngine,
+    anchor,
+    engineStrokeId: (hid: string) => shim.getEngineStrokeId(hid),
+  });
 
   // ----- hush select-drag integration -----
   //
@@ -657,6 +633,7 @@ export function createDrawingLayer({
     blitWorldRegion,
     blitDoneCanvasAtWorldOrigin,
     renderStrokesTo,
+    renderAllStrokesTo,
     hasActiveStroke: () => strokeEngine.hasActiveStroke(),
     beginSelectionDrag,
     updateSelectionDrag,

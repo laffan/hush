@@ -125,6 +125,10 @@ export function getIcon(item) {
   // directly beneath — its icon is the notebook dot-grid bracketed by a
   // vertical rule on each side.
   if (item.type === "notebook" && item.gutter) return typeIcons.gutter;
+  // A proofread notebook is a PDF cut into a canvas — worth telling
+  // apart from an ordinary notebook at a glance, since a desk can end
+  // up holding one per paper.
+  if (item.type === "notebook" && item.proofread) return typeIcons.proofNotebook;
   // A project's own PDFs folder reads as a PDF container.
   if (item.type === "folder" && item.pdfFolder) return typeIcons.pdf;
   // Plain folders read fine without a leading glyph — the disclosure

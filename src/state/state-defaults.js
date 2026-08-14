@@ -53,6 +53,7 @@ export function createDefaultSettings() {
     zenColumnWidth: null,
     sidebarPanelWidth: 300,
     notebookShelfWidth: 280,
+    notebookProofRailWidth: 92,
     // App-wide saved text-style presets for notebook text shapes.
     // Each entry: { id, color, backgroundColor, fontSize }.
     notebookTextStyles: [],
@@ -298,6 +299,8 @@ export function createDefaultSettings() {
     shortcutNbGroup: "Mod+G",
     shortcutNbUngroup: "Mod+Shift+G",
     shortcutNbResetZoom: "Mod+0",
+    shortcutNbSplit: "S",
+    shortcutNbGrab: "G",
 
     // Proofread mode (harper-core). The mode toggle itself isn't
     // persisted (each session starts off — see state-modes.js), but

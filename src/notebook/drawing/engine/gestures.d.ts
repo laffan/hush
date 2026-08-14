@@ -5,6 +5,7 @@ export function createGestures(opts: {
   selectionEngine: object;
   onUndo?: () => void;
   onRedo?: () => void;
+  onGestureStart?: () => void;
   onPanStart?: () => void;
   onPanMove?: (dx: number, dy: number) => void;
   onPanEnd?: () => void;

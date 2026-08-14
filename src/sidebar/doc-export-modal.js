@@ -236,6 +236,7 @@ export async function openDocExportModal(state) {
 
     <div class="nxm-actions">
       <button class="nxm-cancel">Cancel</button>
+      <button class="nxm-alt" data-visible-in="pdf">Save to Desk</button>
       <button class="nxm-confirm">Export</button>
     </div>
   `;
@@ -345,6 +346,7 @@ export async function openDocExportModal(state) {
 
   modal.querySelector(".nxm-cancel").addEventListener("click", cleanup);
   modal.querySelector(".nxm-confirm").addEventListener("click", () => { void runExport(); });
+  modal.querySelector(".nxm-alt").addEventListener("click", () => { void runSaveToDesk(); });
 
   applyVisibility();
   // Kick off the first preview now that the layout has a measurable width.
@@ -380,6 +382,7 @@ export async function openDocExportModal(state) {
       style: choices.style,
       lineSpacing: choices.lineSpacing,
       headerScale: choices.headerScale,
+      headingSpace: choices.headingSpace,
       includeBibliography: choices.includeBibliography,
       citationStyle: choices.citationStyle,
       stripComments: choices.stripComments,
@@ -503,23 +506,47 @@ export async function openDocExportModal(state) {
     }
 
     try {
-      // Reuse the bytes the preview already rendered when nothing that
-      // affects the output changed since.
-      let bytes;
-      const key = renderKey();
-      if (lastRender.key === key && lastRender.bytes) {
-        bytes = lastRender.bytes;
-      } else {
-        confirmBtn.textContent = "Rendering…";
-        bytes = await renderPdfBytes(state, content, choices, name);
-        lastRender = { key, bytes };
-      }
+      const bytes = await pdfBytes((t) => { confirmBtn.textContent = t; });
       const baseName = sanitize(choices.filename) || name;
       const fileName = `${baseName.replace(/\.pdf$/i, "")}.pdf`;
       await deliver(bytes, fileName);
       cleanup();
     } catch (err) {
       fail("PDF export failed:", err);
+    }
+  }
+
+  /** Render (or reuse) the PDF bytes for the current choices. Shared by
+   *  Export and Save to Desk so switching between them never re-renders
+   *  output the preview already produced. */
+  async function pdfBytes(onStatus) {
+    const key = renderKey();
+    if (lastRender.key === key && lastRender.bytes) return lastRender.bytes;
+    onStatus?.("Rendering…");
+    const bytes = await renderPdfBytes(state, content, choices, name);
+    lastRender = { key, bytes };
+    return bytes;
+  }
+
+  /** Land the rendered PDF in the desk's PDFs folder instead of on disk
+   *  — the export half of the read-and-mark-up loop, which otherwise
+   *  needs a round trip through the file system and a re-import. */
+  async function runSaveToDesk() {
+    const btn = modal.querySelector(".nxm-alt");
+    const original = btn.textContent;
+    btn.disabled = true;
+    try {
+      const bytes = await pdfBytes((t) => { btn.textContent = t; });
+      btn.textContent = "Saving…";
+      const { savePdfBytesToDesk } = await import("../pdf/save-pdf-to-desk.js");
+      const baseName = sanitize(choices.filename) || name;
+      await savePdfBytesToDesk(state, bytes, baseName);
+      cleanup();
+    } catch (err) {
+      console.error("Save to Desk failed:", err);
+      btn.textContent = "Save failed";
+      btn.disabled = false;
+      setTimeout(() => { btn.textContent = original; }, 2200);
     }
   }
 

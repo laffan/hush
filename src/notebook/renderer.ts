@@ -7,6 +7,8 @@ import { parseText } from "./markdown";
 import { drawSelectionHighlight, drawGroupHighlight, drawSelectionBox, drawCropOverlay, drawEdgeDeleteButton, drawEdgeDeleteDot, drawReorderPreview, drawShadowHeaders } from "./renderer-selection";
 import { drawBackground, drawBackgroundImage } from "./renderer-background";
 import type { BackgroundImageConfig } from "./renderer-background";
+import { drawSplitChrome } from "./renderer-splits";
+import type { SplitRenderState } from "./renderer-splits";
 import type { FlowchartLayer } from "./flowchart";
 
 export interface RenderState {
@@ -119,6 +121,12 @@ export interface RenderState {
    *  the dot when the user isn't on a touch device — the X still
    *  shows up via the existing pointermove path. */
   touchMode?: boolean;
+  /** Split lines, the live grab, and the tool preview rules. Absent on
+   *  canvases that never show them (Desktops, thumbnail bakes). */
+  splitChrome?: SplitRenderState | null;
+  /** Distance from the canvas's right edge to the shelf / dock, used to
+   *  anchor the pocket tray. */
+  pocketRightInset?: number;
 }
 
 /** Shape ids whose paint has already thrown and been reported. The
@@ -449,6 +457,11 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   if (pocketLayout.entries.length > 0) {
     drawPocketEntries(ctx, pocketLayout.entries, selectedIds, theme, state.fontFamily, imageCache, state.drawingLayer, state.flagColors);
   }
+
+  // Split / grab chrome sits above every shape and every selection
+  // highlight: a cut line the content can hide is a cut line the user
+  // will drag by accident.
+  if (state.splitChrome) drawSplitChrome(ctx, state.splitChrome, camera, w, h, theme);
 
   if (selectionBox) drawSelectionBox(ctx, selectionBox, camera);
 }

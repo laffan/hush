@@ -19,7 +19,7 @@
  * don't branch on format. Encoding always emits the new envelope.
  */
 
-import type { Shape, Layer, CameraBookmark, Camera, BackgroundPattern } from "./types";
+import type { Shape, Layer, CameraBookmark, Camera, BackgroundPattern, ProofMeta, Split } from "./types";
 import type { FlowEdge } from "./flowchart";
 
 /** Per-notebook background overrides. Saved alongside shapes so each
@@ -43,6 +43,8 @@ export interface NotebookContent {
   bookmarks?: CameraBookmark[];
   camera?: Camera;
   background?: NotebookBackground;
+  splits?: Split[];
+  proof?: ProofMeta;
 }
 
 export interface NotebookSnapshotInput {
@@ -52,6 +54,8 @@ export interface NotebookSnapshotInput {
   bookmarks?: CameraBookmark[];
   camera?: Camera;
   background?: NotebookBackground;
+  splits?: Split[];
+  proof?: ProofMeta;
 }
 
 /** JSON-encode a notebook snapshot in the envelope format.
@@ -86,13 +90,17 @@ export function encodeNotebookContent(snapshot: NotebookSnapshotInput): string {
  *  `undefined` fields are omitted, matching JSON.stringify. `shapes`
  *  is required, so the fragment is never empty. */
 export function encodeNotebookBody(
-  snapshot: Pick<NotebookSnapshotInput, "shapes" | "layers" | "flowEdges" | "bookmarks">,
+  snapshot: Pick<NotebookSnapshotInput, "shapes" | "layers" | "flowEdges" | "bookmarks" | "splits" | "proof">,
 ): string {
   const payload = {
     shapes: snapshot.shapes.map(quantizeShape),
     layers: snapshot.layers,
     flowEdges: snapshot.flowEdges,
     bookmarks: snapshot.bookmarks,
+    // Splits and proofread metadata are content, not viewport — they
+    // belong in the cached body so a camera-only save reuses them.
+    splits: snapshot.splits && snapshot.splits.length ? snapshot.splits : undefined,
+    proof: snapshot.proof || undefined,
   };
   return JSON.stringify(payload).slice(1, -1);
 }
@@ -119,6 +127,42 @@ function parseBackground(v: unknown): NotebookBackground | undefined {
   if (typeof b.opacity === "number") out.opacity = b.opacity;
   if (typeof b.rotationEnabled === "boolean") out.rotationEnabled = b.rotationEnabled;
   return Object.keys(out).length ? out : undefined;
+}
+
+/** Splits carry no bounds and no ids into anything else, so validation
+ *  is just "are the two line positions real numbers". A malformed entry
+ *  is dropped rather than failing the whole decode — losing one split
+ *  line beats refusing to open the notebook. */
+function isSplit(v: unknown): boolean {
+  if (!v || typeof v !== "object") return false;
+  const s = v as Record<string, unknown>;
+  return typeof s.id === "string"
+    && (s.orientation === "horizontal" || s.orientation === "vertical")
+    && typeof s.a === "number" && Number.isFinite(s.a)
+    && typeof s.b === "number" && Number.isFinite(s.b);
+}
+
+function parseProof(v: unknown): ProofMeta | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const p = v as Record<string, unknown>;
+  if (!Array.isArray(p.pages)) return undefined;
+  const pages = (p.pages as Record<string, unknown>[])
+    .filter((pg) => pg && typeof pg.shapeId === "string")
+    .map((pg, i) => ({
+      index: typeof pg.index === "number" ? pg.index : i,
+      shapeId: pg.shapeId as string,
+      y: typeof pg.y === "number" ? pg.y : 0,
+      height: typeof pg.height === "number" ? pg.height : 0,
+      width: typeof pg.width === "number" ? pg.width : 0,
+      thumbDataUrl: typeof pg.thumbDataUrl === "string" ? pg.thumbDataUrl : "",
+    }));
+  if (!pages.length) return undefined;
+  return {
+    sourcePdfFileId: typeof p.sourcePdfFileId === "string" ? p.sourcePdfFileId : null,
+    sourceName: typeof p.sourceName === "string" ? p.sourceName : "",
+    pageLayerId: typeof p.pageLayerId === "string" ? p.pageLayerId : "",
+    pages,
+  };
 }
 
 function isCamera(v: unknown): boolean {
@@ -166,7 +210,9 @@ export function decodeNotebookContent(content: string | null | undefined): Noteb
     const bookmarks = Array.isArray(obj.bookmarks) ? (obj.bookmarks as CameraBookmark[]) : undefined;
     const camera = isCamera(obj.camera) ? (obj.camera as Camera) : undefined;
     const background = parseBackground(obj.background);
-    return { shapes, layers, flowEdges, bookmarks, camera, background };
+    const splits = Array.isArray(obj.splits) ? (obj.splits as Split[]).filter(isSplit) : undefined;
+    const proof = parseProof(obj.proof);
+    return { shapes, layers, flowEdges, bookmarks, camera, background, splits, proof };
   }
   return null;
 }

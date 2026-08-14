@@ -414,6 +414,11 @@ function dispatchRowAction(action, nodeId, opts) {
       refresh();
     }
     return;
+  } else if (action === "proofread-pdf") {
+    const node = findNode(storedState.fileTree, nodeId);
+    if (node?.fileId) {
+      import("../pdf/pdf-proofread.js").then((m) => m.createProofNotebook(storedState, node.fileId));
+    }
   } else if (action === "new-doc-here") {
     storedState.newFile(nodeId).then(refresh);
   } else if (action === "new-notebook-here") {
