@@ -46,6 +46,16 @@ const WHEEL_TOP = 0;
  *  takes those touches with it. */
 const WHEEL_LEFT = 10;
 
+/** Reposition handle: a plinth across the foot of the wheel. It sits
+ *  below the drum rather than on it, because a thumb resting on the
+ *  handle covers the handle — anything that has to be *watched* during
+ *  the hold has to live somewhere the hand isn't, which is what the
+ *  border is for. */
+const HANDLE_HEIGHT = 18;
+
+/** Full height of the control: drum + handle, inside one border. */
+const CONTROL_HEIGHT = WHEEL_HEIGHT + HANDLE_HEIGHT;
+
 /** Clearance from the host's own corner when the canvas is hosted in a
  *  pane or stack column: there's no safe-area band or sidebar grip to
  *  measure from there, just the box. Applied on both axes so the wheel
@@ -57,7 +67,7 @@ const WHEEL_PANE_INSET = 10;
  *  document it exists to travel. Panes go down to 60 px tall, so this
  *  is the difference between a proof pane growing a wheel and a proof
  *  pane being covered by one. */
-const MIN_HOST_HEIGHT = WHEEL_PANE_INSET + WHEEL_HEIGHT + 24;
+const MIN_HOST_HEIGHT = WHEEL_PANE_INSET + CONTROL_HEIGHT + 24;
 const MIN_HOST_WIDTH = WHEEL_PANE_INSET + WHEEL_WIDTH + 120;
 
 /** Document px travelled per px of finger travel. A real wheel's face
@@ -94,17 +104,16 @@ const MAX_VELOCITY = 2.5;
 /** Spacing of the drum's ridges, in px of wheel face. */
 const RIDGE_PERIOD = 13;
 
-/** Reposition handle: a strip down the wheel's right edge. */
-const HANDLE_WIDTH = 15;
-const HANDLE_HEIGHT = 50;
+/** Shades the border steps through while the handle is held, one per
+ *  second, each darker than the last. The first lands on contact so a
+ *  press registers immediately; the last is the second before arming. */
+const ARM_STEPS = ["#9ec8ff", "#6ea8ff", "#3f86ea", "#1f5fc0"];
 
-/** How long the handle must be held before reposition mode arms.
- *  Deliberately long: the handle sits on the wheel's own face, and the
- *  wheel is driven by the same press-and-drag gesture, so a shorter hold
- *  would arm itself in the middle of ordinary scrolling. The strip fills
- *  with the arm colour across the hold so the wait reads as progress
- *  rather than as a dead control. */
-const ARM_HOLD_MS = 3000;
+/** How long the handle must be held before reposition mode arms — one
+ *  second per shade above. Deliberately long: the wheel is driven by
+ *  the same press-and-drag gesture, so a shorter hold would arm itself
+ *  during ordinary scrolling. */
+const ARM_HOLD_MS = ARM_STEPS.length * 1000;
 
 /** Movement that abandons the hold — a finger that wandered was
  *  reaching for the wheel, not asking to move it. */
@@ -114,6 +123,12 @@ const ARM_SLIP_PX = 8;
  *  it has to read as "this control is in a special mode" against every
  *  notebook background, including a proof's white pages. */
 const ARM_COLOR = "#4a9eff";
+
+/** The blink that announces arming: outline colours in sequence, each
+ *  held for BLINK_STEP_MS. Ending lit leaves the mode's own outline in
+ *  place with no extra write. */
+const BLINK_SEQUENCE = ["transparent", ARM_COLOR, "transparent", ARM_COLOR];
+const BLINK_STEP_MS = 110;
 
 export interface ProofScrollWheel {
   root: HTMLElement;
@@ -130,8 +145,9 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
   // muddied it.
   const drum = h("div", {
     style: {
-      position: "absolute", left: "0", top: "0", right: "0", bottom: "0",
-      borderRadius: "9px",
+      position: "absolute", left: "0", top: "0", right: "0",
+      height: `${WHEEL_HEIGHT}px`,
+      borderRadius: "9px 9px 0 0",
     },
   });
 
@@ -141,7 +157,7 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
       // it depends on `state.paneHosted`, which the host sets after this
       // constructor has already run.
       position: "absolute",
-      width: `${WHEEL_WIDTH}px`, height: `${WHEEL_HEIGHT}px`,
+      width: `${WHEEL_WIDTH}px`, height: `${CONTROL_HEIGHT}px`,
       display: "none", boxSizing: "border-box",
       borderRadius: "10px", overflow: "hidden",
       // Below the file sidebar (100) on purpose: an open sidebar should
@@ -162,20 +178,19 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
   });
   root.classList.add("notebook-proof-wheel");
 
-  // Reposition handle — the hamburger turned on its side, which is the
-  // grip mark everything else in the app uses for "drag me".
+  // Reposition handle — a plinth across the foot, carrying the
+  // hamburger grip mark everything else in the app uses for "drag me".
   const handle = h("div", {
     style: {
-      position: "absolute", right: "0", top: "50%",
-      width: `${HANDLE_WIDTH}px`, height: `${HANDLE_HEIGHT}px`,
-      transform: "translateY(-50%)",
+      position: "absolute", left: "0", right: "0", bottom: "0",
+      height: `${HANDLE_HEIGHT}px`,
       display: "flex", alignItems: "center", justifyContent: "center",
-      borderRadius: "6px 0 0 6px",
+      borderRadius: "0 0 9px 9px",
       cursor: "grab", touchAction: "none",
     },
   });
   const handleMark = h("div", {
-    style: { transform: "rotate(90deg)", display: "flex", opacity: "0.7" },
+    style: { display: "flex", opacity: "0.7" },
     children: [icon("menu", 14)],
   });
   handle.appendChild(handleMark);
@@ -246,6 +261,8 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
   let custom: { x: number; y: number } | null = readSavedPos();
   let armed = false;
   let holdTimer = 0;
+  /** Timeouts driving the per-second border steps and the arming blink. */
+  const armTimers: number[] = [];
   let holdPointer: number | null = null;
   let holdFrom = { x: 0, y: 0 };
   /** Live reposition drag, or null. `el` holds the pointer capture — the
@@ -284,7 +301,7 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     if (!host?.width || !host.height) return pos;
     return {
       x: Math.min(Math.max(0, pos.x), Math.max(0, host.width - WHEEL_WIDTH)),
-      y: Math.min(Math.max(0, pos.y), Math.max(0, host.height - WHEEL_HEIGHT)),
+      y: Math.min(Math.max(0, pos.y), Math.max(0, host.height - CONTROL_HEIGHT)),
     };
   }
 
@@ -297,18 +314,49 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     root.style.outline = next ? `2px solid ${ARM_COLOR}` : "";
     root.style.outlineOffset = next ? "2px" : "";
     root.style.cursor = next ? "move" : "ns-resize";
-    if (!next) resetHandleTint();
+    if (!next) resetBorder();
   }
 
-  function resetHandleTint() {
-    handle.style.transition = "none";
-    handle.style.background = "transparent";
+  /** Put the border back to the theme's own colour. `applySkin` caches
+   *  on the theme string and won't rewrite an unchanged one, so a hold
+   *  that painted over the border has to undo it explicitly. */
+  function resetBorder() {
+    root.style.borderColor = state.theme.uiBorder;
+  }
+
+  /** Step the border one shade darker per second of the hold. The
+   *  border, not the handle: the handle is under the thumb that's
+   *  holding it, and progress you can't see is progress you don't
+   *  believe in. */
+  function startArmingSteps() {
+    root.style.borderColor = ARM_STEPS[0];
+    for (let i = 1; i < ARM_STEPS.length; i++) {
+      armTimers.push(window.setTimeout(() => {
+        root.style.borderColor = ARM_STEPS[i];
+      }, i * 1000));
+    }
+  }
+
+  /** Flash the outline a couple of times as reposition mode takes hold,
+   *  so arming is an event rather than a colour that stopped changing. */
+  function blinkArmed() {
+    BLINK_SEQUENCE.forEach((colour, i) => {
+      armTimers.push(window.setTimeout(() => {
+        root.style.outlineColor = colour;
+      }, i * BLINK_STEP_MS));
+    });
+  }
+
+  function clearArmTimers() {
+    for (const t of armTimers) clearTimeout(t);
+    armTimers.length = 0;
   }
 
   function cancelHold() {
     if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
+    clearArmTimers();
     holdPointer = null;
-    if (!armed) resetHandleTint();
+    if (!armed) resetBorder();
   }
 
   function beginMove(el: HTMLElement, e: PointerEvent) {
@@ -355,11 +403,12 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     holdPointer = e.pointerId;
     holdFrom = { x: e.clientX, y: e.clientY };
     handle.setPointerCapture(e.pointerId);
-    handle.style.transition = `background ${ARM_HOLD_MS}ms linear`;
-    handle.style.background = ARM_COLOR;
+    startArmingSteps();
     holdTimer = window.setTimeout(() => {
       holdTimer = 0;
       setArmed(true);
+      blinkArmed();
+      resetBorder();
       // The finger is still down: hand the hold straight to a drag so
       // arming and placing are one gesture.
       if (holdPointer !== null) {
@@ -575,6 +624,7 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
       state.removeEventListener("change", onChange);
       document.removeEventListener("pointerdown", onDocPointerDown, true);
       if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
+      clearArmTimers();
       ro?.disconnect();
       stopCoast();
       root.remove();
