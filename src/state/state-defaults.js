@@ -54,6 +54,10 @@ export function createDefaultSettings() {
     sidebarPanelWidth: 300,
     notebookShelfWidth: 280,
     notebookProofRailWidth: 92,
+    // Where the proofread scroll wheel was dragged to, as an offset from
+    // its host box's top-left. null = never moved (default corner).
+    notebookProofWheelX: null,
+    notebookProofWheelY: null,
     // App-wide saved text-style presets for notebook text shapes.
     // Each entry: { id, color, backgroundColor, fontSize }.
     notebookTextStyles: [],

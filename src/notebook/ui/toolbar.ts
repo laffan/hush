@@ -140,7 +140,10 @@ export function createToolbar(state: DrawingState): HTMLElement {
     // when it's anchored to the top or bottom edge.
     const leftInset = (state.leftInset || 0) + (state.dockedLeftWidth || 0);
     const rightInset = state.rightInset || 0;
-    const topInset = state.dockedTopHeight || 0;
+    // `hostTopInset` is the pane's own floating pill title bar, which
+    // sits over the top of the canvas box — the bar belongs underneath
+    // it, not behind it.
+    const topInset = (state.dockedTopHeight || 0) + (state.hostTopInset || 0);
     const bottomInset = state.dockedBottomHeight || 0;
     const offset = state.drawingToolbarOffset || { x: 0, y: 0 };
     const parentEl = container.parentElement;

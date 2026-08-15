@@ -184,19 +184,22 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
     // the shelf left, this picks up the extended distance and the
     // row stays just inboard of the shelf without double counting.
     const ri = state.rightInset || 0;
+    // The window's safe-area band is the window form's business; a
+    // pane's edges are interior (see `shelf-panel.ts#applyPlacement`).
+    const safeRight = state.paneHosted ? "0px" : "env(safe-area-inset-right)";
     const container = wrap.parentElement;
     const minimap = container ? container.querySelector(".notebook-minimap") : null;
     if (minimap && container) {
       // Minimap is visible: sit 10px inboard of the shelf edge (same as
       // the minimap) and stack directly above the minimap with a 10px gap.
-      wrap.style.right = `calc(env(safe-area-inset-right) + ${ri + SHELF_GAP}px)`;
+      wrap.style.right = `calc(${safeRight} + ${ri + SHELF_GAP}px)`;
       const mmRect = minimap.getBoundingClientRect();
       const cRect = container.getBoundingClientRect();
       wrap.style.bottom = `${Math.round(cRect.bottom - mmRect.top + SHELF_GAP)}px`;
     } else {
       // No minimap: park in the bottom-right corner just inboard of the
       // shelf, centres level with the sidebar footer buttons.
-      wrap.style.right = `calc(env(safe-area-inset-right) + ${ri + 16}px)`;
+      wrap.style.right = `calc(${safeRight} + ${ri + 16}px)`;
       wrap.style.bottom = "9px";
     }
     bg.reposition();

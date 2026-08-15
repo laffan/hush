@@ -392,7 +392,11 @@ export function placeGrab(state: DrawingState, pos: number): void {
     { id: generateId(), orientation, a: pos, b: pos + height, createdAt: Date.now() },
     ...g.bufferSplits.map((s) => ({ ...s, id: generateId(), a: s.a + pos, b: s.b + pos })),
   ];
-  state.selectedIds = new Set(landed.map((s) => s.id));
+  // A placed grab leaves nothing selected. Selecting what landed reads
+  // as a live selection the user didn't make — on a proof it puts
+  // handles around the page image that came along for the ride, and the
+  // next tap on the canvas is spent dismissing it.
+  state.selectedIds = new Set();
   state.grab = null;
   state.recordHistory();
   state.notify("shapes");

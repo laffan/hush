@@ -579,7 +579,16 @@ export class NotesCanvas {
     const syncShelfRightInset = () => {
       const rect = this._shelfPanel?.getBoundingClientRect();
       const cr = container.getBoundingClientRect();
-      if (rect && cr.width) this.setRightInset(Math.max(0, cr.right - rect.left));
+      // Clamped to the canvas width: the shelf lives inside the canvas,
+      // so an inset wider than the canvas can only mean the shelf has
+      // been mispositioned outside it — and every consumer treats this
+      // number as "how much of my right edge is spoken for". Letting a
+      // bad measurement through doesn't just move the shelf, it drags
+      // the page rail, the toolbar's centring and the drawing pill with
+      // it (see `shelf-panel.ts#applyPlacement`).
+      if (rect && cr.width) {
+        this.setRightInset(Math.max(0, Math.min(cr.width, cr.right - rect.left)));
+      }
     };
     // The shelf opens / closes via a `transition: width 0.2s`. A single
     // observer-driven read lands on the *pre*-transition width, which left

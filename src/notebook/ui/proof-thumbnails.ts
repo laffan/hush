@@ -489,9 +489,11 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
   let lastTop = "";
   let lastBottom = "";
   function applyPlacement() {
+    // `hostTopInset` is the pane's floating pill title bar (0 elsewhere).
+    const top20 = 20 + (state.hostTopInset || 0);
     const top = state.paneHosted
-      ? "20px"
-      : "calc(env(safe-area-inset-top) + 20px + var(--pane-dock-top-height, 0px))";
+      ? `${top20}px`
+      : `calc(env(safe-area-inset-top) + ${top20}px + var(--pane-dock-top-height, 0px))`;
     const bottom = state.paneHosted
       ? `${BOTTOM_CHROME_PX}px`
       : `calc(env(safe-area-inset-bottom) + ${BOTTOM_CHROME_PX}px + var(--pane-dock-bottom-height, 0px))`;

@@ -29,6 +29,7 @@
 
 import type { DrawingState } from "../state";
 import { h } from "./dom-helpers";
+import { icon } from "./icons";
 // @ts-ignore — sibling JS module, no type declaration file
 import { isIOS } from "../../settings/settings-ui.js";
 
@@ -93,6 +94,27 @@ const MAX_VELOCITY = 2.5;
 /** Spacing of the drum's ridges, in px of wheel face. */
 const RIDGE_PERIOD = 13;
 
+/** Reposition handle: a strip down the wheel's right edge. */
+const HANDLE_WIDTH = 15;
+const HANDLE_HEIGHT = 50;
+
+/** How long the handle must be held before reposition mode arms.
+ *  Deliberately long: the handle sits on the wheel's own face, and the
+ *  wheel is driven by the same press-and-drag gesture, so a shorter hold
+ *  would arm itself in the middle of ordinary scrolling. The strip fills
+ *  with the arm colour across the hold so the wait reads as progress
+ *  rather than as a dead control. */
+const ARM_HOLD_MS = 3000;
+
+/** Movement that abandons the hold — a finger that wandered was
+ *  reaching for the wheel, not asking to move it. */
+const ARM_SLIP_PX = 8;
+
+/** Reposition mode's outline. A fixed blue rather than the theme accent:
+ *  it has to read as "this control is in a special mode" against every
+ *  notebook background, including a proof's white pages. */
+const ARM_COLOR = "#4a9eff";
+
 export interface ProofScrollWheel {
   root: HTMLElement;
   destroy(): void;
@@ -139,6 +161,25 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     children: [drum],
   });
   root.classList.add("notebook-proof-wheel");
+
+  // Reposition handle — the hamburger turned on its side, which is the
+  // grip mark everything else in the app uses for "drag me".
+  const handle = h("div", {
+    style: {
+      position: "absolute", right: "0", top: "50%",
+      width: `${HANDLE_WIDTH}px`, height: `${HANDLE_HEIGHT}px`,
+      transform: "translateY(-50%)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      borderRadius: "6px 0 0 6px",
+      cursor: "grab", touchAction: "none",
+    },
+  });
+  const handleMark = h("div", {
+    style: { transform: "rotate(90deg)", display: "flex", opacity: "0.7" },
+    children: [icon("menu", 14)],
+  });
+  handle.appendChild(handleMark);
+  root.appendChild(handle);
 
   /** Position of the wheel face, in face px. Only its remainder against
    *  RIDGE_PERIOD is ever used, but keeping the running total means the
@@ -194,12 +235,166 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     coastRaf = requestAnimationFrame(coast);
   }
 
+  // ── reposition ──
+  //
+  // Hold the handle for three seconds to arm: the wheel takes a blue
+  // outline and every drag on it moves the control instead of turning
+  // it. A tap anywhere outside commits where it sits and disarms.
+
+  /** Parking spot the user dragged the wheel to, as an offset from the
+   *  host box's top-left. Null until it has been moved. */
+  let custom: { x: number; y: number } | null = readSavedPos();
+  let armed = false;
+  let holdTimer = 0;
+  let holdPointer: number | null = null;
+  let holdFrom = { x: 0, y: 0 };
+  /** Live reposition drag, or null. `el` holds the pointer capture — the
+   *  handle when the drag grew straight out of the arming hold, the
+   *  wheel body when it started as a fresh press. */
+  let move: {
+    pointerId: number; el: HTMLElement;
+    startX: number; startY: number; baseX: number; baseY: number;
+  } | null = null;
+
+  function readSavedPos(): { x: number; y: number } | null {
+    const app = (window as unknown as {
+      __hushState__?: { settings?: { notebookProofWheelX?: number | null; notebookProofWheelY?: number | null } };
+    }).__hushState__;
+    const x = app?.settings?.notebookProofWheelX;
+    const y = app?.settings?.notebookProofWheelY;
+    return typeof x === "number" && typeof y === "number" ? { x, y } : null;
+  }
+
+  function savePos() {
+    const app = (window as unknown as {
+      __hushState__?: { updateSettings?: (p: Record<string, unknown>) => void };
+    }).__hushState__;
+    app?.updateSettings?.({
+      notebookProofWheelX: custom ? Math.round(custom.x) : null,
+      notebookProofWheelY: custom ? Math.round(custom.y) : null,
+    });
+  }
+
+  /** Hold a spot inside the host box. A pane resized (or an iPad
+   *  rotated) since the wheel was parked must not strand it out of
+   *  reach — and the saved offset is shared with the full-window canvas,
+   *  which is a different size again. */
+  function clampToHost(pos: { x: number; y: number }) {
+    const host = root.parentElement?.getBoundingClientRect();
+    if (!host?.width || !host.height) return pos;
+    return {
+      x: Math.min(Math.max(0, pos.x), Math.max(0, host.width - WHEEL_WIDTH)),
+      y: Math.min(Math.max(0, pos.y), Math.max(0, host.height - WHEEL_HEIGHT)),
+    };
+  }
+
+  function setArmed(next: boolean) {
+    if (armed === next) return;
+    armed = next;
+    // An outline draws outside the border box, so the root's own
+    // `overflow: hidden` (which clips the drum to the rounded corners)
+    // doesn't eat it.
+    root.style.outline = next ? `2px solid ${ARM_COLOR}` : "";
+    root.style.outlineOffset = next ? "2px" : "";
+    root.style.cursor = next ? "move" : "ns-resize";
+    if (!next) resetHandleTint();
+  }
+
+  function resetHandleTint() {
+    handle.style.transition = "none";
+    handle.style.background = "transparent";
+  }
+
+  function cancelHold() {
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
+    holdPointer = null;
+    if (!armed) resetHandleTint();
+  }
+
+  function beginMove(el: HTMLElement, e: PointerEvent) {
+    const host = root.parentElement?.getBoundingClientRect();
+    const rect = root.getBoundingClientRect();
+    move = {
+      pointerId: e.pointerId, el,
+      startX: e.clientX, startY: e.clientY,
+      baseX: host ? rect.left - host.left : rect.left,
+      baseY: host ? rect.top - host.top : rect.top,
+    };
+    if (!el.hasPointerCapture(e.pointerId)) el.setPointerCapture(e.pointerId);
+  }
+
+  function applyMove(e: PointerEvent) {
+    if (!move || move.pointerId !== e.pointerId) return;
+    custom = clampToHost({
+      x: move.baseX + (e.clientX - move.startX),
+      y: move.baseY + (e.clientY - move.startY),
+    });
+    applyPlacement();
+  }
+
+  function endMove(e: PointerEvent) {
+    if (!move || move.pointerId !== e.pointerId) return;
+    if (move.el.hasPointerCapture(e.pointerId)) move.el.releasePointerCapture(e.pointerId);
+    move = null;
+  }
+
+  /** Leave reposition mode, keeping wherever the wheel now sits. */
+  function commitPosition() {
+    if (!armed) return;
+    move = null;
+    setArmed(false);
+    savePos();
+  }
+
+  handle.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    // Never let a press on the handle reach the drum — the handle is the
+    // one part of the wheel that doesn't scroll it.
+    e.stopPropagation();
+    if (armed) { beginMove(handle, e); return; }
+    holdPointer = e.pointerId;
+    holdFrom = { x: e.clientX, y: e.clientY };
+    handle.setPointerCapture(e.pointerId);
+    handle.style.transition = `background ${ARM_HOLD_MS}ms linear`;
+    handle.style.background = ARM_COLOR;
+    holdTimer = window.setTimeout(() => {
+      holdTimer = 0;
+      setArmed(true);
+      // The finger is still down: hand the hold straight to a drag so
+      // arming and placing are one gesture.
+      if (holdPointer !== null) {
+        beginMove(handle, { pointerId: holdPointer, clientX: holdFrom.x, clientY: holdFrom.y } as PointerEvent);
+      }
+    }, ARM_HOLD_MS);
+  });
+  handle.addEventListener("pointermove", (e) => {
+    if (move) { applyMove(e); return; }
+    if (holdPointer !== e.pointerId) return;
+    if (Math.abs(e.clientX - holdFrom.x) > ARM_SLIP_PX
+      || Math.abs(e.clientY - holdFrom.y) > ARM_SLIP_PX) cancelHold();
+  });
+  handle.addEventListener("pointerup", (e) => { endMove(e); cancelHold(); });
+  handle.addEventListener("pointercancel", (e) => { endMove(e); cancelHold(); });
+
+  /** The tap that confirms a placement belongs to the wheel, not to the
+   *  canvas underneath — swallowed in the capture phase so it can't also
+   *  land an ink dot on the page. */
+  function onDocPointerDown(e: PointerEvent) {
+    if (!armed || root.contains(e.target as Node)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    commitPosition();
+  }
+  document.addEventListener("pointerdown", onDocPointerDown, true);
+
   // ── input ──
 
   function onPointerDown(e: PointerEvent) {
     if (dragPointer !== null) return;
     e.preventDefault();
     e.stopPropagation();
+    // Armed: the wheel is being placed, not turned.
+    if (armed) { beginMove(root, e); return; }
     // A press on a spinning wheel stops it — and then becomes the drag,
     // so catching a runaway flick and re-aiming it is one gesture.
     stopCoast();
@@ -217,6 +412,7 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
   }
 
   function onPointerMove(e: PointerEvent) {
+    if (move) { applyMove(e); return; }
     if (dragPointer !== e.pointerId) return;
     e.preventDefault();
     const faceDy = e.clientY - dragLastY;
@@ -230,6 +426,7 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
   }
 
   function onPointerUp(e: PointerEvent) {
+    if (move) { endMove(e); return; }
     if (dragPointer !== e.pointerId) return;
     dragPointer = null;
     if (root.hasPointerCapture(e.pointerId)) root.releasePointerCapture(e.pointerId);
@@ -245,6 +442,7 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
   }
 
   function onPointerCancel(e: PointerEvent) {
+    if (move) { endMove(e); return; }
     if (dragPointer !== e.pointerId) return;
     dragPointer = null;
     samples.length = 0;
@@ -289,9 +487,21 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
   let lastTop = "";
   let lastLeft = "";
   function applyPlacement() {
+    // A wheel the user has moved answers to that, and to the host's
+    // bounds — nothing else.
+    if (custom) {
+      const p = clampToHost(custom);
+      const cTop = `${Math.round(p.y)}px`;
+      const cLeft = `${Math.round(p.x)}px`;
+      if (cTop !== lastTop) { root.style.top = cTop; lastTop = cTop; }
+      if (cLeft !== lastLeft) { root.style.left = cLeft; lastLeft = cLeft; }
+      return;
+    }
+    // `hostTopInset` is the pane's floating pill title bar (0 elsewhere).
+    const hostTop = state.hostTopInset || 0;
     const top = state.paneHosted
-      ? `${WHEEL_PANE_INSET}px`
-      : `calc(env(safe-area-inset-top) + ${WHEEL_TOP}px + var(--pane-dock-top-height, 0px))`;
+      ? `${WHEEL_PANE_INSET + hostTop}px`
+      : `calc(env(safe-area-inset-top) + ${WHEEL_TOP + hostTop}px + var(--pane-dock-top-height, 0px))`;
     // `--sidebar-grip-width` is also the file sidebar's collapsed width,
     // so the window form clears the grip when the sidebar is closed and
     // lands squarely underneath the sidebar when it's open — which, with
@@ -337,7 +547,10 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     if (next !== visible) {
       visible = next;
       root.style.display = next ? "block" : "none";
-      if (!next) stopCoast();
+      // A wheel that just went away can't be placed — bank wherever it
+      // had got to rather than leaving the mode armed on a hidden
+      // control that comes back outlined.
+      if (!next) { commitPosition(); stopCoast(); }
     }
     if (visible) { applyPlacement(); applySkin(); }
   }
@@ -360,6 +573,8 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     root,
     destroy() {
       state.removeEventListener("change", onChange);
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
+      if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
       ro?.disconnect();
       stopCoast();
       root.remove();

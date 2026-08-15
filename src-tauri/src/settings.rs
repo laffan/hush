@@ -404,6 +404,15 @@ pub struct AppSettings {
     pub notebook_shelf_width: u32,
     #[serde(default = "default_notebook_proof_rail_width")]
     pub notebook_proof_rail_width: u32,
+    /// Where the proofread scroll wheel was last parked, as an offset
+    /// from the top-left of whichever box hosts the canvas. `None` means
+    /// "never moved" — the wheel takes its default corner. Absolute px
+    /// rather than a fraction because the wheel is a fixed-size control:
+    /// the JS side clamps it back inside a host that has since shrunk.
+    #[serde(default)]
+    pub notebook_proof_wheel_x: Option<f64>,
+    #[serde(default)]
+    pub notebook_proof_wheel_y: Option<f64>,
     /// Routing mode for flowchart arrows on the notebook canvas. Either
     /// "closest" (pick the nearest pair of cardinal edges) or "horizontal"
     /// (always exit the parent's right side and enter the child's left).
@@ -722,6 +731,8 @@ impl Default for AppSettings {
             notebook_text_max_width: default_notebook_text_max_width(),
             notebook_shelf_width: default_notebook_shelf_width(),
             notebook_proof_rail_width: default_notebook_proof_rail_width(),
+            notebook_proof_wheel_x: None,
+            notebook_proof_wheel_y: None,
             flow_connect_mode: default_flow_connect_mode(),
             notebook_text_styles: Vec::new(),
             last_notebook_id: None,

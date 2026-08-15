@@ -251,6 +251,15 @@ export class DrawingState extends EventTarget {
    *  absorb its *own* height and push its toolbar to the ceiling) and
    *  must not apply window safe-area insets — its edges are interior. */
   paneHosted = false;
+  /** Height of the host's own chrome overlapping the top of the canvas
+   *  box, in px. Non-zero only for a docked pane on iPad, whose title
+   *  bar floats as a pill *over* the content rather than sitting above
+   *  it in flow — canvas chrome pinned to the top edge (toolbar, shelf,
+   *  page rail, scroll wheel) adds this so it lands beneath the pill
+   *  instead of under it. Measured from geometry by the pane
+   *  (`pane-dock.js#syncPaneChromeInset`), so it follows the pill
+   *  wherever the CSS puts it. */
+  hostTopInset = 0;
   /** Desktop "Thumbnail labels" option, mirrored per-canvas. Gates the
    *  persistent caption nested-project thumbnails paint (renderer.ts). */
   showFileLabels = true;

@@ -194,6 +194,13 @@ async function loadNotebookPane(pane) {
   // not mirror global dock footprints or window safe-area insets.
   canvas.state.paneHosted = true;
   pane.notebook = canvas;
+  // A pane that was already docked when this canvas mounted (restore at
+  // boot, or a file swapped into a docked pane) needs its chrome inset
+  // measured now — `applyDockGeometry` ran before there was a canvas to
+  // tell. Deferred a frame so the pane's own layout has settled.
+  requestAnimationFrame(() => {
+    import("./pane-dock.js").then((m) => m.syncPaneChromeInset(pane)).catch(() => {});
+  });
 
   // Inherit the current Hush editor style (appearance/theme/font/grid) —
   // if the notebook has a locked style, that takes precedence.

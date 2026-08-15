@@ -110,6 +110,9 @@ export function undockPane(pane) {
     });
   }
   publishDockCssVars();
+  // The pill title bar goes back in flow on undock, so the canvas gets
+  // its top edge back.
+  syncPaneChromeInset(pane);
   // Remaining docked panes may have been shrunk on the cross axis to
   // make room for this one — re-flex them all so they reclaim the
   // freed space.
@@ -210,6 +213,41 @@ export function applyDockGeometry(pane) {
     height: pane.height + "px",
   });
   publishDockCssVars();
+  syncPaneChromeInset(pane);
+}
+
+/** Gap between the pane's floating title pill and whatever the canvas
+ *  parks beneath it. */
+const PILL_CLEARANCE = 8;
+
+/**
+ * Tell a notebook pane's canvas how much of its own top edge the pane's
+ * chrome is sitting on.
+ *
+ * On iPad a docked pane wears its title as a pill floating *over* the
+ * content (the full-width bar would land under the system menu band —
+ * see floating-pane.css), and canvas chrome pinned to the top edge
+ * would otherwise open underneath it. Measured rather than derived: the
+ * overlap is however far the title bar's box reaches past the top of
+ * the content box, which is zero for an in-flow title bar and follows
+ * the pill wherever the CSS puts it, at whatever height its text wraps
+ * to.
+ */
+export function syncPaneChromeInset(pane) {
+  const canvas = pane?.notebook;
+  if (!canvas?.state) return;
+  const bar = pane.el?.querySelector(".floating-pane-titlebar");
+  const content = pane._content;
+  let inset = 0;
+  if (bar && content) {
+    const barRect = bar.getBoundingClientRect();
+    const contentRect = content.getBoundingClientRect();
+    const overlap = barRect.bottom - contentRect.top;
+    if (overlap > 0 && barRect.height) inset = Math.round(overlap + PILL_CLEARANCE);
+  }
+  if (canvas.state.hostTopInset === inset) return;
+  canvas.state.hostTopInset = inset;
+  canvas.state.notify("theme");
 }
 
 /** Track the left sidebar (file panel) so docked panes start past it. */

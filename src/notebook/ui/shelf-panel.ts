@@ -65,7 +65,10 @@ export function createShelfPanel(
   let openWidth = Math.max(200, opts.initialWidth ?? 280);
 
   const panel = h("div", {
-    style: { position: "absolute", top: "calc(env(safe-area-inset-top) + 20px + var(--pane-dock-top-height, 0px))", right: "calc(env(safe-area-inset-right) + var(--pane-dock-right-width, 0px))", bottom: "calc(env(safe-area-inset-bottom) + 20px + var(--pane-dock-bottom-height, 0px))", zIndex: "150", display: "flex", flexDirection: "column", transition: "width 0.2s", overflow: "hidden", width: "24px", minWidth: "24px", borderRadius: "12px 0 0 12px" },
+    // Edge offsets are written by `applyPlacement` — they depend on
+    // `state.paneHosted`, which a pane / stack host sets after this
+    // function has already returned.
+    style: { position: "absolute", zIndex: "150", display: "flex", flexDirection: "column", transition: "width 0.2s", overflow: "hidden", width: "24px", minWidth: "24px", borderRadius: "12px 0 0 12px" },
   });
   panel.classList.add("notebook-shelf");
 
@@ -272,8 +275,43 @@ export function createShelfPanel(
     perf.begin("ui:shelf"); try { rebuildInner(); } finally { perf.end("ui:shelf"); }
   }
 
+  /** Where the shelf hangs, against whichever box the canvas fills.
+   *
+   *  The window form folds in the safe-area bands and the global
+   *  pane-dock footprints. Inside a pane, both are wrong, and the right
+   *  one is catastrophically so: **the global right-dock width IS a
+   *  right-docked pane's own width**, so the shelf was pushed a whole
+   *  pane-width inboard — clean out of the pane, invisible. The damage
+   *  didn't stop there. The canvas measures `rightInset` from where the
+   *  shelf actually is, so an escaped shelf handed a nonsense inset to
+   *  everything that parks against it: the page rail, the toolbar's
+   *  horizontal centring, and the drawing panel's minimized pill, which
+   *  is why a right-docked notebook pane's chrome drifted towards the
+   *  middle of the screen. A pane's edges are interior — the host has
+   *  already carved the docks and the safe areas out of the box.
+   *
+   *  `state.hostTopInset` is the pane's own chrome (the floating pill
+   *  title bar a docked pane wears on iPad); zero everywhere else. */
+  let lastPlacement = "";
+  function applyPlacement() {
+    const key = `${state.paneHosted ? "pane" : "window"}|${state.hostTopInset || 0}`;
+    if (key === lastPlacement) return;
+    lastPlacement = key;
+    const hostTop = state.hostTopInset || 0;
+    if (state.paneHosted) {
+      panel.style.top = `${20 + hostTop}px`;
+      panel.style.right = "0px";
+      panel.style.bottom = "20px";
+    } else {
+      panel.style.top = `calc(env(safe-area-inset-top) + ${20 + hostTop}px + var(--pane-dock-top-height, 0px))`;
+      panel.style.right = "calc(env(safe-area-inset-right) + var(--pane-dock-right-width, 0px))";
+      panel.style.bottom = "calc(env(safe-area-inset-bottom) + 20px + var(--pane-dock-bottom-height, 0px))";
+    }
+  }
+
   function rebuildInner() {
     applyTheme();
+    applyPlacement();
 
     panel.style.width = isOpen ? `${openWidth}px` : "24px";
     panel.style.minWidth = isOpen ? `${openWidth}px` : "24px";
