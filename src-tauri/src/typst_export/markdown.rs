@@ -27,6 +27,7 @@ use std::collections::HashSet;
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 use super::citations::{expand_cite_sentinels, preprocess_cites};
+use super::code::{emit_code_block, emit_inline_code};
 use super::images;
 use super::preprocess::{TAB_MARKER_CLOSE, TAB_MARKER_OPEN};
 
@@ -126,6 +127,8 @@ struct Emitter<'a> {
     /// buffer; the figure (with caption) is emitted on image end.
     image: Option<PendingImage>,
     code_block: Option<String>,
+    /// Info string of the fenced block being collected, if any.
+    code_lang: Option<String>,
     /// Normalized paths the World can serve — see `to_typst`.
     available_images: &'a HashSet<String>,
 }
@@ -160,6 +163,7 @@ impl<'a> Emitter<'a> {
             pending: None,
             image: None,
             code_block: None,
+            code_lang: None,
             available_images,
         }
     }
@@ -169,7 +173,7 @@ impl<'a> Emitter<'a> {
             Event::Start(tag) => self.start(tag, out),
             Event::End(tag) => self.end(tag, out),
             Event::Text(t) => self.text(&t, out),
-            Event::Code(c) => self.write(&format!("`{}`", c.replace('`', "\\`")), out),
+            Event::Code(c) => { let raw = emit_inline_code(&c); self.write(&raw, out); }
             Event::Html(h) | Event::InlineHtml(h) => {
                 // Escape HTML so it shows up as text — Typst doesn't
                 // render raw HTML. Styles can override later.
@@ -244,7 +248,11 @@ impl<'a> Emitter<'a> {
                     pulldown_cmark::CodeBlockKind::Fenced(l) => l.to_string(),
                     pulldown_cmark::CodeBlockKind::Indented => String::new(),
                 };
-                self.code_block = Some(format!("```{}\n", lang));
+                // Language is remembered rather than written: whether the
+                // block can be fenced at all depends on what's inside it,
+                // and that isn't known until the end tag (see `emit_code`).
+                self.code_lang = Some(lang);
+                self.code_block = Some(String::new());
             }
             Tag::List(start) => {
                 self.list_stack.push(match start {
@@ -314,13 +322,11 @@ impl<'a> Emitter<'a> {
             TagEnd::Heading(_) => out.push_str("\n\n"),
             TagEnd::BlockQuote(_) => out.push_str("\n]\n\n"),
             TagEnd::CodeBlock => {
-                if let Some(mut buf) = self.code_block.take() {
-                    if !buf.ends_with('\n') {
-                        buf.push('\n');
-                    }
-                    buf.push_str("```\n\n");
+                if let Some(buf) = self.code_block.take() {
+                    let lang = self.code_lang.take().unwrap_or_default();
                     out.push('\n');
-                    out.push_str(&buf);
+                    out.push_str(&emit_code_block(&buf, &lang));
+                    out.push_str("\n\n");
                 }
             }
             TagEnd::List(_) => {
@@ -433,6 +439,19 @@ mod tests {
     /// `super::to_typst` with a real one.
     fn to_typst(markdown: &str, cite_mode: CitationMode) -> String {
         super::to_typst(markdown, cite_mode, &HashSet::new())
+    }
+
+    /// Regression, from an iPad export that died on
+    /// `unknown variable: ongoing`: a fenced block containing a fence
+    /// closed the raw early, so every paragraph after it was parsed as
+    /// Typst code and an ordinary `#tag` in the prose blew up the
+    /// compile — hundreds of lines from the block that caused it.
+    #[test]
+    fn nested_fence_does_not_leak_into_the_prose() {
+        let md = "Intro.\n\n````\nsome doc showing a fence:\n```\nnested\n```\n````\n\nA paragraph about #ongoing work.";
+        let out = super::to_typst(md, CitationMode::Strip, &HashSet::new());
+        // The prose is prose: the tag is escaped, not a variable.
+        assert!(out.contains("\\#ongoing"), "got: {out}");
     }
 
     fn resolve_with(keys: &[&str]) -> CitationMode {

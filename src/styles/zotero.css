@@ -4,7 +4,10 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 480px;
+  /* Wide enough for the collection tree and a full article title beside
+     it — at the old 480 the tree took its 200 out of the titles. */
+  width: 680px;
+  max-width: calc(100vw - 32px);
   max-height: 500px;
   background: var(--panel-bg, var(--bg));
   border: 1px solid var(--panel-border);

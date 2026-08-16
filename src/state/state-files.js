@@ -231,6 +231,34 @@ export async function openFile(state, id) {
     if (node.type === "pdf") return openPdf(state, id);
   }
   if (state.dirty) await state.saveCurrentFile();
+
+  // Get the bytes BEFORE tearing down what's on screen — the same order
+  // `openNotebook` takes, and for the same reason.
+  //
+  // The load can come back empty-handed: a provider that hasn't
+  // delivered the file (`open-file-wait.js` retries, then gives up and
+  // says so), or an open the user superseded by clicking something else
+  // while it waited. Tearing down first meant every one of those left
+  // the app with *nothing* open — the "Start writing…" placeholder over
+  // a document the user hadn't closed — and the click that was supposed
+  // to open it looked like the click that closed it. Clicking again
+  // then worked, because the failed read had kicked off the download in
+  // the meantime, which is exactly the two-taps-to-open the wait module
+  // was written to end.
+  let file = null;
+  if (IS_TAURI) {
+    // Not a bare `load_file`: inside a synced desk folder the read can be
+    // slow (macOS materialises on open) or fail outright (iOS hands back
+    // a placeholder), and both used to look like the click doing nothing.
+    // See state/open-file-wait.js.
+    const { loadFileForOpen } = await import("./open-file-wait.js");
+    file = await loadFileForOpen(state, id, node);
+  } else {
+    file = state.files.find((f) => f.id === id) || null;
+  }
+  // Nothing to show: leave the editor exactly as the user left it.
+  if (!file) return;
+
   // Park the outgoing doc's EditorState (undo history, selection, folds)
   // so revisiting it restores its own history — and the incoming doc
   // starts from its stashed state or a fresh one, never inheriting the
@@ -251,21 +279,8 @@ export async function openFile(state, id) {
   state.currentProjectId = null;
   state.projectDocIds = [];
   state.currentLocalSync = null;
-  if (IS_TAURI) {
-    // Not a bare `load_file`: inside a synced desk folder the read can be
-    // slow (macOS materialises on open) or fail outright (iOS hands back
-    // a placeholder), and both used to look like the click doing nothing.
-    // See state/open-file-wait.js.
-    const { loadFileForOpen } = await import("./open-file-wait.js");
-    const file = await loadFileForOpen(state, id, node);
-    if (file) {
-      state.currentFileId = file.id;
-      if (state.editor) state.editor.loadDocState(`doc:${file.id}`, file.content);
-    }
-  } else {
-    const file = state.files.find((f) => f.id === id);
-    if (file) { state.currentFileId = file.id; if (state.editor) state.editor.loadDocState(`doc:${file.id}`, file.content); }
-  }
+  state.currentFileId = file.id;
+  if (state.editor) state.editor.loadDocState(`doc:${file.id}`, file.content);
   // Restore the saved per-doc scroll. setContent above resets scrollTop
   // to 0, so we re-apply after CodeMirror has laid out the new buffer.
   const savedScroll = state.settings.docScrollPositions?.[state.currentFileId];

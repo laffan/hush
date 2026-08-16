@@ -79,8 +79,17 @@ function onBookmarksChanged(fileId) {
   if (_openList && _openList.fileId === fileId) _openList.rebuild();
 }
 
+/** Touch-mode ⌘ (`cmd-button.js`), resolved once at boot. The clip drag
+ *  has to decide whether the modifier is down *synchronously* inside
+ *  pointerdown — an awaited import there lands after the gesture has
+ *  already been claimed by the page. */
+let _isCmdHeld = () => false;
+
 export function initPdfBookmarks(state) {
   _state = state;
+  import("../cmd-button.js")
+    .then((m) => { if (typeof m.isCmdHeld === "function") _isCmdHeld = m.isCmdHeld; })
+    .catch(() => { /* touch-mode pills unavailable — the real key still works */ });
   // Notebook text shapes route url-link clicks through a window hook
   // (the canvas module deliberately doesn't import app modules — same
   // pattern as __hushOpenWikilink).
@@ -491,14 +500,54 @@ function paintClipLayer(entry) {
   entry.layer.querySelectorAll(".pdf-clip-mark").forEach((markEl) => {
     const bm = clips.find((b) => b.id === markEl.dataset.bmId);
     if (!bm) return;
+    // Set by a drag so the release doesn't also open the editor.
+    let dragged = false;
     markEl.addEventListener("click", (e) => {
       e.stopPropagation();
+      if (dragged) { dragged = false; return; }
       openBookmarkEditor({
         anchor: pointAnchor(e.clientX, e.clientY),
         fileId: entry.fileId,
         page: entry.page,
         bookmark: bm,
       });
+    });
+
+    // ⌘-drag the dot to move the clip. The tab and the dashed line are
+    // drawn from the same two custom properties, so writing them is the
+    // whole animation — no per-frame layout of three elements.
+    const dot = markEl.querySelector(".pdf-clip-dot");
+    dot?.addEventListener("pointerdown", (e) => {
+      if (!(e.metaKey || e.ctrlKey || _isCmdHeld())) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const page = entry.layer.getBoundingClientRect();
+      if (!page.width || !page.height) return;
+      dot.setPointerCapture(e.pointerId);
+      let at = null;
+      const onMove = (me) => {
+        at = {
+          x: clamp01((me.clientX - page.left) / page.width),
+          y: clamp01((me.clientY - page.top) / page.height),
+        };
+        markEl.style.setProperty("--clip-x", `${(at.x * 100).toFixed(3)}%`);
+        markEl.style.setProperty("--clip-y", `${(at.y * 100).toFixed(3)}%`);
+      };
+      const onUp = () => {
+        dot.removeEventListener("pointermove", onMove);
+        dot.removeEventListener("pointerup", onUp);
+        dot.removeEventListener("pointercancel", onUp);
+        if (!at) return;
+        dragged = true;
+        // The registry write repaints this layer, which rebuilds the
+        // mark at the position we've been previewing.
+        updatePdfBookmark(entry.fileId, bm.id, at);
+      };
+      dot.addEventListener("pointermove", onMove);
+      dot.addEventListener("pointerup", onUp);
+      // iOS ends a claimed touch with `pointercancel`; committing there
+      // keeps a drag the system interrupted rather than dropping it.
+      dot.addEventListener("pointercancel", onUp);
     });
   });
 }

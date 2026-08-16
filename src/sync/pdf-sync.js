@@ -197,6 +197,13 @@ export async function updatePdfBookmark(fileId, bookmarkId, patch) {
   if (typeof patch.name === "string" && patch.name.trim()) bm.name = patch.name.trim();
   if (typeof patch.color === "string" && patch.color) bm.color = patch.color;
   if (typeof patch.page === "number" && patch.page >= 1) bm.page = patch.page | 0;
+  // Where a clip points, moved by a cmd-drag of its dot. Both or
+  // neither — a half-updated pair would put the dot on one axis of the
+  // old position and one of the new.
+  if (Number.isFinite(patch.x) && Number.isFinite(patch.y)) {
+    bm.x = Math.min(1, Math.max(0, patch.x));
+    bm.y = Math.min(1, Math.max(0, patch.y));
+  }
   await persistRegistry();
   _state?.emit("pdf-bookmarks-changed", fileId);
   return bm;

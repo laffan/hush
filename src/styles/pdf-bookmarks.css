@@ -349,6 +349,17 @@
   box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9);
   pointer-events: auto;
   cursor: pointer;
+  /* The dot is a 10px target that also has to be draggable — give the
+     touch/pointer hit area room without growing the mark itself. */
+  touch-action: none;
+}
+
+/* ⌘ held: the dot becomes the grab handle for moving the clip. The
+   class rides <body> from cmd-button.js, so touch mode's ⌘ pill lights
+   it up the same as the real key. */
+body.cmd-held .pdf-clip-dot {
+  cursor: grab;
+  transform: scale(1.3);
 }
 
 .pdf-clip-mark:hover .pdf-clip-tab,

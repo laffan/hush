@@ -44,6 +44,19 @@ const RETRY_MS = [400, 800, 1600, 3200];
 /** Bumped by every open. A download that finishes after the user has
  *  moved on must not yank the editor to a file they left behind. */
 let _seq = 0;
+/** The file the newest open is for. Supersession is about the user
+ *  changing their mind, so it takes BOTH a newer open and a different
+ *  file: two opens racing for the same one (a tap the panel delivered
+ *  twice, a restore landing on the file the user just clicked) are the
+ *  same intent, and abandoning the first left the caller holding null —
+ *  which, before `openFile` was reordered to load first, blanked the
+ *  editor and turned one tap into two. */
+let _latestId = null;
+
+/** True when a newer open for a DIFFERENT file has started. */
+function superseded(mine, id) {
+  return _seq !== mine && _latestId !== id;
+}
 
 async function invoke(cmd, args) {
   const { invoke } = await import("@tauri-apps/api/core");
@@ -116,6 +129,7 @@ export function ensureFileAvailable(state, id, node) {
  *  the failure says the provider is why. */
 async function waitForDelivery(state, id, node, attempt) {
   const mine = ++_seq;
+  _latestId = id;
   const name = node?.name || "this file";
   const started = Date.now();
   let toast = null;
@@ -130,7 +144,7 @@ async function waitForDelivery(state, id, node, attempt) {
     // Re-checked *after* the import: the wait can finish while this is
     // in flight, and a sticky toast raised past the end never gets
     // dismissed.
-    if (done || _seq !== mine) return;
+    if (done || superseded(mine, id)) return;
     if (explained && !specific) return;
     if (specific) explained = true;
     toast = m.showImportToast(message, "info", { sticky: true });
@@ -151,7 +165,10 @@ async function waitForDelivery(state, id, node, attempt) {
     for (let round = 0; round <= RETRY_MS.length; round++) {
       try {
         const result = await attempt();
-        if (_seq !== mine) return null; // the user moved on
+        if (superseded(mine, id)) {
+          logActivity("files", "info", `Abandoned the open of "${name}" — moved on`, { fileId: id });
+          return null; // the user moved on
+        }
         const took = Date.now() - started;
         if (took >= SLOW_OPEN_MS) {
           logActivity("files", "info", `Opened "${name}" after waiting for the provider`, {
@@ -171,12 +188,12 @@ async function waitForDelivery(state, id, node, attempt) {
         }
         if (round === RETRY_MS.length) break;
         await requestDownload(path);
-        if (_seq !== mine) return null;
+        if (superseded(mine, id)) return null;
         await sleep(RETRY_MS[round]);
-        if (_seq !== mine) return null;
+        if (superseded(mine, id)) return null;
       }
     }
-    if (_seq !== mine) return null;
+    if (superseded(mine, id)) return null;
     await hush();
     // Out of retries, or an error that was never about downloading.
     if (undeliveredPath(error) !== null) {
@@ -195,6 +212,6 @@ async function waitForDelivery(state, id, node, attempt) {
   } finally {
     done = true;
     clearTimeout(slow);
-    if (_seq === mine) await hush();
+    if (!superseded(mine, id)) await hush();
   }
 }

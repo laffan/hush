@@ -22,6 +22,7 @@ pipeline deterministic and avoids tempfile permissions issues on iOS.
 
 pub mod bibliography;
 pub mod citations;
+pub mod code;
 pub mod csl;
 pub mod images;
 pub mod markdown;
@@ -279,6 +280,104 @@ mod tests {
         let pdf = render_pdf(&req).expect("render");
         assert!(pdf.len() > 1000, "PDF unexpectedly small: {} bytes", pdf.len());
         assert_eq!(&pdf[..4], b"%PDF", "missing PDF magic");
+    }
+
+    /// No markdown position may let a bare `#tag` reach the Typst
+    /// source as code. Every one of these used to be a live way to lose
+    /// an export: Typst reads `#word` as a variable, so one hashtag in
+    /// the prose is a hard compile failure for the whole document.
+    #[test]
+    fn hash_never_leaks_as_typst_code() {
+        let cases: Vec<(&str, String)> = vec![
+            ("plain", "A tag #ongoing here.".into()),
+            ("footnote body", "Text[^1]\n\n[^1]: note about #ongoing".into()),
+            ("link label", "[#ongoing](http://x)".into()),
+            ("heading", "## Heading #ongoing".into()),
+            ("table cell", "| a | b |\n|---|---|\n| #ongoing | y |".into()),
+            ("list item", "- item #ongoing".into()),
+            ("emphasis", "*#ongoing*".into()),
+            ("blockquote", "> quoted #ongoing".into()),
+            ("image alt", "![#ongoing](pic.png)".into()),
+            ("task list", "- [ ] todo #ongoing".into()),
+            ("tab marker", "---Tab #ongoing---\n\nbody".into()),
+            ("comment anchor", "{>text #ongoing<ab}\n\n[>ab]: note".into()),
+            ("strikethrough", "~~#ongoing~~".into()),
+            ("html", "<span>#ongoing</span>".into()),
+            ("after a nested fence", "````\n```\n````\n\ntag #ongoing".into()),
+            ("after inline backticks", "`` a`b `` then #ongoing".into()),
+        ];
+        let mut leaks = Vec::new();
+        for (label, md) in cases {
+            let cleaned = preprocess::run(&md, true, true, true);
+            let body = markdown::to_typst(&cleaned, markdown::CitationMode::Strip, &std::collections::HashSet::new());
+            // A leak is `#ongoing` neither backslash-escaped nor sitting
+            // inside a quoted string (a URL argument is just data).
+            for (i, _) in body.match_indices("#ongoing") {
+                let escaped = i > 0 && body.as_bytes()[i - 1] == b'\\';
+                let in_string = body[..i].matches('"').count() % 2 == 1;
+                if !escaped && !in_string {
+                    leaks.push(format!("{label}: {}", body.replace('\n', "\\n")));
+                    break;
+                }
+            }
+        }
+        assert!(leaks.is_empty(), "unescaped hash leaked from:\n  {}", leaks.join("\n  "));
+    }
+
+    /// Compile `body` through the Formal style, reporting the first
+    /// diagnostic on failure.
+    fn compiles(body: &str) -> Result<(), String> {
+        let style = styles::lookup("formal").unwrap();
+        let source = styles::wrap(style, body, &styles::WrapOptions {
+            bibliography: None, number_headings: false, page_numbers: false,
+            line_spacing: 1.5, header_scale: 1.0, heading_space: 0.0,
+        });
+        let world = world::ExportWorld::new(source, None, None, vec![]);
+        typst::compile::<typst::layout::PagedDocument>(&world)
+            .output
+            .map(|_| ())
+            .map_err(|e| e.first().map(|d| d.message.to_string()).unwrap_or_default())
+    }
+
+    /// The Typst behaviour the code-block fencing rule is built on: a
+    /// raw block closes at the first matching backtick run, so a fence
+    /// must be longer than anything inside it. Pinned as a test because
+    /// the rule is invisible in our own source — if a Typst upgrade ever
+    /// changes it, this says so rather than the export dying in the
+    /// field.
+    #[test]
+    fn typst_raw_closes_at_the_first_matching_run() {
+        assert!(compiles("```rust\nlet x = 1;\n```").is_ok());
+        assert!(compiles("```\nsee ``` here\n```").is_err(), "a short fence must not hold a longer run");
+        assert!(compiles("````\nsee ``` here\n````").is_ok());
+        assert!(compiles("`````rust\nsee ```` here\n`````").is_ok());
+    }
+
+    /// Regression, from an iPad export that died on
+    /// `unknown variable: ongoing` six hundred lines from the cause: a
+    /// fenced block containing a fence closed its raw early, and the
+    /// prose after it was parsed as Typst code.
+    #[test]
+    fn renders_doc_whose_code_block_contains_a_fence() {
+        let req = ExportRequest {
+            markdown: "# Notes\n\n````\nMarkdown fences look like this:\n```\ncode\n```\n````\n\nA paragraph about #ongoing work, with `a`b` inline too."
+                .into(),
+            style_id: "formal".into(),
+            include_citations: false,
+            citation_style: "numbered".into(),
+            strip_comments: true,
+            strip_flags: true,
+            number_headings: false,
+            page_numbers: true,
+            include_tabs: true,
+            line_spacing: 1.5,
+            header_scale: 1.0,
+            heading_space: 0.0,
+            references: vec![],
+            images: vec![],
+        };
+        let pdf = render_pdf(&req).expect("a nested fence must not fail the export");
+        assert_eq!(&pdf[..4], b"%PDF");
     }
 
     /// Lay out `markdown` through the Formal style and report how many
