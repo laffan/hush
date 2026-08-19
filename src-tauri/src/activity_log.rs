@@ -127,3 +127,19 @@ pub fn note(source: &str, level: &str, message: impl Into<String>) {
     };
     let _ = append(&[entry]);
 }
+
+/// Same, with a structured payload. `detail` is serialised here rather
+/// than by the caller so a log line costs one `json!` at the call site.
+/// Silently drops an unserialisable payload — see `note`.
+pub fn note_detail(source: &str, level: &str, message: impl Into<String>, detail: serde_json::Value) {
+    let entry = ActivityEntry {
+        t: chrono::Utc::now().timestamp_millis(),
+        level: level.to_string(),
+        source: source.to_string(),
+        window: "rust".to_string(),
+        desk: String::new(),
+        message: message.into(),
+        detail: serde_json::to_string(&detail).unwrap_or_default(),
+    };
+    let _ = append(&[entry]);
+}

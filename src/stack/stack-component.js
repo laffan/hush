@@ -33,6 +33,28 @@ const MIN_COLUMN_HEIGHT = 150;
 const maxItemWidth = () => Math.max(MIN_COLUMN_WIDTH, window.innerWidth - 100);
 const maxItemHeight = () => Math.max(MIN_COLUMN_HEIGHT, window.innerHeight - 100);
 
+/**
+ * Hold an `overflow: hidden` box at its origin.
+ *
+ * A column's content box is `overflow: hidden` because its content is
+ * meant to fill it exactly — but `overflow: hidden` is still
+ * *programmatically* scrollable, and anything inside that calls
+ * `scrollIntoView` will scroll it without asking. There is then no way
+ * back: the user can't scroll it, so the content stays shoved off to one
+ * side for as long as the column is open. (The proof page rail did
+ * exactly this on every page it highlighted, which is what dragged whole
+ * proof columns sideways as you read down them.)
+ *
+ * The listener fires only when something has already scrolled the box —
+ * never during normal use — so this costs nothing to leave armed.
+ */
+function pinUnscrollable(el) {
+  el.addEventListener("scroll", () => {
+    if (el.scrollLeft !== 0) el.scrollLeft = 0;
+    if (el.scrollTop !== 0) el.scrollTop = 0;
+  });
+}
+
 export class StackComponent {
   constructor(container, data, state) {
     this._container = container;
@@ -198,6 +220,7 @@ export class StackComponent {
     const content = document.createElement("div");
     content.className = "stack-column-content";
     content.style.display = item.open ? "block" : "none";
+    pinUnscrollable(content);
     col.appendChild(content);
 
     // Click anywhere in the column to make it "active"

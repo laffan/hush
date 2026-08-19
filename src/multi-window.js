@@ -17,6 +17,7 @@ import { isIOSTauri } from "./command-palette-helpers.js";
 import { applyExternalDocContent } from "./sync/apply-external.js";
 import { findNode, findNodeByFileId } from "./state/tree-helpers.js";
 import { updatePrivateBoxColor } from "./theme-colors.js";
+import { logActivity } from "./activity-log.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -161,10 +162,16 @@ export async function openInNewWindow(fileId, fileType, deskId = null) {
         dragDropEnabled: false,
         center: true,
       };
+  logActivity("window", "info", "Opening a new window", { label, fileType, fileId, deskId });
   const win = new WebviewWindow(label, opts);
   // Surface creation errors but don't throw — the palette already closed.
   win.once("tauri://error", (e) => {
-    console.error("Failed to open new window:", e);
+    logActivity("window", "error", "Failed to open a new window", {
+      label, error: String(e?.payload ?? e),
+    });
+  });
+  win.once("tauri://created", () => {
+    logActivity("window", "info", "New window created", { label });
   });
 }
 
@@ -368,11 +375,16 @@ export async function setupMultiWindow(state) {
   });
 
   try {
-    await registerThisWindow();
+    const info = await registerThisWindow();
+    logActivity("window", "info", "Registered with the window registry", {
+      label: myLabel, number: info?.number ?? null,
+    });
     const { fileId, fileType } = currentFileFromState(state);
     await pushCurrentFile(fileId, fileType);
   } catch (e) {
-    console.warn("Multi-window registration failed:", e);
+    logActivity("window", "error", "Multi-window registration failed", {
+      label: myLabel, error: String(e),
+    });
   }
 
   const syncWindowFile = () => {
@@ -439,12 +451,33 @@ export async function setupMultiWindow(state) {
   // this window is showing. Timers stop while iOS suspends us, which is
   // exactly the point — a scene that isn't running drops out of the
   // registry, then reappears here the moment it resumes.
+  // A heartbeat that starts failing, or a window that keeps having to be
+  // re-registered, both say the scene is being suspended and resumed
+  // under us — worth a line, but only on the transition. Steady state
+  // stays silent, which is the whole point of a 4 s timer.
+  let _beatFailing = false;
   const heartbeat = async () => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       const reRegistered = await invoke("window_heartbeat", { label: myLabel });
-      if (reRegistered) syncWindowFile();
-    } catch (_) { /* backend unavailable mid-teardown */ }
+      if (_beatFailing) {
+        _beatFailing = false;
+        logActivity("window", "info", "Heartbeat recovered", { label: myLabel });
+      }
+      if (reRegistered) {
+        logActivity("window", "warn", "Heartbeat re-registered an expired window", {
+          label: myLabel,
+        });
+        syncWindowFile();
+      }
+    } catch (e) {
+      if (!_beatFailing) {
+        _beatFailing = true;
+        logActivity("window", "warn", "Heartbeat failed — backend unreachable", {
+          label: myLabel, error: String(e),
+        });
+      }
+    }
   };
   setInterval(heartbeat, 4000);
 

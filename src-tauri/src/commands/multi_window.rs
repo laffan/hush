@@ -27,11 +27,31 @@ use crate::AppState;
 ///     badge number is minted) counts as few dead siblings as possible.
 fn prune_dead_windows(app: &AppHandle, state: &State<AppState>) {
     let alive: Vec<String> = app.webview_windows().keys().cloned().collect();
+    let before = labels(&state.window_registry.list());
     state.window_registry.prune(&alive);
     #[cfg(mobile)]
     state
         .window_registry
         .prune_stale(std::time::Duration::from_secs(10));
+    let after = labels(&state.window_registry.list());
+    if after != before {
+        // Which windows the registry believes in, and which the runtime
+        // still holds, at the moment it changed its mind. On iPad these
+        // two disagree routinely — that's what the age expiry is for —
+        // and a registry that keeps expiring a window that is plainly
+        // still on screen is a heartbeat that stopped running, which is
+        // worth being able to see afterwards.
+        crate::activity_log::note_detail(
+            "window",
+            "info",
+            "Window registry pruned",
+            serde_json::json!({ "before": before, "after": after, "runtime": alive }),
+        );
+    }
+}
+
+fn labels(list: &[WindowInfo]) -> Vec<String> {
+    list.iter().map(|w| w.label.clone()).collect()
 }
 
 #[tauri::command]
@@ -47,7 +67,27 @@ pub fn register_window(
     label: String,
 ) -> WindowInfo {
     prune_dead_windows(&app, &state);
+    // Log only a label the registry hadn't seen — `registerThisWindow`
+    // is also the re-assert on every foreground, and logging those would
+    // bury the trail under one line per app switch.
+    let fresh = !state
+        .window_registry
+        .list()
+        .iter()
+        .any(|w| w.label == label);
     let info = state.window_registry.ensure(&label);
+    if fresh {
+        crate::activity_log::note_detail(
+            "window",
+            "info",
+            "Window registered",
+            serde_json::json!({
+                "label": label,
+                "number": info.number,
+                "windows": labels(&state.window_registry.list()),
+            }),
+        );
+    }
     let _ = app.emit("windows-updated", state.window_registry.list());
     info
 }
@@ -72,6 +112,15 @@ pub fn set_window_file(
 pub fn unregister_window(app: AppHandle, state: State<AppState>, label: String) {
     state.window_registry.remove(&label);
     prune_dead_windows(&app, &state);
+    crate::activity_log::note_detail(
+        "window",
+        "info",
+        "Window unregistered",
+        serde_json::json!({
+            "label": label,
+            "windows": labels(&state.window_registry.list()),
+        }),
+    );
     let _ = app.emit("windows-updated", state.window_registry.list());
 }
 

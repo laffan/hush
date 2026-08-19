@@ -168,6 +168,15 @@ async function mountDocContent(contentEl, item, state, liveData) {
 async function mountNotebookContent(contentEl, item, state, liveData) {
   const wrapper = document.createElement("div");
   wrapper.className = "stack-notebook-wrapper";
+  // The canvas fills this box exactly and the chrome around it (shelf,
+  // page rail, scroll wheel) is absolutely positioned against it, so it
+  // has nothing to scroll — but `overflow: hidden` doesn't stop a
+  // `scrollIntoView` from inside, and once shoved the user can't shove it
+  // back. Same guard as the column content box; see `pinUnscrollable`.
+  wrapper.addEventListener("scroll", () => {
+    if (wrapper.scrollLeft !== 0) wrapper.scrollLeft = 0;
+    if (wrapper.scrollTop !== 0) wrapper.scrollTop = 0;
+  });
   contentEl.appendChild(wrapper);
 
   try {

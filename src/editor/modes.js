@@ -1,5 +1,16 @@
 import { applyTypewriterPadding } from "./plugins/typewriter.js";
 
+/** iPadOS / iOS, by the project's usual UA + touch-point test (iPadOS 13+
+ *  reports as Macintosh; some WKWebViews expose only one touch point;
+ *  real Macs report zero). Local copy rather than an import so this
+ *  module keeps its single dependency. */
+function isIOSLike() {
+  if (typeof navigator === "undefined") return false;
+  if (/iPad|iPhone|iPod/.test(navigator.userAgent || "")) return true;
+  const tp = typeof navigator.maxTouchPoints === "number" ? navigator.maxTouchPoints : 0;
+  return /Mac/i.test(navigator.platform || "") && tp > 0;
+}
+
 /**
  * Set vertical padding on the editor's scroller.
  *
@@ -57,7 +68,16 @@ export async function applyFullscreen(state) {
   app.classList.toggle("fullscreen-mode", state.isFullscreen);
 
   const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
-  if (IS_TAURI) {
+  // iPadOS owns window size itself (Split View, Stage Manager, the system
+  // full-screen control), so none of the native calls below mean anything
+  // there — and `setFocus` means something actively harmful: tao's iOS
+  // implementation asks the system to activate a scene session with an
+  // EMPTY `UISceneSessionActivationRequest`, and an empty request is how
+  // you ask iPadOS for a brand-new scene. Tauri hands that scene back as
+  // a `SceneRequested` event, so one fullscreen toggle would mint a whole
+  // extra window (and a second Hush entry in the Dock). The class toggle
+  // above is the entire iPad story: it hides Hush's own chrome.
+  if (IS_TAURI && !isIOSLike()) {
     try {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       const { invoke } = await import("@tauri-apps/api/core");

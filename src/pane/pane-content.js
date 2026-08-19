@@ -17,6 +17,7 @@ import { attachEditorTextDrag, attachNotebookTextShapeDrag, attachNotebookImageS
 import { countWords } from "../editor/plugins/word-count.js";
 import { createModeContext } from "../state/mode-context.js";
 import { loadPdfPane, loadStackPane } from "./pane-media.js";
+import { logActivity } from "../activity-log.js";
 
 /** Update a pane's word-count chip from the current editor content.
  *  Notebook panes don't have a word count. The chip itself is created
@@ -374,10 +375,28 @@ export async function savePaneContent(pane) {
   try {
     if (IS_TAURI) {
       let content = "";
+      // Whether `content` came from a live editor / canvas, as opposed to
+      // still being the empty initial value. An empty document is a
+      // legitimate save; an empty *unread* one is a file about to be
+      // overwritten with nothing because the surface behind it was torn
+      // down first, so the two have to be told apart before writing.
+      let read = false;
       if (pane.fileType === "document" && pane.editor) {
         content = pane.editor.getContent();
+        read = true;
       } else if (pane.fileType === "notebook" && pane.notebook) {
-        const { encodeNotebookContent } = await import("../notebook/notebook-content.ts");
+        read = true;
+        // Read the canvas SYNCHRONOUSLY, before the first `await`.
+        //
+        // `closePane` doesn't await this function — it calls it and then
+        // tears the pane down in the same tick, which nulls
+        // `pane.notebook`. Reading the canvas after the dynamic import
+        // below therefore found nothing and threw, and the throw is
+        // swallowed by the catch at the bottom: closing a notebook pane
+        // silently dropped whatever had been drawn in it since the last
+        // autosave. Gathering the payload up front means the close path
+        // holds a complete snapshot no matter when the import resolves.
+        //
         // In gutter mode `state.camera.y` is driven by the host doc's
         // scrollTop (see `project/gutter.js#syncCameraFromScroll`) rather
         // than tracking a meaningful canvas viewport. Persisting it
@@ -387,29 +406,38 @@ export async function savePaneContent(pane) {
         // position. `_gutterPrev.camera` snapshots the pane's camera
         // at the moment the gutter mode was entered — that's the
         // right value to round-trip.
-        const cameraToSave = pane.gutter
-          ? (pane._gutterPrev?.camera || null)
-          : pane.notebook.state.camera;
-        content = encodeNotebookContent({
-          shapes: pane.notebook.getShapes(),
-          layers: pane.notebook.state.layers,
-          flowEdges: pane.notebook.state.flowchart.serialize(),
+        const nb = pane.notebook;
+        const envelope = {
+          shapes: nb.getShapes(),
+          layers: nb.state.layers,
+          flowEdges: nb.state.flowchart.serialize(),
           // Persist bookmarks + camera so a pane save doesn't drop the
           // user's saved viewports. Without these the pane path silently
           // loses every bookmark the moment it autosaves the file.
-          bookmarks: pane.notebook.state.bookmarks,
-          camera: cameraToSave,
+          bookmarks: nb.state.bookmarks,
+          camera: pane.gutter ? (pane._gutterPrev?.camera || null) : nb.state.camera,
           background: {
-            pattern: pane.notebook.state.backgroundPattern,
-            spacing: pane.notebook.state.gridSpacing,
-            opacity: pane.notebook.state.gridOpacity,
-            rotationEnabled: pane.notebook.state.canvasRotationEnabled,
+            pattern: nb.state.backgroundPattern,
+            spacing: nb.state.gridSpacing,
+            opacity: nb.state.gridOpacity,
+            rotationEnabled: nb.state.canvasRotationEnabled,
           },
           // Same reason as the bookmarks above: the pane holds the whole
           // notebook, so its save has to write the whole notebook.
-          splits: pane.notebook.state.splits,
-          proof: pane.notebook.state.proof ?? undefined,
+          splits: nb.state.splits,
+          proof: nb.state.proof ?? undefined,
+        };
+        const { encodeNotebookContent } = await import("../notebook/notebook-content.ts");
+        content = encodeNotebookContent(envelope);
+      }
+      if (!read) {
+        // Dirty, but the surface that held the changes is already gone.
+        // There is nothing to save and everything to lose — writing the
+        // empty string here would truncate the file to nothing.
+        logActivity("panes", "warn", `Skipped saving "${pane.fileName}" — its editor was already gone`, {
+          fileId: pane.fileId, fileType: pane.fileType,
         });
+        return;
       }
       if (pane.localSync) {
         // Write back to the mounted folder on disk. The Local Sync

@@ -33,6 +33,8 @@ mod desk_tree_ops;
 mod files;
 mod hushnote;
 mod images;
+#[cfg(target_os = "ios")]
+mod ios_scene;
 mod local_sync;
 mod multi_window;
 mod pdfs;
@@ -455,6 +457,12 @@ pub fn run() {
                     }
                 }
             }
+            // iPad window lifecycle, into the activity log — see
+            // `ios_scene::note_window_event` for what is recorded and
+            // why. A scene can appear, move between displays and vanish
+            // with nothing on the JS side running to notice.
+            #[cfg(target_os = "ios")]
+            ios_scene::note_window_event(window, event, &label);
         })
         .invoke_handler(tauri::generate_handler![
             commands::settings::get_settings,
@@ -576,6 +584,7 @@ pub fn run() {
             commands::window::set_activation_policy,
             commands::window::set_traffic_lights_visible,
             commands::window::set_window_display_title,
+            commands::window::set_native_background_color,
             commands::multi_window::list_windows,
             commands::multi_window::register_window,
             commands::multi_window::set_window_file,
@@ -591,24 +600,57 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running Hush")
         .run(move |_app, _event| {
-            // iPad multi-window: the system requests a new scene when the
-            // user long-presses the app icon and picks "New Window". Build
-            // a full default window for it (it restores the last file like
-            // a fresh launch). Windows opened programmatically from JS via
+            // iPad multi-window: the system requests a scene when the user
+            // long-presses the app icon and picks "New Window". Build a
+            // full default window for it (it restores the last file like a
+            // fresh launch). Windows opened programmatically from JS via
             // `new WebviewWindow(...)` — e.g. the "Open in new window"
             // command, which seeds `#file=…` — do NOT emit this event and
             // are created directly, so they're unaffected here.
+            //
+            // But NOT every scene the system offers is a window the user
+            // asked for. Plugging a monitor into an iPad hands us an
+            // external-display session, and tao's `set_focus` can ask for
+            // a scene by accident. `ios_scene::accept_scene_request`
+            // triages the request, refuses the ones that aren't windows,
+            // and logs the decision either way — building for those was
+            // what booted a second copy of the whole app onto a surface
+            // nothing could reach. See `ios_scene.rs`.
             #[cfg(target_os = "ios")]
             {
-                if let tauri::RunEvent::SceneRequested { .. } = _event {
-                    _ios_scene_counter += 1;
-                    let label = format!("window-scene-{_ios_scene_counter}");
-                    let _ = tauri::WebviewWindowBuilder::new(
-                        _app,
-                        label,
-                        tauri::WebviewUrl::default(),
-                    )
-                    .build();
+                if let tauri::RunEvent::SceneRequested { scene, .. } = &_event {
+                    // `scene` is an objc2 0.6 `Retained<UIScene>` and this
+                    // crate's Objective-C bridges are on 0.5, so the two
+                    // `Retained` types can't meet. Deref to the object and
+                    // take its address instead — a pointer is a pointer,
+                    // and `ios_scene` speaks to it by selector.
+                    let ptr = &**scene as *const _ as *mut objc2::runtime::AnyObject;
+                    let accepted =
+                        unsafe { ios_scene::accept_scene_request(ptr, _ios_scene_counter) };
+                    if accepted {
+                        _ios_scene_counter += 1;
+                        let label = format!("window-scene-{_ios_scene_counter}");
+                        match tauri::WebviewWindowBuilder::new(
+                            _app,
+                            label.clone(),
+                            tauri::WebviewUrl::default(),
+                        )
+                        .build()
+                        {
+                            Ok(_) => activity_log::note_detail(
+                                "window",
+                                "info",
+                                "Built a window for a system scene request",
+                                serde_json::json!({ "label": label, "sceneWindows": _ios_scene_counter }),
+                            ),
+                            Err(e) => activity_log::note_detail(
+                                "window",
+                                "error",
+                                "Failed to build a window for a system scene request",
+                                serde_json::json!({ "label": label, "error": e.to_string() }),
+                            ),
+                        }
+                    }
                 }
             }
         });
