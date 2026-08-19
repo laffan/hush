@@ -170,9 +170,12 @@ export async function setupModeSwitching(state) {
     c.state.notify("brainstormMode");
   });
 
-  // Seed globalStyleId for existing users who have an activeStyleId but no globalStyleId yet
+  // Seed globalStyleId for existing users who have an activeStyleId but
+  // no globalStyleId yet. Written explicitly: settings writes are
+  // key-scoped now, so a value only assigned into memory would never
+  // reach disk (it used to ride along on the next full-object save).
   if (state.settings.activeStyleId && !state.settings.globalStyleId) {
-    state.settings.globalStyleId = state.settings.activeStyleId;
+    void state.updateSettings({ globalStyleId: state.settings.activeStyleId });
   }
 
   // Apply active style — runs even when activeStyleId is null so the

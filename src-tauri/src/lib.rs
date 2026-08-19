@@ -467,6 +467,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::settings::get_settings,
             commands::settings::save_settings,
+            commands::settings::patch_settings,
             commands::files::list_files,
             commands::files::load_file,
             commands::files::file_availability,

@@ -12,7 +12,7 @@ Hush is a [Tauri v2](https://v2.tauri.app/) app (macOS + iOS/iPadOS) with a vani
 |---|---|
 | `main.js`, `main-modes.js`, `main-listeners.js` | Orchestration only — `init()` wires everything; siblings hold surface-switching and listener installs |
 | `window-diagnostics.js` | Window / screen trail for the activity log — boot snapshot, geometry + display diffs, lifecycle transitions, registry changes |
-| `state/` | `AppState` (single source of truth) + sibling modules: modes, snapshots, naming, tree CRUD, desks, project/doc conversion, per-editor mode contexts, tree helpers |
+| `state/` | `AppState` (single source of truth) + sibling modules: modes, snapshots, naming, tree CRUD, desks, project/doc conversion, per-editor mode contexts, tree helpers, boot-time settings migrations |
 | `editor/` | CodeMirror setup (`editor.js`, `base-extensions.js`), plugins (`plugins/`), modes, formatting, sentence navigation, find, folding, ratchet, zen/selection-focus/shuffle overlays, frontmatter, tabs |
 | `notebook/` | Canvas notebooks — see README-NOTEBOOK.md; `drawing/` (stroke engine) — see README-DRAWING.md |
 | `pane/` | Floating panes: manager, editor factory, content I/O, drag/resize, edge docking, persistence, inline panes, text drag |
@@ -166,7 +166,7 @@ Desktop and iPad (native scenes, Tauri ≥ 2.11). A Rust `WindowRegistry` tracks
 
 Cross-window sync: `broadcast_state_change` (settings / files — receivers re-fetch from disk and merge), `broadcast_doc_changed` (live buffer, debounced 250 ms), `broadcast_notebook_changed` (**id only** — the envelope is multi-MB and marshalling it froze the saving window). Receivers apply under the pull lock so echoes can't loop. Two hard-won rules:
 
-- **Per-window settings writes are key-scoped.** A secondary window writes fresh-disk-settings + only the keys it touched, re-pinning per-window keys (`lastFileId`, `scrollPosition`, `activeDeskId`, mode flags). A full-copy write from a window holding stale memory for an untouched key silently reverts that key on disk (the vanishing YOUAREHERE registry bug).
+- **Every settings write is key-scoped**, through Rust's `patch_settings` — the caller sends the keys it changed and nothing else, and the merge happens under the settings mutex so concurrent patches can't interleave. A window's in-memory copy is stale the moment anything else writes (a sibling window, the Settings panel's snapshot from when it was opened, another write from this window still in flight), and sending a whole `AppSettings` asserts a value for every setting in the app, last write wins. That is how the YOUAREHERE registry vanished, and later how a closed floating pane came back on the next launch — intermittently, both times, because it turned on which write landed last. `save_settings` (whole-object) stays registered only so a stale web bundle on a fresh binary keeps working. Per-window keys (`lastFileId`, `scrollPosition`, `activeDeskId`, mode flags, sidebar chrome) run the other way: disk holds the *main* window's session, so a secondary window keeps them in memory and never writes them at all.
 - Subscribe to cross-window events **before** registering, so the registration's own broadcasts arrive through the same pipe.
 
 `activeDeskId` is per-window: each window operates its own desk; only main's choice persists as the launch desk.

@@ -58,7 +58,9 @@ async function flushSyncLog() {
     const ts = now.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
     for (const msg of messages) log.push(`${ts}  ${msg}`);
     if (log.length > 50) log.splice(0, log.length - 50);
-    s.syncLog = log;
-    await invoke("save_settings", { settings: s });
+    // Key-scoped: this flush is on a 2 s timer and knows nothing about
+    // the rest of the app, so writing back the whole object it read a
+    // moment ago would revert anything saved in between.
+    await invoke("patch_settings", { patch: { syncLog: log } });
   } catch (_) {}
 }

@@ -23,9 +23,8 @@ export { onLocalDropExternal } from "./files-panel-local-sync-dnd.js";
 
 /** Remove a mount from the sidebar (non-destructive on disk). Rust
  *  persists settings.json inside local_sync_remove — mirror the removal
- *  into the in-memory cache and refresh, rather than round-tripping the
- *  full settings object back through save_settings (which can clobber
- *  fields Rust touched in the meantime). */
+ *  into the in-memory cache and refresh, rather than writing the key
+ *  back from here, which would only race Rust's own write. */
 async function unlinkLocalFolder(folder, state, refreshFilesPanel) {
   const { removeLocalSyncFolder } = await import("../sync/local-sync.js");
   await removeLocalSyncFolder(folder.id);
