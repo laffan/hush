@@ -118,6 +118,17 @@ export function getStackFileId() {
   return currentFileId;
 }
 
+/** Force everything a mounted stack is holding to disk: each live
+ *  column's pending edits first, then the `.hushstack` layout (which
+ *  carries per-column scroll and notebook camera). Called when the app
+ *  is going away — see `state/background-flush.js`. No-op with no stack
+ *  open. */
+export async function flushStack() {
+  if (!currentInstance) return;
+  await currentInstance.flushLiveColumns();
+  await saveStack();
+}
+
 /** Serialize the live component through the same encoder the save path
  *  uses, so its result compares apples-to-apples with `lastSavedContent`
  *  and with content read back off disk. */

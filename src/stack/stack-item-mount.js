@@ -40,6 +40,29 @@ export async function mountItemContent(contentEl, item, state, liveColumns) {
   liveColumns.set(item.id, liveData);
 }
 
+/**
+ * Hold an `overflow: hidden` box at its origin.
+ *
+ * A stack column's content box — and the notebook wrapper inside it —
+ * are `overflow: hidden` because their content is meant to fill them
+ * exactly. But `overflow: hidden` is still *programmatically*
+ * scrollable, so anything inside that calls `scrollIntoView` scrolls
+ * them without asking, and there is no way back: the user can't scroll
+ * a hidden box, so the content stays shoved to one side for as long as
+ * the column is open. The proof page rail did exactly that on every page
+ * it highlighted, which is what dragged whole proof columns sideways as
+ * you read down them.
+ *
+ * The listener only ever fires when something has already scrolled the
+ * box — never during normal use — so it costs nothing to leave armed.
+ */
+export function pinUnscrollable(el) {
+  el.addEventListener("scroll", () => {
+    if (el.scrollLeft !== 0) el.scrollLeft = 0;
+    if (el.scrollTop !== 0) el.scrollTop = 0;
+  });
+}
+
 export function unmountItemContent(contentEl, item, liveColumns) {
   const liveData = liveColumns.get(item.id);
   if (!liveData) return;
@@ -115,6 +138,9 @@ async function mountDocContent(contentEl, item, state, liveData) {
       state.syncFileToExternal?.(item.fileId, text);
     };
     const saveInterval = setInterval(flush, 2000);
+    // Exposed so the background flush can force a write without
+    // tearing the column down — see state/background-flush.js.
+    liveData.flush = flush;
 
     liveData.editor = editor;
     liveData.modeContext = mc;
@@ -168,15 +194,10 @@ async function mountDocContent(contentEl, item, state, liveData) {
 async function mountNotebookContent(contentEl, item, state, liveData) {
   const wrapper = document.createElement("div");
   wrapper.className = "stack-notebook-wrapper";
-  // The canvas fills this box exactly and the chrome around it (shelf,
-  // page rail, scroll wheel) is absolutely positioned against it, so it
-  // has nothing to scroll — but `overflow: hidden` doesn't stop a
-  // `scrollIntoView` from inside, and once shoved the user can't shove it
-  // back. Same guard as the column content box; see `pinUnscrollable`.
-  wrapper.addEventListener("scroll", () => {
-    if (wrapper.scrollLeft !== 0) wrapper.scrollLeft = 0;
-    if (wrapper.scrollTop !== 0) wrapper.scrollTop = 0;
-  });
+  // The canvas fills this box and its chrome (shelf, page rail, scroll
+  // wheel) is absolutely positioned against it, so it has nothing to
+  // scroll — and must not be scrolled from inside either.
+  pinUnscrollable(wrapper);
   contentEl.appendChild(wrapper);
 
   try {
@@ -269,6 +290,9 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
       state.syncFileToExternal?.(item.fileId, content);
     };
     const saveInterval = setInterval(flush, 2000);
+    // Exposed so the background flush can force a write without
+    // tearing the column down — see state/background-flush.js.
+    liveData.flush = flush;
 
     liveData.canvas = canvas;
     // Register as a Cmd+drag drop target so text can be dragged
@@ -506,6 +530,9 @@ async function mountProjectContent(contentEl, item, state, liveData) {
       }
     };
     const saveInterval = setInterval(flush, 2000);
+    // Exposed so the background flush can force a write without
+    // tearing the column down — see state/background-flush.js.
+    liveData.flush = flush;
 
     liveData.editor = editor;
     liveData.modeContext = mc;

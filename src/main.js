@@ -25,6 +25,7 @@ import { installWindowShortcuts, installActivationFocus } from "./window-shortcu
 import { setTooltipsEnabled } from "./tooltips.js";
 import { installActivityCapture, configureActivityLog, logActivity } from "./activity-log.js";
 import { installWindowDiagnostics, logWindowSnapshot } from "./window-diagnostics.js";
+import { installBackgroundFlush } from "./state/background-flush.js";
 import {
   getInitialFileFromHash,
   getInitialDeskFromHash,
@@ -441,6 +442,9 @@ async function init() {
       }, 1000);
     });
   }
+  // Force every unsaved surface to disk on the way out — iPadOS can
+  // reclaim a backgrounded webview, and the reload restores from disk.
+  installBackgroundFlush(state);
   // Also save session state when the window becomes hidden
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
