@@ -117,18 +117,26 @@ export async function saveProjectContent(state) {
         state.syncFileToExternal(fid, content);
       } catch (e) { console.warn(`Project save: failed to write file ${fid}:`, e); }
     }
-    else {
-      const f = state.files.find(f => f.id === fid);
-      if (f) {
-        f.content = content;
-        f.modified = Math.floor(Date.now()/1000);
-        if (!f.name || f.name === "Untitled") f.name = state._deriveName(f.content);
+    // Patch the cached entry in place — same reasoning as
+    // `saveCurrentFile`, and it applies harder here: this is the project
+    // autosave, so a re-listing every 2 s of editing meant re-reading
+    // every document in the library every 2 s. We just wrote these
+    // bytes; nothing needs to go back to disk to learn them.
+    const cached = state.files.find(f => f.id === fid);
+    if (cached) {
+      cached.content = content;
+      cached.modified = Math.floor(Date.now() / 1000);
+      if (!IS_TAURI && (!cached.name || cached.name === "Untitled")) {
+        cached.name = state._deriveName(cached.content);
       }
+    } else if (IS_TAURI) {
+      // A part with no cache entry (freshly created, not yet listed) —
+      // one full refresh to pick it up, off the steady-state path.
+      state.files = await tauriInvoke("list_files");
     }
   }
   state.dirty = false;
-  if (IS_TAURI) state.files = await tauriInvoke("list_files");
-  else state._saveFilesLocal();
+  if (!IS_TAURI) state._saveFilesLocal();
   state.emit("files-changed");
   // Update project ordering JSON
   state.syncProjectOrdering(state.currentProjectId);

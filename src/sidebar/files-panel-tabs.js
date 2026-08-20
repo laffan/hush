@@ -17,6 +17,13 @@
  * from the cached `state.files` snapshot — accurate to the last
  * file-tree refresh, which is enough since their content doesn't
  * change while the user is editing a sibling.
+ *
+ * This walk is the reason the library listing still carries content for
+ * documents: it runs on every sidebar render, synchronously, once per
+ * document node, so there is no awaiting a `load_file` here. Notebooks
+ * and stacks come back from the listing with `content: null` and are not
+ * asked (`readDocContent` reads `""` for them, which yields no markers).
+ * See README-TECHNICAL, "Startup".
  */
 import { parseTabSections } from "../longview/longview-parser.js";
 import { EditorView } from "@codemirror/view";

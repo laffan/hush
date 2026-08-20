@@ -41,6 +41,7 @@ mod pdfs;
 mod settings;
 mod snapshots;
 mod startup_trace;
+mod wikilinks;
 pub mod typst_export;
 mod zotero;
 
@@ -70,6 +71,23 @@ pub struct FileEntry {
     pub id: String,
     pub name: String,
     pub content: String,
+    pub modified: u64,
+}
+
+/// One row of the library listing (`list_files`).
+///
+/// Deliberately *not* `FileEntry`: the listing is the frontend's index of
+/// every file in every desk, and it is read at boot, so it carries content
+/// only for the kinds something actually asks the cache for — documents.
+/// A notebook or stack row arrives with `content: null`, which is a
+/// different thing from an empty file and has to stay distinguishable:
+/// callers that need those bytes go through `load_file`. See
+/// README-TECHNICAL, "Startup".
+#[derive(Serialize, Deserialize, Clone)]
+pub struct FileSummary {
+    pub id: String,
+    pub name: String,
+    pub content: Option<String>,
     pub modified: u64,
 }
 
@@ -488,6 +506,7 @@ pub fn run() {
             commands::settings::save_settings,
             commands::settings::patch_settings,
             commands::files::list_files,
+            commands::files::rename_wikilinks,
             commands::files::load_file,
             commands::files::file_availability,
             commands::files::file_mtimes,

@@ -45,7 +45,7 @@ Hush is a [Tauri v2](https://v2.tauri.app/) app (macOS + iOS/iPadOS) with a vani
 | `desk_*.rs` | The desk-folder store — see README-SYNC.md |
 | `settings.rs` + `settings/defaults.rs` | `AppSettings` (camelCase serde) + default-value fns |
 | `files.rs`, `images.rs`, `snapshots.rs` | fileId-keyed file CRUD, image storage, version snapshots |
-| `zotero.rs`, `hushnote.rs`, `multi_window.rs`, `activity_log.rs`, `startup_trace.rs`, `backup` | As named |
+| `zotero.rs`, `hushnote.rs`, `multi_window.rs`, `activity_log.rs`, `startup_trace.rs`, `wikilinks.rs`, `backup` | As named |
 | `ios_scene.rs` | iPad scene triage — which `UIScene` the system offers becomes a window, which is refused, and the window-lifecycle lines in the activity log |
 | `typst_export/` | In-process Typst PDF pipeline (preprocess → pulldown-cmark → Typst source → in-memory `World` → compile). No CLI, no network — same path serves desktop and iOS |
 | `tauri-plugin-pencil/`, `tauri-plugin-icloud-folder/`, `tauri-plugin-scene-reuse/` | Custom iOS plugins: Apple Pencil double-tap, security-scoped folder bookmarks + coordinated I/O, scene reuse for incoming URLs |
@@ -78,7 +78,7 @@ Hush is a [Tauri v2](https://v2.tauri.app/) app (macOS + iOS/iPadOS) with a vani
 
 **Desks.** Structural, always-on (a legacy flat tree is wrapped by a boot migration). Per-desk state splits three ways: *portable* meta rides the desk folder itself (style choice, ratchet flag, last file, desk stickies — see README-SYNC.md), *per-device* state stays in settings (`activeDeskId`, recents, local-folder last file), and the desk list/registry is two-way reconciled with the tree at boot. Desks are archived (zip), never deleted; the last desk can't be removed.
 
-**Naming rule.** A doc's filename follows its first line (`state-naming.js`), triggered on cursor-leaves-line-1, blur, autosave, and a 1.5 s typing-idle debounce. Because that debounce fires the full pipeline on every pause, **the rename path must stay cheap**: it patches the one cached `state.files` entry in place rather than re-fetching the library (`list_files` loads every file's *content* — never call it on a hot path), and the wikilink rewriter regex-pretests raw notebook JSON before parsing. Auto-rename is suppressed for Google-linked docs (the GDoc title owns the name), explicitly-named tabbed docs, and Local Sync files (disk is the source of truth).
+**Naming rule.** A doc's filename follows its first line (`state-naming.js`), triggered on cursor-leaves-line-1, blur, autosave, and a 1.5 s typing-idle debounce. Because that debounce fires the full pipeline on every pause, **the rename path must stay cheap**: it patches the one cached `state.files` entry in place rather than re-fetching the library (never call `list_files` on a hot path), and the wikilink rewrite that follows a rename runs in Rust (`wikilinks.rs`, `spawn_blocking`) — substring-pretesting each file, and reading a notebook's `data.json` straight out of its zip so the images inside are never decoded. Auto-rename is suppressed for Google-linked docs (the GDoc title owns the name), explicitly-named tabbed docs, and Local Sync files (disk is the source of truth).
 
 **Projects.** `openProject()` concatenates child docs with `---hush-separator---` markers into one buffer; `saveProjectContent()` splits and writes each part back. Only docs join the buffer (`state.projectDocIds`); notebooks/stacks/PDF aliases ride along as supplementary sidebar children.
 
@@ -195,9 +195,24 @@ Webview, in `main-boot.js#bootAppState` then `main.js#init`, every step awaited 
 
 ### Where the time goes
 
-Ranked by expected cost. The byte counts are measured from a production `vite build`; the per-phase milliseconds are what the trace exists to produce, so read the panel on the actual iPad before acting on the order.
+Ranked by cost. Item 1 is measured — on an iPad it was 2.8 s of a 3 s launch — and is fixed; the rest are ranked by expected cost, with byte counts from a production `vite build`. Read the Startup Time panel on the actual iPad before acting on the order of what's left.
 
-1. **`list_files` reads the entire library, byte for byte, before anything paints.** `FileManager::list_files` walks every desk index and calls `read_at` on every entry — every `.md`, and every `.hushnote`, which goes through `hushnote::unpack`: inflate the zip, base64 each embedded image back into a `dataUrl`, re-serialise the envelope. A proofread notebook is fifty full-page rasters; a desk holding two of those is tens of megabytes of decode and base64 on the boot path, then marshalled across IPC as one JSON blob. Image files are indexed too, so each one is read whole and thrown away when `read_to_string` rejects the bytes. The comment on `saveCurrentFile` already calls this "an O(N²) whole-library scan" and routes autosave around it — boot still pays it in full. Worst of all, the content it loads is not what opens the document: `openFile` re-reads the file from disk through `open-file-wait.js` anyway. **Fix:** give the boot path a metadata-only listing (id, name, mtime, desk, rel — a `stat` each, no reads) and let `state.files[].content` fill in lazily for the handful of callers that want it (`desktop-thumbs.js`, `files-panel-tabs.js`, `copy-from-desks-copy.js`, the local-sync DnD helpers). This is the single biggest item and the one that scales with the user's library, which is exactly the shape of "it got slower over time".
+1. **`list_files` used to read the entire library, byte for byte, before anything painted** — 2.8 s of a 3 s iPad launch. It walked every desk index and called `read_at` on every entry: every `.md`, and every `.hushnote` through `hushnote::unpack`, which inflates the zip, base64s each embedded image back into a `dataUrl` and re-serialises the envelope. Images were read too, whole, and then dropped when `read_to_string` rejected their bytes.
+
+   Almost none of it was ever read back. `state.files` is two things wearing one name: a **library index** (id → name → mtime) that thirty-odd call sites use, and a **content cache** that, under Tauri, exactly three call sites touch — the sidebar's tab/heading rows, the boot-time empty-`Untitled` sweep, and the wikilink rewriter. The first two want documents. Every other consumer already went to `load_file`, including the one that opens the document you're looking at.
+
+   A synthetic library measured with the real codec says how lopsided that was:
+
+   | kind | files | read | returned |
+   |---|---|---|---|
+   | documents (4 KB `.md`) | 400 | 2.6 ms | 1.54 MB |
+   | notebooks (2 MB of strokes) | 6 | 1.1 ms | 2.24 MB |
+   | notebooks (proof, 50 rasters) | 2 | **119.5 ms** | **26.05 MB** |
+   | images (500 KB `.png`) | 60 | 5.1 ms | 0 MB — every read failed |
+
+   Documents were 2 % of the read and 5 % of the payload. The other 95 % then had to be JSON-parsed by the webview's JS thread before boot could continue, which is where an iPad turns a hundred milliseconds of decode into seconds of black screen.
+
+   **The listing now reads documents and nothing else** (`FileManager::list_files`, returning `FileSummary`). Notebooks and stacks get a `stat` and arrive with `content: null` — deliberately null and not `""`, because an empty body reads downstream as a deletable placeholder. Images are skipped by extension without being opened, which is what already happened to them, just without the read. The two consumers that wanted documents are unaffected; the third, the wikilink rewriter, moved to Rust (below).
 
 2. **The entry point drags in 224 modules before `init()` runs.** `index.html` ships 68 preloaded chunks — **1.31 MB of minified JS and 347 KB of CSS** — all of which must be fetched, parsed and compiled before the first line of `main.js` executes. Much of it is meant to be lazy and isn't. One edge does most of the damage: `editor/base-extensions.js` imports `editor/commands.js` for the keymap, `commands.js` imports `command-palette.js`, and the palette pulls in `command-palette-commands.js` (41 KB) and through it sticky notes, the gutter, `state-tree.js` and the pane manager. A second edge does the rest: `commands.js` → `find-replace.js` → `sidebar/find-panel.js` → `notebook-bridge.js` → `notebook-content.ts` → `flowchart.ts`. That is why `main.js`'s own `import("./sticky/sticky-notes.js")` buys nothing — the module is already in the entry chunk. Rolldown says so out loud on every build (`INEFFECTIVE_DYNAMIC_IMPORT`, three of them today); those warnings are a to-do list, not noise. **Fix:** put the seam where the graph narrows — have the keymap resolve command handlers through a registry populated on first use rather than importing them, and give `find-replace` a lazy path to the find panel. Cutting the palette and the versions/find panels alone drops 16 modules and 203 KB; cutting the notebook and Zotero reach from the editor's keymap takes considerably more.
 
@@ -209,12 +224,14 @@ Ranked by expected cost. The byte counts are measured from a production `vite bu
 
 6. **355 KB of render-blocking CSS, carrying 217 `@font-face` rules.** The font *files* are not fetched at boot (205 of the rules carry `unicode-range`, and WebKit only pulls a face when a glyph needs it), but the stylesheet is a hard render block — nothing paints, splash included, until it parses. **Fix:** split the sheet into a small critical file (`base.css` + editor shell) linked in `<head>` and the rest loaded non-blocking; move `font-imports.js` out of the entry graph and into a deferred import.
 
-7. **Small change, several times over.** `pruneEmptyUntitled` re-runs the whole `list_files` scan after deleting — a second full-library read on any boot that finds a stray placeholder. `reconcile_desk_registrations` runs in `setup()` and again inside `load_forest`. `getCurrentWindowLabel()` is awaited three times in the preamble. None of these is the five seconds, but they are free to fix.
+7. **Small change, several times over.** `reconcile_desk_registrations` runs in `setup()` and again inside `load_forest`. `getCurrentWindowLabel()` is awaited three times in the preamble. (`pruneEmptyUntitled`'s second full `list_files` went with item 1 — it now filters its own cache.) None of these is the five seconds, but they are free to fix.
 
 ### Rules
 
 - **Nothing goes on the pre-paint path that isn't needed to draw the first surface.** Settings, the tree, and the bytes of the one file being opened — that is the list. Registries, sweeps, seeds, watchers and caches belong after `revealApp`.
 - **Never read the whole library to answer a question about one file.** `list_files` is the standing counter-example; treat a new call to it on any hot path as a bug.
+- **`state.files[].content` is documents only, and `null` is not `""`.** Anything that needs a notebook, a stack or an image goes to `load_file`. A consumer that treats a missing body as an empty one will delete somebody's work — see the type guard in `pruneEmptyUntitled`.
+- **A library-wide scan belongs in Rust, off the main thread.** `wikilinks.rs` is the pattern: substring-pretest before parsing, and for a `.hushnote` read `data.json` out of the zip (`hushnote::read_data_json` / `replace_data_json`) rather than `unpack`, which base64s every image the file holds.
 - **Wrap new boot steps in `phase()`.** An unnamed step is one the panel attributes to its parent, which is how a regression hides.
 - **Take `INEFFECTIVE_DYNAMIC_IMPORT` seriously.** Each one is a module the author believed was lazy and isn't; the fix is a seam, not a `/* eslint-disable */` of the build.
 

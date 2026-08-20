@@ -1,13 +1,13 @@
 use serde::Serialize;
 use tauri::State;
 
-use crate::{AppState, FileEntry, TreeNode};
+use crate::{AppState, FileEntry, FileSummary, TreeNode};
 
 #[tauri::command]
-// Async: reads every file in the library (inflating each `.hushnote`
-// zip on the way up) — as a sync command that whole-library scan ran on
-// the main thread and froze the webview for its full duration.
-pub async fn list_files(state: State<'_, AppState>) -> Result<Vec<FileEntry>, String> {
+// Async: still walks every desk index and reads every document, which is
+// not main-thread work. Notebooks, stacks and images no longer have their
+// bytes opened at all — see `FileManager::list_files`.
+pub async fn list_files(state: State<'_, AppState>) -> Result<Vec<FileSummary>, String> {
     state.file_manager.lock().unwrap().list_files().map_err(|e| e.to_string())
 }
 
@@ -26,6 +26,21 @@ pub struct FileAvailability {
     /// Absolute path, when the file is placed — what the frontend hands
     /// the provider to ask for a download.
     pub path: Option<String>,
+}
+
+/// Rewrite every `[[old]]` reference across the library to `[[new]]`,
+/// returning the fileIds actually written. Runs on the naming rule's
+/// typing-idle debounce, so `spawn_blocking`: the walk touches every
+/// document and every notebook zip, which is emphatically not
+/// main-thread work. See `crate::wikilinks`.
+#[tauri::command]
+pub async fn rename_wikilinks(old_name: String, new_name: String) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = crate::desk_store::DeskStore::new(&crate::get_data_dir());
+        crate::wikilinks::rename_across_library(&store, &old_name, &new_name)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Are this file's bytes on the device? A `stat`, not a read, so the

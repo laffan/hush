@@ -165,6 +165,45 @@ pub fn unpack(bytes: &[u8]) -> Result<String, BoxError> {
     Ok(serde_json::to_string(&envelope)?)
 }
 
+/// The envelope as it sits inside the zip — image refs still relative
+/// paths, nothing re-inlined. This is what a scan over the library wants:
+/// `unpack` would base64 every embedded image on the way up, and a
+/// proofread notebook holds fifty full-page rasters. Non-zip bytes (legacy
+/// / hand-made files) come back as-is, same as `unpack`.
+pub fn read_data_json(bytes: &[u8]) -> Result<String, BoxError> {
+    if !bytes.starts_with(b"PK") {
+        return Ok(String::from_utf8_lossy(bytes).into_owned());
+    }
+    let mut zip = zip::ZipArchive::new(Cursor::new(bytes))?;
+    let mut data = String::new();
+    zip.by_name("data.json")?.read_to_string(&mut data)?;
+    Ok(data)
+}
+
+/// Swap a `.hushnote`'s `data.json` for `new_data`, copying every other
+/// entry through byte for byte. The counterpart to `read_data_json`: a
+/// caller that only edits envelope fields never has to decode, re-encode,
+/// or even look at the images. Non-zip bytes get the new body verbatim.
+pub fn replace_data_json(bytes: &[u8], new_data: &str) -> Result<Vec<u8>, BoxError> {
+    if !bytes.starts_with(b"PK") {
+        return Ok(new_data.as_bytes().to_vec());
+    }
+    let mut zip = zip::ZipArchive::new(Cursor::new(bytes))?;
+    let mut images: Vec<(String, Vec<u8>)> = Vec::new();
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i)?;
+        let name = entry.name().to_string();
+        if name == "data.json" || entry.is_dir() {
+            continue;
+        }
+        let mut buf = Vec::new();
+        entry.read_to_end(&mut buf)?;
+        // `zip_envelope` prefixes `images/`, so hand it the bare name.
+        images.push((name.trim_start_matches("images/").to_string(), buf));
+    }
+    zip_envelope(new_data.as_bytes(), &images)
+}
+
 fn decode_data_url(s: &str) -> Option<(String, Vec<u8>)> {
     let rest = s.strip_prefix("data:")?;
     let comma = rest.find(',')?;
@@ -254,6 +293,45 @@ mod tests {
         assert_eq!(back["proof"]["pages"][0]["shapeId"], "s1");
         assert!(back.get("splits").is_some(), "splits lost: {back}");
         assert!(back.get("bookmarks").is_some(), "bookmarks lost: {back}");
+    }
+
+    /// The scan-and-edit pair used by the wikilink rename: read the
+    /// envelope without re-inlining anything, edit it, and write the zip
+    /// back with every image entry carried through untouched. If this
+    /// drifts, a rename silently strips the images out of every notebook
+    /// it rewrites.
+    #[test]
+    fn data_json_round_trip_preserves_images_byte_for_byte() {
+        let bytes = [137u8, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3];
+        let content = format!(
+            r#"{{"format":"hushnote","version":1,"shapes":[{{"id":"a","type":"image","dataUrl":"data:image/png;base64,{}"}},{{"id":"b","type":"text","text":"[[Old]]"}}],"proof":{{"sourceName":"Paper"}}}}"#,
+            B64.encode(bytes)
+        );
+        let packed = pack(&content).unwrap();
+
+        // Reading the envelope leaves the image as its in-zip path.
+        let data = read_data_json(&packed).unwrap();
+        assert!(data.contains(r#""dataUrl":"images/img_1.png""#), "{data}");
+        assert!(!data.contains("base64"), "images were re-inlined: {data}");
+
+        let edited = data.replace("[[Old]]", "[[New]]");
+        let repacked = replace_data_json(&packed, &edited).unwrap();
+
+        // The full read still produces the original image bytes.
+        let back: Value = serde_json::from_str(&unpack(&repacked).unwrap()).unwrap();
+        assert_eq!(back["shapes"][1]["text"], "[[New]]");
+        assert_eq!(back["proof"]["sourceName"], "Paper");
+        let url = back["shapes"][0]["dataUrl"].as_str().unwrap();
+        let b64 = url.strip_prefix("data:image/png;base64,").unwrap();
+        assert_eq!(B64.decode(b64).unwrap(), bytes);
+    }
+
+    #[test]
+    fn data_json_helpers_pass_non_zip_bytes_through() {
+        let raw = r#"{"format":"hushnote","version":1,"shapes":[]}"#;
+        assert_eq!(read_data_json(raw.as_bytes()).unwrap(), raw);
+        let next = r#"{"format":"hushnote","version":1,"shapes":[{"id":"x"}]}"#;
+        assert_eq!(replace_data_json(raw.as_bytes(), next).unwrap(), next.as_bytes());
     }
 
     #[test]

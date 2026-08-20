@@ -6,7 +6,7 @@
 //! every tree save reconciles the folder to match the tree.
 
 use crate::desk_store::DeskStore;
-use crate::{FileEntry, TreeNode};
+use crate::{FileEntry, FileSummary, TreeNode};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
@@ -168,7 +168,21 @@ impl FileManager {
         })
     }
 
-    pub fn list_files(&self) -> Result<Vec<FileEntry>, Box<dyn std::error::Error>> {
+    /// The library listing: one row per file in every desk.
+    ///
+    /// **Content is read for documents only.** This runs on boot, and it
+    /// used to read every file in the library byte for byte — inflating
+    /// each `.hushnote` zip and base64-ing every image inside it back
+    /// into a data URL, then shipping the lot across IPC. On an iPad with
+    /// a couple of proofread notebooks that was seconds of black screen
+    /// before anything could paint. Nothing in the frontend reads a
+    /// notebook or a stack out of that cache; the surfaces that mount one
+    /// call `load_file`. Those kinds get a `stat` instead, and images —
+    /// which have always been dropped from this list, because
+    /// `read_to_string` rejects their bytes — are never opened at all.
+    ///
+    /// See README-TECHNICAL, "Startup".
+    pub fn list_files(&self) -> Result<Vec<FileSummary>, Box<dyn std::error::Error>> {
         let (indexed, staged) = self.store.list_ids();
         let mut entries = Vec::new();
         for (id, desk_id, rel) in indexed {
@@ -176,17 +190,62 @@ impl FileManager {
             // resolved. Calling load_file(&id) here would re-`locate`
             // each id, re-parsing every desk index once per file —
             // O(N²) over the library.
-            if let Ok((content, modified, name)) = self.store.read_at(&desk_id, &rel) {
-                entries.push(FileEntry { id, name, content, modified });
+            match crate::desk_scan::kind_for_rel(&rel).as_deref() {
+                Some("image") => continue,
+                Some("notebook") | Some("stack") => {
+                    if let Some((modified, name)) = self.stat_at(&desk_id, &rel) {
+                        entries.push(FileSummary { id, name, content: None, modified });
+                    }
+                }
+                // Documents, and any extension the kind table doesn't
+                // know — reading an unrecognised one is what this did
+                // before, and the scanner doesn't index them anyway.
+                _ => {
+                    if let Ok((content, modified, name)) = self.store.read_at(&desk_id, &rel) {
+                        entries.push(FileSummary { id, name, content: Some(content), modified });
+                    }
+                }
             }
         }
+        // Staged ids are freshly-created files that no tree save has
+        // placed yet — always tiny, and always a doc in practice.
         for id in staged {
             if let Ok(entry) = self.load_file(&id) {
-                entries.push(entry);
+                entries.push(FileSummary {
+                    id: entry.id,
+                    name: entry.name,
+                    content: Some(entry.content),
+                    modified: entry.modified,
+                });
             }
         }
         entries.sort_by(|a, b| b.modified.cmp(&a.modified));
         Ok(entries)
+    }
+
+    /// mtime + display name without opening the file.
+    ///
+    /// `None` when the path isn't there — which is also how a file the
+    /// provider hasn't delivered presents (iCloud parks the bytes under a
+    /// `.name.icloud` sibling until it materialises them), so the row
+    /// disappears in exactly the case the old read-and-drop did. A file
+    /// that stats but can't be read now keeps its row rather than
+    /// vanishing from the cache; the sidebar row came from the tree
+    /// either way, and `state/open-file-wait.js` is what waits for bytes.
+    fn stat_at(&self, desk_id: &str, rel: &str) -> Option<(u64, String)> {
+        let abs = self.store.abs_path(desk_id, rel);
+        let modified = std::fs::metadata(&abs)
+            .and_then(|m| m.modified())
+            .ok()?
+            .duration_since(UNIX_EPOCH)
+            .ok()?
+            .as_secs();
+        let name = Path::new(rel)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Untitled")
+            .to_string();
+        Some((modified, name))
     }
 
     pub fn delete_file(&self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -273,5 +332,100 @@ fn collect_document_files(nodes: &[TreeNode], out: &mut Vec<String>) {
             }
         }
         collect_document_files(&n.children, out);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hushnote;
+    use base64::{engine::general_purpose::STANDARD as B64, Engine};
+
+    fn tree_node(node_type: &str, name: &str, file_id: &str) -> TreeNode {
+        new_node(node_type, name, Some(file_id))
+    }
+
+    fn desk(children: Vec<TreeNode>) -> TreeNode {
+        let mut kids = vec![new_node("project", "Inbox", None)];
+        kids[0].id = "__inbox__:d1".into();
+        kids.extend(children);
+        let mut d = new_node("desk", "Personal", None);
+        d.id = "d1".into();
+        d.children = kids;
+        d
+    }
+
+    /// The boot listing must read documents and nothing else. A notebook
+    /// row carries `content: None` (not an empty string — an empty body
+    /// would read as a deletable placeholder downstream), an image never
+    /// appears at all, and neither one's bytes are opened.
+    #[test]
+    fn listing_reads_documents_and_only_stats_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let fm = FileManager::new(dir.path());
+
+        // A proofread-shaped notebook: an image big enough that
+        // re-inlining it would be obvious in the payload.
+        let png = B64.encode(vec![7u8; 4096]);
+        let envelope = format!(
+            r#"{{"format":"hushnote","version":1,"shapes":[{{"id":"i","type":"image","dataUrl":"data:image/png;base64,{png}"}}]}}"#
+        );
+
+        for (id, body) in [("f-doc", "# Hello\n\nbody"), ("f-nb", envelope.as_str())] {
+            fm.store.stage_new(id).unwrap();
+            fm.store.write_by_id(id, body).unwrap();
+        }
+        fm.store.stage_new("f-img").unwrap();
+        fm.store.write_by_id("f-img", "not really a png").unwrap();
+
+        let tree = vec![desk(vec![
+            tree_node("document", "Hello", "f-doc"),
+            tree_node("notebook", "Sketch", "f-nb"),
+            tree_node("image", "shot.png", "f-img"),
+        ])];
+        fm.save_file_tree(&tree).unwrap();
+
+        let listing = fm.list_files().unwrap();
+        let by_id = |id: &str| listing.iter().find(|e| e.id == id);
+
+        let doc = by_id("f-doc").expect("document missing from listing");
+        assert_eq!(doc.name, "Hello");
+        assert_eq!(doc.content.as_deref(), Some("# Hello\n\nbody"));
+
+        let nb = by_id("f-nb").expect("notebook missing from listing");
+        assert_eq!(nb.name, "Sketch");
+        assert!(nb.content.is_none(), "notebook body was read into the listing");
+        assert!(nb.modified > 0, "notebook row lost its mtime");
+
+        assert!(by_id("f-img").is_none(), "image reached the listing");
+
+        // And the notebook itself is still whole — the listing only
+        // declined to read it.
+        let full = fm.load_file("f-nb").unwrap();
+        let back: serde_json::Value =
+            serde_json::from_str(&hushnote::read_data_json(&std::fs::read(
+                dir.path().join("desks/d1/Sketch.hushnote"),
+            ).unwrap()).unwrap()).unwrap();
+        assert_eq!(back["shapes"][0]["dataUrl"], "images/img_1.png");
+        assert!(full.content.contains("base64"), "load_file must still re-inline");
+    }
+
+    /// A stat, not a read — but still a stat. A notebook whose bytes
+    /// aren't on the device drops out of the listing exactly as it did
+    /// when the listing read it, because that is what the missing path
+    /// looks like.
+    #[test]
+    fn a_notebook_with_no_bytes_on_disk_drops_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let fm = FileManager::new(dir.path());
+        fm.store.stage_new("f-nb").unwrap();
+        fm.store.write_by_id("f-nb", r#"{"format":"hushnote","version":1,"shapes":[]}"#).unwrap();
+        let tree = vec![desk(vec![tree_node("notebook", "Sketch", "f-nb")])];
+        fm.save_file_tree(&tree).unwrap();
+
+        assert!(fm.list_files().unwrap().iter().any(|e| e.id == "f-nb"));
+        std::fs::remove_file(dir.path().join("desks/d1/Sketch.hushnote")).unwrap();
+        // Gone entirely (not a placeholder) — no row.
+        assert!(!fm.list_files().unwrap().iter().any(|e| e.id == "f-nb"));
     }
 }

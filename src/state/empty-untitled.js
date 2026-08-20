@@ -20,7 +20,9 @@ async function tauriInvoke(cmd, args) {
 }
 
 /** A doc is "empty Untitled" when it carries the placeholder name and
- *  has no actual content. */
+ *  has no actual content. `content` must be the real body — a caller that
+ *  doesn't have it (the library listing carries none for notebooks and
+ *  stacks) must not ask, or it will get `true` for a file full of work. */
 export function isEmptyUntitled(name, content) {
   if (name && name !== "Untitled") return false;
   return !content || !content.trim();
@@ -34,8 +36,16 @@ export async function pruneEmptyUntitled(state) {
   if (!Array.isArray(state.files) || state.files.length === 0) return;
   const targets = [];
   for (const file of state.files) {
+    // Documents only, and only when we are actually holding the body.
+    // The listing carries `content: null` for notebooks and stacks (see
+    // `FileManager::list_files`), and a null body reads as "empty" — an
+    // untitled notebook the user had been drawing in would be deleted on
+    // the next launch. The node type is the real gate; the content check
+    // is the belt to its braces.
+    const node = findNodeByFileId(state.fileTree, file?.id);
+    if (node && node.type !== "document") continue;
+    if (typeof file?.content !== "string") continue;
     if (!isEmptyUntitled(file?.name, file?.content)) continue;
-    const node = findNodeByFileId(state.fileTree, file.id);
     targets.push({ fileId: file.id, nodeId: node?.id || null });
   }
   if (!targets.length) return;
@@ -46,12 +56,9 @@ export async function pruneEmptyUntitled(state) {
     }
     if (nodeId) removeNode(state.fileTree, nodeId);
   }
-  if (IS_TAURI) {
-    try { state.files = await tauriInvoke("list_files"); }
-    catch (_) {}
-  } else {
-    state.files = state.files.filter((f) => !targets.some((t) => t.fileId === f.id));
-    state._saveFilesLocal();
-  }
+  // Drop the pruned entries in place. Re-listing here meant any boot that
+  // found one stray placeholder paid the whole library scan twice.
+  state.files = state.files.filter((f) => !targets.some((t) => t.fileId === f.id));
+  if (!IS_TAURI) state._saveFilesLocal();
   try { await state.saveFileTree(); } catch (_) {}
 }
