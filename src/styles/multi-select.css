@@ -17,7 +17,12 @@
   align-items: stretch;
   justify-content: center;
   overflow-y: auto;
-  font-family: var(--font-family);
+  /* The app's UI font, not the active style's editor font: everything
+     in here is navigation chrome — a title, buttons, and a list of
+     filenames — with no document prose anywhere, so it should read like
+     the files sidebar and the outline rather than like a second editor
+     surface. `.ms-view-btn` takes it from here via `font: inherit`. */
+  font-family: var(--ui-font-family);
   padding-top: 30px; /* clear the drag region on macOS */
 }
 

@@ -376,15 +376,19 @@ html.ios .side-panel-resize {
   border-left-color: var(--fg, #e0e0e0);
 }
 
-/* Paragraph text — narrower wrap so body content reads as a compact
-   minimap distinct from headings, which fill the panel width. */
+/* Paragraph text fills the panel, exactly as headings do. It used to
+   wrap at a fixed 120px so body content read as a compact minimap
+   beside the full-width headings — a reasonable trade when the panel
+   was itself a fixed 200px, and dead space the moment the panel became
+   drag-resizable: widening it bought nothing but margin. Body content
+   still reads as distinct from headings on size and colour. */
 .longview-line {
   color: var(--sidebar-fg);
   font-size: var(--lv-body-font, 3px);
   line-height: 1.25;
   white-space: normal;
   word-break: break-word;
-  max-width: 120px;
+  width: 100%;
   margin: 0;
   padding-top: calc(var(--lv-line-gap, 2px) / 2);
   padding-bottom: calc(var(--lv-line-gap, 2px) / 2);
