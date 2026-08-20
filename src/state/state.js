@@ -5,6 +5,7 @@
 import { findNode, findNodeByFileId } from "./tree-helpers.js";
 import { openProject as _openProject, saveProjectContent as _saveProjectContent, markGutterForDoc as _markGutterForDoc, unmarkGutterForDoc as _unmarkGutterForDoc } from "./state-project.js";
 import { createDefaultSettings } from "./state-defaults.js";
+import { migrateShortcutDefaults } from "./state-migrations.js";
 import * as _modes from "./state-modes.js";
 import * as _snapshots from "./state-snapshots.js";
 import * as _naming from "./state-naming.js";
@@ -19,10 +20,10 @@ async function tauriInvoke(cmd, args) {
 }
 
 // Settings keys that belong to whichever window the user is currently
-// looking at, not to the shared app config. Secondary windows skip
-// disk-writing these (and the main window's on-disk values are
-// re-overlaid on every cross-window save) so opening a file in a child
-// window can't clobber the main window's restored session.
+// looking at, not to the shared app config. Disk holds the MAIN window's
+// session, so secondary windows keep these in memory and never write
+// them — otherwise opening a file in a child window would clobber the
+// session the main window restores from.
 const _PER_WINDOW_SETTINGS_KEYS = new Set([
   "lastFileId",
   "lastNotebookId",
@@ -42,12 +43,6 @@ const _PER_WINDOW_SETTINGS_KEYS = new Set([
   "sidebarOpenPanel",
   "sidebarPinned",
 ]);
-function _allKeysPerWindow(partial) {
-  if (!partial) return false;
-  const keys = Object.keys(partial);
-  if (keys.length === 0) return false;
-  return keys.every((k) => _PER_WINDOW_SETTINGS_KEYS.has(k));
-}
 
 export class AppState {
   constructor() {
@@ -175,8 +170,9 @@ export class AppState {
         // In-memory only: activeDeskId is a per-window key, so a
         // secondary window never writes it back to disk.
         if (initialDesk) this.settings.activeDeskId = initialDesk;
-        if (this._migrateShortcutDefaults()) {
-          try { await tauriInvoke("save_settings", { settings: this.settings }); } catch (_) {}
+        const migrated = migrateShortcutDefaults(this.settings);
+        if (Object.keys(migrated).length) {
+          try { await tauriInvoke("patch_settings", { patch: migrated }); } catch (_) {}
         }
         this.files = await tauriInvoke("list_files");
         this.fileTree = await tauriInvoke("get_file_tree");
@@ -287,7 +283,9 @@ export class AppState {
     }
     const savedSettings = localStorage.getItem("hush_settings");
     if (savedSettings) Object.assign(this.settings, JSON.parse(savedSettings));
-    if (this._migrateShortcutDefaults()) localStorage.setItem("hush_settings", JSON.stringify(this.settings));
+    if (Object.keys(migrateShortcutDefaults(this.settings)).length) {
+      localStorage.setItem("hush_settings", JSON.stringify(this.settings));
+    }
     _desks.migrateLegacyTreeIfNeeded(this).catch(() => {});
     this.ensureSpecialNodes();
     // Drop any empty Untitled docs that survived the last session.
@@ -573,70 +571,46 @@ export class AppState {
   async syncProjectOrdering() {}
   async reconcileSync() {}
 
-  /** One-time keybinding migration: Reduce-sentence selection moved onto
-   *  Cmd+Shift+L (paired with Cmd+L grow) and Select-paragraph took the
-   *  freed Alt+Shift+L. Only swaps when both are still at the prior
-   *  defaults, so any user customisation is left untouched. Returns true
-   *  when a swap was applied (so the caller can persist). */
-  _migrateShortcutDefaults() {
-    const s = this.settings;
-    let changed = false;
-    if (s.shortcutReduceSentence === "Alt+Shift+L" && s.shortcutSelectParagraph === "Mod+Shift+L") {
-      s.shortcutReduceSentence = "Mod+Shift+L";
-      s.shortcutSelectParagraph = "Alt+Shift+L";
-      changed = true;
-    }
-    // New-document shortcut regrouping: Cmd creates Docs, Ctrl creates
-    // Notebooks, Shift makes either an "as pane" create. Installs still
-    // carrying the old defaults are moved onto the new ones; customised
-    // bindings are left alone.
-    if (s.shortcutNewFile === "Mod+N") {
-      s.shortcutNewFile = "Cmd+N";
-      changed = true;
-    }
-    if (s.shortcutNewNotebook === "Mod+Shift+N") {
-      s.shortcutNewNotebook = "Ctrl+N";
-      changed = true;
-    }
-    return changed;
-  }
-
+  /**
+   * Write settings.
+   *
+   * **Every write is key-scoped.** `partial` is sent to Rust's
+   * `patch_settings`, which merges those keys into the live settings
+   * under its own mutex and writes the result. Nothing else this window
+   * happens to be holding travels to disk.
+   *
+   * That matters because a window's in-memory copy is stale the moment
+   * anything else writes: a sibling window, the Settings panel's own
+   * snapshot from when it was opened, or simply another write from this
+   * window that hasn't come back yet. Sending the whole object means
+   * asserting a value for every setting in the app, and the last write
+   * to land wins — which is how a closed floating pane came back on the
+   * next launch, and, before that, how the YOUAREHERE registry
+   * vanished. Intermittently, both times, because it turned on which
+   * write happened to land last.
+   *
+   * Per-window keys (`_PER_WINDOW_SETTINGS_KEYS`) are the one exception
+   * and they run the other way: disk holds the MAIN window's session, so
+   * a secondary window keeps them in memory only and never writes them.
+   * A secondary window's write of shared keys therefore carries no
+   * per-window keys at all, rather than needing them stripped afterwards.
+   */
   async updateSettings(partial, opts = {}) {
     Object.assign(this.settings, partial);
-    // Secondary windows: skip disk writes for purely per-window updates.
-    // Shared-key writes are KEY-SCOPED — fresh disk settings plus only
-    // the keys this partial actually changes — rather than a dump of
-    // this window's full in-memory copy. A secondary window's memory
-    // can be stale for shared keys it didn't touch (it booted before a
-    // sibling's write, or an iPad scene slept through the broadcast),
-    // and the old full-copy write silently reverted those keys on disk:
-    // the sibling kept showing its in-memory value all session and the
-    // loss only surfaced on the next launch (the vanishing YOUAREHERE
-    // registry). Per-window keys never reach disk from here at all —
-    // disk holds the main window's session.
+    let toWrite = partial;
     if (this.isSecondaryWindow) {
-      if (_allKeysPerWindow(partial)) {
+      toWrite = {};
+      for (const [k, v] of Object.entries(partial || {})) {
+        if (!_PER_WINDOW_SETTINGS_KEYS.has(k)) toWrite[k] = v;
+      }
+      // Nothing shared to write — this window's session stays in memory.
+      if (Object.keys(toWrite).length === 0) {
         this.emit("settings-changed");
         return;
       }
-      if (IS_TAURI) {
-        try {
-          const fresh = await tauriInvoke("get_settings");
-          const toSave = { ...fresh, ...partial };
-          for (const k of _PER_WINDOW_SETTINGS_KEYS) {
-            if (k in fresh) toSave[k] = fresh[k];
-          }
-          await tauriInvoke("save_settings", { settings: toSave });
-        } catch (e) { console.error("Settings save failed:", e); }
-      } else {
-        localStorage.setItem("hush_settings", JSON.stringify(this.settings));
-      }
-      this._broadcastCrossWindow("settings");
-      this.emit("settings-changed");
-      return;
     }
     if (IS_TAURI) {
-      try { await tauriInvoke("save_settings", { settings: this.settings }); }
+      try { await tauriInvoke("patch_settings", { patch: toWrite }); }
       catch (e) { console.error("Settings save failed:", e); }
     } else { localStorage.setItem("hush_settings", JSON.stringify(this.settings)); }
     this._broadcastCrossWindow("settings");

@@ -39,6 +39,7 @@ import { addPdfAliasToProject, ensureDeskPdfsFolder } from "../state/state-pdf-a
 import { getActiveDesk } from "../state/state-desks.js";
 import { showImportToast } from "../editor/import-toast.js";
 import { logActivity } from "../activity-log.js";
+import { isIOSTauri } from "../command-palette-helpers.js";
 
 /** Same-request dedupe: deep links are delivered more than once (every
  *  open window gets the event, getCurrent() replays on webview reload).
@@ -211,12 +212,18 @@ export async function handleHushwriterUrl(state, rawUrl) {
   }
   if (alreadyHandled(payload.nonce || rawUrl)) return true;
 
-  // Surface the (tray-hidden) window so the import is visible.
+  // Surface the (tray-hidden) window so the import is visible. `show()`
+  // is safe everywhere; `setFocus()` is desktop-only, because tao's iOS
+  // implementation activates a scene session from an EMPTY request —
+  // iPadOS reads that as "give me a new scene" and Hush ends up with an
+  // extra window per deep link. Deep links arrive several times over on
+  // iPadOS (see README-TECHNICAL "Platform gotchas"), so this is the one
+  // call site where that would compound fastest.
   try {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     const w = getCurrentWindow();
     await w.show();
-    await w.setFocus();
+    if (!isIOSTauri()) await w.setFocus();
   } catch { /* headless contexts */ }
 
   if (!payload.items.length) {

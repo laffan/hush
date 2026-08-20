@@ -122,8 +122,14 @@ export async function setupModeSwitching(state) {
   });
   // Notebook minimap — wires itself to AppState.
   import("./notebook/minimap.js").then(m => m.wireMinimap(state));
-  state.on("notebook-autosave", async () => {
-    const result = await saveNotebook();
+  // The one place a main-canvas notebook save is driven from, so the
+  // external-store push and the cross-window nudge can't drift apart.
+  // `opts.forceSnapshot` bypasses the quiet-moment gate and the
+  // camera-only cap: those exist so a multi-megabyte serialize can't
+  // land mid-stroke or mid-pan, and there is no stroke and no pan once
+  // the user has left the app.
+  const flushNotebook = async (opts = {}) => {
+    const result = await saveNotebook(opts);
     if (result) {
       state.syncFileToExternal(result.fileId, result.content);
       // Nudge sibling windows showing the same notebook to reload it
@@ -132,7 +138,13 @@ export async function setupModeSwitching(state) {
       // the post-save frame stall that ate stroke points.
       state.emit("notebook-cross-window-broadcast", { fileId: result.fileId });
     }
-  });
+    return result;
+  };
+  state.on("notebook-autosave", () => { void flushNotebook(); });
+  // Side channel rather than an event, because the background flush has
+  // to *await* this one — `emit` is synchronous and swallows the
+  // promise. See state/background-flush.js.
+  state.runtime.flushNotebook = flushNotebook;
   state.on("notebook-sync-reload", (content) => {
     reloadNotebookShapes(content).catch((e) => console.warn("notebook-sync-reload failed:", e));
   });
@@ -170,9 +182,12 @@ export async function setupModeSwitching(state) {
     c.state.notify("brainstormMode");
   });
 
-  // Seed globalStyleId for existing users who have an activeStyleId but no globalStyleId yet
+  // Seed globalStyleId for existing users who have an activeStyleId but
+  // no globalStyleId yet. Written explicitly: settings writes are
+  // key-scoped now, so a value only assigned into memory would never
+  // reach disk (it used to ride along on the next full-object save).
   if (state.settings.activeStyleId && !state.settings.globalStyleId) {
-    state.settings.globalStyleId = state.settings.activeStyleId;
+    void state.updateSettings({ globalStyleId: state.settings.activeStyleId });
   }
 
   // Apply active style — runs even when activeStyleId is null so the

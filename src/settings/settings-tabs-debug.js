@@ -1,7 +1,7 @@
 /**
  * Settings → Debug.
  *
- * Three sections, top to bottom:
+ * Sections, top to bottom:
  *
  *  - **Build Info** — what this copy of the app actually is. Both halves:
  *    the web bundle's stamp (scripts/gen-build-info.mjs) and the native
@@ -10,6 +10,9 @@
  *    question any bug report has to answer.
  *  - **Desk Storage** — what the store believes it holds, plus the repair
  *    action that puts back files a desk lost track of.
+ *  - **Windows & Displays** — the window registry plus this window's
+ *    screen geometry (see src/window-diagnostics.js), and a button that
+ *    writes both into the log. Second question of any iPad bug report.
  *  - **Activity Log** — a permanent, cross-window console (see
  *    src/activity-log.js). Rows are plain selectable text so a fragment
  *    can be copied on its own; the header has a button for the lot.
@@ -19,7 +22,8 @@
  */
 
 import { escHtml } from "./settings-tabs.js";
-import { readActivityLog, clearActivityLog } from "../activity-log.js";
+import { readActivityLog, clearActivityLog, flushActivityLog } from "../activity-log.js";
+import { logWindowSnapshot, readWindowGeometry } from "../window-diagnostics.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 
@@ -100,6 +104,19 @@ export function renderDebugTab(settings) {
       <div class="debug-repair-result" id="debug-sync-test-result" hidden></div>
     </div>
 
+    <div class="settings-section" id="debug-windows">
+      <h2>Windows &amp; Displays</h2>
+      <p class="settings-help">Every Hush window the app currently knows about, and the shape of the screen this one is on. On iPad a window can be resized by Split View, moved to another display under Stage Manager, or suspended in the app switcher with nothing running to notice — <strong>Log a snapshot</strong> writes the numbers below into the Activity Log so a "the window went black" or "it crashed when I plugged the monitor in" report has the geometry attached to it.</p>
+      <div class="debug-info-grid" id="debug-windows-body">
+        <p class="settings-help">Reading windows…</p>
+      </div>
+      <div class="debug-actions">
+        <button class="debug-button" id="debug-windows-snapshot">Log a snapshot</button>
+        <button class="debug-button" id="debug-windows-copy">Copy</button>
+        <button class="debug-button" id="debug-windows-refresh">Refresh</button>
+      </div>
+    </div>
+
     <div class="settings-section" id="debug-activity">
       <h2>Activity Log</h2>
       <p class="settings-help">Everything the app does across every desk and every window, kept between launches. Select any part of a row to copy just that, or copy the whole log at once.</p>
@@ -139,6 +156,7 @@ export function bindDebugTab() {
   if (!document.getElementById("debug-activity")) return; // another tab is showing
   void paintBuildInfo();
   void paintDeskStorage();
+  void paintWindows();
   void refreshLog();
 
   on("debug-copy-build", "click", async () => {
@@ -146,6 +164,16 @@ export function bindDebugTab() {
   });
   on("debug-refresh-desks", "click", () => { void paintDeskStorage(); });
   on("debug-repair-desks", "click", runRepair);
+  on("debug-windows-refresh", "click", () => { void paintWindows(); });
+  on("debug-windows-copy", "click", async () => {
+    await copyText(await windowsText(), "debug-windows-copy", "Copy");
+  });
+  on("debug-windows-snapshot", "click", async () => {
+    logWindowSnapshot("requested from Settings → Debug", { windows: await windowList() });
+    await flushActivityLog();
+    await refreshLog();
+    void paintWindows();
+  });
   on("debug-log-refresh", "click", () => { void refreshLog(); });
   on("debug-log-copy", "click", async () => {
     await copyText(visibleEntries().map(asText).join("\n"), "debug-log-copy", "Copy all");
@@ -238,6 +266,54 @@ async function paintBuildInfo() {
       ? `<p class="settings-help debug-warn">The web bundle and the native app were built from different commits (${escHtml(web.commit)} vs ${escHtml(native.commit)}). Rebuild both before chasing a bug.</p>`
       : "",
   ].join("");
+}
+
+/** The registry's view of every live Hush window. Empty outside Tauri,
+ *  and on an error — a diagnostics panel that can't read one section
+ *  still has to render the rest. */
+async function windowList() {
+  if (!IS_TAURI) return [];
+  try { return (await invoke("list_windows")) || []; }
+  catch (_) { return []; }
+}
+
+/** Human-readable geometry rows, shared by the panel and the clipboard
+ *  copy. Keys come straight from `readWindowGeometry` so the panel and
+ *  the log lines describe the same fields under the same names. */
+function geometryRows() {
+  const g = readWindowGeometry();
+  return [
+    ["Viewport", `${g.innerWidth} × ${g.innerHeight}`],
+    ["Visual viewport", g.visualWidth != null ? `${g.visualWidth} × ${g.visualHeight} @ ${g.visualScale}×` : "—"],
+    ["Screen", `${g.screenWidth} × ${g.screenHeight} (available ${g.screenAvailWidth} × ${g.screenAvailHeight})`],
+    ["Pixel ratio", g.dpr != null ? `${g.dpr}×` : "—"],
+    ["Orientation", g.orientation || "—"],
+    ["Safe area (T,R,B,L)", g.safeArea || "—"],
+    ["Colour depth", g.colorDepth != null ? `${g.colorDepth}-bit` : "—"],
+  ];
+}
+
+async function paintWindows() {
+  const host = document.getElementById("debug-windows-body");
+  if (!host) return;
+  const list = await windowList();
+  const windows = list.length
+    ? list.map((w) => row(
+        `Window ${w.number}`,
+        `${w.label}${w.fileType ? ` · ${w.fileType}` : " · nothing open"}`,
+      )).join("")
+    : `<p class="settings-help">${IS_TAURI ? "No windows registered." : "Only available in the app."}</p>`;
+  host.innerHTML = windows + geometryRows().map(([k, v]) => row(k, v)).join("");
+}
+
+async function windowsText() {
+  const list = await windowList();
+  return [
+    "Hush windows & displays",
+    ...list.map((w) => `  window ${w.number}   ${w.label}${w.fileType ? ` · ${w.fileType}` : ""}`),
+    ...geometryRows().map(([k, v]) => `  ${k.padEnd(20)} ${v}`),
+    `  ${"User agent".padEnd(20)} ${navigator.userAgent || "unknown"}`,
+  ].join("\n");
 }
 
 async function paintDeskStorage() {

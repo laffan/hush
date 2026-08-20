@@ -372,8 +372,36 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
     activeEl = next;
     if (activeEl) {
       activeEl.style.outlineColor = state.theme.accent;
-      activeEl.scrollIntoView({ block: "nearest" });
+      revealInRail(activeEl);
     }
+  }
+
+  /** Bring a cell into view **inside the rail's own scroller, and
+   *  nowhere else**.
+   *
+   *  `scrollIntoView` cannot be used here. It walks every scrollable
+   *  ancestor of the element, and in a stack the rail's ancestors are the
+   *  column wrapper, the column content box (both `overflow: hidden`, and
+   *  browsers scroll those programmatically all the same) and the stack's
+   *  own horizontal scroller. So scrolling a proof *down* — which
+   *  re-highlights a page every page or so — would scroll the stack
+   *  *sideways*, drag the canvas out from under its own wrapper, and, as
+   *  the rail is right-anchored and travels with the content it was just
+   *  scrolled off, immediately qualify for another correction. The
+   *  runaway that produced was the "scrolling widens the column and
+   *  pushes everything left" bug, and often the crash after it.
+   *
+   *  Writing `scrollTop` on the one element that is supposed to move has
+   *  none of that reach. Vertical only: the rail never scrolls
+   *  horizontally (`overflowX: hidden`), so there is nothing to do on
+   *  that axis and nothing that should happen on it. */
+  function revealInRail(cell: HTMLElement) {
+    const cellBox = cell.getBoundingClientRect();
+    const viewBox = scroller.getBoundingClientRect();
+    // "nearest": move only when the cell is actually outside the window,
+    // and only far enough to bring the offending edge in.
+    if (cellBox.top < viewBox.top) scroller.scrollTop -= viewBox.top - cellBox.top;
+    else if (cellBox.bottom > viewBox.bottom) scroller.scrollTop += cellBox.bottom - viewBox.bottom;
   }
 
   // ── width ──

@@ -13,7 +13,7 @@ import { initShuffleEditor } from "./editor/shuffle-editor.js";
 import { dispatchDomShortcut, matchesDomEvent } from "./shortcuts.js";
 import { buildEditorCommands } from "./editor/commands.js";
 import { toggleCommandPalette, openFilePalette } from "./command-palette.js";
-import { fontFallbacks, themeBackgrounds, themeForegrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
+import { fontFallbacks, themeBackgrounds, themeForegrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily, installIOSChromeRepaint } from "./theme-colors.js";
 import { applyNotebookSettings, previewNotebookStyle, setNotebookLeftInset } from "./notebook/notebook-bridge.js";
 import { setupModeSwitching } from "./main-modes.js";
 import { installNotebookAppearanceSync } from "./main-listeners.js";
@@ -24,6 +24,8 @@ import { applyActiveStyle, applyFocusModeOpacity, applyDeskGlobalStyle, handleOA
 import { installWindowShortcuts, installActivationFocus } from "./window-shortcuts.js";
 import { setTooltipsEnabled } from "./tooltips.js";
 import { installActivityCapture, configureActivityLog, logActivity } from "./activity-log.js";
+import { installWindowDiagnostics, logWindowSnapshot } from "./window-diagnostics.js";
+import { installBackgroundFlush } from "./state/background-flush.js";
 import {
   getInitialFileFromHash,
   getInitialDeskFromHash,
@@ -63,6 +65,12 @@ async function init() {
       });
     } catch (_) { /* defaults are fine */ }
   }
+  // Window / screen trail — installed here rather than with the rest of
+  // the multi-window wiring further down, because a boot that dies
+  // before it gets there is the boot whose geometry we most want.
+  try {
+    installWindowDiagnostics({ label: IS_TAURI ? await getCurrentWindowLabel() : "main" });
+  } catch (_) { /* diagnostics must never fail a boot */ }
 
   // **Before** the tree is read: on iOS a local desk's folder is only
   // reachable through a security-scoped bookmark, and until it's resolved
@@ -89,6 +97,8 @@ async function init() {
     activeDeskId: state.settings?.activeDeskId || null,
     secondary: state.isSecondaryWindow,
   });
+  // The baseline every later geometry line is a diff against.
+  logWindowSnapshot("boot", { secondary: state.isSecondaryWindow });
 
   // Drop any bundled style presets the user hasn't seen yet into the
   // styles list so they show up as normal entries in the rail. Each
@@ -109,6 +119,7 @@ async function init() {
   applyFontFamily(state.settings.fontFamily);
   applyFocusModeOpacity(state);
   updatePrivateBoxColor(state);
+  installIOSChromeRepaint(state); // display-change half of the same repaint
 
   const editorContainer = document.getElementById("editor-container");
   const notebookContainer = document.getElementById("notebook-container");
@@ -431,6 +442,9 @@ async function init() {
       }, 1000);
     });
   }
+  // Force every unsaved surface to disk on the way out — iPadOS can
+  // reclaim a backgrounded webview, and the reload restores from disk.
+  installBackgroundFlush(state);
   // Also save session state when the window becomes hidden
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {

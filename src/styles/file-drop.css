@@ -57,7 +57,9 @@
   max-width: min(420px, calc(100vw - 32px));
   padding: 10px 16px;
   border-radius: 8px;
-  font-family: var(--font-family, system-ui, sans-serif);
+  /* App chrome, not editor surface — the UI font, so "Opening …" doesn't
+     arrive set in whatever the active style writes prose in. */
+  font-family: var(--ui-font-family, system-ui, -apple-system, sans-serif);
   font-size: 13px;
   line-height: 1.35;
   color: #fff;

@@ -12,7 +12,7 @@
  */
 
 import { createSpine, resolveItemName } from "./stack-spine.js";
-import { mountItemContent, unmountItemContent, snapshotItemContent } from "./stack-item-mount.js";
+import { mountItemContent, unmountItemContent, snapshotItemContent, pinUnscrollable } from "./stack-item-mount.js";
 import { startReorder } from "./stack-reorder.js";
 import { updateScrollbarPills, setupScrollThumb, updateScrollThumb } from "./stack-scrollbar-pills.js";
 
@@ -198,6 +198,7 @@ export class StackComponent {
     const content = document.createElement("div");
     content.className = "stack-column-content";
     content.style.display = item.open ? "block" : "none";
+    pinUnscrollable(content);
     col.appendChild(content);
 
     // Click anywhere in the column to make it "active"
@@ -521,6 +522,17 @@ export class StackComponent {
       }
     }
     return out;
+  }
+
+  /** Write every live column's pending edits without tearing anything
+   *  down — column contents are separate files on their own 2 s timers.
+   *  See `state/background-flush.js`. Clean columns resolve at once. */
+  flushLiveColumns() {
+    const pending = [];
+    for (const [, liveData] of this._liveColumns) {
+      if (typeof liveData?.flush === "function") pending.push(liveData.flush());
+    }
+    return Promise.allSettled(pending);
   }
 
   serialize() {

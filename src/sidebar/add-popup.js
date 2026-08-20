@@ -95,10 +95,9 @@ export function mountAddPopup(state, anchorEl) {
       const { addLocalSyncFolder } = await import("../sync/local-sync.js");
       // Stamp the new mount with the currently active desk. Rust
       // persists settings.json inside local_sync_add, so we mirror the
-      // returned folder into the in-memory cache without calling
-      // updateSettings — sending the full JS state.settings back through
-      // save_settings can clobber unrelated fields that Rust has updated
-      // since startup (e.g. sync log entries).
+      // returned folder into the in-memory cache rather than writing it
+      // back from here — Rust already owns this key, and a second write
+      // would only race its own.
       const folder = await addLocalSyncFolder(state.settings?.activeDeskId || null);
       if (!folder) return;
       state.settings.localSyncFolders = (state.settings.localSyncFolders || []).concat(folder);

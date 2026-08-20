@@ -180,8 +180,91 @@ export function updatePrivateBoxColor(state, overrideBg, overrideFg) {
       }
       const panel = document.getElementById("panel-overlay");
       if (panel) panel.style.color = uiFg;
+      pushNativeBackground(bg);
     }
   }
+}
+
+/** Last colour pushed to the native layers, so the repaint paths above —
+ *  which run on every theme touch, every foreground, and every window
+ *  resize — cost one IPC per actual colour change rather than one per
+ *  call. */
+let _lastNativeBg = null;
+
+/** Paint the `UIWindow` / `WKWebView` under the page in the theme colour.
+ *  Everything above is CSS, and CSS only helps once the page is painting:
+ *  the black the user sees when a second display is plugged in is the
+ *  native surface showing through a webview that is still re-compositing.
+ *  Fire-and-forget — a no-op on every platform but iOS, and a diagnostic
+ *  nicety at that, so it must never break a theme apply. */
+function pushNativeBackground(bg) {
+  if (bg === _lastNativeBg) return;
+  _lastNativeBg = bg;
+  if (typeof window === "undefined" || !window.__TAURI_INTERNALS__) return;
+  void (async () => {
+    try {
+      const [{ invoke }, { getCurrentWindow }] = await Promise.all([
+        import("@tauri-apps/api/core"),
+        import("@tauri-apps/api/window"),
+      ]);
+      await invoke("set_native_background_color", {
+        label: getCurrentWindow().label,
+        color: bg,
+      });
+    } catch (_) { /* older binary, or a window mid-teardown */ }
+  })();
+}
+
+/**
+ * Re-assert the iOS chrome colours whenever the window's box changes.
+ *
+ * The existing mitigation for WKWebView's stale `var(--theme-bg)` chrome
+ * runs on foreground transitions. A display change is the other trigger
+ * and had no handler: plug a monitor into the iPad and the app comes back
+ * black or transparent until something forces a re-layout — which is why
+ * resizing the window "fixes" it. These are the events that fire when the
+ * window's screen changes underneath it.
+ *
+ * Two writes per event, matching the visibility path: one now, one on the
+ * next frame, because WKWebView's own layer restore can land after (and
+ * clobber) a synchronous write. Coalesced so a Stage Manager resize drag
+ * costs one pair at the end rather than one per frame.
+ */
+export function installIOSChromeRepaint(state) {
+  if (typeof window === "undefined") return;
+  let pending = null;
+  const repaint = () => {
+    // Checked per-event rather than once: `html.ios` is added during
+    // boot, and this can be installed before that.
+    if (!document.documentElement.classList.contains("ios")) return;
+    if (pending) clearTimeout(pending);
+    pending = setTimeout(() => {
+      pending = null;
+      updatePrivateBoxColor(state);
+      requestAnimationFrame(() => updatePrivateBoxColor(state));
+    }, 120);
+  };
+  window.addEventListener("resize", repaint);
+  window.addEventListener("orientationchange", repaint);
+  window.visualViewport?.addEventListener("resize", repaint);
+  window.addEventListener("pageshow", repaint);
+  // A pixel-ratio change has no event of its own, but a media query on
+  // the *current* ratio stops matching the moment it moves — re-armed
+  // after each fire, that tracks it indefinitely. This is the one signal
+  // that fires when the window is handed to a display of the same size
+  // and a different scale.
+  const watchRatio = () => {
+    let mql;
+    try { mql = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`); }
+    catch (_) { return; }
+    const onChange = () => {
+      mql.removeEventListener?.("change", onChange);
+      repaint();
+      watchRatio();
+    };
+    mql.addEventListener?.("change", onChange);
+  };
+  watchRatio();
 }
 
 export function applyFontFamily(family) {

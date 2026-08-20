@@ -383,6 +383,11 @@ export function closePane(id) {
   const pane = panes.get(id);
   if (!pane) return;
   emitPaneActivity("closed", pane);
+  // Deliberately not awaited — closing a pane has to feel instant, so
+  // the save runs to completion on its own. That means `savePaneContent`
+  // must read the editor / canvas synchronously, before its first
+  // `await`, because the teardown on the next line takes both away. It
+  // does; see the note there before changing either side.
   savePaneContent(pane);
   teardownPaneContent(pane);
   if (pane.gutter) {

@@ -626,11 +626,26 @@ function startShortcutRecording(display, settingKey) {
 }
 
 // ===== Save =====
+/**
+ * Write one setting.
+ *
+ * Key-scoped, via Rust's `patch_settings` — this panel's `settings`
+ * object is a snapshot taken when it was opened, and the app carries on
+ * writing underneath it the whole time it is up (autosaves, session
+ * state, the floating-pane list). Sending the whole snapshot back
+ * reverted every one of those to whatever they were when the panel
+ * opened; a floating pane closed while Settings was open came back on
+ * the next launch that way. The reply is the settings as they now stand,
+ * which is also what the rest of the app is handed.
+ */
 async function saveSetting(key, value) {
   settings[key] = value;
   if (IS_TAURI) {
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("save_settings", { settings });
+    const fresh = await invoke("patch_settings", { patch: { [key]: value } });
+    // Merged in place, not reassigned: the tab renderers were handed
+    // this object and some hold onto it.
+    if (fresh) Object.assign(settings, fresh);
     // In modal mode, use the callback instead of cross-window emit
     if (onSaveCallback) {
       onSaveCallback(settings);
