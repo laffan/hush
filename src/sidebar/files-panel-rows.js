@@ -165,20 +165,25 @@ export function isItemActive(item, state) {
   return false;
 }
 
-/** Float flagged children to the top of each plain folder (projects
- *  keep their user ordering). Pure — returns a shallow-cloned tree. */
-export function sortFlaggedItems(tree) {
-  return tree.map(node => {
-    if (!node.children || node.children.length === 0) return node;
-    const sortedChildren = sortFlaggedItems(node.children);
-    if (node.type === "folder") {
-      const flagged = sortedChildren.filter(c => c.flagged);
-      const unflagged = sortedChildren.filter(c => !c.flagged);
-      return { ...node, children: [...flagged, ...unflagged] };
-    }
-    return { ...node, children: sortedChildren };
-  });
-}
+/* Flagged rows are NOT floated to the top of their folder any more, and
+ * a sort like that must not come back as a tree transform.
+ *
+ * It read as display-only — a pure function returning a cloned tree —
+ * but the clone was what seeded the SortableList, and the list's
+ * `onChange` writes its data straight back to `state.fileTree` and
+ * saves. So the float was real: flag an item, drag anything in the
+ * sidebar afterwards, and the flagged item's borrowed position became
+ * its persisted one. Unrecoverably, too — the original interleaving is
+ * gone once the partition is committed. It also decided which file some
+ * open paths land on, `openLastFileForDesk`'s "first child of the desk's
+ * Inbox" fallback among them, which is flags choosing what opens.
+ *
+ * Flagged items still surface at the top of the sidebar, in the
+ * dedicated Flagged section (`files-panel-flagged.js`) — that is the
+ * affordance, and it costs the file order nothing. Anything that wants
+ * the in-folder float back has to do it in the rendering layer, without
+ * permuting the data the list commits from.
+ */
 
 let _pdfSyncModule = null;
 export async function getPdfSync() {

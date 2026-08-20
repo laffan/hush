@@ -12,7 +12,7 @@ import { escHtml, showPromptModal, googleLinkBadgeHtml, computeNumberLabels, DRA
 import {
   isInboxId, isImagesId, isPdfsId, isTrashId, isAnySpecialId, allSpecialIds,
   visibleTopLevel, renderedDeskIdFor, commitRenderedChildren, isAllDesksMode, numberSkip, hasPairedGutter, getIcon,
-  actionButtons, getPdfSync, buildPdfRowHtml, sortFlaggedItems,
+  actionButtons, getPdfSync, buildPdfRowHtml,
   isItemActive,
 } from "./files-panel-rows.js";
 import { normalizePdfProjectAliases } from "../state/state-pdf-aliases.js";
@@ -85,7 +85,7 @@ export function createFilesPanel(container, state, hidePanel) {
 
   reapplyGutterMarkers(state.fileTree);
   renderedDeskId = renderedDeskIdFor(state);
-  const sortedTree = augmentTreeWithHeadings(state, augmentTreeWithTabs(state, sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state)))));
+  const sortedTree = augmentTreeWithHeadings(state, augmentTreeWithTabs(state, normalizeProjectChildren(visibleTopLevel(state))));
   numberLabels = computeNumberLabels(sortedTree, numberSkip, isInboxId);
 
   sortableInstance = new SortableList(listContainer, {
@@ -218,7 +218,7 @@ export function createFilesPanel(container, state, hidePanel) {
       const isMultiSelectable = (item.type === "document" || item.type === "notebook" || item.type === "pdf" || item.type === "stack") && item.fileId;
       if (isMultiSelectable) {
         if (event && (event.shiftKey || event.metaKey || event.ctrlKey)) {
-          const visible = collectVisibleDocs(state, visibleTopLevel, sortFlaggedItems, sortableInstance?.state?.collapsedIds);
+          const visible = collectVisibleDocs(state, visibleTopLevel, sortableInstance?.state?.collapsedIds);
           handleDocMultiClick(item, event, state, visible);
           refreshList(state);
           return;
@@ -480,7 +480,7 @@ function refreshList(state) {
     // contents (project, PDFs, Inbox) into whichever desk the panel was
     // first built on. That is how content "moved desks" overnight.
     renderedDeskId = renderedDeskIdFor(state);
-    const sorted = augmentTreeWithHeadings(state, augmentTreeWithTabs(state, sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state)))));
+    const sorted = augmentTreeWithHeadings(state, augmentTreeWithTabs(state, normalizeProjectChildren(visibleTopLevel(state))));
     numberLabels = computeNumberLabels(sorted, numberSkip, isInboxId);
     sortableInstance.setData(sorted);
   }

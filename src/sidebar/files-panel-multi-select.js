@@ -19,9 +19,9 @@ import { normalizeProjectChildren } from "../state/tree-helpers.js";
  *  because the user can't see them anyway, and a shift-range that
  *  silently pulled in invisible rows would feel like a bug. The
  *  result is the reference order for shift-range expansion. */
-export function collectVisibleDocs(state, visibleTopLevel, sortFlaggedItems, collapsedIds) {
+export function collectVisibleDocs(state, visibleTopLevel, collapsedIds) {
   const out = [];
-  const tree = sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state)));
+  const tree = normalizeProjectChildren(visibleTopLevel(state));
   const collapsed = collapsedIds || new Set();
   function walk(nodes) {
     for (const n of nodes) {
