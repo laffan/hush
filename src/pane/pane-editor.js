@@ -212,6 +212,18 @@ export function applyPaneTypewriterFromContext(view, modeRef, container) {
   _applyPaneTypewriter(view, modeRef, container);
 }
 
+/** Where the typewriter line sits inside the host box, as a fraction of
+ *  its height. Panes share the main editor's `typewriterPosition` (the
+ *  value its draggable boundary writes) so both surfaces agree on where
+ *  the line belongs; the pane just measures its own box instead of the
+ *  window. Clamped so a boundary dragged to the very edge of the screen
+ *  still leaves a usable band inside a small pane. */
+function paneTypewriterOffset(state, containerH) {
+  const raw = Number(state.typewriterPosition);
+  const frac = Number.isFinite(raw) ? Math.min(0.9, Math.max(0.1, raw)) : 0.6;
+  return Math.round(containerH * frac);
+}
+
 function _applyPaneTypewriter(view, state, container) {
   if (!state.typewriterMode) {
     _removePaneTypewriter(view, container);
@@ -219,9 +231,19 @@ function _applyPaneTypewriter(view, state, container) {
   }
   const scroller = view.scrollDOM;
   const containerH = container.clientHeight || 300;
-  const targetY = Math.round(containerH * 0.5);
+  const targetY = paneTypewriterOffset(state, containerH);
+  // Top padding on the scroller pushes line 1 down to the boundary.
+  // The runway below has to go on `.cm-content`, NOT on the scroller:
+  // WebKit doesn't count a scroll container's own bottom padding as
+  // scrollable overflow, so scroller padding gives the last lines
+  // nothing to scroll into and the cursor sticks below the line at the
+  // end of a document. (The main editor solves the same problem with
+  // real blank lines appended to the buffer; a pane holds the whole
+  // file and writes the whole file back on save, so it stays away from
+  // the buffer and pads the element instead.)
   scroller.style.paddingTop = targetY + "px";
-  scroller.style.paddingBottom = targetY + "px";
+  scroller.style.paddingBottom = "0px";
+  view.contentDOM.style.paddingBottom = Math.max(0, containerH - targetY) + "px";
 
   let line = container.querySelector(".pane-tw-line");
   if (!line) {
@@ -242,17 +264,51 @@ function _applyPaneTypewriter(view, state, container) {
     zIndex: "5",
   });
 
+  observePaneTypewriterResize(view, state, container);
   requestAnimationFrame(() => scrollPaneCursorToTypewriter(view, state, container));
 }
 
-/** Remove typewriter padding and boundary line from a pane. */
+/** Re-centre the line and the cursor whenever the host box changes size.
+ *  Every way a pane can be scaled ends in a size change on this element
+ *  — the resize handles, a dock reflow, the size popover, a window
+ *  resize, a stack column re-layout — so one observer covers them all
+ *  where hooking each caller would not. (A pane attached to a notebook
+ *  canvas is scaled by a CSS transform, which leaves the box alone: the
+ *  line and its padding scale with everything else, as they should.) */
+function observePaneTypewriterResize(view, state, container) {
+  if (container.__twResizeObserver || typeof ResizeObserver === "undefined") return;
+  let pending = false;
+  const obs = new ResizeObserver(() => {
+    if (pending) return;
+    pending = true;
+    // Coalesce to one pass per frame: a drag-resize fires this on every
+    // pointer sample, and each pass reads layout.
+    requestAnimationFrame(() => {
+      pending = false;
+      if (!container.__twResizeObserver) return; // torn down mid-flight
+      if (!state.typewriterMode) { _removePaneTypewriter(view, container); return; }
+      _applyPaneTypewriter(view, state, container);
+    });
+  });
+  container.__twResizeObserver = obs;
+  obs.observe(container);
+}
+
+/** Remove typewriter padding, the boundary line, and the size watcher. */
 function _removePaneTypewriter(view, container) {
   if (view && view.scrollDOM) {
     view.scrollDOM.style.paddingTop = "";
     view.scrollDOM.style.paddingBottom = "";
+    if (view.contentDOM) view.contentDOM.style.paddingBottom = "";
   }
-  const line = container.querySelector(".pane-tw-line");
-  if (line) line.remove();
+  if (container) {
+    const line = container.querySelector(".pane-tw-line");
+    if (line) line.remove();
+    if (container.__twResizeObserver) {
+      container.__twResizeObserver.disconnect();
+      container.__twResizeObserver = null;
+    }
+  }
 }
 
 /** Scroll the pane's editor so the cursor sits at the typewriter line. */
@@ -260,7 +316,7 @@ function scrollPaneCursorToTypewriter(view, state, container) {
   if (!state.typewriterMode) return;
   const scroller = view.scrollDOM;
   const containerH = container.clientHeight || 300;
-  const targetY = Math.round(containerH * 0.5);
+  const targetY = paneTypewriterOffset(state, containerH);
   try {
     const cursor = view.state.selection.main.head;
     const coords = view.coordsAtPos(cursor);

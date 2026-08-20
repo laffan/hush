@@ -1,4 +1,5 @@
 import { applyTypewriterPadding } from "./plugins/typewriter.js";
+import { sidePanelWidthPx } from "../ui/side-panel-resizer.js";
 
 /**
  * Set vertical padding on the editor's scroller.
@@ -187,13 +188,16 @@ export function updateColumnResizers(state) {
     }
     let rightInsetOffset = 0;
     if (rightInset && rightOpen) {
-      rightInsetOffset = 200; // right panel (200)
+      // Both right-hand bars are drag-resizable, so their widths come
+      // from the CSS custom properties the resizer writes rather than
+      // from constants that would drift the moment one was dragged.
+      rightInsetOffset = sidePanelWidthPx("--right-panel-width", 200);
       // The comments panel is pinned to the outline's left edge; when it's
       // showing it carves out its own width too, so the column is pushed in
-      // rather than overlaid (matches its CSS width).
+      // rather than overlaid.
       const commentsEl = document.getElementById("comments-panel");
       if (commentsEl && !commentsEl.classList.contains("hidden")) {
-        rightInsetOffset += 240;
+        rightInsetOffset += sidePanelWidthPx("--comments-panel-width", 240);
       }
     }
 

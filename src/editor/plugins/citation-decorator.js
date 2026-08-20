@@ -554,12 +554,21 @@ function createSearchController(view) {
     if (!ref) { close(); view.focus(); return; }
     const citekey = ref.citekey || ref.key;
     const insert = `${citekey}](zotero://select/library/items/${ref.key})`;
-    view.dispatch({
-      changes: { from: activeRange.from, to: activeRange.to, insert },
-      selection: { anchor: activeRange.from + insert.length },
-    });
+    // `close()` clears activeRange, so keep the range before tearing the
+    // popup down. Order matters: the popup's search input holds the
+    // caret while it's up, so it has to leave the DOM and hand focus
+    // back to the editor *before* the selection is dispatched —
+    // otherwise WebKit restores its own idea of the editor's caret when
+    // focus returns and the cursor lands wherever it was before the
+    // popup opened rather than after the citation we just inserted.
+    const { from, to } = activeRange;
     close();
     view.focus();
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + insert.length },
+      scrollIntoView: true,
+    });
   }
 
   function ensureRefs() {

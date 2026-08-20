@@ -1,15 +1,17 @@
 /* ===== Comments Panel ====================================================
    A list of the document's imported Google-Docs comments, attached to the
-   LEFT edge of the outline (`#right-panel-overlay`, 200px wide). It shares
+   LEFT edge of the outline (`#right-panel-overlay`). Both bars are
+   drag-resizable, so each one's width is a custom property on <html>
+   and this panel offsets itself by the outline's. It shares
    the outline's dock-offset vars so the two move together, toggles with the
    outline, and scrolls independently. Clicking an item scrolls the editor
    to that comment. */
 #comments-panel {
   position: fixed;
   top: var(--pane-dock-top-height, 0px);
-  right: calc(var(--pane-dock-right-width, 0px) + 200px);
+  right: calc(var(--pane-dock-right-width, 0px) + var(--right-panel-width, 200px));
   bottom: var(--pane-dock-bottom-height, 0px);
-  width: 240px;
+  width: var(--comments-panel-width, 240px);
   height: auto;
   background: var(--theme-bg, var(--bg));
   color: var(--fg);

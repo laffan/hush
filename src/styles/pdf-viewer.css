@@ -708,7 +708,8 @@ html.ios:not(.phone) .floating-pane.docked.docked-bottom .pdf-zoom-toolbar::afte
 .pdf-mode #drag-region,
 .pdf-mode #right-panel-overlay,
 .pdf-mode .sidebar-trigger,
-.pdf-mode .right-panel-trigger {
+.pdf-mode .right-panel-trigger,
+.pdf-mode .side-panel-resize {
   display: none !important;
 }
 body.pdf-mode .column-resizer { display: none !important; }

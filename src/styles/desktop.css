@@ -42,7 +42,8 @@ body.desktop-active #stack-container,
    z-index above the Desktop), so without this the trigger floats over
    the Desktop after opening a guttered doc and coming back. */
 body.desktop-active #right-panel-overlay,
-body.desktop-active .right-panel-trigger {
+body.desktop-active .right-panel-trigger,
+body.desktop-active .side-panel-resize {
   visibility: hidden;
 }
 

@@ -119,7 +119,23 @@ export function openCitationPopup(opts) {
         el.style.top = `${rect.top - margin - h}px`;
       }
       el.style.visibility = "visible";
+      // Focus only lands once the popup is actually rendered: the
+      // flip-above measurement above parks it at `visibility: hidden`
+      // for a frame, and `focus()` on a non-rendered element is a
+      // no-op — which is how the caret used to stay in the document
+      // and every keystroke went on widening the `[@…` instead of
+      // filtering the list.
+      focusInput();
     });
+  }
+
+  /** Put the caret in the search field, at the end of any seeded
+   *  query. Safe to call repeatedly; a no-op once the popup is gone. */
+  function focusInput() {
+    if (!el.isConnected) return;
+    if (document.activeElement === input) return; // don't yank a mid-word caret
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
   }
 
   function commit() {
@@ -149,9 +165,10 @@ export function openCitationPopup(opts) {
 
   render();
   if (opts.anchor) position(opts.anchor);
-  input.focus();
-  // Caret at the end of any seeded query.
-  input.setSelectionRange(input.value.length, input.value.length);
+  // `position` re-focuses after the popup is visible; this first call
+  // covers the anchorless case (nothing hides the popup, so it takes
+  // effect immediately).
+  focusInput();
 
   return {
     el,

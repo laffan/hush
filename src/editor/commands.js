@@ -35,20 +35,8 @@ import { insertFootnote } from "./plugins/footnotes.js";
 import { openZoteroModal } from "../zotero.js";
 import { openShuffleEditor } from "./shuffle-editor.js";
 import { toggleWordCount } from "./plugins/word-count.js";
-import { getActiveModeContext } from "../state/mode-context.js";
+import { getActiveModeContext, toggleModeOnContext } from "../state/mode-context.js";
 import { setInstanceHighlightsEffect, findAllOccurrences } from "./select-instance-highlight.js";
-
-function toggleModeOnContext(state, modeName) {
-  const ctx = getActiveModeContext(state);
-  if (ctx) {
-    ctx.mc.toggle(modeName, ctx.view, ctx.container);
-    return true;
-  }
-  if (modeName === "focusMode") state.toggleFocus();
-  else if (modeName === "typewriterMode") state.toggleTypewriter();
-  else if (modeName === "dryMode") state.toggleDry();
-  return true;
-}
 
 /** Hunt for an editor surface whose active selection is non-empty and
  *  return a payload the Selection Focus overlay can mount a fresh

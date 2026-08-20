@@ -3,10 +3,22 @@
  * Handles inset/overlay mode, show/hide triggers, and refresh.
  */
 import { createLongView } from "../longview/longview.js";
+import { attachSidePanelResize, sidePanelWidthPx } from "./side-panel-resizer.js";
 
 export function setupRightPanel(state) {
   const rightPanelOverlay = document.getElementById("right-panel-overlay");
   let longViewInstance = null;
+
+  // Drag the outline's inboard edge to widen it. The strip sits at the
+  // panel's left edge — everything to its right is the dock footprint
+  // plus the panel itself.
+  attachSidePanelResize(state, rightPanelOverlay, {
+    cssVar: "--right-panel-width",
+    settingKey: "outlinePanelWidth",
+    defaultWidth: 200,
+    min: 140,
+    rightOffset: "calc(var(--pane-dock-right-width, 0px) + var(--right-panel-width, 200px))",
+  });
 
   // Desks own the outline (right-sidebar) toggle state: record open /
   // closed against the active desk so switching back restores it. Stored
@@ -24,7 +36,10 @@ export function setupRightPanel(state) {
     const w = window.innerWidth;
     const colW = state.settings.columnWidth || 800;
     const rightPad = Math.max(50, Math.floor((w - colW) / 2));
-    if (rightPad >= 200) {
+    // Inset only while the gutter beside the text column is at least as
+    // wide as the panel itself — which is now the user's width, not a
+    // fixed 200.
+    if (rightPad >= sidePanelWidthPx("--right-panel-width", 200)) {
       rightPanelOverlay.classList.add("panel-inset");
       rightPanelOverlay.classList.remove("panel-overlay-mode");
     } else {

@@ -21,6 +21,7 @@ import {
   enterSendSelectedPicker, enterFilePicker, enterDeskPicker,
 } from "./command-palette-pickers.js";
 import { addGutter, openGutter, closeGutter, gutterAddHidden, gutterOpenHidden, gutterCloseHidden } from "./project/gutter-commands.js";
+import { toggleModeOnContext } from "./state/mode-context.js";
 import { deleteTreeNode } from "./state/state-tree.js";
 import {
   getActivePaneId, fitActivePaneToGap, createPane,
@@ -460,8 +461,13 @@ function buildCommands(state) {
       action: (s) => s.emit("show-ratchet-dropdown") },
     { id: "private", label: "Private mode", icon: icons.private, shortcutKey: "shortcutTogglePrivate", ctx: "doc",
       action: (s) => s.togglePrivate() },
+    // Routed through the per-editor mode context (same helper the
+    // shortcut uses) so running this with a pane or stack column
+    // focused toggles that surface rather than the main editor behind
+    // it. Falls back to the global toggle when the main editor is the
+    // active surface.
     { id: "typewriter", label: "Typewriter mode", icon: icons.typewriter, shortcutKey: "shortcutTypewriter", ctx: "doc",
-      action: (s) => s.toggleTypewriter() },
+      action: (s) => toggleModeOnContext(s, "typewriterMode") },
     { id: "dry", label: "Show repeats", icon: icons.dry, shortcutKey: "shortcutToggleDry", ctx: "doc",
       action: (s) => s.toggleDry() },
     { id: "focus", label: "Focus mode", icon: icons.focus, shortcutKey: "shortcutToggleFocus", ctx: "doc",

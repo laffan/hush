@@ -83,13 +83,14 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
 export type ReorderMode = "swap" | "ripple";
 
 /** Default brush-slot presets. Slot 1 stays on "auto" so it tracks
- *  the active theme's foreground; slot 2 follows the heading colour.
+ *  the active theme's foreground; slot 2 is the round stamp
+ *  (`brush-5`) in the palette's red, the everyday marking-up pen.
  *  Slot 3 carries an explicit blue so a fresh notebook offers a
  *  useful palette out of the box, and slot 4 is a yellow highlighter
  *  (chisel-tip atlas + the multiply/alpha highlighter mode). */
 const DEFAULT_BRUSH_SLOTS: DrawingSlot[] = [
   { brushId: "brush-1", color: "auto",    size: 3,  streamline: 0.35, spacing: 0.12, mode: "normal" },
-  { brushId: "brush-2", color: "heading", size: 6,  streamline: 0.35, spacing: 0.12, mode: "normal" },
+  { brushId: "brush-5", color: "#e11d48", size: 6,  streamline: 0.35, spacing: 0.12, mode: "normal" },
   { brushId: "brush-3", color: "#3b82f6", size: 25, streamline: 0.35, spacing: 0.12, mode: "normal" },
   { brushId: "brush-highlighter", color: "#fde047", size: 20, streamline: 0.35, spacing: 0.12, mode: "highlighter" },
 ];

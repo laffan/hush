@@ -122,6 +122,12 @@ pub struct AppSettings {
     pub zen_column_width: Option<u32>,
     #[serde(default = "default_sidebar_panel_width")]
     pub sidebar_panel_width: u32,
+    // The document's right-hand bars — the outline and the Google-Docs
+    // comments list — each drag-resizable from its inboard edge.
+    #[serde(default = "default_outline_panel_width")]
+    pub outline_panel_width: u32,
+    #[serde(default = "default_comments_panel_width")]
+    pub comments_panel_width: u32,
     // Sidebar session state — which panel was open ("files" / "styles"
     // / "versions") and whether it was pinned when the app last quit.
     // Per-window in the JS sense, but the Tauri side stores them
@@ -292,13 +298,13 @@ pub struct AppSettings {
     #[serde(default = "default_true")]
     pub longview_wrap_flag_text: bool,
     #[serde(default = "default_longview_body_font_size")]
-    pub longview_body_font_size: u32,
+    pub longview_body_font_size: f64,
     #[serde(default = "default_longview_heading_font_size")]
     pub longview_heading_font_size: u32,
     #[serde(default = "default_longview_flag_font_size")]
     pub longview_flag_font_size: u32,
     #[serde(default = "default_longview_line_gap")]
-    pub longview_line_gap: u32,
+    pub longview_line_gap: f64,
     #[serde(default = "default_longview_current_position_color")]
     pub longview_current_position_color: String,
 
@@ -599,6 +605,8 @@ impl Default for AppSettings {
             column_width: default_column_width(),
             zen_column_width: None,
             sidebar_panel_width: default_sidebar_panel_width(),
+            outline_panel_width: default_outline_panel_width(),
+            comments_panel_width: default_comments_panel_width(),
             sidebar_open_panel: None,
             sidebar_pinned: false,
             shortcut_open_editor: default_shortcut_open(),

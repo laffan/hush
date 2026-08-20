@@ -52,6 +52,10 @@ export function createDefaultSettings() {
     // columnWidth on first use, then persist independently.
     zenColumnWidth: null,
     sidebarPanelWidth: 300,
+    // The document's right-hand bars, both drag-resizable from their
+    // inboard edge (see ui/side-panel-resizer.js).
+    outlinePanelWidth: 200,
+    commentsPanelWidth: 240,
     notebookShelfWidth: 280,
     notebookProofRailWidth: 92,
     // Where the proofread scroll wheel was dragged to, as an offset from

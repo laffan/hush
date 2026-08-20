@@ -12,6 +12,10 @@ import {
   renderCursorOptions,
 } from "./styles-panel-shared.js";
 import { renderPostSection, bindPostSection, endPostPreview } from "./style-modal-post.js";
+import {
+  renderLineIndicatorColorRows,
+  bindLineIndicatorColorRows,
+} from "./style-modal-line-indicator.js";
 import { renderStyleExtras, bindStyleExtras, endBackgroundPreview } from "./style-modal-background.js";
 import { applyActiveStyle } from "../style-application.js";
 import { bindCustomDropdown } from "./custom-dropdown.js";
@@ -36,11 +40,15 @@ const systemFonts = [
   "Helvetica Neue", "Lucida Grande", "Menlo", "Monaco", "Optima",
   "Palatino", "SF Mono", "SF Pro", "Times New Roman", "Verdana",
 ];
+// The line-indicator colour is a per-appearance override like these,
+// but it lives beside the Line Indicator dropdown in Editing (behind
+// its "Custom color" checkbox) rather than in this list — an indicator
+// set to "none" has no colour to pick, and both appearances are
+// editable there at once.
 const colorKeys = [
   { key: "bg", label: "Background" }, { key: "fg", label: "Text" },
   { key: "header", label: "Header" }, { key: "links", label: "Links" },
   { key: "cursor", label: "Cursor" }, { key: "selection", label: "Selection" },
-  { key: "lineIndicator", label: "Line Indicator Color" },
 ];
 
 /** Build a Style-shaped draft from global AppSettings — used when editing the Default style. */
@@ -358,6 +366,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
                   </select>
                 </div>
               </div>
+              ${renderLineIndicatorColorRows(draft)}
             </div>
 
             <div class="style-modal-section">
@@ -601,6 +610,12 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     const lineIndEl = backdrop.querySelector("#style-line-indicator");
     if (lineIndEl) lineIndEl.addEventListener("change", () => {
       draft.lineIndicator = lineIndEl.value || "none";
+      // The colour rows only exist while an indicator is picked, so a
+      // change here adds or removes them.
+      render();
+      scheduleSave();
+    });
+    bindLineIndicatorColorRows(backdrop, draft, render, () => {
       updatePreview();
       scheduleSave();
     });

@@ -15,6 +15,7 @@ import { COMMENT_ANCHOR_RE, parseCommentDefinitions } from "../editor/comment-sy
 import {
   removeCommentFromDoc, applySuggestion, renderNoteSegments, setActiveCommentId,
 } from "../editor/plugins/comment-anchors.js";
+import { attachSidePanelResize } from "./side-panel-resizer.js";
 
 export function setupCommentsPanel(state) {
   const panel = document.createElement("div");
@@ -30,6 +31,16 @@ export function setupCommentsPanel(state) {
 
   panel.append(header, listEl);
   document.getElementById("app").appendChild(panel);
+
+  // Its own drag edge, inboard of the outline's. The strip's offset has
+  // to clear both bars: this panel is parked to the left of the outline.
+  attachSidePanelResize(state, panel, {
+    cssVar: "--comments-panel-width",
+    settingKey: "commentsPanelWidth",
+    defaultWidth: 240,
+    min: 160,
+    rightOffset: "calc(var(--pane-dock-right-width, 0px) + var(--right-panel-width, 200px) + var(--comments-panel-width, 240px))",
+  });
 
   // Clicks inside the panel must not reach the outline's document-level
   // "click outside → hide" handler (overlay mode), which would otherwise

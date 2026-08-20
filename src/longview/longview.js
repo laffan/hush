@@ -101,7 +101,7 @@ export function createLongView(container, state) {
     // Slider area — sizes + gap
     const sliders = document.createElement("div");
     sliders.className = "longview-options-group";
-    sliders.appendChild(makeSliderRow("Paragraph size", s.longviewBodyFontSize, 1, 8, 0.5, "longviewBodyFontSize", "px"));
+    sliders.appendChild(makeSliderRow("Paragraph size", s.longviewBodyFontSize, 1, 12, 0.5, "longviewBodyFontSize", "px"));
     sliders.appendChild(makeSliderRow("Heading size", s.longviewHeadingFontSize, 8, 20, 1, "longviewHeadingFontSize", "px"));
     sliders.appendChild(makeSliderRow("Flag size", s.longviewFlagFontSize, 8, 18, 1, "longviewFlagFontSize", "px"));
     sliders.appendChild(makeSliderRow("Line gap", s.longviewLineGap, 0, 8, 0.5, "longviewLineGap", "px"));

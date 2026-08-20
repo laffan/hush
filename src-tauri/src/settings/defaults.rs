@@ -61,8 +61,12 @@ pub fn default_true() -> bool {
 pub fn default_make_space_direction() -> String {
     "right".to_string()
 }
-pub fn default_longview_body_font_size() -> u32 {
-    3
+// Half-steps: the outline's Paragraph size and Line gap sliders both
+// move in 0.5 px increments, so these round-trip as floats. Typed as
+// u32 they rejected any half value outright — serde failed the whole
+// AppSettings deserialize, and the save that carried it was lost.
+pub fn default_longview_body_font_size() -> f64 {
+    3.0
 }
 pub fn default_longview_heading_font_size() -> u32 {
     12
@@ -70,8 +74,8 @@ pub fn default_longview_heading_font_size() -> u32 {
 pub fn default_longview_flag_font_size() -> u32 {
     12
 }
-pub fn default_longview_line_gap() -> u32 {
-    2
+pub fn default_longview_line_gap() -> f64 {
+    2.0
 }
 pub fn default_longview_current_position_color() -> String {
     "#ff0000".to_string()
@@ -111,6 +115,12 @@ pub fn default_column_width() -> u32 {
 }
 pub fn default_sidebar_panel_width() -> u32 {
     300
+}
+pub fn default_outline_panel_width() -> u32 {
+    200
+}
+pub fn default_comments_panel_width() -> u32 {
+    240
 }
 pub fn default_recent_files_panel_height() -> u32 {
     150

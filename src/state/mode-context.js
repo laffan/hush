@@ -40,6 +40,27 @@ export function createModeContext(appState) {
 }
 
 /**
+ * Toggle one mode on whichever editing surface is active: the focused
+ * pane / stack column via its own context, or — when the main editor is
+ * the active surface — the global AppState flag.
+ *
+ * Every entry point for these modes routes through here (the keyboard
+ * shortcuts and the command palette alike) so a mode never lands on the
+ * main editor behind a pane the user was typing in.
+ */
+export function toggleModeOnContext(state, modeName) {
+  const ctx = getActiveModeContext(state);
+  if (ctx) {
+    ctx.mc.toggle(modeName, ctx.view, ctx.container);
+    return true;
+  }
+  if (modeName === "focusMode") state.toggleFocus();
+  else if (modeName === "typewriterMode") state.toggleTypewriter();
+  else if (modeName === "dryMode") state.toggleDry();
+  return true;
+}
+
+/**
  * Find the active per-editor mode context. Returns
  * `{ mc, view, container }` for a pane / stack column, or `null` when
  * the main editor is focused (caller falls through to global state).

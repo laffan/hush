@@ -23,7 +23,8 @@
 .notebook-mode #drag-region,
 .notebook-mode #right-panel-overlay,
 .notebook-mode .sidebar-trigger,
-.notebook-mode .right-panel-trigger {
+.notebook-mode .right-panel-trigger,
+.notebook-mode .side-panel-resize {
   display: none !important;
 }
 
