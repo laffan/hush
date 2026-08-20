@@ -91,6 +91,14 @@ export function createDefaultSettings() {
     // default; when on, opening a notebook mounts the on-canvas
     // frame/stall diagnostics overlay (notebook/perf-hud.ts).
     debugPerfHud: false,
+    // Settings > Debug > Startup Time — "Track Startup processes". Off by
+    // default; when on, the editor window writes each launch's phase
+    // breakdown to `startupTimings` for the settings webview to render
+    // (src/startup-trace.js).
+    trackStartupTiming: false,
+    // The most recent recorded launch. Opaque to Rust; shape owned by
+    // src/startup-trace.js#getStartupTrace.
+    startupTimings: null,
     // "Desks" — top-level container above all other tree nodes. The
     // top level is always one or more desk nodes, each with its own
     // namespaced Inbox/Images/Trash. Sessions started before desks

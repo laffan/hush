@@ -11,6 +11,7 @@ import * as _snapshots from "./state-snapshots.js";
 import * as _naming from "./state-naming.js";
 import * as _desks from "./state-desks.js";
 import * as _files from "./state-files.js";
+import { phase, phaseSync } from "../startup-trace.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -166,7 +167,7 @@ export class AppState {
     const initialDesk = opts.initialDesk || null;
     if (IS_TAURI) {
       try {
-        Object.assign(this.settings, await tauriInvoke("get_settings"));
+        Object.assign(this.settings, await phase("get_settings", () => tauriInvoke("get_settings")));
         // In-memory only: activeDeskId is a per-window key, so a
         // secondary window never writes it back to disk.
         if (initialDesk) this.settings.activeDeskId = initialDesk;
@@ -174,28 +175,28 @@ export class AppState {
         if (Object.keys(migrated).length) {
           try { await tauriInvoke("patch_settings", { patch: migrated }); } catch (_) {}
         }
-        this.files = await tauriInvoke("list_files");
-        this.fileTree = await tauriInvoke("get_file_tree");
-        await _desks.migrateLegacyTreeIfNeeded(this);
-        const specialsChanged = this.ensureSpecialNodes();
+        this.files = await phase("list_files — read every file in every desk", () => tauriInvoke("list_files"));
+        this.fileTree = await phase("get_file_tree", () => tauriInvoke("get_file_tree"));
+        await phase("migrate legacy tree", () => _desks.migrateLegacyTreeIfNeeded(this));
+        const specialsChanged = phaseSync("ensure special nodes", () => this.ensureSpecialNodes());
         // Boot-time PDF layout cleanup (strays + orphaned aliases) —
         // guarded inside the helper against a short tree read.
         let pdfLayoutChanged = false;
         try {
           const { normalizePdfLayoutAtBoot } = await import("./state-pdf-aliases.js");
-          pdfLayoutChanged = normalizePdfLayoutAtBoot(this);
+          pdfLayoutChanged = phaseSync("normalize PDF layout", () => normalizePdfLayoutAtBoot(this));
         } catch (_) { /* best-effort */ }
-        await this.initPdfRegistry();
+        await phase("PDF registry", () => this.initPdfRegistry());
         // Drop any empty Untitled docs that survived the last session
         // (created by `newFile` but never typed into). Runs before the
         // "restore last file" branch so we don't land on a ghost.
-        await _files.pruneEmptyUntitled(this);
+        await phase("prune empty Untitled docs", () => _files.pruneEmptyUntitled(this));
         // Persist only when a boot repair actually changed the tree.
         // The old unconditional save made every window boot write the
         // whole forest — so a deep-link carrier scene (or a relaunch)
         // stomped desks that a sibling window had just changed, which is
         // how content "moved" between desks across a restart.
-        if (specialsChanged || pdfLayoutChanged) await this.saveFileTree();
+        if (specialsChanged || pdfLayoutChanged) await phase("save repaired tree", () => this.saveFileTree());
 
         // Restore session state from settings
         this.typewriterMode = !!this.settings.typewriterMode;
@@ -213,13 +214,13 @@ export class AppState {
             this.currentNotebookFileId = initialFile.fileId;
           } else if (initialFile.fileType === "project"
               && findNode(this.fileTree, initialFile.fileId)) {
-            await this.openProject(initialFile.fileId);
+            await phase("open project (new window)", () => this.openProject(initialFile.fileId));
           } else if (this.files.some(f => f.id === initialFile.fileId)) {
-            await this.openFile(initialFile.fileId);
+            await phase("open file (new window)", () => this.openFile(initialFile.fileId));
           } else if (this.files.length > 0) {
-            await this.openFile(this.files[0].id);
+            await phase("open first file (fallback)", () => this.openFile(this.files[0].id));
           } else {
-            await this.newFile();
+            await phase("create first file", () => this.newFile());
           }
         } else {
           // Restore last open file/project/notebook
@@ -235,9 +236,9 @@ export class AppState {
           } else if (lastNotebookId && this.files.some(f => f.id === lastNotebookId)) {
             this.currentNotebookFileId = lastNotebookId;
           } else if (lastProjectId && findNode(this.fileTree, lastProjectId)) {
-            await this.openProject(lastProjectId);
+            await phase("restore last project", () => this.openProject(lastProjectId));
           } else if (lastFileId && this.files.some(f => f.id === lastFileId)) {
-            await this.openFile(lastFileId);
+            await phase("restore last file", () => this.openFile(lastFileId));
           } else if (this.settings.lastLocalSync?.folderId) {
             // A Local Folder file was the last thing open. Defer the
             // actual open to main-modes (it needs a live editor); just

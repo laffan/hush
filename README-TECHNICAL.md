@@ -10,7 +10,8 @@ Hush is a [Tauri v2](https://v2.tauri.app/) app (macOS + iOS/iPadOS) with a vani
 
 | Area | Contents |
 |---|---|
-| `main.js`, `main-modes.js`, `main-listeners.js` | Orchestration only — `init()` wires everything; siblings hold surface-switching and listener installs |
+| `main.js`, `main-boot.js`, `main-modes.js`, `main-listeners.js` | Orchestration only — `init()` wires everything; siblings hold the boot preamble, surface-switching and listener installs |
+| `startup-trace.js` | Named phase per boot step, both halves of the launch — feeds Settings → Debug → Startup Time (see **Startup**) |
 | `window-diagnostics.js` | Window / screen trail for the activity log — boot snapshot, geometry + display diffs, lifecycle transitions, registry changes |
 | `state/background-flush.js` | Forces every unsaved surface to disk when the app is backgrounded or torn down |
 | `state/` | `AppState` (single source of truth) + sibling modules: modes, snapshots, naming, tree CRUD, desks, project/doc conversion, per-editor mode contexts, tree helpers, boot-time settings migrations |
@@ -44,7 +45,7 @@ Hush is a [Tauri v2](https://v2.tauri.app/) app (macOS + iOS/iPadOS) with a vani
 | `desk_*.rs` | The desk-folder store — see README-SYNC.md |
 | `settings.rs` + `settings/defaults.rs` | `AppSettings` (camelCase serde) + default-value fns |
 | `files.rs`, `images.rs`, `snapshots.rs` | fileId-keyed file CRUD, image storage, version snapshots |
-| `zotero.rs`, `hushnote.rs`, `multi_window.rs`, `activity_log.rs`, `backup` | As named |
+| `zotero.rs`, `hushnote.rs`, `multi_window.rs`, `activity_log.rs`, `startup_trace.rs`, `backup` | As named |
 | `ios_scene.rs` | iPad scene triage — which `UIScene` the system offers becomes a window, which is refused, and the window-lifecycle lines in the activity log |
 | `typst_export/` | In-process Typst PDF pipeline (preprocess → pulldown-cmark → Typst source → in-memory `World` → compile). No CLI, no network — same path serves desktop and iOS |
 | `tauri-plugin-pencil/`, `tauri-plugin-icloud-folder/`, `tauri-plugin-scene-reuse/` | Custom iOS plugins: Apple Pencil double-tap, security-scoped folder bookmarks + coordinated I/O, scene reuse for incoming URLs |
@@ -176,6 +177,47 @@ Cross-window sync: `broadcast_state_change` (settings / files — receivers re-f
 
 **Diagnostics.** `src/window-diagnostics.js` writes the window's geometry, screen, pixel ratio and safe-area insets to the activity log at boot, then a diff whenever any of it moves (coalesced 400 ms — a Stage Manager drag fires `resize` continuously), plus visibility / focus / freeze / `pagehide` transitions and every registry change. The Rust side logs scene decisions, window destroy/close, display-scale changes and `Suspended`/`Resumed`. Settings → Debug → **Windows & Displays** shows the live picture and has a button that writes a snapshot into the log. A trail that ends on "suspended" and resumes at a fresh boot is the OS reclaiming the app; one that just stops is a crash — that distinction is the reason the lifecycle lines are there.
 
+## Startup
+
+**The window is transparent, so every millisecond before first paint is a black screen.** There is no OS-drawn launch image standing in: the surface behind a transparent `WKWebView` is a `UIWindow` with no background colour, `base.css` leaves `html, body` transparent, and the `html.ios` rule that would paint it only applies once `main.js` has added the class — which is a whole `AppState.init()` away. A launch that takes five seconds looks like five seconds of nothing, and looks the same whether the app is doing real work or is wedged.
+
+Three pieces address that, and they are deliberately separate:
+
+- **The splash** (`index.html`) — inline `<style>` plus an inline SVG of the menu-bar mark at 200 px, pale on black, painted from the document itself so it does not wait on the app's CSS or its JS. It fades the mark in on a 140 ms delay, so a launch that beats the delay shows plain black and never flashes an icon. `main.js#revealApp` takes it down one frame after the first surface is mounted; `window.__hushHideSplash` is also called from `init()`'s catch and from a 15 s timer in the document, because a splash that outlives a failed boot is worse than no splash.
+- **The trace** (`src/startup-trace.js` + `src-tauri/src/startup_trace.rs`) — a named phase per step, both halves of the launch. Recording is unconditional (two clock reads and an object per phase); the `trackStartupTiming` setting gates only whether the run is *written* for the settings webview to read.
+- **The panel** — Settings → Debug → **Startup Time**, top of the tab. Toggling it on asks the editor window (via `hush-startup-timing-capture`) to persist the launch already in progress, so the list fills in without a relaunch.
+
+### What a launch actually does
+
+Native, in `run()`, with no window on screen and nothing on the JS side able to observe it: data dirs created → `AppSettings::load` → `migrate_from_flat` → `migrate_snapshots_db` → managers constructed → `snapshot_manager.cleanup_all()` → (in `setup`) local-sync watchers re-armed → `reconcile_desk_registrations` → desk watchers armed → `refresh_gdoc_link_cache` → recovery scheduler → window shown.
+
+Webview, in `main-boot.js#bootAppState` then `main.js#init`, every step awaited in series: window label → wikilink hooks → activity log → window diagnostics → (iOS) re-acquire security-scoped desk folders → **`AppState.init`** (`get_settings` → `list_files` → `get_file_tree` → legacy-tree migration → special nodes → PDF layout normalise → PDF registry → prune empty Untitled → restore last file) → seed style presets → appearance CSS vars → `createEditor` → text/image drag → `setupModeSwitching` (mounts the first surface) → `createSidebar` → floating panes → **reveal**.
+
+### Where the time goes
+
+Ranked by expected cost. The byte counts are measured from a production `vite build`; the per-phase milliseconds are what the trace exists to produce, so read the panel on the actual iPad before acting on the order.
+
+1. **`list_files` reads the entire library, byte for byte, before anything paints.** `FileManager::list_files` walks every desk index and calls `read_at` on every entry — every `.md`, and every `.hushnote`, which goes through `hushnote::unpack`: inflate the zip, base64 each embedded image back into a `dataUrl`, re-serialise the envelope. A proofread notebook is fifty full-page rasters; a desk holding two of those is tens of megabytes of decode and base64 on the boot path, then marshalled across IPC as one JSON blob. Image files are indexed too, so each one is read whole and thrown away when `read_to_string` rejects the bytes. The comment on `saveCurrentFile` already calls this "an O(N²) whole-library scan" and routes autosave around it — boot still pays it in full. Worst of all, the content it loads is not what opens the document: `openFile` re-reads the file from disk through `open-file-wait.js` anyway. **Fix:** give the boot path a metadata-only listing (id, name, mtime, desk, rel — a `stat` each, no reads) and let `state.files[].content` fill in lazily for the handful of callers that want it (`desktop-thumbs.js`, `files-panel-tabs.js`, `copy-from-desks-copy.js`, the local-sync DnD helpers). This is the single biggest item and the one that scales with the user's library, which is exactly the shape of "it got slower over time".
+
+2. **The entry point drags in 224 modules before `init()` runs.** `index.html` ships 68 preloaded chunks — **1.31 MB of minified JS and 347 KB of CSS** — all of which must be fetched, parsed and compiled before the first line of `main.js` executes. Much of it is meant to be lazy and isn't. One edge does most of the damage: `editor/base-extensions.js` imports `editor/commands.js` for the keymap, `commands.js` imports `command-palette.js`, and the palette pulls in `command-palette-commands.js` (41 KB) and through it sticky notes, the gutter, `state-tree.js` and the pane manager. A second edge does the rest: `commands.js` → `find-replace.js` → `sidebar/find-panel.js` → `notebook-bridge.js` → `notebook-content.ts` → `flowchart.ts`. That is why `main.js`'s own `import("./sticky/sticky-notes.js")` buys nothing — the module is already in the entry chunk. Rolldown says so out loud on every build (`INEFFECTIVE_DYNAMIC_IMPORT`, three of them today); those warnings are a to-do list, not noise. **Fix:** put the seam where the graph narrows — have the keymap resolve command handlers through a registry populated on first use rather than importing them, and give `find-replace` a lazy path to the find panel. Cutting the palette and the versions/find panels alone drops 16 modules and 203 KB; cutting the notebook and Zotero reach from the editor's keymap takes considerably more.
+
+3. **Boot is one long serial `await` chain.** Nothing overlaps and nothing is deferred past first paint. `get_settings`, `list_files` and `get_file_tree` are three sequential IPC round trips that have no dependency on each other. The style-preset seed, the PDF registry, the empty-Untitled sweep and the local-desk-folder re-acquire all block the editor from being constructed, and none of them is needed to show a document. **Fix:** `Promise.all` the independent reads; move everything that isn't "settings + the tree + the one file we're opening" to after `revealApp`.
+
+4. **`snapshot_manager.cleanup_all()` runs synchronously in `run()`, before the window exists.** It walks `.hush/versions/` for every desk, lists every snapshot of every document, and deletes what the decay policy retires. On a synced folder, where `read_dir` may be hitting provider placeholders, that is unbounded — and it is housekeeping with no deadline. **Fix:** hand it to a background thread after the window is up, the way `desk_recovery::start_scheduler` already does.
+
+5. **`initPdfRegistry` awaits one IPC round trip per PDF.** `for (const fileId of ...) await checkPdfExists(fileId)` — strictly sequential, and a `pdf_exists` per entry. A library with a hundred PDFs pays a hundred serialized crossings before the editor is built. **Fix:** one batched `pdf_exists` command over the whole id list; and move the whole registry init off the pre-paint path.
+
+6. **355 KB of render-blocking CSS, carrying 217 `@font-face` rules.** The font *files* are not fetched at boot (205 of the rules carry `unicode-range`, and WebKit only pulls a face when a glyph needs it), but the stylesheet is a hard render block — nothing paints, splash included, until it parses. **Fix:** split the sheet into a small critical file (`base.css` + editor shell) linked in `<head>` and the rest loaded non-blocking; move `font-imports.js` out of the entry graph and into a deferred import.
+
+7. **Small change, several times over.** `pruneEmptyUntitled` re-runs the whole `list_files` scan after deleting — a second full-library read on any boot that finds a stray placeholder. `reconcile_desk_registrations` runs in `setup()` and again inside `load_forest`. `getCurrentWindowLabel()` is awaited three times in the preamble. None of these is the five seconds, but they are free to fix.
+
+### Rules
+
+- **Nothing goes on the pre-paint path that isn't needed to draw the first surface.** Settings, the tree, and the bytes of the one file being opened — that is the list. Registries, sweeps, seeds, watchers and caches belong after `revealApp`.
+- **Never read the whole library to answer a question about one file.** `list_files` is the standing counter-example; treat a new call to it on any hot path as a bug.
+- **Wrap new boot steps in `phase()`.** An unnamed step is one the panel attributes to its parent, which is how a regression hides.
+- **Take `INEFFECTIVE_DYNAMIC_IMPORT` seriously.** Each one is a module the author believed was lazy and isn't; the fix is a seam, not a `/* eslint-disable */` of the build.
+
 ## Backend notes
 
 - `AppSettings` uses `#[serde(rename_all = "camelCase")]` and `#[serde(default)]` on every field; defaults live in `settings/defaults.rs`.
@@ -188,6 +230,7 @@ Cross-window sync: `broadcast_state_change` (settings / files — receivers re-f
 - Grammar (`harper-core`) and spellcheck (`spellbook`) both run `async` + `spawn_blocking`; dictionaries embed via `include_str!` behind `OnceLock`.
 - The activity log (`activity_log.rs` + `src/activity-log.js`) is the cross-window console: JSONL ring at `{data_dir}/activity.log`, JS batches on a 1.5 s timer with eager flush on error/`pagehide`/`visibilitychange: hidden` (iPad swipe-away never runs `beforeunload`). Rust logs fire-and-forget — diagnostics must never fail the operation they describe.
 - Build stamps: `scripts/gen-build-info.mjs` (web) + `src-tauri/build.rs` (native) surface in Settings > Debug; a mismatch (stale bundle + fresh binary, common on iPad) explains many "impossible" bugs.
+- `startup_trace.rs` records the native launch phases (settings load, the two migrations, snapshot cleanup, watcher arming) behind a `OnceLock<Mutex<Vec<Phase>>>`, read back by `get_startup_native_timings`. Same rule as the activity log: it must never fail the operation it measures.
 
 ## Data storage
 

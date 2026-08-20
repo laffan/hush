@@ -40,6 +40,7 @@ mod multi_window;
 mod pdfs;
 mod settings;
 mod snapshots;
+mod startup_trace;
 pub mod typst_export;
 mod zotero;
 
@@ -187,25 +188,34 @@ fn setup_tray_menu(app: &AppHandle, shortcut_label: &str) -> Result<(), Box<dyn 
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // First line of the process: every native startup phase is timed
+    // against this instant (see startup_trace.rs).
+    startup_trace::mark_launch();
     let data_dir = get_data_dir();
     fs::create_dir_all(&data_dir).ok();
     fs::create_dir_all(data_dir.join("files")).ok();
     fs::create_dir_all(data_dir.join("files").join("images")).ok();
 
-    let settings = AppSettings::load(&data_dir).unwrap_or_default();
+    let settings = startup_trace::record("load settings", || {
+        AppSettings::load(&data_dir).unwrap_or_default()
+    });
 
     // One-shot migration from the flat store (files/*.json +
     // file_tree.json) into per-desk folders. Runs before any manager
     // reads; a no-op once `desks/order.json` exists.
-    if let Err(e) = desk_migrate::migrate_from_flat(&data_dir) {
-        eprintln!("desk-store migration failed: {}", e);
-    }
+    startup_trace::record("migrate flat store", || {
+        if let Err(e) = desk_migrate::migrate_from_flat(&data_dir) {
+            eprintln!("desk-store migration failed: {}", e);
+        }
+    });
     // Same deal for version history: snapshots.db rows become per-desk
     // .hush/versions/<fileId>/*.snap files. Runs after the desk store
     // exists so each document's snapshots land in its desk.
-    if let Err(e) = snapshots::migrate_snapshots_db(&data_dir) {
-        eprintln!("snapshot migration failed: {}", e);
-    }
+    startup_trace::record("migrate snapshots", || {
+        if let Err(e) = snapshots::migrate_snapshots_db(&data_dir) {
+            eprintln!("snapshot migration failed: {}", e);
+        }
+    });
 
     #[cfg(desktop)]
     let shortcut_label = settings.shortcut_open_editor.clone()
@@ -232,9 +242,11 @@ pub fn run() {
     let persisted_local_sync = settings.local_sync_folders.clone();
 
     // Run snapshot cleanup on startup
-    if let Err(e) = snapshot_manager.cleanup_all() {
-        eprintln!("Snapshot cleanup error: {}", e);
-    }
+    startup_trace::record("snapshot cleanup", || {
+        if let Err(e) = snapshot_manager.cleanup_all() {
+            eprintln!("Snapshot cleanup error: {}", e);
+        }
+    });
 
     // Sequential labels for system-requested iPad scenes (long-press
     // "New Window"). Captured by the run() closure below.
@@ -307,24 +319,31 @@ pub fn run() {
                 // change in the folder then reconciled a desk that no
                 // longer existed ("no tree for desk …" on repeat) while
                 // the desk that did exist was watched by nobody.
-                desk_store::DeskStore::new(&crate::get_data_dir()).reconcile_desk_registrations();
-                for (desk_id, entry) in
-                    desk_roots::load_entries(&crate::get_data_dir().join("desks"))
-                {
-                    if entry.bookmark().is_some() {
-                        continue;
+                startup_trace::record("reconcile desk registrations", || {
+                    desk_store::DeskStore::new(&crate::get_data_dir())
+                        .reconcile_desk_registrations();
+                });
+                startup_trace::record("arm desk watchers", || {
+                    for (desk_id, entry) in
+                        desk_roots::load_entries(&crate::get_data_dir().join("desks"))
+                    {
+                        if entry.bookmark().is_some() {
+                            continue;
+                        }
+                        let _ = app_state.desk_watch_manager.watch_path(
+                            handle.clone(),
+                            &desk_id,
+                            std::path::Path::new(entry.path()),
+                            "desk-changed",
+                        );
                     }
-                    let _ = app_state.desk_watch_manager.watch_path(
-                        handle.clone(),
-                        &desk_id,
-                        std::path::Path::new(entry.path()),
-                        "desk-changed",
-                    );
-                }
+                });
                 // Merge per-desk Google-Doc-link sidecars into the
                 // settings cache (and migrate settings-only entries down
                 // into their desks) so links ride desk handoffs.
-                commands::google_docs::refresh_gdoc_link_cache(&app_state);
+                startup_trace::record("google-doc link cache", || {
+                    commands::google_docs::refresh_gdoc_link_cache(&app_state);
+                });
                 // Rolling recovery snapshots for local desks: a
                 // background thread zips any local desk with pending
                 // edits every 30 minutes (see desk_recovery.rs).
@@ -560,6 +579,7 @@ pub fn run() {
             commands::diagnostics::desk_list_retired,
             commands::diagnostics::desk_restore_retired,
             commands::diagnostics::build_info,
+            commands::diagnostics::get_startup_native_timings,
             commands::local_sync::local_sync_add,
             commands::local_sync::local_sync_remove,
             commands::local_sync::local_sync_list,

@@ -5,9 +5,98 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Hush</title>
   <!-- Fonts bundled locally via @fontsource packages -->
+  <!--
+    Splash styles are inline, and deliberately so. The window is
+    `transparent: true`, and the surface behind a transparent WKWebView is
+    a UIWindow with no background colour — i.e. black. `base.css` paints
+    `html.ios` only once `main.js` has added the class, which is several
+    hundred milliseconds of module parse and a whole `state.init()` away,
+    so every launch used to open on that black hole. This rule set lives in
+    the document itself so the splash paints on the first frame the parser
+    produces rather than waiting on the app's own CSS or JS.
+
+    z-index 10050 sits above `--z-modal-topmost` (10001) and below the drag
+    ghost; the scale lives in base.css, but the splash cannot depend on
+    base.css having loaded, so the number is written out here.
+  -->
+  <style>
+    #hush-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 10050;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 1;
+    }
+    /* The mark fades in on a delay: a launch that finishes before the
+       delay elapses shows plain black and never flashes an icon at the
+       user, which is what a fast launch should look like. Written as a
+       resting opacity plus a `backwards` fill rather than the other way
+       round, so that an engine that declines to run the animation leaves
+       the mark visible instead of invisible. */
+    #hush-splash svg {
+      width: 200px;
+      height: 200px;
+      opacity: 0.32;
+      animation: hush-splash-in 420ms ease-out 140ms backwards;
+    }
+    @keyframes hush-splash-in { from { opacity: 0; } }
+    #hush-splash.hush-splash-out {
+      opacity: 0;
+      transition: opacity 220ms ease;
+      pointer-events: none;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #hush-splash svg { animation: none; }
+      #hush-splash.hush-splash-out { transition: none; }
+    }
+  </style>
   <link rel="stylesheet" href="/src/styles/main.css" />
 </head>
 <body>
+  <!-- The menu-bar mark, scaled to 200 px on its long edge. The rounded
+       square is drawn once and the three text rules are cut out of it with
+       a mask, so the shape reads the same on any backdrop. Geometry is
+       taken from src-tauri/icons/tray-icon@2x.png at a 44-unit grid. -->
+  <div id="hush-splash">
+    <svg viewBox="0 0 44 44" aria-hidden="true" focusable="false">
+      <defs>
+        <mask id="hush-splash-cut">
+          <rect width="44" height="44" rx="8" fill="#fff" />
+          <g fill="#000">
+            <rect x="8" y="10" width="11" height="5" />
+            <rect x="22" y="10" width="14" height="5" />
+            <rect x="8" y="19.5" width="13" height="5" />
+            <rect x="25" y="19.5" width="10" height="5" />
+            <rect x="8" y="29" width="25" height="5" />
+          </g>
+        </mask>
+      </defs>
+      <rect width="44" height="44" rx="8" fill="#edeae3" mask="url(#hush-splash-cut)" />
+    </svg>
+  </div>
+  <script>
+    // Timestamp of the first painted frame's markup, and the splash's own
+    // teardown. Both are needed before any module has loaded: the mark is
+    // the earliest thing `startup-trace.js` can measure against, and the
+    // teardown has to be reachable even if the bundle never finishes.
+    window.__hushSplashAt = performance.now();
+    window.__hushHideSplash = function () {
+      var el = document.getElementById("hush-splash");
+      if (!el || el.classList.contains("hush-splash-out")) return;
+      window.__hushSplashHiddenAt = performance.now();
+      el.classList.add("hush-splash-out");
+      var drop = function () { if (el.parentNode) el.parentNode.removeChild(el); };
+      el.addEventListener("transitionend", drop, { once: true });
+      setTimeout(drop, 400);
+    };
+    // Last resort. A boot that throws before it reaches the dismiss call
+    // must not leave the user staring at a splash with an app running
+    // underneath it.
+    setTimeout(window.__hushHideSplash, 15000);
+  </script>
   <div id="app">
     <div id="drag-region" data-tauri-drag-region></div>
     <div id="editor-container"></div>

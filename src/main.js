@@ -1,9 +1,8 @@
 import { createEditor } from "./editor/editor.js";
 import { createSidebar } from "./sidebar/sidebar.js";
-import { AppState } from "./state/state.js";
 import { findNodeByFileId } from "./state/tree-helpers.js";
 import { setupTauriIntegration } from "./tauri-bridge.js";
-import { applyAppearance, isIOS, isPhone, openSettingsWindow } from "./settings/settings-ui.js";
+import { isIOS } from "./settings/settings-ui.js";
 import { getThemeById } from "./themes/index.js";
 import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 import { setupFileDrop } from "./editor/file-drop.js";
@@ -13,7 +12,7 @@ import { initShuffleEditor } from "./editor/shuffle-editor.js";
 import { dispatchDomShortcut, matchesDomEvent } from "./shortcuts.js";
 import { buildEditorCommands } from "./editor/commands.js";
 import { toggleCommandPalette, openFilePalette } from "./command-palette.js";
-import { fontFallbacks, themeBackgrounds, themeForegrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily, installIOSChromeRepaint } from "./theme-colors.js";
+import { fontFallbacks, themeBackgrounds, themeForegrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 import { applyNotebookSettings, previewNotebookStyle, setNotebookLeftInset } from "./notebook/notebook-bridge.js";
 import { setupModeSwitching } from "./main-modes.js";
 import { installNotebookAppearanceSync } from "./main-listeners.js";
@@ -23,108 +22,22 @@ import { initCmdHeldSliders } from "./cmd-held-sliders.js";
 import { applyActiveStyle, applyFocusModeOpacity, applyDeskGlobalStyle, handleOAuthCode } from "./style-application.js";
 import { installWindowShortcuts, installActivationFocus } from "./window-shortcuts.js";
 import { setTooltipsEnabled } from "./tooltips.js";
-import { installActivityCapture, configureActivityLog, logActivity } from "./activity-log.js";
-import { installWindowDiagnostics, logWindowSnapshot } from "./window-diagnostics.js";
 import { installBackgroundFlush } from "./state/background-flush.js";
-import {
-  getInitialFileFromHash,
-  getInitialDeskFromHash,
-  getCurrentWindowLabel,
-  setupMultiWindow,
-} from "./multi-window.js";
+import { setupMultiWindow } from "./multi-window.js";
+import { bootAppState } from "./main-boot.js";
+import { phase, phaseSync, finishStartupTrace, installStartupTraceBridge } from "./startup-trace.js";
 import "./font-imports.js";
 
 async function init() {
   const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
-  const state = new AppState();
-
-  if (IS_TAURI) {
-    try {
-      const label = await getCurrentWindowLabel();
-      state.isSecondaryWindow = label !== "main";
-    } catch (_) { /* fall back to main-window behaviour */ }
-  }
-  // Register the wikilink open hook before state.init so cmd-clicks on
-  // an auto-opened notebook resolve immediately.
-  if (typeof window !== "undefined") {
-    const { openWikilink, openWikilinkAsPane } = await import("./links/wikilink-index.js");
-    window.__hushOpenWikilink = (title) => { void openWikilink(state, title); };
-    window.__hushOpenWikilinkAsPane = (title) => { void openWikilinkAsPane(state, title); };
-  }
-  // Start the activity log before anything can go wrong — boot is the
-  // stretch we most often need a trail for, and it's the stretch no
-  // console is watching.
-  installActivityCapture();
-  if (IS_TAURI) {
-    try {
-      configureActivityLog({
-        windowLabel: await getCurrentWindowLabel(),
-        deskName: () => (state.fileTree || []).find(
-          (n) => n.type === "desk" && n.id === state.settings?.activeDeskId,
-        )?.name || "",
-      });
-    } catch (_) { /* defaults are fine */ }
-  }
-  // Window / screen trail — installed here rather than with the rest of
-  // the multi-window wiring further down, because a boot that dies
-  // before it gets there is the boot whose geometry we most want.
-  try {
-    installWindowDiagnostics({ label: IS_TAURI ? await getCurrentWindowLabel() : "main" });
-  } catch (_) { /* diagnostics must never fail a boot */ }
-
-  // **Before** the tree is read: on iOS a local desk's folder is only
-  // reachable through a security-scoped bookmark, and until it's resolved
-  // every `std::fs` call against that folder fails. `load_forest` skips a
-  // desk it can't read, so a boot that ran ahead of this saw a forest
-  // with the local desks missing — and then repaired, re-registered and
-  // saved that short forest as if the desks were gone. This has to happen
-  // first; the rest of the desk-roots lifecycle can stay where it is.
-  if (IS_TAURI && isIOS()) {
-    try {
-      const m = await import("./sync/desk-roots.js");
-      await m.acquireLocalDeskAccess(state);
-    } catch (e) {
-      logActivity("desks", "error", "Could not re-open local desk folders before boot", { error: String(e) });
-    }
-  }
-
-  const initialFile = state.isSecondaryWindow ? getInitialFileFromHash() : null;
-  const initialDesk = state.isSecondaryWindow ? getInitialDeskFromHash() : null;
-  await state.init({ initialFile, initialDesk });
-  if (typeof window !== "undefined") window.__hushState__ = state;
-  logActivity("boot", "info", "Window initialised", {
-    desks: (state.fileTree || []).filter((n) => n.type === "desk").map((n) => n.name),
-    activeDeskId: state.settings?.activeDeskId || null,
-    secondary: state.isSecondaryWindow,
-  });
-  // The baseline every later geometry line is a diff against.
-  logWindowSnapshot("boot", { secondary: state.isSecondaryWindow });
-
-  // Drop any bundled style presets the user hasn't seen yet into the
-  // styles list so they show up as normal entries in the rail. Each
-  // preset is tracked by filename so deleting one keeps it gone.
-  try {
-    const { seedStylePresets } = await import("./sidebar/style-presets.js");
-    await seedStylePresets(state);
-  } catch (e) { console.warn("seedStylePresets failed:", e); }
-
-  // On iOS, set html background to prevent black bars behind the webview
-  if (isIOS()) document.documentElement.classList.add("ios");
-  if (isPhone()) document.documentElement.classList.add("phone");
-
-  // Apply appearance and CSS vars
-  applyAppearance(state.settings.appearance || "dark");
-  document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
-  document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
-  applyFontFamily(state.settings.fontFamily);
-  applyFocusModeOpacity(state);
-  updatePrivateBoxColor(state);
-  installIOSChromeRepaint(state); // display-change half of the same repaint
+  // Reads settings + the library, starts the logs, paints the shell in
+  // the user's colours. See main-boot.js.
+  const state = await bootAppState(IS_TAURI);
 
   const editorContainer = document.getElementById("editor-container");
   const notebookContainer = document.getElementById("notebook-container");
   const stackContainer = document.getElementById("stack-container");
-  const editor = createEditor(editorContainer, state);
+  const editor = phaseSync("create editor", () => createEditor(editorContainer, state));
   state.setEditor(editor);
 
   // "In the trash" banner — pinned above the editor whenever the active
@@ -167,12 +80,12 @@ async function init() {
 
   // Cmd-drag a selection out of the main editor to drop into a pane or
   // notebook canvas (same behaviour as pane editors).
-  const { attachEditorTextDrag } = await import("./pane/text-drag.js");
+  const { attachEditorTextDrag } = await phase("text drag", () => import("./pane/text-drag.js"));
   attachEditorTextDrag(editor.view, editorContainer);
   // Cmd-drag also works on image chips / raw image refs — route them via
   // the same text-drag pipeline so the markdown ref is inserted at the
   // drop point (the receiving editor re-decorates it).
-  const { attachImageDrag } = await import("./editor/plugins/image-decorator.js");
+  const { attachImageDrag } = await phase("image drag", () => import("./editor/plugins/image-decorator.js"));
   attachImageDrag(editor.view, editorContainer, state);
 
   // Emit content-change events so floating panes can sync.
@@ -183,7 +96,7 @@ async function init() {
     _origMarkDirty();
     state.emit("doc-content-changed");
   };
-  await setupModeSwitching(state);
+  await phase("mount initial surface", () => setupModeSwitching(state));
 
   // Restore mode states (typewriter, DRY) that were loaded from settings
   if (state.typewriterMode || state.dryMode || state.ratchetMode) {
@@ -282,7 +195,7 @@ async function init() {
   // Initial focus
   editor.focus();
 
-  createSidebar(state);
+  phaseSync("create sidebar", () => createSidebar(state));
   setupFileDrop(state);
   initZenFocus(state);
   initSelectionFocus(state);
@@ -297,7 +210,12 @@ async function init() {
   // Zotero" / "Open in Hush" / "Download to Hush" (+ notebook hook).
   import("./links/zotero-link-menu.js").then(({ initZoteroLinkMenu }) => initZoteroLinkMenu(state));
   // Initialize floating pane system (includes global click-outside-to-deactivate)
-  initPaneManager(state);
+  phaseSync("floating panes", () => initPaneManager(state));
+  // The app is on screen now: the initial surface is mounted, the sidebar
+  // is built and the pane system is live. Everything below this line is
+  // wiring the user can't see, so the splash comes down here rather than
+  // at the end of init().
+  revealApp(state);
   // Sticky notes — temporary reminders floating above every surface.
   import("./sticky/sticky-notes.js").then(({ initStickyNotes }) => initStickyNotes(state));
   // YOU ARE HERE — one marker per desk; save-pipeline detection +
@@ -484,11 +402,11 @@ async function init() {
     }
   });
 
-  await setupTauriIntegration(state);
+  await phase("tauri integration", () => setupTauriIntegration(state));
   import("./traffic-lights.js").then(m => m.setupTrafficLightsHoverReveal()).catch(() => {});
   // Multi-window registry + sibling-mutation listeners (desktop + native
   // iPad multi-window). Cross-window live sync rides this.
-  await setupMultiWindow(state);
+  await phase("multi-window registry", () => setupMultiWindow(state));
 
   // Apply initial always-on-top setting
   if (IS_TAURI) {
@@ -697,4 +615,19 @@ async function init() {
     .catch((e) => console.warn("desk roots lifecycle failed:", e));
 }
 
-init().catch(console.error);
+/** Take the boot splash down and close the startup trace. Deferred a frame
+ *  so the reveal lands on a laid-out UI rather than a half-built one. */
+function revealApp(state) {
+  installStartupTraceBridge(state);
+  requestAnimationFrame(() => {
+    window.__hushHideSplash?.();
+    void finishStartupTrace(state);
+  });
+}
+
+init().catch((e) => {
+  console.error(e);
+  // A boot that died still has to hand the window over — the splash's own
+  // timeout would otherwise leave the user in front of black for 15 s.
+  window.__hushHideSplash?.();
+});

@@ -1012,6 +1012,57 @@ html.phone .settings-panel {
 }
 .debug-warn { color: var(--debug-error); }
 
+/* Startup Time — one row per phase, name left, share-of-launch bar in the
+   middle, duration right. The bar is the point: a list of numbers makes
+   you do the arithmetic, a bar shows you which phase ate the launch. */
+.startup-phases {
+  margin-top: 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: rgba(128, 128, 128, 0.04);
+  padding: 4px 12px;
+  max-height: 360px;
+  overflow-y: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.startup-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 3px 0;
+}
+.startup-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.startup-row-bar {
+  flex: 0 0 30%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(128, 128, 128, 0.16);
+  overflow: hidden;
+}
+.startup-row-bar i {
+  display: block;
+  height: 100%;
+  background: var(--sidebar-fg);
+  /* A phase too short to be a visible sliver still deserves a mark. */
+  min-width: 1px;
+}
+.startup-row-ms {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--sidebar-fg);
+  text-align: right;
+  min-width: 62px;
+}
+
 .debug-actions {
   display: flex;
   gap: 8px;

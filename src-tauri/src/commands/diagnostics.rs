@@ -32,6 +32,14 @@ pub fn activity_log_clear() -> Result<(), String> {
     activity_log::clear().map_err(|e| e.to_string())
 }
 
+/// Native startup phases, for Settings → Debug → Startup Time. Everything
+/// `run()` does before the webview exists is invisible to the frontend's
+/// own clock; this is that half of the trace. See `startup_trace.rs`.
+#[tauri::command]
+pub fn get_startup_native_timings() -> crate::startup_trace::NativeTrace {
+    crate::startup_trace::snapshot()
+}
+
 /// What the desk store believes it holds — per-desk file counts, missing
 /// files, ids claimed by two desks at once, retired folders.
 #[tauri::command]

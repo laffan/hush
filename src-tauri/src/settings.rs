@@ -453,6 +453,17 @@ pub struct AppSettings {
     /// frame/stall diagnostics overlay (src/notebook/perf-hud.ts).
     #[serde(default)]
     pub debug_perf_hud: bool,
+    /// Settings > Debug > Startup Time — "Track Startup processes". Off by
+    /// default; when on, the editor window persists each launch's phase
+    /// breakdown into `startup_timings` so the (separate) settings webview
+    /// can render it.
+    #[serde(default)]
+    pub track_startup_timing: bool,
+    /// The most recent recorded launch. Opaque JSON owned by the JS side
+    /// (`src/startup-trace.js`) — Rust never reads into it, so the shape
+    /// can grow phases without a schema change here.
+    #[serde(default)]
+    pub startup_timings: serde_json::Value,
     /// "Desks" — top-level containers above all other tree nodes.
     /// Always-on; kept as a deprecated boolean so older settings.json
     /// files still parse. The JS side treats desks as structural.
@@ -748,6 +759,8 @@ impl Default for AppSettings {
             minimap_visible: false,
             properties_visible: false,
             debug_perf_hud: false,
+            track_startup_timing: false,
+            startup_timings: serde_json::Value::Null,
             use_desks: true,
             desks: Vec::new(),
             desks_meta: serde_json::json!({}),

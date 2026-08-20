@@ -3,6 +3,10 @@
  *
  * Sections, top to bottom:
  *
+ *  - **Startup Time** — where a launch's seconds actually go, native half
+ *    and webview half, one row per phase (see src/startup-trace.js). First
+ *    section because "why is it slow to open" is asked more often than
+ *    anything else the tab answers.
  *  - **Build Info** — what this copy of the app actually is. Both halves:
  *    the web bundle's stamp (scripts/gen-build-info.mjs) and the native
  *    binary's (src-tauri/build.rs). On iPad those come from separate
@@ -65,6 +69,18 @@ function row(label, value) {
 export function renderDebugTab(settings) {
   const s = settings;
   return `
+    <div class="settings-section" id="debug-startup">
+      <h2>Startup Time</h2>
+      <p class="settings-help">Every step a launch takes, from the moment the process starts to the moment the first surface is on screen, with what each one cost. The window is transparent until the app paints, so all of this time reads to the user as a black screen — this is the list that says which part of it to go after.</p>
+      <div class="settings-row">
+        <label for="setting-track-startup-timing">Track Startup processes</label>
+        <input type="checkbox" id="setting-track-startup-timing" ${s.trackStartupTiming ? "checked" : ""} />
+      </div>
+      <div id="debug-startup-body">
+        <p class="settings-help">Reading startup trace…</p>
+      </div>
+    </div>
+
     <div class="settings-section" id="debug-build-info">
       <h2>Build Info</h2>
       <p class="settings-help">Which build this is. The web bundle and the native app are produced by separate steps — on iPad especially, a mismatch between the two explains a surprising number of "that shouldn't happen" bugs.</p>
@@ -154,11 +170,19 @@ let _entries = [];
 
 export function bindDebugTab() {
   if (!document.getElementById("debug-activity")) return; // another tab is showing
+  void paintStartupTiming();
   void paintBuildInfo();
   void paintDeskStorage();
   void paintWindows();
   void refreshLog();
 
+  // The checkbox's own save runs through settings-window.js#bindCheckbox;
+  // this listener is the second half — switching it on asks the editor
+  // window to record the launch that is already in progress, so the list
+  // fills in straight away instead of demanding a relaunch first.
+  on("setting-track-startup-timing", "change", onTrackStartupChanged);
+  // The section's own Copy / Refresh buttons don't exist yet — they are
+  // part of the body `paintStartupTiming` renders, and are wired there.
   on("debug-copy-build", "click", async () => {
     await copyText(await buildInfoText(), "debug-copy-build", "Copy build info");
   });
@@ -225,6 +249,130 @@ async function runSyncTest() {
 
 function on(id, event, handler) {
   document.getElementById(id)?.addEventListener(event, handler);
+}
+
+// ===== Startup Time =====
+//
+// The trace is recorded by the editor window (src/startup-trace.js) and
+// reaches this webview through settings, because the two are separate
+// pages and can't see each other's memory. `trackStartupTiming` gates the
+// write, not the recording — so switching the toggle on can ask the editor
+// window for the launch already in progress rather than making the user
+// relaunch to see anything.
+
+/** The trace, as last written by the editor window. */
+let _startup = null;
+
+function fmtMs(v) {
+  if (v == null || Number.isNaN(v)) return "—";
+  if (v >= 1000) return `${(v / 1000).toFixed(2)} s`;
+  return `${Math.round(v)} ms`;
+}
+
+/** Process start → first surface on screen. Native phases run before the
+ *  webview exists, so the webview's own clock only covers half of it. */
+function launchTotal(t) {
+  return (t?.processToWebviewMs || 0) + (t?.totalMs || 0);
+}
+
+function startupRow(name, ms, depth, total) {
+  const share = total > 0 ? Math.min(100, (ms / total) * 100) : 0;
+  return `
+    <div class="startup-row">
+      <span class="startup-row-name" style="padding-left:${depth * 14}px">${escHtml(name)}</span>
+      <span class="startup-row-bar"><i style="width:${share.toFixed(2)}%"></i></span>
+      <span class="startup-row-ms">${escHtml(fmtMs(ms))}</span>
+    </div>`;
+}
+
+function renderStartup(t) {
+  const total = launchTotal(t);
+  const appMs = Math.max(0, (t.totalMs || 0) - (t.documentMs || 0) - (t.bundleMs || 0));
+  const summary = [
+    row("Recorded", fmtTime(t.capturedAt)),
+    row("Launch → first surface", fmtMs(total)),
+    row("Native launch (before the webview)", fmtMs(t.processToWebviewMs)),
+    row("Document + stylesheet", fmtMs(t.documentMs)),
+    row("JavaScript bundle", fmtMs(t.bundleMs)),
+    row("App boot", fmtMs(appMs)),
+  ].join("");
+  const native = (t.native || []).map((p) => startupRow(`native · ${p.name}`, p.ms, 0, total));
+  const phases = (t.phases || []).map((p) => startupRow(p.name, p.ms, p.depth || 0, total));
+  const rows = native.concat(phases);
+  return `
+    <div class="debug-info-grid">${summary}</div>
+    <div class="startup-phases">${rows.join("") || '<p class="settings-help">No phases recorded.</p>'}</div>
+    <div class="debug-actions">
+      <button class="debug-button" id="debug-startup-copy">Copy</button>
+      <button class="debug-button" id="debug-startup-refresh">Refresh</button>
+    </div>`;
+}
+
+/** Plain-text form, for pasting into a bug report. */
+function startupText() {
+  const t = _startup;
+  if (!t) return "Hush startup: nothing recorded.";
+  const lines = [
+    "Hush startup trace",
+    `  recorded             ${fmtTime(t.capturedAt)}`,
+    `  launch → surface     ${fmtMs(launchTotal(t))}`,
+    `  native launch        ${fmtMs(t.processToWebviewMs)}`,
+    `  document + css       ${fmtMs(t.documentMs)}`,
+    `  javascript bundle    ${fmtMs(t.bundleMs)}`,
+    "",
+  ];
+  for (const p of t.native || []) lines.push(`  native · ${p.name}: ${fmtMs(p.ms)}`);
+  for (const p of t.phases || []) {
+    lines.push(`  ${"  ".repeat(p.depth || 0)}${p.name}: ${fmtMs(p.ms)}`);
+  }
+  return lines.join("\n");
+}
+
+async function paintStartupTiming() {
+  const body = document.getElementById("debug-startup-body");
+  if (!body) return;
+  let settings = null;
+  try {
+    settings = IS_TAURI ? await invoke("get_settings") : null;
+  } catch (_) { /* fall through to the off / empty state */ }
+  // The checkbox, not the persisted value: this repaint can be triggered
+  // by the toggle's own `change` event, which may still be racing the
+  // settings write. What the user just clicked is the truth.
+  const box = document.getElementById("setting-track-startup-timing");
+  const tracking = box ? box.checked : !!settings?.trackStartupTiming;
+  _startup = settings?.startupTimings || null;
+  if (!tracking) {
+    _startup = null;
+    body.innerHTML = `<p class="settings-help">Off. Switch it on to see how long each step of the last launch took — the recording itself is always running, so the numbers appear immediately, without a relaunch.</p>`;
+    return;
+  }
+  if (!_startup) {
+    body.innerHTML = `<p class="settings-help">Nothing recorded yet. Relaunch Hush and come back — the next launch will be captured.</p>`;
+    return;
+  }
+  body.innerHTML = renderStartup(_startup);
+  on("debug-startup-copy", "click", async () => {
+    await copyText(startupText(), "debug-startup-copy", "Copy");
+  });
+  on("debug-startup-refresh", "click", () => { void paintStartupTiming(); });
+}
+
+/** Toggled on: ask the editor window to write out the launch it booted
+ *  from, then repaint. Toggled off: just repaint the off state. */
+async function onTrackStartupChanged(e) {
+  const wantsTracking = !!e.currentTarget?.checked;
+  if (!wantsTracking || !IS_TAURI) { void paintStartupTiming(); return; }
+  try {
+    const { emit, listen } = await import("@tauri-apps/api/event");
+    const stop = await listen("hush-startup-timing-captured", () => {
+      stop();
+      void paintStartupTiming();
+    });
+    await emit("hush-startup-timing-capture");
+  } catch (_) { /* the settings write still landed; fall back to a repaint */ }
+  // Repaint regardless — an editor window that never answers (an older
+  // build, a window still booting) should still leave a readable panel.
+  setTimeout(() => { void paintStartupTiming(); }, 400);
 }
 
 async function buildInfoText() {
