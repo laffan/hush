@@ -209,3 +209,28 @@ pub fn broadcast_notebook_changed(
     )
     .map_err(|e| e.to_string())
 }
+
+/// Broadcast which sticky notes a window is currently showing, so the
+/// others can stand down. A sticky is a reminder pinned to a scope, not
+/// to a window, and every window that has that scope open used to draw
+/// its own copy — the same note three times over on a three-window
+/// desk. The rule is "the window that had it keeps it": each window
+/// publishes the ids it *could* show along with its registry number,
+/// and the lowest-numbered claimant wins (see
+/// `sticky/sticky-window-claims.js`). Numbers are minted in window
+/// order and never reused, so a window opened later can never take a
+/// note off one already showing it, and the ordering needs no clock and
+/// no arbitration round trip.
+#[tauri::command]
+pub fn broadcast_sticky_claims(
+    app: AppHandle,
+    label: String,
+    number: u32,
+    ids: Vec<String>,
+) -> Result<(), String> {
+    app.emit(
+        "cross-window-sticky-claims",
+        serde_json::json!({ "label": label, "number": number, "ids": ids }),
+    )
+    .map_err(|e| e.to_string())
+}

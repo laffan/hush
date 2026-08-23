@@ -111,6 +111,53 @@ export function hasPairedGutter(state, docItem) {
     && sibs.some((c) => c.type === "notebook" && c.gutter && c.gutterForDoc === docItem.fileId);
 }
 
+/** A week, in seconds — the age at which an Inbox row's timestamp turns
+ *  red. The Inbox is a staging area, not a home: a file still sitting
+ *  there a week after it was last touched is the thing the colour is
+ *  for. */
+const INBOX_STALE_SECONDS = 7 * 24 * 60 * 60;
+
+/** Is this row a file sitting directly in a desk's Inbox? Rows there get
+ *  the two-line treatment below; everywhere else in the tree a filename
+ *  is a filename. */
+export function isInboxItem(tree, item) {
+  if (!item?.fileId) return false;
+  if (item.type !== "document" && item.type !== "notebook" && item.type !== "stack") return false;
+  return isInboxId(findParentOfNode(tree, item.id)?.id);
+}
+
+/** "3 minutes ago" … "12 Mar" — the file's last edit, at the coarsest
+ *  granularity that still says something. Recent enough to be about
+ *  *this session* reads in relative terms; older than that and the date
+ *  is the more useful fact. */
+function formatEditedAt(seconds) {
+  const age = Math.max(0, Math.floor(Date.now() / 1000) - seconds);
+  if (age < 60) return "just now";
+  if (age < 3600) { const m = Math.floor(age / 60); return `${m} minute${m === 1 ? "" : "s"} ago`; }
+  if (age < 86400) { const h = Math.floor(age / 3600); return `${h} hour${h === 1 ? "" : "s"} ago`; }
+  if (age < INBOX_STALE_SECONDS) { const d = Math.floor(age / 86400); return `${d} day${d === 1 ? "" : "s"} ago`; }
+  const d = new Date(seconds * 1000);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(undefined, sameYear
+    ? { day: "numeric", month: "short" }
+    : { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** The stacked name + "last edited" line an Inbox row wears instead of a
+ *  plain filename. Returns "" when the library listing has no mtime for
+ *  this file — a PDF (whose bytes never go through `list_files`) or a
+ *  file created this tick and not yet re-listed. */
+export function inboxNameHtml(state, item, nameHtml) {
+  const modified = state.files?.find((f) => f.id === item.fileId)?.modified;
+  if (typeof modified !== "number" || !modified) return "";
+  const stale = (Math.floor(Date.now() / 1000) - modified) > INBOX_STALE_SECONDS;
+  const when = escHtml(formatEditedAt(modified));
+  return `<span class="tree-item-name tree-item-inbox">`
+    + `<span class="tree-item-inbox-name">${nameHtml}</span>`
+    + `<span class="tree-item-inbox-edited${stale ? " stale" : ""}">${when}</span>`
+    + `</span>`;
+}
+
 export function getIcon(item) {
   if (item.type === "desk") return typeIcons.desk;
   if (isInboxId(item.id)) return typeIcons.inbox;

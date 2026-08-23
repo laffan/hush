@@ -4,7 +4,7 @@
  * container, just inboard of the shelf. A row of three pieces, right
  * to left:
  *
- *   [rotation °] [rotate toggle] [background settings]
+ *   [rotation °] [rotate toggle] [page rail toggle] [background settings]
  *
  * - Background settings opens the pattern / spacing / opacity popup
  *   (reused from `bg-settings-popup.ts`; its internal tab stays
@@ -17,6 +17,11 @@
  *   degrees while the option is on; tapping it snaps the rotation
  *   back to 0. Hidden while the option is off (rotation is forced to
  *   0 there anyway).
+ * - The page rail toggle shows / hides a proofread notebook's page
+ *   rail (`proof-thumbnails.ts`). Only rendered on a proof — nothing
+ *   else has a rail — and it sits here because the rail's own foot
+ *   already clears this row, so the control is beside the thing it
+ *   controls.
  *
  * This row replaced the bottom toolbar's end-cap so the surface
  * controls are always reachable wherever the toolbar happens to sit.
@@ -106,6 +111,26 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
   });
   rotateBtn.classList.add("notebook-rotate-toggle-btn");
 
+  // --- page rail toggle (proofread notebooks only) ------------------
+  // The rail is an app-wide reading preference, so it rides settings
+  // rather than the notebook's own bg-surface fields. Sibling windows
+  // pick it up through the ordinary settings broadcast; this canvas
+  // repaints off the `interaction` pulse below, which is repaint-only
+  // and so can't mark the notebook dirty.
+  const railBtn = h("button", {
+    title: "Show page rail",
+    style: { ...cornerBtnStyle, display: "none" },
+    children: [icon("page-rail", 20)],
+    onClick: (e) => {
+      e.stopPropagation();
+      const app = hushApp();
+      app?.updateSettings?.({ notebookProofRailVisible: !railVisible() });
+      state.notify("interaction");
+      refreshRail();
+    },
+  });
+  railBtn.classList.add("notebook-proof-rail-toggle-btn");
+
   // --- background settings (rightmost, the corner anchor) -----------
   const button = h("button", {
     title: "Background settings",
@@ -117,12 +142,48 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
 
   wrap.appendChild(rotationReadout);
   wrap.appendChild(rotateBtn);
+  wrap.appendChild(railBtn);
   wrap.appendChild(button);
 
   // Anchor the popup against the visible bg button — the row sits in
   // the bottom-right corner, so use the above-right mode so the flyout
   // opens upward and aligns with the button's right edge.
   bg.setAnchor(button, { mode: "above-right" });
+
+  function hushApp() {
+    return (window as unknown as {
+      __hushState__?: {
+        settings?: { notebookProofRailVisible?: boolean };
+        updateSettings?: (p: Record<string, unknown>) => void;
+      };
+    }).__hushState__;
+  }
+
+  function railVisible(): boolean {
+    return hushApp()?.settings?.notebookProofRailVisible !== false;
+  }
+
+  /** Show the toggle only on a proof, and paint it the way the rotate
+   *  toggle paints itself: accent icon + accent border while on. Runs
+   *  off the same per-notify listener as everything else here, so it
+   *  keys on its own visible state to skip the style writes — a proof
+   *  is panned as much as any other canvas. */
+  let _lastRailKey = "";
+  function refreshRail(force?: boolean): void {
+    const isProof = !!state.proof;
+    const on = railVisible();
+    const theme = state.theme;
+    const key = `${isProof}:${on}:${theme.accent}:${theme.foreground}`;
+    if (!force && key === _lastRailKey) return;
+    _lastRailKey = key;
+    railBtn.style.display = isProof ? "flex" : "none";
+    if (!isProof) return;
+    railBtn.title = on ? "Hide page rail" : "Show page rail";
+    railBtn.style.color = on ? theme.accent : theme.foreground;
+    railBtn.style.opacity = on ? "1" : "0.6";
+    railBtn.style.border = `1px solid ${on ? theme.accent : theme.uiBorder}`;
+    railBtn.style.background = theme.background;
+  }
 
   /** Camera rotation, normalized to (-180, 180] whole degrees. The
    *  gesture accumulates rotation across twists, so the raw radians
@@ -168,6 +229,7 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
     button.style.background = theme.background;
     button.style.border = `1px solid ${theme.uiBorder}`;
     rotateBtn.style.background = theme.background;
+    refreshRail(true);
     rotationReadout.style.background = theme.background;
     rotationReadout.style.border = `1px solid ${theme.uiBorder}`;
     rotationReadout.style.color = theme.foreground;
@@ -216,6 +278,10 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
     if (keys.includes("canvasRotationEnabled") || keys.includes("camera")) {
       refreshRotation();
     }
+    // A notebook only becomes a proof when its envelope lands, and the
+    // rail toggle rides a setting no canvas key names — so this one is
+    // re-derived on every notify and guarded by its own key instead.
+    refreshRail();
   }) as EventListener);
 
   window.addEventListener("resize", applyRightInset);

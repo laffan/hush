@@ -447,8 +447,19 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
 
   // ── update ──
 
+  /** App-wide reading preference, toggled from the canvas's bottom-right
+   *  chrome row. Read live rather than cached: the toggle pulses the
+   *  canvas through a repaint-only key, which lands here as an ordinary
+   *  change event with no payload of its own. */
+  function railEnabled(): boolean {
+    const app = (window as unknown as {
+      __hushState__?: { settings?: { notebookProofRailVisible?: boolean } };
+    }).__hushState__;
+    return app?.settings?.notebookProofRailVisible !== false;
+  }
+
   function update() {
-    if (!state.proof) { root.style.display = "none"; return; }
+    if (!state.proof || !railEnabled()) { root.style.display = "none"; return; }
     const pieces = collectPieces(state);
     if (!pieces.length) { root.style.display = "none"; return; }
     root.style.display = "flex";

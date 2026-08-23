@@ -26,6 +26,11 @@
  * collapse, active note rises to the top of the sticky z-band (which
  * sits above panes / sidebars — see --z-sticky in base.css).
  * Cmd+= / Cmd+- resize the note's text while it has focus.
+ *
+ * A scope is not a window, so with several windows open more than one
+ * could qualify to show the same note. Exactly one does: the window
+ * already showing it keeps it and the rest stand down — see
+ * `sticky-window-claims.js`, which `refreshVisibility` consults.
  */
 import {
   findNode,
@@ -36,7 +41,7 @@ import {
 } from "../state/tree-helpers.js";
 import {
   DEFAULT_SIZE, HEADER_HEIGHT, FONT_STEP, DEFAULT_FONT, ICON_CLOSE,
-  CTX_ICON, CTX_MENU, ctxIconFor, excerptFor, desktopOpenId,
+  ctxIconFor, excerptFor, desktopOpenId,
   clampAxis, clampSize, clampFont,
 } from "./sticky-shared.js";
 import {
@@ -45,6 +50,8 @@ import {
   desktopStickiesFor,
 } from "./sticky-desktop.js";
 import { setupDrag, setupResize } from "./sticky-interact.js";
+import { toggleContextMenu } from "./sticky-context-menu.js";
+import { initStickyClaims, claimedElsewhere, publishClaims } from "./sticky-window-claims.js";
 
 const notes = new Map(); // id → note record
 /** Re-anchor + re-scale desktop-pinned notes against the live camera. */
@@ -98,6 +105,10 @@ export function initStickyNotes(state) {
   // closed in another window would never materialise here without a
   // rebuild on the cross-window merge pulse.
   state.on("remote-settings-merged", () => rebuildFromSettings());
+
+  // One sticky, one window: a second window opened onto the same scope
+  // defers to the one already showing the note (sticky-window-claims.js).
+  void initStickyClaims({ refresh });
 
   // Click anywhere outside a sticky drops the active highlight.
   window.addEventListener("pointerdown", (e) => {
@@ -391,7 +402,7 @@ function buildNoteDOM(note) {
   ctxBtn.setAttribute("aria-label", "Change context (Document / Desk / App)");
   ctxBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    toggleContextMenu(note, ctxBtn);
+    toggleContextMenu(note, ctxBtn, contextHooks);
   });
   titlebar.appendChild(ctxBtn);
 
@@ -435,7 +446,24 @@ function buildNoteDOM(note) {
 
   titlebar.addEventListener("dblclick", (e) => {
     if (e.target.closest(".sticky-note-btn")) return;
+    // WebKit's double-click word-select is the *default action*, and it
+    // runs even when the hit element is `user-select: none` — it just
+    // widens whatever selection already exists, which for a sticky
+    // floating over a pane means the word under that pane's caret gets
+    // selected every time the header is double-clicked to collapse.
+    e.preventDefault();
+    e.stopPropagation();
     toggleCollapse(note);
+  });
+  // The selection actually starts at `mousedown`, so that is the event
+  // that has to be cancelled. Cancelling `pointerdown` (which the drag
+  // helper already does) is *supposed* to suppress the compatibility
+  // mouse events, but WebKit still delivers mousedown for a mouse
+  // pointer — so cancel it here as well. The textarea is exempt: it
+  // needs its own caret placement and selection.
+  el.addEventListener("mousedown", (e) => {
+    if (e.target instanceof Element && e.target.closest(".sticky-note-text")) return;
+    e.preventDefault();
   });
   el.addEventListener("pointerdown", () => activateNote(note));
   setupDrag(note, titlebar, interactHooks);
@@ -464,6 +492,20 @@ const interactHooks = {
   repaintDesktop: () => repaintDesktop(),
 };
 
+// Same arrangement for the Document / Desk / App switcher — see
+// sticky-context-menu.js.
+const contextHooks = {
+  appState: () => appState,
+  currentFileContext: () => currentFileContext(appState),
+  container: () => ensureContainer(),
+  nextZ: () => ++zCounter,
+  activate: (n) => activateNote(n),
+  labelFor: (n) => labelFor(n),
+  refreshVisibility: () => refreshVisibility(),
+  persist: () => schedulePersist(),
+  stickiesChanged: () => emitStickiesChanged(),
+};
+
 function adjustFont(note, delta, e) {
   e.preventDefault();
   e.stopPropagation();
@@ -478,119 +520,6 @@ function toggleCollapse(note) {
   note.el.style.height = (note.collapsed ? HEADER_HEIGHT : note.height) + "px";
   if (note.collapsed && note._excerptEl) note._excerptEl.textContent = excerptFor(note.text);
   schedulePersist();
-}
-
-// ── Context switcher ──────────────────────────────────────────────────
-
-let activeMenu = null;
-let activeMenuCleanup = null;
-
-function closeContextMenu() {
-  if (activeMenu) { activeMenu.remove(); activeMenu = null; }
-  if (activeMenuCleanup) { activeMenuCleanup(); activeMenuCleanup = null; }
-}
-
-/** Does scope `key` describe the note's current attachment? Project and
- *  file notes both read as "Document" (they share the pink body). */
-function contextKeyMatches(kind, key) {
-  if (key === "file") return kind === "file" || kind === "project" || kind === "desktop";
-  return kind === key;
-}
-
-/** Can the note be switched to scope `key` right now? Document needs a
- *  file on screen to attach to; Desk needs an active desk; App is always
- *  available. */
-function contextAvailable(key) {
-  if (key === "file") return !!currentFileContext(appState);
-  if (key === "desk") return !!(appState?.getActiveDesk?.()?.id);
-  return true;
-}
-
-function toggleContextMenu(note, anchorBtn) {
-  if (activeMenu && activeMenu._noteId === note.id) { closeContextMenu(); return; }
-  closeContextMenu();
-  activateNote(note);
-
-  const menu = document.createElement("div");
-  menu.className = "sticky-context-menu";
-  menu._noteId = note.id;
-  for (const opt of CTX_MENU) {
-    const isCurrent = contextKeyMatches(note.kind, opt.key);
-    const available = contextAvailable(opt.key);
-    const row = document.createElement("button");
-    row.className = "sticky-context-option" + (isCurrent ? " current" : "");
-    row.innerHTML = `<span class="sticky-ctx-ico">${CTX_ICON[opt.key]}</span><span>${opt.label}</span>`;
-    if (!available && !isCurrent) row.disabled = true;
-    row.addEventListener("click", (e) => {
-      e.stopPropagation();
-      closeContextMenu();
-      if (available && !isCurrent) changeContext(note, opt.key);
-    });
-    menu.appendChild(row);
-  }
-
-  // The note itself is overflow:hidden, so the menu lives in the
-  // full-screen sticky container and is positioned to the button. It
-  // must out-stack the notes too — every note carries an inline
-  // z-index from zCounter, and a z:auto sibling would paint *behind*
-  // the very note that opened it (the menu overlaps the note body).
-  const rect = anchorBtn.getBoundingClientRect();
-  menu.style.left = Math.round(rect.left) + "px";
-  menu.style.top = Math.round(rect.bottom + 4) + "px";
-  menu.style.zIndex = ++zCounter;
-  ensureContainer().appendChild(menu);
-  activeMenu = menu;
-  // Nudge back on screen if it would spill off the right / bottom edge.
-  const mrect = menu.getBoundingClientRect();
-  if (mrect.right > window.innerWidth - 8) {
-    menu.style.left = Math.round(window.innerWidth - 8 - mrect.width) + "px";
-  }
-  if (mrect.bottom > window.innerHeight - 8) {
-    menu.style.top = Math.round(rect.top - 4 - mrect.height) + "px";
-  }
-
-  const onDown = (e) => {
-    // Clicks inside the menu are handled by the option buttons; clicks on
-    // a context button are left for its own handler to toggle the menu.
-    if (e.target instanceof Element
-        && e.target.closest(".sticky-context-menu, .sticky-note-context")) return;
-    closeContextMenu();
-  };
-  const onKey = (e) => { if (e.key === "Escape") closeContextMenu(); };
-  setTimeout(() => {
-    window.addEventListener("pointerdown", onDown, true);
-    window.addEventListener("keydown", onKey, true);
-  }, 0);
-  activeMenuCleanup = () => {
-    window.removeEventListener("pointerdown", onDown, true);
-    window.removeEventListener("keydown", onKey, true);
-  };
-}
-
-/** Re-attach the note to a new scope, repaint its colour + glyph, and
- *  re-evaluate whether it's visible on the current surface. */
-function changeContext(note, key) {
-  let target = null;
-  if (key === "file") {
-    target = currentFileContext(appState);
-    if (!target) return;
-  } else if (key === "desk") {
-    target = appState?.getActiveDesk?.()?.id || null;
-    if (!target) return;
-  }
-  note.el.classList.remove("sticky-file", "sticky-project", "sticky-desk", "sticky-global", "sticky-desktop");
-  delete note.wx;
-  delete note.wy;
-  note.kind = key;
-  note.target = target;
-  note.el.classList.add("sticky-" + key);
-  if (note._ctxBtn) {
-    note._ctxBtn.innerHTML = ctxIconFor(key);
-    note._ctxBtn.title = labelFor(note);
-  }
-  refreshVisibility();
-  schedulePersist();
-  emitStickiesChanged();
 }
 
 function activateNote(note) {
@@ -611,11 +540,23 @@ function closeNote(id) {
 
 // ── Visibility / labels / pruning ─────────────────────────────────────
 
+/** Show every note whose scope is on screen — minus the ones another
+ *  window got to first. A sticky is scoped to a file / desk / the app,
+ *  never to a window, so two windows on the same desk would each draw
+ *  their own copy of the same note; `sticky-window-claims.js` settles
+ *  which one keeps it (the window that had it, i.e. the lower registry
+ *  number) and this pass hides the rest. The claim set is republished
+ *  from here because this is the one place that knows what this window
+ *  is eligible for. */
 function refreshVisibility() {
   if (!appState) return;
+  const eligible = [];
   for (const [, note] of notes) {
-    note.el.style.display = noteVisible(note) ? "" : "none";
+    const scopeOn = noteVisible(note);
+    if (scopeOn) eligible.push(note.id);
+    note.el.style.display = scopeOn && !claimedElsewhere(note.id) ? "" : "none";
   }
+  publishClaims(eligible);
 }
 
 function noteVisible(note) {

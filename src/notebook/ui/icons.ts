@@ -94,6 +94,12 @@ const PATHS: Record<string, string> = {
   "menu": `<path d="M5 7 H19 M5 12 H19 M5 17 H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
   // Rotate — circular arrow with a return tip in the upper-right corner.
   // Retargeted to currentColor.
+  // Magnifier with a plus — the proof scroll wheel's "drive zoom, not
+  // vertical position" toggle.
+  "zoom": `<circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M15.5 15.5 L21 21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8.5 11 H13.5 M11 8.5 V13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
+  // Page rail — text on the left, a column of stacked page thumbnails on
+  // the right: the proofread notebook's rail toggle.
+  "page-rail": `<path d="M3 5 H10 M3 9 H10 M3 13 H8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><rect x="14" y="3" width="7" height="5.5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="9.25" width="7" height="5.5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="15.5" width="7" height="5.5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.5"/>`,
   "rotate": `<path d="M21.8883 13.5C21.1645 18.3113 17.013 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C16.1006 2 19.6248 4.46819 21.1679 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 8H21.4C21.7314 8 22 7.73137 22 7.4V3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
   // Toolbar collapse — two arrows pointing toward each other along the
   // horizontal axis. Paired with `toolbar-expand` for the collapse-tab

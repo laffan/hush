@@ -51,7 +51,7 @@ import zoteroRaw from "./sidebar/sidebar_icons/zotero.svg?raw";
 import settingsRaw from "./sidebar/sidebar_icons/settings.svg?raw";
 import searchRaw from "./sidebar/sidebar_icons/search.svg?raw";
 import expandRaw from "./sidebar/sidebar_icons/expand.svg?raw";
-import { typeIcons } from "./sidebar/files-panel-shared.js";
+import { typeIcons, showDeleteConfirmModal } from "./sidebar/files-panel-shared.js";
 import { getActiveModeContext } from "./state/mode-context.js";
 import { openShuffleEditor, shuffleSelectionAvailable } from "./editor/shuffle-editor.js";
 import { addSticky, canAddFileSticky, canAddProjectSticky } from "./sticky/sticky-notes.js";
@@ -280,14 +280,20 @@ function buildCommands(state) {
         openInNewWindow(fileId, fileType, s.getActiveDesk?.()?.id || null);
       } },
     { id: "delete-current", label: "Delete current file", icon: icons.trash, shortcutKey: null, ctx: "shared",
-      action: async (s) => {
+      // In-app modal, not `window.confirm`: the native dialog doesn't
+      // reliably block in the WebView — it can return before the user has
+      // answered, so the file was already in the Trash behind the prompt
+      // that was still asking whether to put it there.
+      action: (s) => {
         const fileId = s.currentNotebookFileId || s.currentFileId;
         if (!fileId) return;
         const node = findNodeByFileId(s.fileTree, fileId);
         if (!node) return;
-        const ok = window.confirm(`Move "${node.name || "Untitled"}" to Trash?`);
-        if (!ok) return;
-        await deleteTreeNode(s, node.id);
+        showDeleteConfirmModal(
+          `Move "${node.name || "Untitled"}" to Trash?`,
+          "You can restore it from the Trash afterwards.",
+          () => { void deleteTreeNode(s, node.id); },
+        );
       } },
     { id: "files", label: "Files", icon: icons.files, shortcutKey: "shortcutToggleSidebar", ctx: "shared",
       action: (s) => s.emit("toggle-left-panel") },
@@ -553,17 +559,20 @@ function buildCommands(state) {
     { id: "pane-unpin", label: "Unpin pane", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !panes.get(getActivePaneId())?.pinned, action: () => setActivePanePinned(false) },
     { id: "pane-close-current", label: "Close current pane", icon: icons.trash, shortcutKey: null, ctx: "pane", action: () => { const id = getActivePaneId(); if (id) closePane(id); } },
     { id: "pane-close-and-delete", label: "Close pane and delete document", icon: icons.trash, shortcutKey: null, ctx: "pane",
-      action: async (s) => {
+      // Same in-app modal as Delete current file, and for the same
+      // reason — see there.
+      action: (s) => {
         const id = getActivePaneId();
         if (!id) return;
         const pane = panes.get(id);
         const fileId = pane?.fileId;
         const node = fileId ? findNodeByFileId(s.fileTree, fileId) : null;
         if (!node) { closePane(id); return; }
-        const ok = window.confirm(`Close pane and move "${node.name || "Untitled"}" to Trash?`);
-        if (!ok) return;
-        closePane(id);
-        await deleteTreeNode(s, node.id);
+        showDeleteConfirmModal(
+          `Close pane and move "${node.name || "Untitled"}" to Trash?`,
+          "You can restore it from the Trash afterwards.",
+          () => { closePane(id); void deleteTreeNode(s, node.id); },
+        );
       } },
 
     // === PANE SET (current document's panes) ===

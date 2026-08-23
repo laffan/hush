@@ -52,12 +52,18 @@ async function init() {
   trashBanner.textContent = "In the Trash — read only";
   editorContainer.parentElement?.insertBefore(trashBanner, editorContainer);
 
-  async function syncTrashLock() {
+  // Synchronous on purpose. This runs off teardown events, where the
+  // surface pointers are mid-flight by design (an unmount event is
+  // emitted *before* the matching `current*` is nulled), so it has to
+  // read them in the same tick it was called in — an `await` here let a
+  // banner computed from the outgoing file land after the pass that had
+  // already cleared it. `findNodeByFileId` is imported at the top of
+  // this module, so there was never anything to wait for.
+  function syncTrashLock() {
     if (!state.editor) return;
     const fileId = state.currentNotebookFileId || state.currentFileId;
     let inTrash = false;
     if (fileId) {
-      const { findNodeByFileId } = await import("./state/tree-helpers.js");
       const node = findNodeByFileId(state.fileTree, fileId);
       if (node && state.isInTrash(node.id)) inTrash = true;
     }
@@ -67,13 +73,18 @@ async function init() {
     trashBanner.classList.toggle("hidden", !inTrash);
     document.body.classList.toggle("file-in-trash", inTrash);
   }
-  state.on("file-opened", syncTrashLock);
-  state.on("notebook-open", syncTrashLock);
-  state.on("notebook-unmount", syncTrashLock);
-  // Restore / Permanently Delete fire `files-changed` after the move —
-  // re-evaluate so a file restored back into the inbox loses the banner
-  // without needing to be re-opened.
-  state.on("files-changed", syncTrashLock);
+  for (const ev of [
+    "file-opened", "notebook-open", "notebook-unmount",
+    // `clearActiveFile` ends on "no-file-state" — the event a deleted
+    // open file arrives on. Without it the banner raised while the file
+    // was still open, on its way into the Trash, had nothing to take it
+    // back down again.
+    "no-file-state",
+    // Restore / Permanently Delete fire `files-changed` after the move —
+    // re-evaluate so a file restored back into the inbox loses the banner
+    // without needing to be re-opened.
+    "files-changed",
+  ]) state.on(ev, syncTrashLock);
   syncTrashLock();
 
   import("./google-docs/link-bar.js").then((m) => m.initLinkBar(state)).catch((e) => console.warn("[google-docs] link-bar mount failed", e));

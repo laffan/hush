@@ -99,6 +99,41 @@ export async function deleteTreeNode(state, nodeId) {
     }
     removeRealPdfNodesForFileIds(state.fileTree, pdfFileIds, keep);
   }
+  // Let go of the deleted surface BEFORE the tree is saved. `saveFileTree`
+  // emits `files-changed`, and by this point the node is already sitting
+  // in Trash — so anything asking "is the open file in the Trash?" (the
+  // read-only bar above the editor) got a yes about a file the user was
+  // in the middle of deleting.
+  //
+  // Answer "was the open surface inside what we deleted?" up front, too.
+  // The unmounts below null the very pointers the test reads — that
+  // ordering is deliberate, so a listener on an unmount event still sees
+  // the outgoing surface — and asking afterwards asks about a field that
+  // is already null. That is why deleting the open notebook used to
+  // leave the previous document's text in the editor instead of dropping
+  // to the empty pane.
+  const hadNotebook = docFileIds.includes(state.currentNotebookFileId);
+  const hadPdf = pdfFileIds.includes(state.currentPdfFileId);
+  const hadStack = stackFileIds.includes(state.currentStackFileId);
+  const hadDoc = docFileIds.includes(state.currentFileId) || nodeId === state.currentProjectId;
+  if (hadNotebook) {
+    state.emit("notebook-unmount");
+    state.currentNotebookFileId = null;
+  }
+  if (hadPdf) {
+    state.emit("pdf-unmount");
+    state.currentPdfFileId = null;
+  }
+  if (hadStack) {
+    state.emit("stack-unmount");
+    state.currentStackFileId = null;
+  }
+  if (hadDoc || hadNotebook || hadPdf || hadStack) {
+    // The open surface was just deleted. Drop to the "no file selected"
+    // pane instead of jumping to an arbitrary DB file (which often lived
+    // in a different desk).
+    await state.clearActiveFile();
+  }
   await state.saveFileTree();
   // Close any open panes backed by a file we just removed so they don't
   // linger orphaned — most importantly a gutter notebook: deleting the
@@ -117,24 +152,6 @@ export async function deleteTreeNode(state, nodeId) {
       }
       for (const id of victims) closePane(id);
     } catch (_) {}
-  }
-  if (docFileIds.includes(state.currentNotebookFileId)) {
-    state.emit("notebook-unmount");
-    state.currentNotebookFileId = null;
-  }
-  if (pdfFileIds.includes(state.currentPdfFileId)) {
-    state.emit("pdf-unmount");
-    state.currentPdfFileId = null;
-  }
-  if (stackFileIds.includes(state.currentStackFileId)) {
-    state.emit("stack-unmount");
-    state.currentStackFileId = null;
-  }
-  if (docFileIds.includes(state.currentFileId) || nodeId === state.currentProjectId || docFileIds.includes(state.currentNotebookFileId) || pdfFileIds.includes(state.currentPdfFileId) || stackFileIds.includes(state.currentStackFileId)) {
-    // The open surface was just deleted. Drop to the "no file selected"
-    // pane instead of jumping to an arbitrary DB file (which often lived
-    // in a different desk).
-    await state.clearActiveFile();
   }
   state.emit("files-changed");
 }

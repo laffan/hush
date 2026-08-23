@@ -410,6 +410,11 @@ pub struct AppSettings {
     pub notebook_shelf_width: u32,
     #[serde(default = "default_notebook_proof_rail_width")]
     pub notebook_proof_rail_width: u32,
+    /// Is the proofread notebook's page rail on screen? App-wide rather
+    /// than per-notebook: it's a reading preference, like the shelf's
+    /// width, not something a proof carries with it.
+    #[serde(default = "default_true")]
+    pub notebook_proof_rail_visible: bool,
     /// Where the proofread scroll wheel was last parked, as an offset
     /// from the top-left of whichever box hosts the canvas. `None` means
     /// "never moved" — the wheel takes its default corner. Absolute px
@@ -750,6 +755,7 @@ impl Default for AppSettings {
             notebook_text_max_width: default_notebook_text_max_width(),
             notebook_shelf_width: default_notebook_shelf_width(),
             notebook_proof_rail_width: default_notebook_proof_rail_width(),
+            notebook_proof_rail_visible: true,
             notebook_proof_wheel_x: None,
             notebook_proof_wheel_y: None,
             flow_connect_mode: default_flow_connect_mode(),

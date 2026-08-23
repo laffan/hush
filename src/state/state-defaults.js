@@ -58,6 +58,10 @@ export function createDefaultSettings() {
     commentsPanelWidth: 240,
     notebookShelfWidth: 280,
     notebookProofRailWidth: 92,
+    // Page rail on a proofread notebook — the live minimap down the
+    // right edge. On by default; the toggle sits in the canvas's
+    // bottom-right chrome row (notebook/ui/bg-settings-fixed-button.ts).
+    notebookProofRailVisible: true,
     // Where the proofread scroll wheel was dragged to, as an offset from
     // its host box's top-left. null = never moved (default corner).
     notebookProofWheelX: null,

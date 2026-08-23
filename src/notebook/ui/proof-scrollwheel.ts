@@ -22,6 +22,19 @@
  * follows the platform's "natural" scrolling (content tracks the finger)
  * rather than a notched wheel's opposite convention — see `DIRECTION`.
  *
+ * The drum sits between two plinths of the same size, each doing the one
+ * job the drum can't:
+ *
+ *   - The **foot** repositions the control. Drag it and the wheel moves;
+ *     let go and it stays. (It used to demand a four-second hold before
+ *     it would budge — the hold existed because the drum and the foot
+ *     were one surface, and a plinth of its own is a better answer than
+ *     a timer.)
+ *   - The **cap** switches what the drum drives: vertical position, or
+ *     zoom. In zoom mode the whole control takes a red outline, because
+ *     the same gesture now does something else entirely and the drum
+ *     itself looks identical either way.
+ *
  * iPad / iPhone only, and only on a proofread notebook: everywhere else
  * the platform already has an answer and the corner is better left
  * empty.
@@ -34,7 +47,7 @@ import { icon } from "./icons";
 import { isIOS } from "../../settings/settings-ui.js";
 
 export const WHEEL_WIDTH = 50;
-export const WHEEL_HEIGHT = 200;
+export const WHEEL_HEIGHT = 250;
 
 /** Offset from the top of the host box, before safe-area and
  *  docked-pane insets are folded in. */
@@ -46,15 +59,19 @@ const WHEEL_TOP = 0;
  *  takes those touches with it. */
 const WHEEL_LEFT = 10;
 
-/** Reposition handle: a plinth across the foot of the wheel. It sits
- *  below the drum rather than on it, because a thumb resting on the
- *  handle covers the handle — anything that has to be *watched* during
- *  the hold has to live somewhere the hand isn't, which is what the
- *  border is for. */
-const HANDLE_HEIGHT = 18;
+/** Reposition handle: a plinth across the foot of the wheel, below the
+ *  drum rather than on it, so a drag that moves the control can't also
+ *  turn it. Deep enough to be a target for a thumb that is aiming past
+ *  a 250 px drum. */
+const HANDLE_HEIGHT = 36;
 
-/** Full height of the control: drum + handle, inside one border. */
-const CONTROL_HEIGHT = WHEEL_HEIGHT + HANDLE_HEIGHT;
+/** Mode toggle: the matching plinth across the cap. Same size as the
+ *  foot — they are the two things you press rather than turn, and a pair
+ *  that reads as a pair is a pair you don't mis-hit. */
+const CAP_HEIGHT = HANDLE_HEIGHT;
+
+/** Full height of the control: cap + drum + foot, inside one border. */
+const CONTROL_HEIGHT = CAP_HEIGHT + WHEEL_HEIGHT + HANDLE_HEIGHT;
 
 /** Clearance from the host's own corner when the canvas is hosted in a
  *  pane or stack column: there's no safe-area band or sidebar grip to
@@ -62,7 +79,7 @@ const CONTROL_HEIGHT = WHEEL_HEIGHT + HANDLE_HEIGHT;
  *  clears a docked pane's floating title pill as well as its edge. */
 const WHEEL_PANE_INSET = 10;
 
-/** The wheel is a fixed 50 × 200 control, and a host box that can't
+/** The wheel is a fixed-size control, and a host box that can't
  *  spare the room for it doesn't want one: it would sit across the
  *  document it exists to travel. Panes go down to 60 px tall, so this
  *  is the difference between a proof pane growing a wheel and a proof
@@ -104,31 +121,24 @@ const MAX_VELOCITY = 2.5;
 /** Spacing of the drum's ridges, in px of wheel face. */
 const RIDGE_PERIOD = 13;
 
-/** Shades the border steps through while the handle is held, one per
- *  second, each darker than the last. The first lands on contact so a
- *  press registers immediately; the last is the second before arming. */
-const ARM_STEPS = ["#9ec8ff", "#6ea8ff", "#3f86ea", "#1f5fc0"];
+/** Zoom mode's outline. A fixed red rather than the theme accent: it
+ *  has to read as "this control is doing something else right now"
+ *  against every notebook background, including a proof's white pages,
+ *  and the drum looks identical in both modes. */
+const ZOOM_COLOR = "#e0483d";
 
-/** How long the handle must be held before reposition mode arms — one
- *  second per shade above. Deliberately long: the wheel is driven by
- *  the same press-and-drag gesture, so a shorter hold would arm itself
- *  during ordinary scrolling. */
-const ARM_HOLD_MS = ARM_STEPS.length * 1000;
+/** Zoom per px of face travel, as the exponent of an exponential — a
+ *  fixed *ratio* per px, so the wheel feels the same at 25 % as at
+ *  100 % (a linear step would crawl at the bottom of the range and
+ *  lurch at the top). 0.004 puts the full [0.25, 1] envelope inside
+ *  ~350 px of face, about one and a half drum lengths. */
+const ZOOM_GAIN = 0.004;
 
-/** Movement that abandons the hold — a finger that wandered was
- *  reaching for the wheel, not asking to move it. */
-const ARM_SLIP_PX = 8;
-
-/** Reposition mode's outline. A fixed blue rather than the theme accent:
- *  it has to read as "this control is in a special mode" against every
- *  notebook background, including a proof's white pages. */
-const ARM_COLOR = "#4a9eff";
-
-/** The blink that announces arming: outline colours in sequence, each
- *  held for BLINK_STEP_MS. Ending lit leaves the mode's own outline in
- *  place with no extra write. */
-const BLINK_SEQUENCE = ["transparent", ARM_COLOR, "transparent", ARM_COLOR];
-const BLINK_STEP_MS = 110;
+/** Zoom envelope, matching the canvas's own wheel and pinch handlers
+ *  (`state.ts#handleWheel`): past 1:1 ink only blurs, and 25 % is the
+ *  practical floor for a still-legible overview. */
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 1;
 
 export interface ProofScrollWheel {
   root: HTMLElement;
@@ -145,9 +155,9 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
   // muddied it.
   const drum = h("div", {
     style: {
-      position: "absolute", left: "0", top: "0", right: "0",
+      position: "absolute", left: "0", right: "0",
+      top: `${CAP_HEIGHT}px`,
       height: `${WHEEL_HEIGHT}px`,
-      borderRadius: "9px 9px 0 0",
     },
   });
 
@@ -178,6 +188,26 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
   });
   root.classList.add("notebook-proof-wheel");
 
+  // Mode toggle — a plinth across the cap. Tapping it swaps what the
+  // drum drives; the magnifier is the only mark on the control that
+  // says which mode it is in, so it is also the thing the red outline
+  // is anchored to.
+  const cap = h("div", {
+    style: {
+      position: "absolute", left: "0", right: "0", top: "0",
+      height: `${CAP_HEIGHT}px`,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      borderRadius: "9px 9px 0 0",
+      cursor: "pointer", touchAction: "none",
+    },
+  });
+  const capMark = h("div", {
+    style: { display: "flex" },
+    children: [icon("zoom", 18)],
+  });
+  cap.appendChild(capMark);
+  root.appendChild(cap);
+
   // Reposition handle — a plinth across the foot, carrying the
   // hamburger grip mark everything else in the app uses for "drag me".
   const handle = h("div", {
@@ -190,8 +220,8 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     },
   });
   const handleMark = h("div", {
-    style: { display: "flex", opacity: "0.7" },
-    children: [icon("menu", 14)],
+    style: { display: "flex" },
+    children: [icon("menu", 18)],
   });
   handle.appendChild(handleMark);
   root.appendChild(handle);
@@ -213,16 +243,48 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
 
   // ── motion ──
 
-  /** Turn the wheel by `faceDy` px of face travel and move the document
-   *  the matching distance. Everything upstream — drag deltas, coast
-   *  velocity, the release samples — is in face px, so `DIRECTION` and
-   *  `GAIN` are applied in exactly one place. */
+  /** Turn the wheel by `faceDy` px of face travel and move the camera
+   *  the matching amount. Everything upstream — drag deltas, coast
+   *  velocity, the release samples — is in face px, so `DIRECTION`,
+   *  `GAIN` and the zoom conversion are applied in exactly one place.
+   *
+   *  The drum turns either way: what the wheel is doing to the document
+   *  is a separate question from what the wheel itself is doing, and a
+   *  face that stops moving at the end of the zoom range (or the end of
+   *  the document) reads as a jam. */
   function turn(faceDy: number) {
     if (!faceDy) return;
     facePos += faceDy;
     drum.style.backgroundPositionY = `${facePos % RIDGE_PERIOD}px`;
+    if (zoomMode) { zoomBy(faceDy); return; }
     const docDy = faceDy * GAIN * DIRECTION;
     state.camera = { ...state.camera, y: state.camera.y - docDy };
+    state.notify("camera");
+  }
+
+  /** Scale the camera about the middle of the canvas. There is no
+   *  pointer position to pivot on — the finger is over on the wheel —
+   *  so the centre of what the reader is looking at is the anchor, and
+   *  the page they were reading stays where it was. Face UP zooms in,
+   *  matching every vertical slider in the app. */
+  function zoomBy(faceDy: number) {
+    const cam = state.camera;
+    const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN,
+      cam.zoom * Math.exp(-faceDy * ZOOM_GAIN)));
+    if (next === cam.zoom) return;
+    const el = state.canvasEl;
+    const cx = (el?.clientWidth || window.innerWidth) / 2;
+    const cy = (el?.clientHeight || window.innerHeight) / 2;
+    const k = next / cam.zoom;
+    // Same pivot form as `state.ts#handleWheel`: scale the
+    // camera-relative screen vector, which stays correct under a
+    // rotated camera.
+    state.camera = {
+      x: cx - k * (cx - cam.x),
+      y: cy - k * (cy - cam.y),
+      zoom: next,
+      rotation: cam.rotation,
+    };
     state.notify("camera");
   }
 
@@ -250,24 +312,46 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     coastRaf = requestAnimationFrame(coast);
   }
 
+  // ── mode ──
+  //
+  // The cap swaps what the drum drives. Nothing else about the gesture
+  // changes, so the red outline is the whole signal — and it has to be
+  // an outline rather than a border colour, because the border is the
+  // theme's and swapping it would read as a skin bug on a white page.
+
+  let zoomMode = false;
+
+  function setZoomMode(next: boolean) {
+    if (zoomMode === next) return;
+    zoomMode = next;
+    // A coast started under one mode has no business finishing under the
+    // other — a flick meant to travel the document would land as a zoom.
+    stopCoast();
+    // An outline draws outside the border box, so the root's own
+    // `overflow: hidden` (which clips the drum to the rounded corners)
+    // doesn't eat it.
+    root.style.outline = next ? `2px solid ${ZOOM_COLOR}` : "";
+    root.style.outlineOffset = next ? "2px" : "";
+    applyCapSkin();
+  }
+
+  cap.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    // Never let a press on the cap reach the drum — the cap is one of the
+    // two parts of the wheel that doesn't turn it.
+    e.stopPropagation();
+    setZoomMode(!zoomMode);
+  });
+
   // ── reposition ──
   //
-  // Hold the handle for three seconds to arm: the wheel takes a blue
-  // outline and every drag on it moves the control instead of turning
-  // it. A tap anywhere outside commits where it sits and disarms.
+  // The foot is a handle, not a mode: drag it and the wheel moves, let
+  // go and it stays where it was dropped.
 
   /** Parking spot the user dragged the wheel to, as an offset from the
    *  host box's top-left. Null until it has been moved. */
   let custom: { x: number; y: number } | null = readSavedPos();
-  let armed = false;
-  let holdTimer = 0;
-  /** Timeouts driving the per-second border steps and the arming blink. */
-  const armTimers: number[] = [];
-  let holdPointer: number | null = null;
-  let holdFrom = { x: 0, y: 0 };
-  /** Live reposition drag, or null. `el` holds the pointer capture — the
-   *  handle when the drag grew straight out of the arming hold, the
-   *  wheel body when it started as a fresh press. */
+  /** Live reposition drag, or null. `el` holds the pointer capture. */
   let move: {
     pointerId: number; el: HTMLElement;
     startX: number; startY: number; baseX: number; baseY: number;
@@ -305,60 +389,6 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     };
   }
 
-  function setArmed(next: boolean) {
-    if (armed === next) return;
-    armed = next;
-    // An outline draws outside the border box, so the root's own
-    // `overflow: hidden` (which clips the drum to the rounded corners)
-    // doesn't eat it.
-    root.style.outline = next ? `2px solid ${ARM_COLOR}` : "";
-    root.style.outlineOffset = next ? "2px" : "";
-    root.style.cursor = next ? "move" : "ns-resize";
-    if (!next) resetBorder();
-  }
-
-  /** Put the border back to the theme's own colour. `applySkin` caches
-   *  on the theme string and won't rewrite an unchanged one, so a hold
-   *  that painted over the border has to undo it explicitly. */
-  function resetBorder() {
-    root.style.borderColor = state.theme.uiBorder;
-  }
-
-  /** Step the border one shade darker per second of the hold. The
-   *  border, not the handle: the handle is under the thumb that's
-   *  holding it, and progress you can't see is progress you don't
-   *  believe in. */
-  function startArmingSteps() {
-    root.style.borderColor = ARM_STEPS[0];
-    for (let i = 1; i < ARM_STEPS.length; i++) {
-      armTimers.push(window.setTimeout(() => {
-        root.style.borderColor = ARM_STEPS[i];
-      }, i * 1000));
-    }
-  }
-
-  /** Flash the outline a couple of times as reposition mode takes hold,
-   *  so arming is an event rather than a colour that stopped changing. */
-  function blinkArmed() {
-    BLINK_SEQUENCE.forEach((colour, i) => {
-      armTimers.push(window.setTimeout(() => {
-        root.style.outlineColor = colour;
-      }, i * BLINK_STEP_MS));
-    });
-  }
-
-  function clearArmTimers() {
-    for (const t of armTimers) clearTimeout(t);
-    armTimers.length = 0;
-  }
-
-  function cancelHold() {
-    if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
-    clearArmTimers();
-    holdPointer = null;
-    if (!armed) resetBorder();
-  }
-
   function beginMove(el: HTMLElement, e: PointerEvent) {
     const host = root.parentElement?.getBoundingClientRect();
     const rect = root.getBoundingClientRect();
@@ -384,57 +414,19 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     if (!move || move.pointerId !== e.pointerId) return;
     if (move.el.hasPointerCapture(e.pointerId)) move.el.releasePointerCapture(e.pointerId);
     move = null;
-  }
-
-  /** Leave reposition mode, keeping wherever the wheel now sits. */
-  function commitPosition() {
-    if (!armed) return;
-    move = null;
-    setArmed(false);
     savePos();
   }
 
   handle.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     // Never let a press on the handle reach the drum — the handle is the
-    // one part of the wheel that doesn't scroll it.
+    // one part of the wheel that doesn't turn it.
     e.stopPropagation();
-    if (armed) { beginMove(handle, e); return; }
-    holdPointer = e.pointerId;
-    holdFrom = { x: e.clientX, y: e.clientY };
-    handle.setPointerCapture(e.pointerId);
-    startArmingSteps();
-    holdTimer = window.setTimeout(() => {
-      holdTimer = 0;
-      setArmed(true);
-      blinkArmed();
-      resetBorder();
-      // The finger is still down: hand the hold straight to a drag so
-      // arming and placing are one gesture.
-      if (holdPointer !== null) {
-        beginMove(handle, { pointerId: holdPointer, clientX: holdFrom.x, clientY: holdFrom.y } as PointerEvent);
-      }
-    }, ARM_HOLD_MS);
+    beginMove(handle, e);
   });
-  handle.addEventListener("pointermove", (e) => {
-    if (move) { applyMove(e); return; }
-    if (holdPointer !== e.pointerId) return;
-    if (Math.abs(e.clientX - holdFrom.x) > ARM_SLIP_PX
-      || Math.abs(e.clientY - holdFrom.y) > ARM_SLIP_PX) cancelHold();
-  });
-  handle.addEventListener("pointerup", (e) => { endMove(e); cancelHold(); });
-  handle.addEventListener("pointercancel", (e) => { endMove(e); cancelHold(); });
-
-  /** The tap that confirms a placement belongs to the wheel, not to the
-   *  canvas underneath — swallowed in the capture phase so it can't also
-   *  land an ink dot on the page. */
-  function onDocPointerDown(e: PointerEvent) {
-    if (!armed || root.contains(e.target as Node)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    commitPosition();
-  }
-  document.addEventListener("pointerdown", onDocPointerDown, true);
+  handle.addEventListener("pointermove", applyMove);
+  handle.addEventListener("pointerup", endMove);
+  handle.addEventListener("pointercancel", endMove);
 
   // ── input ──
 
@@ -442,8 +434,6 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     if (dragPointer !== null) return;
     e.preventDefault();
     e.stopPropagation();
-    // Armed: the wheel is being placed, not turned.
-    if (armed) { beginMove(root, e); return; }
     // A press on a spinning wheel stops it — and then becomes the drag,
     // so catching a runaway flick and re-aiming it is one gesture.
     stopCoast();
@@ -461,7 +451,6 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
   }
 
   function onPointerMove(e: PointerEvent) {
-    if (move) { applyMove(e); return; }
     if (dragPointer !== e.pointerId) return;
     e.preventDefault();
     const faceDy = e.clientY - dragLastY;
@@ -475,7 +464,6 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
   }
 
   function onPointerUp(e: PointerEvent) {
-    if (move) { endMove(e); return; }
     if (dragPointer !== e.pointerId) return;
     dragPointer = null;
     if (root.hasPointerCapture(e.pointerId)) root.releasePointerCapture(e.pointerId);
@@ -491,12 +479,15 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
   }
 
   function onPointerCancel(e: PointerEvent) {
-    if (move) { endMove(e); return; }
     if (dragPointer !== e.pointerId) return;
     dragPointer = null;
     samples.length = 0;
   }
 
+  // The drum is the root itself, so these also see the handle's and
+  // cap's events bubbling up — both stop propagation on pointerdown, and
+  // a reposition drag never sets `dragPointer`, so the guards above let
+  // the bubbled moves through untouched.
   root.addEventListener("pointerdown", onPointerDown);
   root.addEventListener("pointermove", onPointerMove);
   root.addEventListener("pointerup", onPointerUp);
@@ -520,6 +511,23 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
       + ` transparent 1px, transparent ${RIDGE_PERIOD}px)`;
     drum.style.backgroundColor = t.uiBackground;
     drum.style.backgroundPositionY = `${facePos % RIDGE_PERIOD}px`;
+    // The plinth marks are `stroke: currentColor` SVGs, and the wheel is
+    // mounted straight into the notebook container with no colour of its
+    // own — so on a dark canvas they inherited near-black ink on a
+    // near-black plinth and vanished. Paint them from the theme's own
+    // foreground, the way the ridges are.
+    handle.style.color = t.foreground;
+    handleMark.style.opacity = "0.7";
+    applyCapSkin();
+  }
+
+  /** The cap's own colours, which depend on the mode as well as the
+   *  theme — so it is re-applied on a mode flip, when the theme string
+   *  hasn't changed and `applySkin` would bail early. */
+  function applyCapSkin() {
+    const t = state.theme;
+    cap.style.color = zoomMode ? ZOOM_COLOR : t.foreground;
+    capMark.style.opacity = zoomMode ? "1" : "0.55";
   }
 
   // ── visibility ──
@@ -596,10 +604,9 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     if (next !== visible) {
       visible = next;
       root.style.display = next ? "block" : "none";
-      // A wheel that just went away can't be placed — bank wherever it
-      // had got to rather than leaving the mode armed on a hidden
-      // control that comes back outlined.
-      if (!next) { commitPosition(); stopCoast(); }
+      // A flywheel still coasting when its wheel leaves the screen would
+      // keep driving a camera nobody is looking at.
+      if (!next) { move = null; stopCoast(); }
     }
     if (visible) { applyPlacement(); applySkin(); }
   }
@@ -622,9 +629,6 @@ export function createProofScrollWheel(state: DrawingState): ProofScrollWheel {
     root,
     destroy() {
       state.removeEventListener("change", onChange);
-      document.removeEventListener("pointerdown", onDocPointerDown, true);
-      if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
-      clearArmTimers();
       ro?.disconnect();
       stopCoast();
       root.remove();

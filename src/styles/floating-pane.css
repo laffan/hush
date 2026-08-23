@@ -557,3 +557,24 @@ html.ios:not(.phone) .floating-pane.docked.docked-top .floating-pane-titlebar {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
   z-index: 3;
 }
+
+/* A pill shrink-wraps its contents, so the filename and the button
+   cluster end up touching and the whole bar is covered by things that
+   swallow a press — the title link opens the file, every button does
+   its own job, and `setupPaneDrag` bails on both. That left a docked
+   pane with no grabbable title bar at all. Reserve a fixed strip of
+   bare pill between the two: it belongs to the title bar itself, so a
+   press there starts the drag (and undocks the pane) like the full-width
+   bar's empty middle does. */
+html.ios:not(.phone) .floating-pane.docked.docked-left .floating-pane-titlebar,
+html.ios:not(.phone) .floating-pane.docked.docked-right .floating-pane-titlebar,
+html.ios:not(.phone) .floating-pane.docked.docked-top .floating-pane-titlebar {
+  /* The strip is the buttons' own margin, so drop the bar's flex gap
+     here and the reserved space is exactly 30px. */
+  gap: 0;
+}
+html.ios:not(.phone) .floating-pane.docked.docked-left .floating-pane-buttons,
+html.ios:not(.phone) .floating-pane.docked.docked-right .floating-pane-buttons,
+html.ios:not(.phone) .floating-pane.docked.docked-top .floating-pane-buttons {
+  margin-left: 30px;
+}

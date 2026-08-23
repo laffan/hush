@@ -57,7 +57,10 @@ export function handleRename(nodeId, triggerEl, state, refreshAfter) {
     li = document.querySelector(`.sl-item[data-id="${safe}"]`);
   }
   if (!li) return;
-  const nameEl = li.querySelector(".tree-item-name");
+  // An Inbox row stacks the filename over its last-edit line, both
+  // inside `.tree-item-name` — rename the name span, not the stack, or
+  // the input opens pre-filled with "Notes3 days ago".
+  const nameEl = li.querySelector(".tree-item-inbox-name") || li.querySelector(".tree-item-name");
   if (!nameEl) return;
   const rowEl = li.querySelector(".tree-item-row");
   if (rowEl) rowEl.classList.add("renaming");

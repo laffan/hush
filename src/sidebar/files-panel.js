@@ -11,6 +11,7 @@ import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pan
 import { escHtml, showPromptModal, googleLinkBadgeHtml, computeNumberLabels, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
 import {
   isInboxId, isImagesId, isPdfsId, isTrashId, isAnySpecialId, allSpecialIds,
+  isInboxItem, inboxNameHtml,
   visibleTopLevel, renderedDeskIdFor, commitRenderedChildren, isAllDesksMode, numberSkip, hasPairedGutter, getIcon,
   actionButtons, getPdfSync, buildPdfRowHtml,
   isItemActive,
@@ -190,7 +191,13 @@ export function createFilesPanel(container, state, hidePanel) {
         if (isActiveDesk) {
           row.innerHTML = `<span class="desk-active-pill">${icon}<span class="desk-active-name">${escHtml(displayName)}</span></span>${trailing}`;
         } else {
-          row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${numPrefix}${escHtml(displayName)}</span>${trailing}`;
+          // Inbox rows carry their last-edit time under the filename —
+          // the Inbox is a staging area, and how long something has been
+          // sitting in it is the fact that decides what to do with it.
+          const label = `${numPrefix}${escHtml(displayName)}`;
+          const nameHtml = (isInboxItem(state.fileTree, item) && inboxNameHtml(state, item, label))
+            || `<span class="tree-item-name">${label}</span>`;
+          row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}${nameHtml}${trailing}`;
         }
       }
       if (item.type === "image" && item.fileId) attachImageTooltipToRow(row, item.fileId, item.name);
