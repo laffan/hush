@@ -70,6 +70,22 @@ export function toggleModeOnContext(state, modeName) {
 }
 
 /**
+ * True when some surface holding a *document* is the one the user is
+ * working in — the main editor when it isn't showing a notebook, or a
+ * focused doc pane / stack column when it is.
+ *
+ * Doc-only editor features (spellcheck) key off this rather than off
+ * `currentNotebookFileId` alone. A doc open in a pane over a notebook
+ * is still a doc being written in, and testing only the main surface
+ * hid the command and made its toggle a no-op.
+ */
+export function hasActiveDocSurface(appState) {
+  if (!appState.currentNotebookFileId) return true;
+  const ctx = getActiveModeContext(appState);
+  return !!ctx?.view;
+}
+
+/**
  * Find the active per-editor mode context. Returns
  * `{ mc, view, container }` for a pane / stack column, or `null` when
  * the main editor is focused (caller falls through to global state).

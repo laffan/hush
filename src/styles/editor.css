@@ -360,12 +360,22 @@ body.file-in-trash #notebook-container .notes-canvas + * {
    browser-native ::selection rendering on top of it produced a
    doubled rectangle in project view (where block-replace decorations
    shift native selection off by a line). Make native selection
-   transparent and let drawSelection own the visuals. */
-#editor-container ::selection {
-  background: transparent;
+   transparent and let drawSelection own the visuals.
+
+   Scoped to `.cm-editor` rather than `#editor-container` so it reaches
+   every surface: panes, stack columns and the Zen / Selection Focus
+   overlays each mount their own CodeMirror outside the main container
+   and were all still painting both. CodeMirror's own version of this
+   rule only reaches `.cm-line` and its descendants, and a replace
+   decoration's widget — a link pill, a citation — renders outside the
+   line's span, so the two together are what actually covers a line.
+   `!important` because CodeMirror's is important too, and a tie has to
+   land on transparent. */
+.cm-editor ::selection {
+  background: transparent !important;
 }
-#editor-container ::-moz-selection {
-  background: transparent;
+.cm-editor ::-moz-selection {
+  background: transparent !important;
 }
 
 #editor-container .cm-gutters {

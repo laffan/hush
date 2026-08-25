@@ -99,14 +99,10 @@ function buildDecorations(view, appState, showInlineArrow) {
       const key = title.toLowerCase();
       const occurrence = occCount.get(key) || 0;
       occCount.set(key, occurrence + 1);
-      // Skip if the cursor sits inside the link so the user can edit it.
-      const cursorInside = cursors.some(
-        (c) =>
-          (c.from >= from && c.from <= to) ||
-          (c.to >= from && c.to <= to) ||
-          (c.from <= from && c.to >= to),
-      );
-      if (cursorInside) continue;
+      // Reveal the raw `[[title]]` only while the selection is inside
+      // this link, so the user can edit it. A link merely swept up in a
+      // larger selection stays rendered — see link-decorator.js.
+      if (cursors.some((c) => c.from >= from && c.to <= to)) continue;
 
       const note = appState ? resolveWikilink(appState, title) : null;
       builder.add(from, to, Decoration.replace({

@@ -23,6 +23,7 @@ import { EditorView } from "@codemirror/view";
 import { EditorState, EditorSelection } from "@codemirror/state";
 import { createBaseExtensions } from "./base-extensions.js";
 import { applyBlockCursor } from "./block-cursor.js";
+import { bindLineIndicatorToContainer } from "./line-indicator.js";
 
 let active = null;
 
@@ -66,7 +67,11 @@ function enterSelectionFocus(state) {
   stage.className = "selection-focus-stage";
   // Match the source view's column width so the line measure the user
   // dialled in carries over to the focused view.
-  if (payload.columnWidth) stage.style.width = `${payload.columnWidth}px`;
+  // Plus the gutter the stage's own CSS reserves for the line
+  // indicator's margin marks, so the text measure stays the source's.
+  if (payload.columnWidth) {
+    stage.style.width = `calc(${payload.columnWidth}px + 2 * var(--overlay-gutter, 28px))`;
+  }
   overlay.appendChild(stage);
 
   // Bumped font size — the source's own size scaled by the saved
@@ -84,6 +89,10 @@ function enterSelectionFocus(state) {
   document.body.classList.add("selection-focus-active");
   document.body.appendChild(overlay);
   applyBlockCursor(state);
+  // The line indicator's variant skin is a container class, and this
+  // overlay mounts its CodeMirror outside `#editor-container` — the
+  // same gap Zen had.
+  const unbindLineIndicator = bindLineIndicatorToContainer(overlay, state);
 
   // Build a fresh CodeMirror seeded with the captured selection. The
   // base extensions cover markdown, callouts, links, formatting, image
@@ -136,6 +145,7 @@ function enterSelectionFocus(state) {
     view,
     onKeydown,
     onSettingsChanged,
+    unbindLineIndicator,
     sourceView: payload.sourceView,
     from: payload.from,
     to: payload.to,
@@ -154,6 +164,7 @@ function exitSelectionFocus(state) {
 
   document.removeEventListener("keydown", a.onKeydown, true);
   if (a.onSettingsChanged) state.off("settings-changed", a.onSettingsChanged);
+  if (a.unbindLineIndicator) a.unbindLineIndicator();
   a.view.destroy();
   a.overlay.remove();
   document.body.classList.remove("selection-focus-active");

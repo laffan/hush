@@ -21,7 +21,7 @@ import {
   enterSendSelectedPicker, enterFilePicker, enterDeskPicker,
 } from "./command-palette-pickers.js";
 import { addGutter, openGutter, closeGutter, gutterAddHidden, gutterOpenHidden, gutterCloseHidden } from "./project/gutter-commands.js";
-import { toggleModeOnContext } from "./state/mode-context.js";
+import { toggleModeOnContext, hasActiveDocSurface } from "./state/mode-context.js";
 import { deleteTreeNode } from "./state/state-tree.js";
 import {
   getActivePaneId, fitActivePaneToGap, createPane,
@@ -499,7 +499,12 @@ function buildCommands(state) {
       action: (s) => s.emit("toggle-outline-panel") },
     { id: "proofread", label: "Proofread mode", icon: icons.proofread, shortcutKey: null, ctx: "doc",
       action: (s) => s.toggleProofread() },
-    { id: "spellcheck", label: "Spellcheck", icon: icons.proofread, shortcutKey: null, ctx: "doc",
+    // Not `ctx: "doc"`: spellcheck rides the shared extension set, so a
+    // doc pane over an open notebook can be spellchecked even though the
+    // main surface is a canvas. The gate is whether any doc surface is
+    // in play.
+    { id: "spellcheck", label: "Spellcheck", icon: icons.proofread, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !hasActiveDocSurface(s),
       action: (s) => s.toggleSpellcheck() },
     { id: "copy-as-google-doc", label: "Copy as Google Doc", icon: icons.export, shortcutKey: null, ctx: "doc",
       action: (s) => import("./editor/google-docs/copy-command.js").then((m) => s.editor?.view && m.copyAsGoogleDoc(s.editor.view)) },
@@ -651,12 +656,20 @@ function buildActiveModeTurnoffs(state) {
       id: "turnoff-zenFocus", label: "Turn off Zen Focus", icon: icons.focus,
       shortcutKey: "shortcutZenFocus", action: (s) => s.toggleZenFocus(),
     }];
-    if (state.currentNotebookFileId) return zen;
+    if (state.currentNotebookFileId) return [...zen, ...notebookModeTurnoffs(state)];
     // In doc mode, prepend Zen alongside the doc-only turn-offs below.
     return [...zen, ...docModeTurnoffs(state)];
   }
-  if (state.currentNotebookFileId) return [];
+  if (state.currentNotebookFileId) return notebookModeTurnoffs(state);
   return docModeTurnoffs(state);
+}
+
+/** The turn-offs that still apply with a notebook as the main surface.
+ *  Spellcheck is the only one: it reaches a focused doc pane over the
+ *  canvas, so a user who turned it on there needs a way back off. */
+function notebookModeTurnoffs(state) {
+  if (!state.spellcheckMode || !hasActiveDocSurface(state)) return [];
+  return docModeTurnoffs(state).filter((m) => m.id === "turnoff-spellcheckMode");
 }
 
 function docModeTurnoffs(state) {

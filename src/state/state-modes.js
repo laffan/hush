@@ -4,6 +4,7 @@
  */
 
 import { getDeskRatchet, setDeskRatchet } from "./state-desks.js";
+import { hasActiveDocSurface } from "./mode-context.js";
 
 /** Toggle the active desk's persistent Ratchet mode — every Doc in the
  *  desk goes forward-only until this is turned back off, across
@@ -62,7 +63,12 @@ export function toggleProofread(state) {
 }
 
 export function toggleSpellcheck(state) {
-  if (state.currentNotebookFileId) return;
+  // Spellcheck rides `createBaseExtensions`, so it reaches panes and
+  // stack columns as well as the main editor — the gate is "is there a
+  // document surface in play", not "is the main editor showing one".
+  // Testing the latter made this a silent no-op whenever a notebook was
+  // open, even with the doc pane the user was typing in focused.
+  if (!hasActiveDocSurface(state)) return;
   state.spellcheckMode = !state.spellcheckMode;
   state.emit("mode-changed");
   state.updateSettings({ spellcheckMode: state.spellcheckMode });

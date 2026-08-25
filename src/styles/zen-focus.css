@@ -47,9 +47,15 @@
 }
 
 .zen-focus-stage {
+  /* Room outside the text column for the line indicator's arrows and
+     border stripes, which hang 13-18 px off the text edge. The stage
+     grows by the same amount it gives away, so the measure the user
+     dialled in is still exactly --column-width — without it the
+     scroller clipped the marks at the column edge. */
+  --overlay-gutter: 28px;
   /* Track the editor's --column-width so resizing in Zen matches the
      main editor. Capped at 100 % to keep narrow viewports tidy. */
-  width: min(100%, var(--column-width, 800px));
+  width: min(100%, calc(var(--column-width, 800px) + 2 * var(--overlay-gutter)));
   height: 100%;
   display: flex;
   align-items: stretch;
@@ -80,7 +86,7 @@
 .zen-focus-stage .cm-scroller {
   font-size: var(--zen-font-size);
   line-height: 1.5;
-  padding: 50vh 0;
+  padding: 50vh var(--overlay-gutter);
   scrollbar-width: none;
 }
 .zen-focus-stage .cm-scroller::-webkit-scrollbar { display: none; }

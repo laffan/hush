@@ -32,6 +32,9 @@ import { focusSentenceBounds } from "./focus-mode.js";
 // Keep in sync with CITE_RE in doc-export-modal.js and is_citekey_char
 // in src-tauri/src/typst_export/markdown.rs.
 const CITEKEY_BODY = "[A-Za-z0-9_:.+-]+";
+/** One citekey character — the same class as `CITEKEY_BODY`, used to
+ *  run forward from the caret to the end of the key it sits in. */
+const CITEKEY_CHAR_RE = /[A-Za-z0-9_:.+-]/;
 const BRACKET_ITEM_RE = new RegExp(`^\\[@(${CITEKEY_BODY})\\](?:\\(([^)\\n]*)\\))?`);
 const BARE_ITEM_RE = new RegExp(`^@(${CITEKEY_BODY})`);
 
@@ -388,15 +391,10 @@ function buildDecorations(view, appState) {
     for (const item of parseCitations(line.text)) {
       const from = line.from + item.from;
       const to = line.from + item.to;
-      // Show the raw markdown while the cursor is inside this item so
-      // the citekey and deep link stay editable.
-      const cursorInside = cursors.some(
-        (c) =>
-          (c.from >= from && c.from <= to) ||
-          (c.to >= from && c.to <= to) ||
-          (c.from <= from && c.to >= to),
-      );
-      if (cursorInside) continue;
+      // Show the raw markdown while the selection is inside this item
+      // so the citekey and deep link stay editable. A citation caught
+      // in a larger selection stays a pill — see link-decorator.js.
+      if (cursors.some((c) => c.from >= from && c.to <= to)) continue;
       const dimmed = focusBounds
         ? (to <= focusBounds.from || from >= focusBounds.to)
         : false;
@@ -516,6 +514,15 @@ function findActiveCitationContext(state) {
     if (ch === "[" || ch === "@") return null; // plain bracket / bare @
   }
   if (openIdx < 0) return null;
+  // The scan above only sees what's behind the caret, so an arrow key
+  // into a *finished* citation looked exactly like one being typed and
+  // the picker reopened, stealing the caret out of text the user was
+  // only passing through. Look ahead as well: run to the end of the
+  // citekey and, if a `]` closes it, this citation already exists —
+  // it should expand like any other link and leave the caret alone.
+  let end = localCursor;
+  while (end < text.length && CITEKEY_CHAR_RE.test(text[end])) end++;
+  if (text[end] === "]") return null;
   return { from: line.from + openIdx, to: head, query: text.slice(openIdx, localCursor) };
 }
 

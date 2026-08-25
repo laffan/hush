@@ -11,6 +11,7 @@ import {
 } from "./command-palette-pickers.js";
 import { createPane } from "./pane/pane-manager.js";
 import { icons, buildCommands, buildActiveModeTurnoffs } from "./command-palette-commands.js";
+import { getActiveModeContext } from "./state/mode-context.js";
 
 let overlay = null;
 let activeIndex = 0;
@@ -186,13 +187,23 @@ function open(state) {
     renderList(list, state);
   });
 
-  // Focus the main editor after close(), but only if we weren't hosting
-  // an active notebook text shape — close() already handed focus back
-  // to the textarea, and stealing it away to the hidden main editor
-  // would blur the textarea and (after the 150ms timer fires) commit
-  // the shape anyway.
-  const focusMainEditorIfAppropriate = () => {
+  // Hand focus back to the surface the command ran against, only if we
+  // weren't hosting an active notebook text shape — close() already
+  // handed focus back to the textarea, and stealing it away to the
+  // hidden main editor would blur the textarea and (after the 150ms
+  // timer fires) commit the shape anyway.
+  //
+  // "The surface" is the focused pane or stack column when there is one,
+  // not the main editor behind it. Sending the caret to the editor
+  // underneath is wrong on its face, and it also silently defeated
+  // anything that keys off which editor holds focus: spellcheck only
+  // checks and underlines the focused surface, so toggling it from the
+  // palette with a pane focused left the pane blank until the user
+  // clicked back into it.
+  const restoreFocusToActiveSurface = () => {
     if (suspendedNotebookText) return; // close() will focus the textarea
+    const ctx = getActiveModeContext(state);
+    if (ctx?.view) { ctx.view.focus(); return; }
     if (state.editor) state.editor.focus();
   };
 
@@ -209,10 +220,20 @@ function open(state) {
     if (cmd.id === "zotero") suspendedNotebookText = null;
     close();
     cmd.action(state, paletteHandle);
+    // Closing the palette blurs its input, so unless the command opened
+    // UI of its own the caret is left on <body> and the surface the
+    // command ran against never gets it back. Restore it only when
+    // nothing has claimed focus — a command that raised a modal, a
+    // prompt or a picker owns the caret and must keep it.
+    queueMicrotask(() => {
+      const el = document.activeElement;
+      if (el && el !== document.body && el !== document.documentElement) return;
+      restoreFocusToActiveSurface();
+    });
   }
 
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { e.preventDefault(); close(); focusMainEditorIfAppropriate(); return; }
+    if (e.key === "Escape") { e.preventDefault(); close(); restoreFocusToActiveSurface(); return; }
     if (e.key === "ArrowDown") { e.preventDefault(); keyboardNav = true; if (filteredCommands.length) { activeIndex = (activeIndex + 1) % filteredCommands.length; renderList(list, state); } return; }
     if (e.key === "ArrowUp") { e.preventDefault(); keyboardNav = true; if (filteredCommands.length) { activeIndex = (activeIndex - 1 + filteredCommands.length) % filteredCommands.length; renderList(list, state); } return; }
     if (e.key === "Enter") {
@@ -223,7 +244,7 @@ function open(state) {
   });
 
   overlay.addEventListener("mousedown", (e) => {
-    if (!palette.contains(e.target)) { close(); focusMainEditorIfAppropriate(); }
+    if (!palette.contains(e.target)) { close(); restoreFocusToActiveSurface(); }
   });
 
   // Real mouse movement (mouse-only event, never fired by touch) hands

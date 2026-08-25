@@ -99,12 +99,13 @@ function buildDecorations(view, appState) {
       const text = match[1];
       const url = match[2];
 
-      // Skip if any cursor/selection overlaps this link
-      const cursorInside = cursors.some(c =>
-        (c.from >= from && c.from <= to) || (c.to >= from && c.to <= to) ||
-        (c.from <= from && c.to >= to)
-      );
-      if (cursorInside) continue;
+      // Reveal the raw markdown only while the selection is *inside*
+      // this link — a caret in it, or a range picking out part of it.
+      // A link merely swept up in a larger selection stays rendered:
+      // the reveal exists so the link can be edited, and expanding one
+      // (or twenty) mid-sweep just reflows the paragraph under the
+      // user's drag.
+      if (cursors.some((c) => c.from >= from && c.to <= to)) continue;
 
       const dimmed = focusBounds
         ? (to <= focusBounds.from || from >= focusBounds.to)

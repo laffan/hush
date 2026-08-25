@@ -22,6 +22,7 @@ import { createBaseExtensions } from "./base-extensions.js";
 import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createProjectViewField, createSeparatorFilter } from "./plugins/project-view.js";
 import { applyBlockCursor } from "./block-cursor.js";
+import { bindLineIndicatorToContainer } from "./line-indicator.js";
 import { panes } from "../pane/pane-state.js";
 import { getActivePaneId } from "../pane/pane-manager.js";
 import { getStackInstance } from "../stack/stack-bridge.js";
@@ -256,6 +257,12 @@ export function enterZenFocus(state) {
   // it's the overlay that needs it — Zen mounts its CodeMirror outside
   // `#editor-container` so the cursor CSS wouldn't otherwise reach it.
   applyBlockCursor(state);
+  // Same story for the line indicator: `createBaseExtensions` brings the
+  // overlay-drawing plugin, but the variant skin is a `line-ind-*` class
+  // on a container, and Zen's CodeMirror lives outside `#editor-container`
+  // where nothing had put one. Without this the indicator drew and
+  // stayed invisible.
+  const unbindLineIndicator = bindLineIndicatorToContainer(overlay, state);
 
   // Build the Zen shadow editor. createBaseExtensions covers markdown,
   // callouts, links, etc. — but it intentionally omits focus mode (and
@@ -357,6 +364,7 @@ export function enterZenFocus(state) {
     onModeChanged,
     wasFocusMode,
     zenResizerCleanup,
+    unbindLineIndicator,
   };
 }
 
@@ -375,6 +383,7 @@ export function exitZenFocus(state) {
   if (hintFadeTimer) { clearTimeout(hintFadeTimer); hintFadeTimer = null; }
 
   if (a.zenResizerCleanup) { try { a.zenResizerCleanup(); } catch (_) {} }
+  if (a.unbindLineIndicator) a.unbindLineIndicator();
   a.zenView.destroy();
   a.overlay.remove();
   document.body.classList.remove("zen-focus-active");
@@ -433,7 +442,10 @@ function installZenResizers(state, overlay, stage) {
     const sidePad = Math.max(20, Math.floor((w - colW) / 2));
     // Drive the stage width directly so changes from the resizers
     // apply instantly without depending on a global CSS-var update.
-    stage.style.width = colW + "px";
+    // Plus the gutter the stage reserves either side for the line
+    // indicator's margin marks — `colW` is the *text* measure, and the
+    // scroller's padding would otherwise eat it (zen-focus.css).
+    stage.style.width = `calc(${colW}px + 2 * var(--overlay-gutter, 28px))`;
     // Position the resizers 10 px outside the stage's edges to match
     // the main editor's resizer geometry.
     left.style.left = (sidePad - 10) + "px";
