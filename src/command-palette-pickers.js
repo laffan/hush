@@ -19,7 +19,7 @@ import { paneIndicatorsFor } from "./sidebar/files-panel-pane-indicators.js";
 import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "./pane/pane-state.js";
 import { sendSelectedToFile } from "./selection-extract.js";
 import { addNotebookAsGutter } from "./project/gutter-commands.js";
-import { typeIcons, deskRatchetGlyph } from "./sidebar/files-panel-shared.js";
+import { typeIcons, leafIcon, deskRatchetGlyph } from "./sidebar/files-panel-shared.js";
 import { collectFileLeaves, activeDeskSubtree } from "./command-palette-helpers.js";
 import { getDeskRecentFileIds } from "./state/recent-files.js";
 import deskRaw from "./sidebar/sidebar_icons/desk.svg?raw";
@@ -170,7 +170,7 @@ export function enterFilePicker(palette, state, placeholder, onPick, { includePr
   leaves = leaves.slice().sort((a, b) => (rank.get(a.fileId) ?? Infinity) - (rank.get(b.fileId) ?? Infinity));
   const items = leaves.map((f) => ({
     id: "file-" + f.id, label: f.name, shortcutKey: null,
-    icon: typeIcons[f.type] || typeIcons.document,
+    icon: leafIcon(f),
     paneIndicators: paneIndicatorsFor({ fileId: f.fileId, type: f.type }, state),
     action: () => onPick(f),
   }));

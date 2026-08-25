@@ -81,6 +81,31 @@ export function createSpellcheckPlugin(stateRef) {
           return;
         }
 
+        // Typing moves every word after the caret, but the issue list is
+        // whatever the last check returned — absolute offsets into the
+        // document as it was. Map both the stored ranges and the live
+        // decoration set through the change so the underlines travel
+        // with their words instead of sitting at stale offsets until the
+        // debounce fires. (CodeMirror maps nothing on a ViewPlugin's
+        // behalf; without this the marks drifted backwards under the
+        // text and snapped into place ~600 ms after the last keystroke.)
+        // `from` maps with assoc 1 and `to` with -1, matching how a mark
+        // decoration maps itself: text typed against either edge of a
+        // word lands outside the underline rather than extending it.
+        if (update.docChanged) {
+          const s = _viewState.get(this.view);
+          if (s && s.issues.length) {
+            const mapped = [];
+            for (const issue of s.issues) {
+              const from = update.changes.mapPos(issue.from, 1);
+              const to = update.changes.mapPos(issue.to, -1);
+              if (from < to) mapped.push({ ...issue, from, to });
+            }
+            s.issues = mapped;
+          }
+          this.decorations = this.decorations.map(update.changes);
+        }
+
         if (active && flipped) {
           if (this._timer) { clearTimeout(this._timer); this._timer = null; }
           if (this.view.hasFocus) this.runCheckNow();

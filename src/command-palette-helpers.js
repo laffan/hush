@@ -51,10 +51,23 @@ export function collectFileLeaves(fileTree) {
       // Project PDF aliases mirror a desk PDF that's already listed.
       if (n.pdfAlias) continue;
       if ((n.type === "document" || n.type === "notebook" || n.type === "stack" || n.type === "pdf") && n.fileId) {
-        out.push({ id: n.id, name: n.name || "Untitled", type: n.type, fileId: n.fileId });
+        // Carry the decorations that change a leaf's glyph — a picker
+        // row should read the same as the sidebar row for the same
+        // file, and `leafIcon` needs them to tell a proofread or gutter
+        // notebook (and a flagged or style-locked doc) apart from a
+        // plain one. Without them every notebook came back as the
+        // stock dot grid.
+        out.push({
+          id: n.id, name: n.name || "Untitled", type: n.type, fileId: n.fileId,
+          proofread: n.proofread, gutter: n.gutter,
+          flagged: n.flagged, lockedStyleId: n.lockedStyleId,
+        });
       }
       if (n.type === "project" && n.id !== "__inbox__" && !n.id?.startsWith("__inbox__:")) {
-        out.push({ id: n.id, name: n.name || "Untitled", type: "project", fileId: n.id });
+        out.push({
+          id: n.id, name: n.name || "Untitled", type: "project", fileId: n.id,
+          flagged: n.flagged,
+        });
       }
       if (n.children?.length) walk(n.children);
     }

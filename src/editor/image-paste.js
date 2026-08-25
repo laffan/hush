@@ -1,71 +1,28 @@
 /**
- * Image paste — when the clipboard payload contains image bytes
- * (e.g. a screenshot or "Copy Image" from another app), save them to
- * the Images folder and insert a markdown ref at the cursor.
+ * Image paste — when the clipboard holds image bytes (a screenshot,
+ * "Copy Image" from another app, an image copied out of a file
+ * browser), save them to the Images folder and insert a markdown ref at
+ * the cursor.
  *
  * Mirrors the drag-drop image path so the same Local Sync sibling-write
  * rule applies for Local Sync docs. Lives in its own module so editor.js
  * stays under the line limit and pane editors pick it up via the same
  * `createBaseExtensions` extension list.
  *
- * Three sources are checked, in order, because WKWebView's clipboard
- * exposure varies by platform:
- *   1. `event.clipboardData.items` — standard browser path.
- *   2. `event.clipboardData.files` — populated when items isn't (some
- *      WKWebView builds; some "Copy image" sources).
- *   3. `navigator.clipboard.read()` — async fallback for macOS Tauri,
- *      where WKWebView sometimes strips the synchronous payload but
- *      keeps the system clipboard reachable while transient activation
- *      from the paste gesture is alive.
+ * The event's own `clipboardData` is checked first — it's synchronous
+ * and needs no permission. When it comes up empty (WKWebView routinely
+ * strips image bytes from it) the read falls to `clipboard-image.js`,
+ * which goes through the Tauri clipboard plugin rather than
+ * `navigator.clipboard.read()`. That ordering is the fix for "pasting
+ * an image into a Doc does nothing": the browser API's answer on macOS
+ * is a system "Paste from …" prompt, and an image that only arrives
+ * behind a prompt may as well not arrive.
  */
 import { EditorView } from "@codemirror/view";
 import { defaultLocalSyncContext } from "./base-extensions.js";
-
-function collectImageFilesFromEvent(event) {
-  const cd = event.clipboardData;
-  if (!cd) return [];
-  const out = [];
-  const items = cd.items;
-  if (items) {
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      if (it.kind === "file" && (it.type || "").startsWith("image/")) {
-        const f = it.getAsFile();
-        if (f) out.push(f);
-      }
-    }
-  }
-  if (out.length === 0 && cd.files) {
-    for (let i = 0; i < cd.files.length; i++) {
-      const f = cd.files[i];
-      if (f && (f.type || "").startsWith("image/")) out.push(f);
-    }
-  }
-  return out;
-}
-
-async function readImagesViaClipboardApi() {
-  if (typeof navigator === "undefined" || !navigator.clipboard?.read) return [];
-  try {
-    const items = await navigator.clipboard.read();
-    const out = [];
-    for (const item of items) {
-      for (const t of item.types || []) {
-        if (typeof t === "string" && t.startsWith("image/")) {
-          try {
-            const blob = await item.getType(t);
-            const ext = (t.split("/")[1] || "png").split(";")[0];
-            out.push(new File([blob], `pasted-${Date.now()}.${ext}`, { type: t }));
-          } catch (_) { /* skip this type */ }
-          break; // one image per item is enough
-        }
-      }
-    }
-    return out;
-  } catch (_) {
-    return [];
-  }
-}
+import {
+  imageFilesFromDataTransfer, readClipboardImageDataUrl, dataUrlToFile,
+} from "../clipboard-image.js";
 
 export function createImagePasteExtension(state, opts) {
   const getImageContext = opts?.getImageContext || (() => defaultLocalSyncContext(state));
@@ -75,31 +32,37 @@ export function createImagePasteExtension(state, opts) {
       ? { folderId: ctx.folderId, baseDir: ctx.baseDir || "" }
       : null;
   }
+  function insert(view, files) {
+    if (!files.length) return;
+    const pos = view.state.selection.main.head;
+    import("./file-drop.js")
+      .then((m) => m.insertImagesAtPos(state, view, files, pos, localSyncFromCtx()))
+      .catch((e) => console.error("Image paste failed:", e));
+  }
   return EditorView.domEventHandlers({
     paste(event, view) {
-      const sync = collectImageFilesFromEvent(event);
+      const sync = imageFilesFromDataTransfer(event.clipboardData);
       if (sync.length > 0) {
         event.preventDefault();
-        const pos = view.state.selection.main.head;
-        import("./file-drop.js")
-          .then((m) => m.insertImagesAtPos(state, view, sync, pos, localSyncFromCtx()))
-          .catch((e) => console.error("Image paste failed:", e));
+        insert(view, sync);
         return true;
       }
-      // Async fallback — only fires when sync paths returned nothing.
-      // On macOS Tauri WKWebView the synchronous clipboardData is
-      // sometimes empty for image bytes even though the OS clipboard
-      // has them. The async Clipboard API still works while the paste
-      // gesture's transient activation is alive, so kick it off without
-      // preventDefault — if it finds an image we insert, otherwise CM's
-      // own paste handles the (likely empty) text payload.
-      readImagesViaClipboardApi().then((files) => {
-        if (!files.length) return;
-        const pos = view.state.selection.main.head;
-        import("./file-drop.js")
-          .then((m) => m.insertImagesAtPos(state, view, files, pos, localSyncFromCtx()))
-          .catch((e) => console.error("Image paste (async) failed:", e));
-      }).catch((e) => console.warn("[paste] clipboard.read failed:", e));
+      // No image on the event. Ask the OS clipboard — but only when the
+      // event carried no text either. A clipboard holding text is a
+      // text paste, and macOS hands out an image representation of some
+      // rich-text copies (Word, Excel), so reading unconditionally would
+      // drop a picture of the words in place of the words. The reported
+      // failure is the other case exactly: WKWebView strips image bytes
+      // and leaves `clipboardData` empty.
+      if ((event.clipboardData?.getData("text/plain") || "").length > 0) return false;
+      // Started here, in the handler's own task, so the browser fallback
+      // still holds the paste gesture's transient activation. We can't
+      // await the answer before deciding whether to preventDefault, so
+      // let CodeMirror have the (empty) event and insert the image when
+      // it lands.
+      readClipboardImageDataUrl()
+        .then((dataUrl) => { if (dataUrl) insert(view, [dataUrlToFile(dataUrl)]); })
+        .catch((e) => console.warn("[paste] clipboard image read failed:", e));
       return false;
     },
   });

@@ -249,9 +249,25 @@ body.file-in-trash #notebook-container .notes-canvas + * {
    skin the overlay accordingly. The preview pane uses the same
    `.preview-active-line` shim it always had, since it only ever shows
    one short line of demo text. */
+/* Every mark resolves its colour through `--line-ind-paint` so the
+   unfocused state is one swap rather than an override per variant. The
+   two states mirror the pane border exactly: the live surface paints in
+   the caret colour, an unfocused one in the panel-border grey. That
+   grey is itself translucent, so the highlight's wash mixes at a higher
+   ratio (`--line-ind-wash`) to land at a comparable weight instead of
+   fading to nothing. */
+.hush-line-ind,
+.preview-active-line {
+  --line-ind-paint: var(--line-indicator-color, var(--cursor));
+  --line-ind-wash: 10%;
+}
+.hush-line-ind.hush-line-ind-muted {
+  --line-ind-paint: var(--panel-border, rgba(128, 128, 128, 0.35));
+  --line-ind-wash: 28%;
+}
 .line-ind-highlight .hush-line-ind,
 .line-ind-highlight .preview-active-line {
-  background-color: color-mix(in srgb, var(--line-indicator-color, var(--cursor)) 10%, transparent);
+  background-color: color-mix(in srgb, var(--line-ind-paint) var(--line-ind-wash), transparent);
 }
 /* Borders sit 10 px outside the text column (matching the arrow gap)
    rather than hugging the text edge, so the indicator reads as a
@@ -268,7 +284,7 @@ body.file-in-trash #notebook-container .notes-canvas + * {
   top: 0;
   bottom: 0;
   width: 3px;
-  background-color: var(--line-indicator-color, var(--cursor));
+  background-color: var(--line-ind-paint);
   pointer-events: none;
 }
 .line-ind-left-border .hush-line-ind::before,
@@ -308,12 +324,32 @@ body.file-in-trash #notebook-container .notes-canvas + * {
 .line-ind-double-arrow .hush-line-ind::before,
 .line-ind-double-arrow .preview-active-line::before {
   left: -18px;
-  border-left: 8px solid var(--line-indicator-color, var(--cursor));
+  border-left: 8px solid var(--line-ind-paint);
 }
 .line-ind-double-arrow .hush-line-ind::after,
 .line-ind-double-arrow .preview-active-line::after {
   right: -18px;
-  border-right: 8px solid var(--line-indicator-color, var(--cursor));
+  border-right: 8px solid var(--line-ind-paint);
+}
+
+/* Flush mode (panes, stack columns) — the overlay already spans the
+   host's inner edges, so the marks sit *inside* it rather than hanging
+   in a gutter that doesn't exist. Without this they landed under the
+   pane's rounded border and were clipped away. Overrides the shared
+   offsets above, so it has to come after them. */
+.hush-line-ind-flush.hush-line-ind-left-border::before,
+.hush-line-ind-flush.hush-line-ind-border::before {
+  left: 0;
+}
+.hush-line-ind-flush.hush-line-ind-border::after {
+  right: 0;
+}
+.hush-line-ind-flush.hush-line-ind-left-arrow::before,
+.hush-line-ind-flush.hush-line-ind-double-arrow::before {
+  left: 2px;
+}
+.hush-line-ind-flush.hush-line-ind-double-arrow::after {
+  right: 2px;
 }
 
 #editor-container .cm-selectionBackground {

@@ -63,6 +63,7 @@
     "deep-link:default",
     "clipboard-manager:default",
     "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-read-image",
     "clipboard-manager:allow-write-text",
     "pencil:default",
     "icloud-folder:default",

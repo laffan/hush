@@ -37,8 +37,14 @@ export function createPaneEditor(container, appState, onChange, opts) {
   const modeRef = opts?.modeContext || appState;
   const hasModeCtx = !!opts?.modeContext;
 
+  // `flushLineIndicator`: a pane / stack column has no gutter for the
+  // arrow + border indicators to hang in, and its host clips — so they
+  // attach to this surface's own edges instead of to the text column.
   const { extensions, themeComp, highlightComp, shortcutComp, editableComp } =
-    createBaseExtensions(modeRef, onChange ? () => onChange() : null, { getImageContext });
+    createBaseExtensions(modeRef, onChange ? () => onChange() : null, {
+      getImageContext,
+      flushLineIndicator: true,
+    });
 
   const dryPlugin = createDryHighlightPlugin(modeRef);
 

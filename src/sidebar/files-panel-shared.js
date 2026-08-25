@@ -75,6 +75,34 @@ export const typeIcons = {
   desk: `<svg viewBox="0 0 24 24" class="tree-type-icon desk-icon"><path d="M4 7L4 17"/><path d="M1 7L23 7"/><path d="M14 14H20"/><path d="M20 7L20 17"/><path d="M14 7L14 17"/></svg>`,
 };
 
+/** Icon for one file leaf — a document, notebook, stack, PDF or
+ *  project — resolving the decorations that change its glyph: a gutter
+ *  or proofread notebook, a flag, a locked style. Container and
+ *  special-folder rows are the sidebar's own business and stay in
+ *  `files-panel-rows.js#getIcon`, which delegates here for the rest.
+ *
+ *  Shared so a row in the command palette's file pickers reads as the
+ *  same file the sidebar shows. The pickers used to index `typeIcons`
+ *  by bare type, which drew every notebook — proofread or not — as the
+ *  stock dot grid.
+ */
+export function leafIcon(item) {
+  // A project's gutter notebook reads as an attachment of the doc it
+  // sits directly beneath — its icon is the notebook dot-grid bracketed
+  // by a vertical rule on each side.
+  if (item.type === "notebook" && item.gutter) return typeIcons.gutter;
+  // A proofread notebook is a PDF cut into a canvas — worth telling
+  // apart from an ordinary notebook at a glance, since a desk can end
+  // up holding one per paper.
+  if (item.type === "notebook" && item.proofread) return typeIcons.proofNotebook;
+  if (item.flagged) {
+    return typeIcons[item.type + "Flagged"] || typeIcons[item.type] || typeIcons.document;
+  }
+  if (item.type === "pdf") return typeIcons.pdf;
+  if (item.lockedStyleId && item.type === "document") return typeIcons.documentLocked;
+  return typeIcons[item.type] || typeIcons.document;
+}
+
 // Six-dot drag-handle glyph, shared by the desk-switcher popover rows and
 // the all-desks file-panel rows so desks can be grabbed for reordering.
 export const DRAG_HANDLE_SVG = `<svg viewBox="0 0 16 16" class="drag-handle-icon" width="12" height="12" aria-hidden="true"><circle cx="6" cy="4" r="1.2"/><circle cx="10" cy="4" r="1.2"/><circle cx="6" cy="8" r="1.2"/><circle cx="10" cy="8" r="1.2"/><circle cx="6" cy="12" r="1.2"/><circle cx="10" cy="12" r="1.2"/></svg>`;

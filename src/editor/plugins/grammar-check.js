@@ -95,6 +95,26 @@ export function createGrammarCheckPlugin(stateRef) {
           return;
         }
 
+        // Keep the underlines on their words while the user types. The
+        // issue list holds absolute offsets into the document the last
+        // check saw; CodeMirror maps nothing on a ViewPlugin's behalf,
+        // so without this every mark after the caret sat at a stale
+        // offset — drifting backwards under the text until the 1.5 s
+        // debounce rebuilt them. Same mapping as spellcheck.js.
+        if (update.docChanged) {
+          const st = _viewState.get(this.view);
+          if (st && st.issues.length) {
+            const mapped = [];
+            for (const issue of st.issues) {
+              const from = update.changes.mapPos(issue.from, 1);
+              const to = update.changes.mapPos(issue.to, -1);
+              if (from < to) mapped.push({ ...issue, from, to });
+            }
+            st.issues = mapped;
+          }
+          this.decorations = this.decorations.map(update.changes);
+        }
+
         if (active && flipped) {
           // Toggle just flipped on — fire immediately so the loading
           // modal is up across the whole cold-start dictionary build,

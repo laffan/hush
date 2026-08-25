@@ -7,6 +7,10 @@
  * root of the target desk's children (preserving sub-tree structure).
  *
  * Send: the node is moved (removed from source, appended to target).
+ * A send is a departure, so the source desk lets go of the surface
+ * too — the open editor drops to the empty pane and any pane backed by
+ * a file inside the subtree closes, rather than leaving the user typing
+ * into a document their desk no longer holds.
  * Copy: the subtree is recursively cloned. Doc / notebook leaves get
  * fresh fileIds via `state.duplicateFile`; folders / projects become
  * structural clones with new tree-node ids.
@@ -19,6 +23,7 @@
 
 import { escHtml, typeIcons, deskRatchetGlyph } from "./files-panel-shared.js";
 import { findNode, removeNode } from "../state/tree-helpers.js";
+import { collectTypedFileIds } from "../state/state-tree.js";
 import deskRaw from "./sidebar_icons/desk.svg?raw";
 
 let _overlayEl = null;
@@ -108,10 +113,21 @@ async function runSendOrCopy(state, nodeId, targetDeskId, mode) {
   if (!Array.isArray(target.children)) target.children = [];
 
   if (mode === "send") {
+    // Ask whether the open surface is inside what we're about to move
+    // BEFORE moving it — and let go of it before the tree is saved.
+    // A send is a departure from this desk: the file is gone from the
+    // sidebar the moment it lands in the other desk, and leaving it in
+    // the editor left the user typing into a document their desk no
+    // longer holds. Mirrors the ordering `deleteTreeNode` uses for the
+    // same reason (state-tree.js).
+    const departing = findNode(tree, nodeId);
+    const wasOpen = departing ? subtreeHoldsActiveSurface(state, nodeId, departing) : false;
     const removed = removeNode(tree, nodeId);
     if (!removed) return;
+    if (wasOpen) await state.clearActiveFile();
     // Drop into the target desk's root, just before its specials.
     insertBeforeDeskSpecials(target.children, removed);
+    await closePanesForSubtree(removed);
   } else {
     const node = findNode(tree, nodeId);
     if (!node) return;
@@ -121,6 +137,38 @@ async function runSendOrCopy(state, nodeId, targetDeskId, mode) {
   }
   await state.saveFileTree();
   state.emit("files-changed");
+}
+
+/** True when the surface the editor is showing lives inside `node` —
+ *  the doc / notebook / PDF / stack itself, or the project whose parts
+ *  are joined into the buffer. */
+function subtreeHoldsActiveSurface(state, nodeId, node) {
+  const { docFileIds, pdfFileIds, stackFileIds } = collectTypedFileIds(node);
+  return docFileIds.includes(state.currentFileId)
+    || docFileIds.includes(state.currentNotebookFileId)
+    || pdfFileIds.includes(state.currentPdfFileId)
+    || stackFileIds.includes(state.currentStackFileId)
+    || nodeId === state.currentProjectId;
+}
+
+/** Close any floating pane backed by a file that just left the desk —
+ *  the same cleanup a delete does, for the same reason: the pane would
+ *  otherwise keep autosaving into a file this desk no longer lists. */
+async function closePanesForSubtree(node) {
+  const { docFileIds, pdfFileIds, stackFileIds } = collectTypedFileIds(node);
+  const goneIds = new Set([...docFileIds, ...pdfFileIds, ...stackFileIds]);
+  if (!goneIds.size) return;
+  try {
+    const [{ panes }, { closePane }] = await Promise.all([
+      import("../pane/pane-state.js"),
+      import("../pane/pane-manager.js"),
+    ]);
+    for (const [id, pane] of [...panes]) {
+      if (goneIds.has(pane.fileId)) await closePane(id);
+    }
+  } catch (e) {
+    console.error("closing panes for sent files failed:", e);
+  }
 }
 
 function insertBeforeDeskSpecials(children, node) {

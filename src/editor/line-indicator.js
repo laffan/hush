@@ -6,9 +6,23 @@
  * Each editor (main view, every pane, every stack column) gets its own
  * overlay element inside `view.scrollDOM`. The overlay is positioned
  * by `view.coordsAtPos(head)` so it lines up with the wrapped visual
- * line rather than the whole document line block. The overlay is
- * suppressed unless the editor currently holds focus, so a stack with
- * three docs only paints the indicator on the one you're typing in.
+ * line rather than the whole document line block.
+ *
+ * Every surface paints one, focused or not: an unfocused surface goes
+ * grey (`hush-line-ind-muted`), exactly the two-state colouring a pane
+ * border uses, so a stack of three docs still shows where the cursor
+ * sits in each without three of them claiming to be the live one.
+ *
+ * **Margin geometry has two modes.** In the main editor the arrows and
+ * border stripes hang 13-18 px *outside* the text column, into the wide
+ * gutter `applyColumnLayout` leaves. A pane or stack column has no such
+ * gutter — its scroller is 12 px of padding from the host's edge, and
+ * the host clips — so those offsets put the marks under the pane's
+ * rounded border and cropped them away. Those surfaces pass
+ * `flush: true`, which spans the overlay across the whole scroller box
+ * and pulls the marks inside its edges: the indicator attaches to the
+ * pane's edge rather than to the text, and the highlight wash runs
+ * edge to edge.
  *
  * The container (editor / pane / preview wrapper) still carries a
  * `line-ind-<variant>` class — CSS targets `.line-ind-X
@@ -31,14 +45,18 @@ function resolveLineIndicator(state) {
 }
 
 /** Build the overlay-driving ViewPlugin. Reads the active style from
- *  the shared `state` reference and the focus state from the view. */
-export function createLineIndicatorPlugin(state) {
+ *  the shared `state` reference and the focus state from the view.
+ *  `opts.flush` puts the overlay in host-edge mode (see the module
+ *  comment) — panes and stack columns set it. */
+export function createLineIndicatorPlugin(state, opts) {
+  const flush = !!opts?.flush;
   return ViewPlugin.fromClass(
     class {
       constructor(view) {
         this.view = view;
         this.overlay = document.createElement("div");
         this.overlay.className = "hush-line-ind";
+        this.overlay.classList.toggle("hush-line-ind-flush", flush);
         this.overlay.style.position = "absolute";
         this.overlay.style.pointerEvents = "none";
         this.overlay.style.display = "none";
@@ -77,10 +95,11 @@ export function createLineIndicatorPlugin(state) {
           key: "hushLineIndicator",
           read: () => {
             const indicator = resolveLineIndicator(state);
-            if (!indicator || !this.view.hasFocus) return null;
+            if (!indicator) return null;
             const head = this.view.state.selection.main.head;
             const coords = this.view.coordsAtPos(head);
             if (!coords) return null;
+            const muted = !this.view.hasFocus;
             // Align the overlay's bounds with the *text* area, not the
             // cm-content's padding box. In the main editor, cm-scroller
             // carries the gutter padding and cm-content is flush, so
@@ -93,14 +112,26 @@ export function createLineIndicatorPlugin(state) {
             // collide with the column edge and get clipped by the
             // column wrapper's overflow:hidden.
             const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+            const top = coords.top - scrollerRect.top + this.view.scrollDOM.scrollTop;
+            const height = Math.max(1, coords.bottom - coords.top);
+            // Flush mode measures the scroller's own box: the overlay is
+            // absolutely positioned against that padding box, so left 0 /
+            // width clientWidth is precisely the host's inner edges, with
+            // the 12 px scroller padding left as the margin the marks sit
+            // in (see the module comment).
+            if (flush) {
+              return {
+                indicator, muted, top, height,
+                left: this.view.scrollDOM.scrollLeft,
+                width: this.view.scrollDOM.clientWidth,
+              };
+            }
             const contentRect = this.view.contentDOM.getBoundingClientRect();
             const cs = getComputedStyle(this.view.contentDOM);
             const padLeft = parseFloat(cs.paddingLeft) || 0;
             const padRight = parseFloat(cs.paddingRight) || 0;
             return {
-              indicator,
-              top: coords.top - scrollerRect.top + this.view.scrollDOM.scrollTop,
-              height: Math.max(1, coords.bottom - coords.top),
+              indicator, muted, top, height,
               left: contentRect.left - scrollerRect.left + padLeft + this.view.scrollDOM.scrollLeft,
               width: Math.max(0, contentRect.width - padLeft - padRight),
             };
@@ -112,6 +143,7 @@ export function createLineIndicatorPlugin(state) {
             }
             for (const v of VARIANTS) this.overlay.classList.remove("hush-line-ind-" + v);
             this.overlay.classList.add("hush-line-ind-" + data.indicator);
+            this.overlay.classList.toggle("hush-line-ind-muted", data.muted);
             this.overlay.style.display = "block";
             this.overlay.style.top = data.top + "px";
             this.overlay.style.left = data.left + "px";

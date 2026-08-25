@@ -104,7 +104,12 @@ export async function createImageFromDataUrl(state, dataUrl, requestedName) {
   }
   dataUrlCache.set(finalName, dataUrl);
 
-  const images = findNode(state.fileTree, state.getImagesId());
+  // Ensure the desk has an Images folder before filing the node. It is
+  // minted at boot with the rest of a desk's specials, but a desk
+  // adopted from a plain folder — or one whose tree predates the
+  // folder — can be missing it, and the image then landed on disk with
+  // nothing in the sidebar pointing at it.
+  const images = findNode(state.fileTree, state.getImagesId()) || ensureImagesFolder(state);
   let isNew = false;
   if (images) {
     const already = (images.children || []).some((c) => c.type === "image" && c.fileId === finalName);
@@ -124,6 +129,26 @@ export async function createImageFromDataUrl(state, dataUrl, requestedName) {
     }
   }
   return { filename: finalName, alt: altFromFilename(finalName), dataUrl };
+}
+
+/** Mint the active desk's Images folder and pin it back into the desk's
+ *  special ordering. Returns the node, or null when there's no desk to
+ *  hang it off (the pre-desk boot window). */
+function ensureImagesFolder(state) {
+  const desk = state.getActiveDesk?.();
+  if (!desk) return null;
+  const deskNode = (state.fileTree || []).find((n) => n.type === "desk" && n.id === desk.id);
+  if (!deskNode) return null;
+  const id = state.getImagesId();
+  if (!Array.isArray(deskNode.children)) deskNode.children = [];
+  let node = deskNode.children.find((n) => n.id === id);
+  if (!node) {
+    node = { id, type: "folder", name: "Images", children: [], flagged: false };
+    // Images sits above Archive / Trash in the pinned tail; the sidebar
+    // re-pins on render, so appending is enough to get it in the block.
+    deskNode.children.push(node);
+  }
+  return node;
 }
 
 /** Delete an image binary from disk. */

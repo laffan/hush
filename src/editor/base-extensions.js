@@ -109,6 +109,10 @@ export function buildShortcutExtension(state) {
  *   Ratchet reads a buffer's edges as the document's — line 1 as the
  *   filename, the end as the writing edge — and neither is true of a
  *   fragment, so it locks the slice whole instead.
+ * @param {boolean} [opts.flushLineIndicator] This surface has no gutter
+ *   outside its text column for the line indicator's arrows / border
+ *   stripes to hang in (a pane, a stack column), so they attach to the
+ *   surface's own edges and the highlight runs edge to edge.
  * @returns {{ extensions: Extension[], themeComp, highlightComp, shortcutComp }}
  */
 export function createBaseExtensions(state, onChange, opts) {
@@ -192,7 +196,7 @@ export function createBaseExtensions(state, onChange, opts) {
     createFootnotePlugin(state),
     createFlagHighlightPlugin(state),
     createYouAreHerePlugin(),
-    createLineIndicatorPlugin(state),
+    createLineIndicatorPlugin(state, { flush: !!opts?.flushLineIndicator }),
     createLinkDecoratorPlugin(state),
     createWikilinkPlugin(state),
     createCitationPlugin(state),

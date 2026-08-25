@@ -3,7 +3,9 @@
  *
  * Each editing surface (floating pane, stack column) gets its own mode
  * context so toggling focus / typewriter / DRY applies only to the
- * active editor, not every editor on screen.
+ * active editor, not every editor on screen. A fresh context starts
+ * from the global flags, so a surface opened while a mode is on joins
+ * it; from there the two diverge on the next toggle.
  *
  * The context is a prototype-inherited proxy of AppState: plugins that
  * read `stateRef.focusMode` see the local value (own-property), while
@@ -19,7 +21,14 @@ const MODE_KEYS = ["focusMode", "typewriterMode", "dryMode"];
 
 export function createModeContext(appState) {
   const proxy = Object.create(appState);
-  for (const k of MODE_KEYS) proxy[k] = false;
+  // Seed from the global flags rather than from off. These modes are
+  // per-surface once a surface exists, but "Typewriter mode is on" is a
+  // statement about how the user is writing, not about one editor: a
+  // pane opened while it's on belongs in it too. Without this a pane
+  // opened after the toggle was silently exempt — and the global
+  // boundary line hides itself whenever a pane is active, so the mode
+  // read as simply not working in panes.
+  for (const k of MODE_KEYS) proxy[k] = !!appState[k];
 
   function toggle(modeName, view, container) {
     if (!MODE_KEYS.includes(modeName)) return;

@@ -10,6 +10,7 @@ import { getActiveNotebookState } from "./notes-canvas";
 import {
   writeText as tauriWriteText, readText as tauriReadText,
 } from "@tauri-apps/plugin-clipboard-manager";
+import { readClipboardImageDataUrl } from "../clipboard-image.js";
 
 /** Cmd+C / V / X bind on `window`, so when several NotesCanvas instances
  *  exist (main canvas + a pane, desk thumbnail, etc.) every state's
@@ -524,6 +525,10 @@ export function bindInputEvents(
     const cd = e.clipboardData;
     if (!cd) return;
 
+    // Started before the text work below, for the same activation
+    // reason as `asyncCanvasPaste` — only consulted if the event's own
+    // payload turns out to carry neither shapes nor an image.
+    const imageP = readClipboardImageDataUrl().catch(() => null);
     const rawText = extractTextFromDataTransfer(cd);
     // The window stash is a same-session safety net for when the OS
     // clipboard write was rejected. If the OS clipboard now carries
@@ -555,6 +560,16 @@ export function bindInputEvents(
     if (rawText && rawText.trim()) {
       markPasted();
       state.addTextShapeAtCenter(cleanLineBreaks(rawText));
+      return;
+    }
+    // The event carried nothing usable — WKWebView strips image bytes
+    // from `clipboardData` often enough that this is the common case for
+    // a native Edit > Paste of an image.
+    const osImage = await imageP;
+    if (osImage) {
+      const dims = await getImageDimensions(osImage);
+      markPasted();
+      state.addImageShape(osImage, "pasted-image", dims.width, dims.height);
     }
   }) as unknown as (e: HTMLElementEventMap["paste"]) => void);
 
@@ -618,6 +633,14 @@ async function asyncCanvasPaste(state: DrawingState) {
   }
   if (state.editingText) return;
 
+  // Start the image read in this task, before the text round trip. Its
+  // browser fallback needs the Cmd+V gesture's transient activation, and
+  // awaiting an IPC text read first is long enough to spend it — which
+  // is why an image paste used to take several attempts before it
+  // landed. Text still decides: a clipboard carrying text is a text
+  // paste (and an in-app shape envelope travels as text), so the image
+  // is only used when there is none.
+  const imageP = readClipboardImageDataUrl().catch(() => null);
   const text = await readClipboardText();
 
   // Same-session fallback: only consult the stash when the OS clipboard
@@ -632,37 +655,17 @@ async function asyncCanvasPaste(state: DrawingState) {
     return;
   }
 
-  // navigator.clipboard.read() returns image blobs on browsers that
-  // support it. Best-effort; failures fall through to plain text.
-  try {
-    const items = await navigator.clipboard.read();
-    for (const item of items) {
-      for (const type of item.types) {
-        if (type.startsWith("image/")) {
-          const blob = await item.getType(type);
-          const dataUrl = await blobToDataUrl(blob);
-          const dims = await getImageDimensions(dataUrl);
-          markPasted();
-          state.addImageShape(dataUrl, "pasted-image", dims.width, dims.height);
-          return;
-        }
-      }
-    }
-  } catch {
-    // clipboard.read() unsupported — fall through.
-  }
-
   if (text && text.trim()) {
     markPasted();
     state.addTextShapeAtCenter(cleanLineBreaks(text));
+    return;
+  }
+
+  const dataUrl = await imageP;
+  if (dataUrl) {
+    const dims = await getImageDimensions(dataUrl);
+    markPasted();
+    state.addImageShape(dataUrl, "pasted-image", dims.width, dims.height);
   }
 }
 
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result as string);
-    r.onerror = () => reject(new Error("Failed to read blob"));
-    r.readAsDataURL(blob);
-  });
-}

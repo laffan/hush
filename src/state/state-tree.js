@@ -286,7 +286,7 @@ function clearFlaggedRecursive(node) {
 }
 
 /** Walk a node and classify its descendants' fileIds by type. */
-function collectTypedFileIds(node) {
+export function collectTypedFileIds(node) {
   const docFileIds = [];
   const imageFileIds = [];
   const pdfFileIds = [];
