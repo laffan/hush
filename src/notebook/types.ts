@@ -126,6 +126,13 @@ export interface TextShape extends ShapeBase {
   backgroundColor?: string;
   borderColor?: string;
   borderWidth?: number;
+  /** Per-shape overrides of the canvas-wide text style. Absent means
+   *  "follow the canvas", which is every shape on an ordinary notebook;
+   *  a proofread notebook seeds new text with its own (see
+   *  `DrawingState.newTextStyle`) so annotation reads as a correction
+   *  mark against the page rather than as more of the document. */
+  fontFamily?: string;
+  bold?: boolean;
   /** Marks this text shape as a persisted gutter header label. Renders
    *  with the faded shadow-header style + horizontal rule above, is
    *  immune to selection / drag / edit, and gets its y position synced

@@ -218,13 +218,20 @@ export class NotesCanvas {
     this.container = container;
     this.state = new DrawingState();
 
-    // Set up container styles
+    // Set up container styles. `fontFamily` is the app's UI face, not
+    // the style's: everything the canvas builds in DOM is chrome —
+    // toolbars, the shelf, colour menus, popups — and a good many of
+    // those elements ask for `font-family: inherit`, which was picking
+    // up the writing font the active style sets on the page. Canvas
+    // *content* is painted with an explicit `ctx.font` and the inline
+    // text editor sets its own face, so neither is affected.
     Object.assign(container.style, {
       position: "relative",
       width: "100%",
       height: "100%",
       overflow: "hidden",
       background: "#f4f5f7",
+      fontFamily: "var(--ui-font-family)",
     });
 
     // Create canvas
@@ -715,6 +722,7 @@ export class NotesCanvas {
     // `proof` off the same change event the shapes arrive on.
     this.state.splits = extras?.splits ? extras.splits.slice() : [];
     this.state.proof = extras?.proof ?? null;
+    this.state.applyProofTextDefaults();
     this.state.grab = null;
     // Ensure every shape has a layerId; default to the seed / first
     // layer so legacy notebooks render on a real layer.
@@ -775,7 +783,10 @@ export class NotesCanvas {
     }
     this.state.shapes = snapshot.shapes.map((s) => s.layerId ? s : ({ ...s, layerId: topLayerId }));
     if (snapshot.splits) this.state.splits = snapshot.splits.slice();
-    if (snapshot.proof !== undefined) this.state.proof = snapshot.proof;
+    if (snapshot.proof !== undefined) {
+      this.state.proof = snapshot.proof;
+      this.state.applyProofTextDefaults();
+    }
     if (snapshot.flowEdges) this.state.flowchart.deserialize(snapshot.flowEdges);
     // Keep whatever part of the selection survived the mirror.
     const surviving = new Set(this.state.shapes.map((s) => s.id));

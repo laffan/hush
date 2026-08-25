@@ -593,7 +593,10 @@ export function resolveHighlightBg(flagName: string | undefined, flagColors: Rec
 
 export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, theme: CanvasTheme, fontFamily: string, omitGlyphs = false, flagColors?: Record<string, string>) {
   const baseFontSize = shape.fontSize;
-  const ff = `${fontFamily}, ${FONT_FAMILY}`;
+  // Per-shape face and weight win over the canvas's; absent means
+  // "follow the canvas", which is every shape on an ordinary notebook.
+  const ff = `${shape.fontFamily || fontFamily}, ${FONT_FAMILY}`;
+  const baseBold = shape.bold ? "bold" : "normal";
 
   // Measure function using the render context for accurate width
   const measure = (text: string, fontSize: number): number => {
@@ -707,7 +710,7 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
         ctx.save();
         ctx.fillStyle = textColor;
         ctx.globalAlpha = 0.75;
-        ctx.font = `normal normal ${lineFontSize}px ${ff}`;
+        ctx.font = `normal ${baseBold} ${lineFontSize}px ${ff}`;
         if (!omitGlyphs) ctx.fillText(line.listMarker, x, y);
         ctx.restore();
       }
@@ -715,7 +718,7 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
     }
 
     for (const run of line.runs) {
-      const weight = run.bold ? "bold" : "normal";
+      const weight = run.bold ? "bold" : baseBold;
       const style = run.italic ? "italic" : "normal";
       const fontSize = baseFontSize * run.sizeScale;
       ctx.font = `${style} ${weight} ${fontSize}px ${ff}`;

@@ -625,6 +625,7 @@ pub fn run() {
             commands::window::set_traffic_lights_visible,
             commands::window::set_window_display_title,
             commands::window::set_native_background_color,
+            commands::window::set_native_selection_tint,
             commands::multi_window::list_windows,
             commands::multi_window::register_window,
             commands::multi_window::set_window_file,

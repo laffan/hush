@@ -132,6 +132,102 @@ pub fn set_native_background_color(
     Ok(())
 }
 
+/// Tint the native text-selection UI to match the one CodeMirror draws.
+/// iOS only; a no-op everywhere else.
+///
+/// On iPadOS a ranged selection inside editable web content is drawn
+/// twice: CodeMirror's own `drawSelection()` layer, and UIKit's native
+/// selection view (the same machinery behind the grab handles and the
+/// loupe). The native one is painted by the system, not the web process,
+/// so `::selection` — which is what hides it everywhere else — cannot
+/// reach it, and the two land as a grey rectangle slightly out of
+/// register with the styled one. `tintColor` is the one lever the
+/// platform offers: pointing it at the style's own selection colour
+/// makes the two read as a single selection instead of two.
+///
+/// `color` is `#rrggbb`. Alpha is left to UIKit, which applies its own
+/// to the selection fill.
+#[tauri::command]
+pub fn set_native_selection_tint(
+    _app: AppHandle,
+    _label: String,
+    _color: String,
+) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        let rgb = parse_hex_rgb(&_color).ok_or_else(|| format!("Bad colour: {_color}"))?;
+        let window = _app
+            .get_webview_window(&_label)
+            .ok_or_else(|| format!("Window not found: {_label}"))?;
+        let w = window.clone();
+        window
+            .run_on_main_thread(move || {
+                use objc2::msg_send;
+                use objc2::runtime::AnyObject;
+                use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+                let Ok(handle) = w.window_handle() else { return };
+                let RawWindowHandle::UiKit(h) = handle.as_raw() else { return };
+                let ui_view = h.ui_view.as_ptr() as *mut AnyObject;
+                unsafe {
+                    let cls = objc2::class!(UIColor);
+                    let color: *mut AnyObject = msg_send![
+                        cls,
+                        colorWithRed: rgb.0,
+                        green: rgb.1,
+                        blue: rgb.2,
+                        alpha: 1.0f64
+                    ];
+                    if color.is_null() {
+                        return;
+                    }
+                    tint_webviews(ui_view, color);
+                }
+            })
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Set `tintColor` on `view` (and one level of its subviews) wherever it
+/// is a `WKWebView`. The handle Tauri hands us is the window's root
+/// view, so the webview is normally one level down — check both rather
+/// than assume which, exactly as `paint_webviews` does.
+///
+/// # Safety
+/// `view` must be a live `UIView` and `color` a live `UIColor`; call on
+/// the main thread.
+#[cfg(target_os = "ios")]
+unsafe fn tint_webviews(
+    view: *mut objc2::runtime::AnyObject,
+    color: *mut objc2::runtime::AnyObject,
+) {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+
+    unsafe fn tint_one(candidate: *mut AnyObject, color: *mut AnyObject) {
+        if candidate.is_null() {
+            return;
+        }
+        let is_web: bool = msg_send![candidate, isKindOfClass: objc2::class!(WKWebView)];
+        if !is_web {
+            return;
+        }
+        let _: () = msg_send![candidate, setTintColor: color];
+    }
+
+    tint_one(view, color);
+    let subviews: *mut AnyObject = msg_send![view, subviews];
+    if subviews.is_null() {
+        return;
+    }
+    let count: usize = msg_send![subviews, count];
+    for i in 0..count {
+        let sub: *mut AnyObject = msg_send![subviews, objectAtIndex: i];
+        tint_one(sub, color);
+    }
+}
+
 /// Colour `view` (and one level of its subviews) wherever it is a
 /// `WKWebView`, including the scroll view each one owns.
 ///

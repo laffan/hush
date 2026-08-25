@@ -329,7 +329,10 @@ export function createTextEditor(state: DrawingState): HTMLElement {
     const screenPos = canvasToScreen(et.position, state.camera);
 
     const fontStyle = {
-      fontFamily: `${state.fontFamily}, ${FONT_FAMILY}`,
+      // The shape's own face / weight when it has one (proof notes), so
+      // what the user types looks like what commits.
+      fontFamily: `${et.fontFamily || state.fontFamily}, ${FONT_FAMILY}`,
+      fontWeight: et.bold ? "bold" : "normal",
       fontSize: scaledFontSize + "px",
       lineHeight: scaledLineHeight + "px",
     };

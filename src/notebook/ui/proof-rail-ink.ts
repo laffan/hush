@@ -242,7 +242,7 @@ function drawTextPreview(
   theme: CanvasTheme,
   fontFamily: string,
 ): void {
-  const ff = `${fontFamily}, ${FONT_FAMILY}`;
+  const ff = `${t.fontFamily || fontFamily}, ${FONT_FAMILY}`;
   const measureCtx = getMeasureCtx();
   const measure = (text: string, fs: number): number => {
     measureCtx.font = `${fs}px ${ff}`;

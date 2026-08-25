@@ -181,6 +181,7 @@ export function updatePrivateBoxColor(state, overrideBg, overrideFg) {
       const panel = document.getElementById("panel-overlay");
       if (panel) panel.style.color = uiFg;
       pushNativeBackground(bg);
+      pushNativeSelectionTint();
     }
   }
 }
@@ -210,6 +211,66 @@ function pushNativeBackground(bg) {
       await invoke("set_native_background_color", {
         label: getCurrentWindow().label,
         color: bg,
+      });
+    } catch (_) { /* older binary, or a window mid-teardown */ }
+  })();
+}
+
+/** Last selection tint pushed to the native layer — same dedupe as the
+ *  background above. */
+let _lastNativeTint = null;
+
+/** `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()` or `rgba()` -> `#rrggbb`, or
+ *  null for anything this can't read. The native side only takes six hex
+ *  digits, and a selection colour arrives in any of these forms
+ *  depending on whether it came from a style override or a stylesheet
+ *  fallback. */
+function toHex6(value) {
+  const v = (value || "").trim();
+  if (!v) return null;
+  const pair = (n) => n.toString(16).padStart(2, "0");
+  const m = v.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
+  if (m) {
+    const c = m.slice(1, 4).map((n) => Math.max(0, Math.min(255, Math.round(parseFloat(n)))));
+    return `#${pair(c[0])}${pair(c[1])}${pair(c[2])}`;
+  }
+  if (v[0] !== "#") return null;
+  const h = v.slice(1);
+  if (h.length === 3) return `#${h[0]}${h[0]}${h[1]}${h[1]}${h[2]}${h[2]}`;
+  if (h.length === 6 || h.length === 8) return `#${h.slice(0, 6)}`;
+  return null;
+}
+
+/** Point the native text-selection tint at the colour CodeMirror paints
+ *  its own selection with.
+ *
+ *  iPadOS draws a ranged selection twice — CodeMirror's `drawSelection()`
+ *  layer and UIKit's native selection view — and the native one is a
+ *  system-drawn overlay that `::selection` can't reach, so it shows
+ *  through as a grey rectangle slightly out of register with the styled
+ *  one. `tintColor` is the only lever the platform gives us; setting it
+ *  to the same colour makes the pair read as one selection.
+ *
+ *  Reads the live `--selection` custom property rather than re-deriving
+ *  it, so it always matches what the CSS actually resolved. When no style
+ *  sets one, `editor.css` falls back to a neutral grey and so do we — the
+ *  point is that the two layers agree, not which colour wins. */
+function pushNativeSelectionTint() {
+  if (typeof window === "undefined" || !window.__TAURI_INTERNALS__) return;
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue("--selection").trim();
+  const color = toHex6(raw) || "#808080";
+  if (color === _lastNativeTint) return;
+  _lastNativeTint = color;
+  void (async () => {
+    try {
+      const [{ invoke }, { getCurrentWindow }] = await Promise.all([
+        import("@tauri-apps/api/core"),
+        import("@tauri-apps/api/window"),
+      ]);
+      await invoke("set_native_selection_tint", {
+        label: getCurrentWindow().label,
+        color,
       });
     } catch (_) { /* older binary, or a window mid-teardown */ }
   })();

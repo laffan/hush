@@ -44,7 +44,19 @@ export interface EditingText {
   fontSize: number;
   color: string;
   width?: number; // constraint width from existing shape
+  /** Per-shape text style, carried through the inline editor so the
+   *  textarea renders in the face the committed shape will use. */
+  fontFamily?: string;
+  bold?: boolean;
 }
+
+/** What text on a proofread notebook starts as. A proof is a printed
+ *  page with the reader's marks on it, and a correction that renders in
+ *  the document's own face at the document's own colour reads as more
+ *  document. Red, bold and monospaced is the pen you pick up for the
+ *  margin — and per *shape*, not per canvas, so an existing note keeps
+ *  whatever it was written in and the user can still change any of it. */
+const PROOF_TEXT_STYLE = { color: "#d62828", fontFamily: "Courier", bold: true };
 
 export type ResizeHandle = "nw" | "ne" | "sw" | "se" | "n" | "s" | "e" | "w";
 const HANDLE_SIZE = 8;
@@ -113,6 +125,10 @@ export class DrawingState extends EventTarget {
   selectionBox: SelectionBox | null = null;
   editingText: EditingText | null = null;
   bookmarks: CameraBookmark[] = [];
+  /** Per-shape text style a *new* text shape starts from, or null to
+   *  follow the canvas. Set when a proofread notebook mounts (see
+   *  `PROOF_TEXT_STYLE`); untouched everywhere else. */
+  newTextStyleOverride: { fontFamily?: string; bold?: boolean; color?: string } | null = null;
 
   // === Splits / Grabs (see splits.ts + state-splits.ts) ===
   /** Notebook-level cut lines. Not shapes: no bounds, no layer, never
@@ -667,6 +683,27 @@ export class DrawingState extends EventTarget {
     this.notify("activeLayerId");
   }
 
+  /** Point `newTextStyleOverride` at the proof pen when this canvas is
+   *  a proofread notebook, and clear it when it isn't. Called wherever
+   *  `proof` is assigned, so a canvas reused for a different file (a
+   *  pane swapping content) can't keep the previous one's defaults. */
+  applyProofTextDefaults() {
+    this.newTextStyleOverride = this.proof ? { ...PROOF_TEXT_STYLE } : null;
+  }
+
+  /** The style a newly created text shape starts from: the canvas
+   *  defaults, overlaid with this canvas's override if it has one.
+   *  Every `editingText` for a *new* shape spreads this in, so the
+   *  inline editor and the committed shape agree. */
+  newTextStyle(): { color: string; fontFamily?: string; bold?: boolean } {
+    const o = this.newTextStyleOverride;
+    return {
+      color: o?.color ?? this.color,
+      ...(o?.fontFamily ? { fontFamily: o.fontFamily } : {}),
+      ...(o?.bold ? { bold: true } : {}),
+    };
+  }
+
   /** True when the active layer is locked or hidden. Shape creators
    *  should bail early when this returns true — new shapes added to
    *  an invisible layer would be confusing. */
@@ -1097,7 +1134,7 @@ export class DrawingState extends EventTarget {
         const updated = { ...s, text: trimmed };
         // Auto-shrink width to content if not manually resized
         if (!s.manualWidth) {
-          updated.width = autoFitWidth(trimmed, s.fontSize, editing.width, this.fontFamily);
+          updated.width = autoFitWidth(trimmed, s.fontSize, editing.width, s.fontFamily || this.fontFamily);
         }
         return updated;
       });
@@ -1125,11 +1162,13 @@ export class DrawingState extends EventTarget {
         // Pending flow parent is meaningless for an image — discard it.
         this._pendingFlowParent = null;
       } else {
-        const fitWidth = autoFitWidth(trimmed, editing.fontSize, editing.width, this.fontFamily);
+        const fitWidth = autoFitWidth(trimmed, editing.fontSize, editing.width, editing.fontFamily || this.fontFamily);
         this.shapes = [...this.shapes, {
           id: shapeId, type: "text", position: editing.position,
           text: trimmed, fontSize: editing.fontSize, color: editing.color,
           width: fitWidth,
+          ...(editing.fontFamily ? { fontFamily: editing.fontFamily } : {}),
+          ...(editing.bold ? { bold: true } : {}),
           layerId: this.activeLayerId,
           createdAt: Date.now(),
         } as TextShape];
@@ -1163,6 +1202,7 @@ export class DrawingState extends EventTarget {
     this.editingText = {
       shapeId: shape.id, position: shape.position,
       text: shape.text, fontSize: shape.fontSize, color: shape.color,
+      fontFamily: shape.fontFamily, bold: shape.bold,
       // Widen to at least the configured max for comfortable editing,
       // unless the user has manually resized this shape past it.
       width: shape.manualWidth ? shape.width : Math.max(this.maxTextWidth, shape.width || 0),
@@ -1502,7 +1542,7 @@ export class DrawingState extends EventTarget {
       if (hit && hit.type === "text") {
         this.startEditingExistingText(hit);
       } else {
-        this.editingText = { shapeId: null, position: canvasPt, text: "", fontSize: this.fontSize, color: this.color, width: this.maxTextWidth };
+        this.editingText = { shapeId: null, position: canvasPt, text: "", fontSize: this.fontSize, width: this.maxTextWidth, ...this.newTextStyle() };
         this.notify("editingText");
       }
     } else if (this.tool === "select" || this.brainstormMode) {
@@ -1711,7 +1751,7 @@ export class DrawingState extends EventTarget {
     if (hit && hit.type === "text") {
       this.startEditingExistingText(hit);
     } else {
-      this.editingText = { shapeId: null, position: canvasPt, text: "", fontSize: this.fontSize, color: this.color, width: this.maxTextWidth };
+      this.editingText = { shapeId: null, position: canvasPt, text: "", fontSize: this.fontSize, width: this.maxTextWidth, ...this.newTextStyle() };
       this.notify("editingText");
     }
   }

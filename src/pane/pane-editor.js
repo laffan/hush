@@ -109,8 +109,23 @@ export function createPaneEditor(container, appState, onChange, opts) {
     },
     focus: () => view.focus(),
     blur: () => view.contentDOM.blur(),
+    /** Lock / unlock this surface for typing. Panes flip this on every
+     *  focus change (`focusPane` unlocks the one you clicked and locks
+     *  the one you left), and flipping `EditorView.editable` rewrites
+     *  `contenteditable` on `.cm-content` — which in WebKit tears down
+     *  and rebuilds that subtree's render tree, taking the scroller's
+     *  position with it. The pane came back parked at the top of the
+     *  document, and because the reset lands on the *blur* the user
+     *  only sees it when the pane is next focused. Hold the offset
+     *  across the flip: once now, once after CodeMirror's measure pass,
+     *  and only when it actually moved. */
     setEditable: (editable) => {
+      const scroller = view.scrollDOM;
+      const before = scroller.scrollTop;
       view.dispatch({ effects: editableComp.reconfigure(EditorView.editable.of(editable)) });
+      const restore = () => { if (scroller.scrollTop !== before) scroller.scrollTop = before; };
+      restore();
+      requestAnimationFrame(restore);
     },
     /** Select the given range and scroll it to the centre of the pane.
      *  Used by the shelf's search results so a click jumps the reader to

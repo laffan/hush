@@ -43,7 +43,13 @@ export function getShapeBounds(shape: Shape, fontFamily?: string): Bounds {
     case "draw":
       return getPointsBounds(shape.points);
     case "text":
-      return getTextBounds(shape.position, shape.text, shape.fontSize, shape.width, fontFamily);
+      // A shape carrying its own face measures in that face, not the
+      // canvas's — otherwise a proof note in Courier wraps against
+      // Inter's metrics and its bounds miss the glyphs by a word.
+      return getTextBounds(
+        shape.position, shape.text, shape.fontSize, shape.width,
+        shape.fontFamily || fontFamily,
+      );
     case "image":
       return {
         minX: shape.position.x,
