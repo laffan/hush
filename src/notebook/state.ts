@@ -230,7 +230,14 @@ export class DrawingState extends EventTarget {
     // group, pointing at one stray stroke instead of the cluster.
     getBounds: (s) => this.unionGroupBounds(s),
     getLayoutBounds: (s) => this.unionGroupBounds(s),
-    isFlowable: (s) => this.flowchartEnabled && s.type !== "drag-area",
+    // Shapes on a hidden or locked layer are not flowable: the lock
+    // exists so the pointer can't reach them, and a chart connection is
+    // reached entirely by pointer. This is what keeps `findDropTarget`
+    // and `tryConnect` — the connect-by-drop path, in the layer and in
+    // the drop handler below — off locked material.
+    isFlowable: (s) => this.flowchartEnabled
+      && s.type !== "drag-area"
+      && !this._isLayerInert(s.layerId),
   });
   /** Per-canvas flowchart switch. The Desktop view turns it off: no
    *  drop-to-connect targets, no edge creation, no ⌘→ child editors —
@@ -693,10 +700,24 @@ export class DrawingState extends EventTarget {
     return s;
   }
 
-  /** True when `shape` sits on a hidden or locked layer. */
+  /** True when `layerId` names a hidden or locked layer. A direct scan
+   *  rather than a `_inertLayerIds()` membership test, for the callers
+   *  that ask per shape on a hot path (the flowchart's `isFlowable` runs
+   *  over every shape on every frame of a drag) — building a Set per
+   *  call would allocate one per shape per frame. Layer counts are small
+   *  enough that the scan is cheaper than the Set. */
+  _isLayerInert(layerId?: string): boolean {
+    if (!layerId) return false;
+    const L = this.layers.find((l) => l.id === layerId);
+    return !!L && (L.hidden || L.locked);
+  }
+
+  /** True when `shape` sits on a hidden or locked layer. Pass `inert`
+   *  when looping over many shapes at once; without it the lookup falls
+   *  through to `_isLayerInert` rather than building a throwaway Set. */
   _isShapeInert(shape: { layerId?: string }, inert?: Set<string>): boolean {
     if (!shape.layerId) return false;
-    return (inert ?? this._inertLayerIds()).has(shape.layerId);
+    return inert ? inert.has(shape.layerId) : this._isLayerInert(shape.layerId);
   }
 
   /** `this.shapes` minus anything on a hidden or locked layer. Returns
@@ -1130,7 +1151,15 @@ export class DrawingState extends EventTarget {
     return shapeId;
   }
 
-  startEditingExistingText(shape: TextShape) {
+  /** Open the inline editor on an existing text shape. Returns false
+   *  when the shape is on a hidden or locked layer and no editor was
+   *  opened — the pointer routes in (double-click, the Text tool's hit
+   *  test) filter inert layers before they get here, but the
+   *  flowchart's keyboard navigation (⌘← parent, ⌘↑ most-recent) walks
+   *  edges, and an edge can point at a node whose layer was locked
+   *  afterwards. Guarding here covers every caller. */
+  startEditingExistingText(shape: TextShape): boolean {
+    if (this._isShapeInert(shape)) return false;
     this.editingText = {
       shapeId: shape.id, position: shape.position,
       text: shape.text, fontSize: shape.fontSize, color: shape.color,
@@ -1140,6 +1169,7 @@ export class DrawingState extends EventTarget {
     };
     this.recordRecentEdit(shape.id);
     this.notify("editingText");
+    return true;
   }
 
   /** Track a text-shape id in the recent-edit history (most-recent last,
@@ -1178,10 +1208,13 @@ export class DrawingState extends EventTarget {
   tidySubtree(rootId: string): void {
     const layout = this.flowchart.tidy(rootId, this.shapes);
     if (layout.size === 0) return;
+    const inert = this._inertLayerIds();
     const deltas = new Map<string, { dx: number; dy: number }>();
     for (const [id, tl] of layout) {
       const s = this.shapes.find((x) => x.id === id);
       if (!s) continue;
+      // A tidy is still a move, and a locked layer doesn't move.
+      if (this._isShapeInert(s, inert)) continue;
       const old = getShapeBounds(s, this.fontFamily);
       const dx = tl.minX - old.minX;
       const dy = tl.minY - old.minY;
@@ -1198,6 +1231,7 @@ export class DrawingState extends EventTarget {
     }
     if (groupDeltas.size > 0) {
       for (const sh of this.shapes) {
+        if (this._isShapeInert(sh, inert)) continue;
         if (sh.groupId && !deltas.has(sh.id)) {
           const d = groupDeltas.get(sh.groupId);
           if (d) deltas.set(sh.id, d);
@@ -1224,6 +1258,10 @@ export class DrawingState extends EventTarget {
     if (!this.flowchartEnabled) return;
     const parent = this.shapes.find((s) => s.id === parentId);
     if (!parent || parent.type !== "text") return;
+    // No new edge onto a hidden or locked node. ⌘→ can't reach one (its
+    // editor won't open), but ⌘↓ resolves the sibling's parent from the
+    // edge list and can land here with a locked parent.
+    if (this._isShapeInert(parent)) return;
     const pBounds = getShapeBounds(parent, this.fontFamily);
     let baseY = pBounds.minY;
     for (const cid of this.flowchart.childrenOf(parentId)) {
@@ -1269,8 +1307,7 @@ export class DrawingState extends EventTarget {
     if (!parentId) return false;
     const parent = this.shapes.find((s) => s.id === parentId);
     if (!parent || parent.type !== "text") return false;
-    this.startEditingExistingText(parent);
-    return true;
+    return this.startEditingExistingText(parent);
   }
 
   /** Enter edit mode on the most-recently-edited text shape (excluding
@@ -1281,8 +1318,9 @@ export class DrawingState extends EventTarget {
       if (id === excludeId) continue;
       const shape = this.shapes.find((s) => s.id === id);
       if (shape && shape.type === "text") {
-        this.startEditingExistingText(shape);
-        return true;
+        if (this.startEditingExistingText(shape)) return true;
+        // Locked since it was last edited — keep walking back.
+        continue;
       }
     }
     return false;
@@ -1831,6 +1869,9 @@ export class DrawingState extends EventTarget {
         for (const s of this.shapes) {
           if (this.selectedIds.has(s.id) && s.type === "drag-area") selectedDragAreaIds.add(s.id);
         }
+        // Hoisted for the whole move: the drop-target probe below wants
+        // it too, and this runs on every pointer sample of a drag.
+        const inert = this._inertLayerIds();
         // Flowchart descendants of any selected node move with the
         // selection so the downstream spatial layout stays intact —
         // unless the host opted out (derived chains, see the switch).
@@ -1838,6 +1879,20 @@ export class DrawingState extends EventTarget {
         if (this.flowDragDescendants) {
           for (const id of this.selectedIds) {
             for (const d of this.flowchart.descendantsOf(id)) flowDescendants.add(d);
+          }
+          // A descendant on a hidden or locked layer is dropped from the
+          // set: the edge may predate the lock, but the lock means "this
+          // doesn't move", and a chart drag is no more entitled to move
+          // it than a direct one is. Its own descendants still follow —
+          // the lock is on the shape, not on the subtree below it. One
+          // pass over the shapes rather than a lookup per descendant,
+          // and skipped outright when nothing is locked or hidden.
+          if (inert.size > 0 && flowDescendants.size > 0) {
+            for (const sh of this.shapes) {
+              if (flowDescendants.has(sh.id) && this._isShapeInert(sh, inert)) {
+                flowDescendants.delete(sh.id);
+              }
+            }
           }
         }
         // If a flowchart descendant is part of a group, the rest of that group
@@ -1850,6 +1905,7 @@ export class DrawingState extends EventTarget {
         }
         if (followingGroups.size > 0) {
           for (const sh of this.shapes) {
+            if (this._isShapeInert(sh, inert)) continue;
             if (sh.groupId && followingGroups.has(sh.groupId)) flowDescendants.add(sh.id);
           }
         }
@@ -1916,6 +1972,11 @@ export class DrawingState extends EventTarget {
             if (draggingSet.has(s.id)) continue;
             if (s.id === exclude) continue;
             if (s.pocketed) continue;
+            // Nothing on a hidden or locked layer is a drop target, so
+            // don't outline one as a prospective parent either — the
+            // drop handler would refuse it (`isFlowable`) and the
+            // outline would be a promise the release can't keep.
+            if (this._isShapeInert(s, inert)) continue;
             if (s.groupId && draggingGroupIds.has(s.groupId)) continue;
             const bb = this._probeBounds(s, flowDescendants, selectedDragAreaIds);
             if (probe.x >= bb.minX && probe.x <= bb.maxX && probe.y >= bb.minY && probe.y <= bb.maxY) {
@@ -2229,7 +2290,13 @@ export class DrawingState extends EventTarget {
               // existing offset so the chain stays intact. Grouped descendants
               // bring the rest of their group along so the group doesn't get
               // torn apart by the snap.
-              const desc = new Set(this.flowchart.descendantsOf(droppedId));
+              const snapInert = this._inertLayerIds();
+              const desc = new Set<string>();
+              for (const id of this.flowchart.descendantsOf(droppedId)) {
+                const sh = this.shapes.find((s) => s.id === id);
+                if (sh && this._isShapeInert(sh, snapInert)) continue;
+                desc.add(id);
+              }
               if (desc.size > 0) {
                 const groups = new Set<string>();
                 for (const id of desc) {
@@ -2238,6 +2305,7 @@ export class DrawingState extends EventTarget {
                 }
                 if (groups.size > 0) {
                   for (const sh of this.shapes) {
+                    if (this._isShapeInert(sh, snapInert)) continue;
                     if (sh.groupId && groups.has(sh.groupId)) desc.add(sh.id);
                   }
                 }

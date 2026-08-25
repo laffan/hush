@@ -11,6 +11,7 @@ import { syntaxHighlighting } from "@codemirror/language";
 import { getActiveTheme } from "../themes/index.js";
 import { createBaseExtensions, buildShortcutExtension, programmaticAnnotations } from "../editor/base-extensions.js";
 import { bindLineIndicatorToContainer } from "../editor/line-indicator.js";
+import { bindCursorModeToContainer, paintCursorMode, resolveCursorPaint } from "../editor/block-cursor.js";
 import { getMarkdownHighlight } from "../editor/markdown-highlight.js";
 import { bypassSeparatorFilter } from "../editor/plugins/project-view.js";
 import { createDryHighlightPlugin } from "../editor/plugins/dry-highlight.js";
@@ -53,7 +54,13 @@ export function createPaneEditor(container, appState, onChange, opts) {
     extensions: [...extensions, dryPlugin, typewriterUpdateListener, ...extraExts],
   });
   const view = new EditorView({ state: startState, parent: container });
-  bindLineIndicatorToContainer(container, appState);
+  const unbindLineIndicator = bindLineIndicatorToContainer(container, appState);
+  // The settings this surface is themed from. Starts as the session's
+  // and is replaced by `reconfigureTheme` once a locked style resolves,
+  // so the cursor binding below repaints against the style the surface
+  // is actually showing rather than the one the session is on.
+  let themedSettings = appState.settings;
+  const unbindCursorMode = bindCursorModeToContainer(container, appState, () => themedSettings);
 
   if (modeRef.typewriterMode) {
     _applyPaneTypewriter(view, modeRef, container);
@@ -126,6 +133,8 @@ export function createPaneEditor(container, appState, onChange, opts) {
     },
     destroy: () => {
       appState.off("mode-changed", onModeChanged);
+      unbindLineIndicator();
+      unbindCursorMode();
       _removePaneTypewriter(view, container);
       view.destroy();
     },
@@ -139,6 +148,7 @@ export function createPaneEditor(container, appState, onChange, opts) {
       const effective = lockedStyleId
         ? resolveLockedStyleSettings(settings, lockedStyleId)
         : settings;
+      themedSettings = effective;
       const t = getActiveTheme(effective);
       const style = effective.activeStyleId
         ? (effective.styles || []).find(s => s.id === effective.activeStyleId) : null;
@@ -165,6 +175,11 @@ export function createPaneEditor(container, appState, onChange, opts) {
       // own background/foreground inside, so without inline overrides
       // here the pane keeps showing the theme's stock colours.
       applyStyleColorsToView(view, style, effective);
+      // Cursor mode (system / block / underline) is a class on the
+      // container, not something the CodeMirror theme can carry — repaint
+      // it here so a locked style's cursor lands with the rest of its
+      // colours instead of waiting for the next global style event.
+      paintCursorMode(container, resolveCursorPaint(effective));
     },
   };
 }

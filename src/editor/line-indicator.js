@@ -141,9 +141,18 @@ export function applyLineIndicatorClass(container, state) {
 }
 
 /** Wire a container to re-apply the indicator class on every
- *  `style-changed` / `settings-changed` so dropdown edits land live. */
+ *  `style-changed` / `settings-changed` so dropdown edits land live.
+ *  Returns an unbind function — panes and stack columns are created and
+ *  destroyed constantly, and a listener closing over a detached
+ *  container keeps the whole surface alive. */
 export function bindLineIndicatorToContainer(container, state) {
-  applyLineIndicatorClass(container, state);
-  state.on("style-changed", () => applyLineIndicatorClass(container, state));
-  state.on("settings-changed", () => applyLineIndicatorClass(container, state));
+  if (!container) return () => {};
+  const reapply = () => applyLineIndicatorClass(container, state);
+  reapply();
+  state.on("style-changed", reapply);
+  state.on("settings-changed", reapply);
+  return () => {
+    state.off("style-changed", reapply);
+    state.off("settings-changed", reapply);
+  };
 }

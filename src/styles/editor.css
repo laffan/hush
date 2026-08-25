@@ -196,7 +196,12 @@ body.file-in-trash #notebook-container .notes-canvas + * {
 }
 
 /* Block cursor mode — also targets the Zen Focus and Selection Focus
-   overlays, which mount their own CodeMirror outside `#editor-container`.
+   overlays, which mount their own CodeMirror outside `#editor-container`,
+   and `.cursor-mode-surface`: the marker `block-cursor.js#paintCursorMode`
+   stamps on whatever root it paints, which is how floating panes and
+   stack columns get the mode without this file learning their class
+   names. Its `.a.b .c` specificity clears the CodeMirror theme's own
+   `.cm-cursor` rule, which panes inherit from `createBaseExtensions`.
    The cursor's `0.6em` width is relative to the cursor element's
    computed font-size, which inherits from `.cm-scroller` (the main
    editor uses --font-size; Zen uses --zen-font-size; Selection Focus
@@ -204,7 +209,8 @@ body.file-in-trash #notebook-container .notes-canvas + * {
    surface it's painted in. */
 #editor-container.block-cursor .cm-cursor,
 .zen-focus-overlay.block-cursor .cm-cursor,
-.selection-focus-overlay.block-cursor .cm-cursor {
+.selection-focus-overlay.block-cursor .cm-cursor,
+.cursor-mode-surface.block-cursor .cm-cursor {
   border-left: none;
   background: var(--block-cursor-color, var(--cursor));
   /* Kept in sync with the style-preview block swatch
@@ -223,7 +229,8 @@ body.file-in-trash #notebook-container .notes-canvas + * {
    leaves a hairline strip under chunky text). */
 #editor-container.underline-cursor .cm-cursor,
 .zen-focus-overlay.underline-cursor .cm-cursor,
-.selection-focus-overlay.underline-cursor .cm-cursor {
+.selection-focus-overlay.underline-cursor .cm-cursor,
+.cursor-mode-surface.underline-cursor .cm-cursor {
   border-left: none;
   border-bottom: 0.18em solid var(--block-cursor-color, var(--cursor));
   background: transparent;
