@@ -131,7 +131,7 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutItalic) settings.shortcutItalic = "Mod+I";
   if (!settings.shortcutHighlight) settings.shortcutHighlight = "Mod+=";
   if (!settings.shortcutComment) settings.shortcutComment = "Mod+/";
-  if (!settings.shortcutStrikethrough) settings.shortcutStrikethrough = "Mod+`";
+  if (!settings.shortcutStrikethrough) settings.shortcutStrikethrough = "Mod+-";
   if (!settings.shortcutInsertFootnote) settings.shortcutInsertFootnote = "Mod+Shift+M";
   if (!settings.shortcutSelectParagraph) settings.shortcutSelectParagraph = "Alt+Shift+L";
   if (!settings.shortcutZotero) settings.shortcutZotero = "Mod+Shift+I";

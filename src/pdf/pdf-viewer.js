@@ -228,7 +228,13 @@ export function createPdfViewer(container, opts = {}) {
   });
 
   // ── Keyboard zoom (Cmd+/- while viewer is mounted) ──────────────
+  // Window-level, so it fires while the caret is in a doc that happens
+  // to share the screen with a PDF pane or stack column — and ⌘= / ⌘-
+  // are Highlight and Strikethrough there. CodeMirror cancels the event
+  // for a binding it handled, which is the signal that the keystroke was
+  // already spent; without this check the same press zoomed the PDF too.
   function onKeydown(e) {
+    if (e.defaultPrevented) return;
     if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
     if (e.key === "=" || e.key === "+") { e.preventDefault(); stepZoomIn(); }
     else if (e.key === "-") { e.preventDefault(); stepZoomOut(); }

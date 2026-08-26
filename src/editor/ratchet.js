@@ -116,7 +116,7 @@ function isRearrangement(tr) {
 /** The strikethrough binding as the user would read it — the refusal
  *  notice names it, since it's the way out of the refusal. */
 function strikeShortcutLabel(state) {
-  const raw = state?.settings?.shortcutStrikethrough || "Mod+`";
+  const raw = state?.settings?.shortcutStrikethrough || "Mod+-";
   const isMac = navigator.platform?.includes("Mac") || navigator.userAgent?.includes("Mac");
   const parts = raw.split("+").map((p) => (
     /^(CmdOrCtrl|Mod|Cmd|Meta)$/i.test(p) ? (isMac ? "⌘" : "Ctrl") : p

@@ -11,6 +11,8 @@ import {
   writeText as tauriWriteText, readText as tauriReadText,
 } from "@tauri-apps/plugin-clipboard-manager";
 import { readClipboardImageDataUrl } from "../clipboard-image.js";
+import { logActivity } from "../activity-log.js";
+import { describeActiveElement, describeClipboard } from "../paste-diagnostics.js";
 
 /** Cmd+C / V / X bind on `window`, so when several NotesCanvas instances
  *  exist (main canvas + a pane, desk thumbnail, etc.) every state's
@@ -461,7 +463,10 @@ export function bindInputEvents(
     // paste *is* dispatched (e.g. native Edit > Paste in Tauri), and the
     // two paths dedupe on `lastPasteAt`.
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === "v" || e.key === "V")) {
-      if (!isClipboardOwner(state)) return;
+      if (!isClipboardOwner(state)) {
+        logActivity("paste", "info", "Canvas Cmd+V ignored — another surface owns the clipboard");
+        return;
+      }
       e.preventDefault();
       void asyncCanvasPaste(state);
       return;
@@ -510,6 +515,12 @@ export function bindInputEvents(
   // canvas-focused case via the async clipboard API. Both paths share
   // `lastPasteAt` to avoid double-pasting if both fire.
   on(document as unknown as HTMLElement, "paste", (async (e: ClipboardEvent) => {
+    logActivity("paste", "info", "Canvas paste event", {
+      clipboardOwner: isClipboardOwner(state),
+      activeElement: describeActiveElement(),
+      editingText: state.editingText,
+      ...describeClipboard(e.clipboardData),
+    });
     if (!isClipboardOwner(state)) return;
     if (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) return;
     // Skip when focus is in any contenteditable surface — the main Doc
@@ -570,6 +581,9 @@ export function bindInputEvents(
       const dims = await getImageDimensions(osImage);
       markPasted();
       state.addImageShape(osImage, "pasted-image", dims.width, dims.height);
+      logActivity("paste", "info", "Canvas paste added an image shape", { via: "clipboard read", ...dims });
+    } else {
+      logActivity("paste", "warn", "Canvas paste found nothing to paste — the event was empty and the clipboard read came back with nothing");
     }
   }) as unknown as (e: HTMLElementEventMap["paste"]) => void);
 
@@ -622,7 +636,11 @@ function markPasted() { lastPasteAt = Date.now(); }
 function recentlyPasted(): boolean { return Date.now() - lastPasteAt < PASTE_DEDUP_MS; }
 
 async function asyncCanvasPaste(state: DrawingState) {
-  if (recentlyPasted()) return;
+  if (recentlyPasted()) {
+    logActivity("paste", "info", "Canvas Cmd+V skipped — a paste landed within the last " + PASTE_DEDUP_MS + "ms");
+    return;
+  }
+  logActivity("paste", "info", "Canvas Cmd+V", { activeElement: describeActiveElement(), editingText: state.editingText });
   // Bail early if the focus is in any editable surface — the paste belongs
   // there, not on the canvas.
   const activeEl = document.activeElement as HTMLElement | null;
@@ -666,6 +684,8 @@ async function asyncCanvasPaste(state: DrawingState) {
     const dims = await getImageDimensions(dataUrl);
     markPasted();
     state.addImageShape(dataUrl, "pasted-image", dims.width, dims.height);
+    logActivity("paste", "info", "Canvas Cmd+V added an image shape", dims);
+  } else {
+    logActivity("paste", "warn", "Canvas Cmd+V found nothing — no shapes, no text, no image");
   }
 }
-

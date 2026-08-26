@@ -191,7 +191,7 @@ export function createDefaultSettings() {
     shortcutItalic: "Mod+I",
     shortcutHighlight: "Mod+=",
     shortcutComment: "Mod+/",
-    shortcutStrikethrough: "Mod+`",
+    shortcutStrikethrough: "Mod+-",
     shortcutInsertFootnote: "Mod+Shift+M",
 
     // Shortcuts — Additional editing actions

@@ -13,6 +13,7 @@
  * dropped file, but does NOT block the editor/notebook from receiving
  * the drop event.
  */
+import { logActivity } from "../activity-log.js";
 
 const TEXT_EXTENSIONS = [".md", ".txt", ".text", ".markdown"];
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".heic", ".heif", ".avif", ".tif", ".tiff"];
@@ -435,16 +436,30 @@ export async function insertImagesAtPos(state, view, files, pos, localSync) {
         const altSrc = finalName.replace(/\.[^.]+$/, "") || "image";
         chunks.push(buildImageMarkdown(altSrc, finalName));
       } catch (e) {
+        logActivity("paste", "error", "Local Sync image write failed", {
+          name: file?.name, error: String(e?.message || e),
+        });
         console.error("Local Sync image insert failed:", e);
       }
     }
   } else {
     for (const file of files) {
       const res = await state.createImageFromFile(file);
+      // `createImageFromFile` answers null for a failed `save_image` —
+      // the one step between "an image was on the clipboard" and "a link
+      // appeared in the document", and it used to fail in silence.
       if (res) chunks.push(buildImageMarkdown(res.alt, res.filename));
+      else logActivity("paste", "error", "Saving the image to the Images folder failed", {
+        name: file?.name, type: file?.type, size: file?.size,
+      });
     }
   }
-  if (!chunks.length) return;
+  if (!chunks.length) {
+    logActivity("paste", "warn", "No image markdown to insert — every file failed to save", {
+      count: files.length,
+    });
+    return;
+  }
   const line = view.state.doc.lineAt(pos);
   const atLineStart = pos === line.from;
   const atLineEnd = pos === line.to;

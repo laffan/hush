@@ -19,7 +19,9 @@
  *    writes both into the log. Second question of any iPad bug report.
  *  - **Activity Log** — a permanent, cross-window console (see
  *    src/activity-log.js). Rows are plain selectable text so a fragment
- *    can be copied on its own; the header has a button for the lot.
+ *    can be copied on its own; the header has a button for the lot. The
+ *    filter box takes a source name: `paste` is a full trace of an image
+ *    paste, which on iPad is the only way to see one at all.
  *
  * Rendering is markup-only, like the other tabs; `bindDebugTab` wires the
  * live parts after the panel is in the DOM.
@@ -135,7 +137,7 @@ export function renderDebugTab(settings) {
 
     <div class="settings-section" id="debug-activity">
       <h2>Activity Log</h2>
-      <p class="settings-help">Everything the app does across every desk and every window, kept between launches. Select any part of a row to copy just that, or copy the whole log at once.</p>
+      <p class="settings-help">Everything the app does across every desk and every window, kept between launches. Select any part of a row to copy just that, or copy the whole log at once. Filter by a subsystem's name to follow one thing end to end — <code>paste</code> traces an image paste from the event through the clipboard read to the file being written, which is how to find out why one didn't land.</p>
       <div class="debug-log-toolbar">
         <input type="search" id="debug-log-filter" class="debug-log-filter" placeholder="Filter…" />
         <select id="debug-log-level" class="debug-log-level">

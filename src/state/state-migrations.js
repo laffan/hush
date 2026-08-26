@@ -17,8 +17,9 @@
 /** Shortcut defaults that were re-assigned after release: Reduce-sentence
  *  selection moved onto Cmd+Shift+L (paired with Cmd+L grow) and
  *  Select-paragraph took the freed Alt+Shift+L; then the new-document
- *  group was split across Cmd and Ctrl. Returns `{ key: value }` for
- *  whatever it changed; empty when there was nothing to do. */
+ *  group was split across Cmd and Ctrl; then Strikethrough left the
+ *  grave key for Cmd+-. Returns `{ key: value }` for whatever it
+ *  changed; empty when there was nothing to do. */
 export function migrateShortcutDefaults(settings) {
   const s = settings;
   const changed = {};
@@ -39,6 +40,16 @@ export function migrateShortcutDefaults(settings) {
   if (s.shortcutNewNotebook === "Mod+Shift+N") {
     s.shortcutNewNotebook = "Ctrl+N";
     changed.shortcutNewNotebook = s.shortcutNewNotebook;
+  }
+  // Strikethrough moved off the grave key. ⌘` is a *system* shortcut on
+  // both platforms Hush ships on — "Move focus to next window" on macOS,
+  // window cycling on iPadOS — so wherever the OS claimed it the key
+  // never reached the web layer at all and the binding was unreachable
+  // however it was matched. ⌘- pairs with ⌘= (highlight) and nothing
+  // upstream wants it.
+  if (s.shortcutStrikethrough === "Mod+`" || s.shortcutStrikethrough === "Cmd+`") {
+    s.shortcutStrikethrough = "Mod+-";
+    changed.shortcutStrikethrough = s.shortcutStrikethrough;
   }
   return changed;
 }

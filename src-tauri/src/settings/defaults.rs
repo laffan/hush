@@ -267,7 +267,7 @@ pub fn default_zotero_snapshot_quality() -> u32 {
     90
 }
 pub fn default_shortcut_strikethrough() -> String {
-    "Mod+`".to_string()
+    "Mod+-".to_string()
 }
 pub fn default_shortcut_select_paragraph() -> String {
     "Alt+Shift+L".to_string()

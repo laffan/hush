@@ -29,10 +29,15 @@
  * want: `state.createImageFromDataUrl` writes it to the Images folder,
  * and `DrawingState.addImageShape` embeds it in the notebook envelope.
  *
- * Zero app imports — a leaf, so the lazily-loaded notebook bundle can
- * share it with the editor without dragging app state across the
- * boundary.
+ * Zero app *state* imports — a leaf, so the lazily-loaded notebook
+ * bundle can share it with the editor without dragging app state across
+ * the boundary. `activity-log.js` is itself a leaf (no imports of its
+ * own) and is the exception: every failure in here used to be swallowed
+ * by a bare `catch (_) {}`, which is why "the paste did nothing" came
+ * with nothing to read. Reasons now go to Settings → Debug → Activity
+ * Log under the `paste` source.
  */
+import { logActivity } from "./activity-log.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__ != null;
 
@@ -64,15 +69,27 @@ function rgbaToPngDataUrl(rgba, width, height) {
 }
 
 async function readViaTauriPlugin() {
-  if (!IS_TAURI) return null;
+  if (!IS_TAURI) {
+    logActivity("paste", "info", "Clipboard plugin skipped — not running under Tauri");
+    return null;
+  }
   try {
     const { readImage } = await import("@tauri-apps/plugin-clipboard-manager");
     const image = await readImage();
-    if (!image) return null;
+    if (!image) {
+      logActivity("paste", "info", "Clipboard plugin: no image on the clipboard");
+      return null;
+    }
     const [rgba, size] = await Promise.all([image.rgba(), image.size()]);
-    return rgbaToPngDataUrl(rgba, size?.width, size?.height);
-  } catch (_) {
+    const url = rgbaToPngDataUrl(rgba, size?.width, size?.height);
+    logActivity("paste", url ? "info" : "warn",
+      url ? "Clipboard plugin read an image" : "Clipboard plugin image failed to encode",
+      { width: size?.width, height: size?.height, bytes: rgba?.length });
+    return url;
+  } catch (e) {
     // No image on the clipboard, or the platform doesn't implement it.
+    // Which of those it was is the whole question, so say.
+    logActivity("paste", "info", "Clipboard plugin read failed", { error: String(e?.message || e) });
     return null;
   }
 }
@@ -87,17 +104,39 @@ function blobToDataUrl(blob) {
 }
 
 async function readViaClipboardApi() {
-  if (typeof navigator === "undefined" || !navigator.clipboard?.read) return null;
+  if (typeof navigator === "undefined" || !navigator.clipboard?.read) {
+    // A non-secure context is the usual reason the API is missing
+    // entirely, and it looks exactly like "the paste did nothing".
+    logActivity("paste", "warn", "navigator.clipboard.read is unavailable", {
+      hasClipboard: typeof navigator !== "undefined" && !!navigator.clipboard,
+      isSecureContext: typeof window !== "undefined" ? window.isSecureContext : null,
+      origin: typeof location !== "undefined" ? location.origin : null,
+    });
+    return null;
+  }
+  const started = Date.now();
   try {
     const items = await navigator.clipboard.read();
+    const seen = [];
     for (const item of items) {
       for (const type of item.types || []) {
+        seen.push(type);
         if (typeof type === "string" && type.startsWith("image/")) {
-          return await blobToDataUrl(await item.getType(type));
+          const url = await blobToDataUrl(await item.getType(type));
+          logActivity("paste", "info", "Browser clipboard read an image", { type, ms: Date.now() - started });
+          return url;
         }
       }
     }
-  } catch (_) { /* denied, unsupported, or nothing to read */ }
+    logActivity("paste", "info", "Browser clipboard held no image", { types: seen, ms: Date.now() - started });
+  } catch (e) {
+    // On iOS a spent user gesture surfaces here as NotAllowedError — the
+    // single most likely reason an image paste "did nothing", and it was
+    // being discarded silently.
+    logActivity("paste", "warn", "Browser clipboard read failed", {
+      name: e?.name, error: String(e?.message || e), ms: Date.now() - started,
+    });
+  }
   return null;
 }
 
@@ -119,6 +158,14 @@ export async function readClipboardImageDataUrl() {
   // several tries in a notebook and never landed in a Doc: by the time
   // `navigator.clipboard.read()` ran, the gesture it needed was gone.
   // Calling it first, in the caller's own task, is the whole fix.
+  logActivity("paste", "info", "Reading the clipboard for an image", {
+    route: isIOS() ? "browser (iOS)" : "plugin, then browser",
+    // Whether the gesture is still live is the thing that decides an iOS
+    // read, so record it at the moment the read starts.
+    userActivation: typeof navigator !== "undefined" && navigator.userActivation
+      ? { isActive: navigator.userActivation.isActive, hasBeenActive: navigator.userActivation.hasBeenActive }
+      : null,
+  });
   if (isIOS()) return await readViaClipboardApi();
   return (await readViaTauriPlugin()) || (await readViaClipboardApi());
 }
@@ -140,6 +187,62 @@ export function imageFilesFromDataTransfer(dt) {
   if (out.length === 0 && dt.files) {
     for (const f of dt.files) {
       if (f && (f.type || "").startsWith("image/")) out.push(f);
+    }
+  }
+  return out;
+}
+
+/** Image sources in a paste's `text/html` that we can actually fetch.
+ *
+ *  WebKit routinely answers an image paste with markup rather than
+ *  bytes: `clipboardData` carries only `text/html` holding an `<img>`,
+ *  and `files` / `items` are empty. Where that `src` is a `data:` or
+ *  `blob:` URL the image is right there for the taking, with no
+ *  clipboard permission and no user gesture involved.
+ *
+ *  `webkit-fake-url:` — WebKit's placeholder for bytes it kept back — is
+ *  deliberately *not* fetchable, and is returned as `skipped` so the log
+ *  can say that is what happened rather than "nothing found".
+ *
+ *  Synchronous on purpose: the caller decides whether to start a
+ *  clipboard read on this answer, and that decision has to be made
+ *  before any `await` spends the paste gesture's activation.
+ */
+export function fetchableImageSrcsFromHtml(html) {
+  const empty = { fetchable: [], skipped: [] };
+  if (!html || typeof DOMParser === "undefined") return empty;
+  let doc;
+  try { doc = new DOMParser().parseFromString(html, "text/html"); } catch (_) { return empty; }
+  const out = { fetchable: [], skipped: [] };
+  for (const img of Array.from(doc?.images || [])) {
+    const src = img.getAttribute("src");
+    if (!src) continue;
+    const scheme = src.slice(0, src.indexOf(":") + 1).toLowerCase();
+    if (scheme === "data:" || scheme === "blob:") out.fetchable.push(src);
+    else out.skipped.push(scheme || src.slice(0, 24));
+  }
+  return out;
+}
+
+/** Fetch image sources gathered by `fetchableImageSrcsFromHtml` into
+ *  `File`s, so they hand the same shape to an image-insert routine as
+ *  the DataTransfer path. Anything that fails to fetch, or isn't an
+ *  image once fetched, is logged and dropped. */
+export async function filesFromImageSrcs(srcs) {
+  const out = [];
+  for (const src of srcs || []) {
+    try {
+      const blob = await (await fetch(src)).blob();
+      if (!blob || !(blob.type || "").startsWith("image/")) {
+        logActivity("paste", "info", "Pasted HTML image was not an image once fetched", { type: blob?.type });
+        continue;
+      }
+      const ext = (blob.type.split("/")[1] || "png").split("+")[0];
+      out.push(new File([blob], `pasted-${Date.now()}.${ext}`, { type: blob.type }));
+    } catch (e) {
+      logActivity("paste", "warn", "Pasted HTML image could not be fetched", {
+        scheme: src.slice(0, src.indexOf(":") + 1), error: String(e?.message || e),
+      });
     }
   }
   return out;

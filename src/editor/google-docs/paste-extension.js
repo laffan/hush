@@ -5,10 +5,9 @@
  * look rich, returns false so CodeMirror's default plain-text paste
  * (or the image-paste extension behind it) handles the event.
  *
- * Mounted in `editor.js` *after* `createImagePasteExtension`, so an image
- * paste still wins for clipboard payloads that include image bytes —
- * image-paste calls preventDefault and stops the chain before this
- * handler sees the event.
+ * Image paste outranks this (`Prec.high` in both extension lists), so a
+ * clipboard payload carrying image bytes never reaches here — image-paste
+ * calls preventDefault and stops the chain.
  */
 import { EditorView } from "@codemirror/view";
 import { htmlToMarkdown } from "./html-to-markdown.js";
@@ -21,7 +20,11 @@ export function createGoogleDocsPasteExtension() {
       const html = cd.getData("text/html");
       if (!html) return false;
       const md = htmlToMarkdown(html);
-      if (md == null) return false;
+      // Empty is a refusal, not a result. WebKit hands over `text/html`
+      // for some image copies — `<p><img …></p>` passes the rich-tag
+      // test and renders to nothing — and claiming the event to insert
+      // "" swallowed the paste whole.
+      if (!md) return false;
       event.preventDefault();
       const sel = view.state.selection.main;
       view.dispatch({

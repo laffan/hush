@@ -1,5 +1,5 @@
 import { EditorView, keymap, drawSelection, placeholder, ViewPlugin } from "@codemirror/view";
-import { EditorState, Compartment } from "@codemirror/state";
+import { EditorState, Compartment, Prec } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting } from "@codemirror/language";
 import { Strikethrough, Table } from "@lezer/markdown";
@@ -304,7 +304,15 @@ export function createEditor(container, state) {
       // all in the main editor — the surface the user actually writes
       // in. Same hole as the Cmd+` fallback had; see
       // `createStrikethroughFallback`.
-      createImagePasteExtension(state),
+      //
+      // `Prec.high` rather than "earlier in this array": both paste
+      // handlers sit at default precedence otherwise, and which one CM
+      // offers the event to first is then a property of list order,
+      // which is exactly the kind of thing that gets shuffled. An image
+      // paste must outrank the rich-HTML one — WebKit hands over
+      // `text/html` wrapping an `<img>` for some image copies, and the
+      // HTML path would convert that to nothing and swallow the event.
+      Prec.high(createImagePasteExtension(state)),
       createGoogleDocsPasteExtension(),
       headingIndentPlugin,
       findHighlightField,

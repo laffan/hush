@@ -8,3 +8,5 @@
 export declare function readClipboardImageDataUrl(): Promise<string | null>;
 export declare function imageFilesFromDataTransfer(dt: DataTransfer | null): File[];
 export declare function dataUrlToFile(dataUrl: string, name?: string): File;
+export declare function fetchableImageSrcsFromHtml(html: string): { fetchable: string[]; skipped: string[] };
+export declare function filesFromImageSrcs(srcs: string[]): Promise<File[]>;

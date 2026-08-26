@@ -103,6 +103,11 @@ const KEYCODE_TO_KEY = {
   186: ";", 222: "'", 188: ",", 190: ".", 191: "/", 192: "`",
 };
 
+/** The characters `isPhysicalKey` can resolve — the punctuation keys a
+ *  layout may rename or a platform may fail to report. Callers use it to
+ *  decide whether a physical-key route applies at all. */
+export const PUNCTUATION_KEYS = new Set(Object.values(CODE_TO_KEY));
+
 /** True when `event` came off the physical key that types `char` on a US
  *  layout, whatever this layout reports for it. Checked in order of
  *  reliability: `code`, then `keyCode`, then the character itself — so a
