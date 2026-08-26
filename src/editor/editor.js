@@ -47,6 +47,7 @@ import { createFlagHighlightPlugin, hexToRgba } from "./flag-highlight.js";
 import { createYouAreHerePlugin } from "./plugins/you-are-here.js";
 import {
   defaultLocalSyncContext, buildShortcutExtension, createBaseExtensions,
+  createStrikethroughFallback,
   programmaticAnnotations, isProgrammaticUpdate,
 } from "./base-extensions.js";
 import { applyBlockCursor } from "./block-cursor.js";
@@ -274,6 +275,8 @@ export function createEditor(container, state) {
       wrapOnSelection,
       updateListener,
       blurListener,
+      // Physical-key route for Cmd+` — see createStrikethroughFallback.
+      createStrikethroughFallback(state),
       shortcutCompartment.of(initialShortcuts),
       readOnlyCompartment.of([]),
       ratchetExtensions,

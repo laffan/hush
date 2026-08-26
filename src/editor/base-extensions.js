@@ -90,6 +90,35 @@ export function buildShortcutExtension(state) {
 }
 
 /**
+ * Catch Cmd+Backquote at the DOM-event layer so the strikethrough toggle
+ * fires reliably across keyboard layouts. The grave key registers as a
+ * combining-accent dead key on many layouts (`event.key === "Dead"`), and
+ * on some platforms / CodeMirror builds the literal "`" doesn't match the
+ * stored "Mod+`" binding either, so the user-customizable keymap entry
+ * alone isn't enough. Match the physical code instead.
+ *
+ * **Every doc surface needs this, not just the ones built from
+ * `createBaseExtensions`.** `editor.js` assembles its own extension list
+ * and was missing it, so Cmd+` did nothing in the main editor while
+ * working fine in a pane — which reads as the shortcut being unbound.
+ * Exported so the two lists can't drift again.
+ *
+ * @param {object} state AppState (or a per-editor mode context proxy)
+ */
+export function createStrikethroughFallback(state) {
+  return EditorView.domEventHandlers({
+    keydown(e, view) {
+      if (e.code !== "Backquote") return false;
+      if (!(e.metaKey || e.ctrlKey)) return false;
+      if (!matchesDomEvent(e, state.settings.shortcutStrikethrough)) return false;
+      toggleStrikethrough(view);
+      e.preventDefault();
+      return true;
+    },
+  });
+}
+
+/**
  * Build the shared CodeMirror extension set used by both the main editor
  * and floating pane editors.  This is the single source of truth for the
  * Hush writing experience (theme, syntax, shortcuts, plugins).
@@ -138,24 +167,7 @@ export function createBaseExtensions(state, onChange, opts) {
     if (update.docChanged && onChange && !isProgrammaticUpdate(update)) onChange(update);
   });
 
-  // Catch Cmd+Backquote at the DOM-event layer so the strikethrough toggle
-  // fires reliably across keyboard layouts. The grave key registers as a
-  // combining-accent dead key on many layouts (event.key === "Dead"), and
-  // on some platforms / CodeMirror builds the literal "`" doesn't match
-  // the stored "Mod+`" binding either, so the user-customizable keymap
-  // entry alone isn't enough. Match the physical code instead.
-  const strikethroughFallback = EditorView.domEventHandlers({
-    keydown(e, view) {
-      if (e.code !== "Backquote") return false;
-      if (!(e.metaKey || e.ctrlKey)) return false;
-      if (matchesDomEvent(e, state.settings.shortcutStrikethrough)) {
-        toggleStrikethrough(view);
-        e.preventDefault();
-        return true;
-      }
-      return false;
-    },
-  });
+  const strikethroughFallback = createStrikethroughFallback(state);
 
   const hushTheme = EditorView.theme({
     "&": { height: "100%" },

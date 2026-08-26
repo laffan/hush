@@ -119,7 +119,7 @@ export function createSpellcheckPlugin(stateRef) {
         // loses focus, the rebuild below drops its decorations.
         if (active && update.focusChanged) {
           if (this.view.hasFocus) this.runCheckNow();
-          else closeSpellPopover();
+          else if (!spellPopoverHoldsFocus()) closeSpellPopover();
         }
 
         if (annot || update.viewportChanged || flipped || update.focusChanged) {
@@ -185,6 +185,14 @@ let _popoverHostView = null;
 let _popoverDocListener = null;
 let _popoverKeyListener = null;
 
+/** True while the open popover owns the focus. Blurring the editor
+ *  normally means the user moved on and the popover should go, but the
+ *  popover is a menu they have to reach *by* clicking, so a blur into it
+ *  is the opposite of moving on. */
+function spellPopoverHoldsFocus() {
+  return !!(_popoverEl && _popoverEl.contains(document.activeElement));
+}
+
 function closeSpellPopover() {
   if (_popoverEl) {
     _popoverEl.remove();
@@ -203,6 +211,14 @@ function closeSpellPopover() {
 
 function applySpellReplacement(view, issue, replacement) {
   try {
+    // The range was measured when the popover opened. Only write if the
+    // document still reads the same there — a fetch of suggestions is a
+    // round trip to the dictionary, and the user can type through it.
+    // Better to do nothing than to overwrite whatever moved into the
+    // span in the meantime.
+    const len = view.state.doc.length;
+    if (issue.from < 0 || issue.to > len || issue.from >= issue.to) return;
+    if (view.state.doc.sliceString(issue.from, issue.to) !== issue.word) return;
     view.dispatch({
       changes: { from: issue.from, to: issue.to, insert: replacement },
       selection: { anchor: issue.from + replacement.length },
@@ -285,11 +301,29 @@ async function openSpellPopover(view, issue, anchorX, anchorY) {
       row.type = "button";
       row.className = "hush-spellcheck-popover-row";
       row.textContent = sugg;
-      row.addEventListener("click", (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
+      const commit = () => {
         applySpellReplacement(view, issue, sugg);
         closeSpellPopover();
+      };
+      // Commit on *mousedown*, with the default prevented so focus never
+      // leaves the editor. Picking a suggestion used to do nothing at
+      // all: pressing the button blurred the editor, the plugin's
+      // focus-change branch tore the popover down, and the row was gone
+      // from the document before the mouse came back up — so no `click`
+      // was ever dispatched. Keeping the caret in the editor also keeps
+      // the underlines painted, since only the focused surface shows
+      // them.
+      row.addEventListener("mousedown", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        commit();
+      });
+      // Keyboard activation dispatches a click with no preceding
+      // mousedown; `detail === 0` is how that arrives.
+      row.addEventListener("click", (ev) => {
+        if (ev.detail !== 0) return;
+        ev.preventDefault();
+        commit();
       });
       list.appendChild(row);
     }
