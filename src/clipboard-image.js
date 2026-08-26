@@ -44,8 +44,9 @@ const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__ != 
 /** iOS / iPadOS, including an iPad reporting itself as a Mac. Local copy
  *  of `settings-ui.js`'s `isIOS` — this module is a leaf on purpose (see
  *  the header) and importing app modules would drag state across the
- *  lazily-loaded notebook boundary. */
-function isIOS() {
+ *  lazily-loaded notebook boundary. Exported so the notebook's paste path
+ *  can branch on the same answer rather than keeping a third copy. */
+export function isIOS() {
   if (typeof navigator === "undefined") return false;
   if (/iPad|iPhone|iPod/.test(navigator.userAgent || "")) return true;
   const tp = typeof navigator.maxTouchPoints === "number" ? navigator.maxTouchPoints : 0;

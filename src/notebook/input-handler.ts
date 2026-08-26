@@ -1,53 +1,13 @@
 import type { DrawingState } from "./state";
 import type { Camera } from "./types";
 import {
-  cleanLineBreaks, extractDroppedText, extractTextFromDataTransfer,
+  cleanLineBreaks, extractDroppedText,
   fileToDataUrl, getImageDimensions, isImageFile, isTextFile,
 } from "./external-content";
 import { screenToCanvas } from "./utils";
-import { tryDecode } from "./clipboard-format";
-import { getActiveNotebookState } from "./notes-canvas";
 import {
-  writeText as tauriWriteText, readText as tauriReadText,
-} from "@tauri-apps/plugin-clipboard-manager";
-import { readClipboardImageDataUrl } from "../clipboard-image.js";
-import { logActivity } from "../activity-log.js";
-import { describeActiveElement, describeClipboard } from "../paste-diagnostics.js";
-
-/** Cmd+C / V / X bind on `window`, so when several NotesCanvas instances
- *  exist (main canvas + a pane, desk thumbnail, etc.) every state's
- *  handler fires on the same keystroke. Allow only the canvas the user
- *  last interacted with to act — otherwise hidden / 0-sized panes paste
- *  in parallel and the visible canvas's paste lands at unexpected
- *  coordinates. NotesCanvas claims the slot on mount, so a single
- *  fresh notebook always has an active canvas before the user can
- *  reach for the keyboard. */
-function isClipboardOwner(state: DrawingState): boolean {
-  return getActiveNotebookState() === state;
-}
-
-const IS_TAURI: boolean =
-  typeof window !== "undefined" &&
-  (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ != null;
-
-// Tauri's WKWebView blocks `navigator.clipboard.writeText` /
-// `readText` from non-editable canvas focus, surfacing the macOS
-// "Paste from..." prompt for every read. The clipboard-manager plugin
-// talks to NSPasteboard directly and bypasses that UI; the browser
-// build keeps the standard navigator API.
-async function writeClipboardText(text: string): Promise<void> {
-  if (IS_TAURI) {
-    try { await tauriWriteText(text); return; } catch { /* fall through */ }
-  }
-  try { await navigator.clipboard.writeText(text); } catch { /* clipboard unavailable */ }
-}
-
-async function readClipboardText(): Promise<string> {
-  if (IS_TAURI) {
-    try { return await tauriReadText(); } catch { /* fall through */ }
-  }
-  try { return await navigator.clipboard.readText(); } catch { return ""; }
-}
+  handleCanvasPasteEvent, handleCanvasPasteShortcut, isClipboardOwner, writeClipboardText,
+} from "./canvas-paste";
 
 /** Shortcut keys read from Hush settings (camelCase field names). */
 export interface NotebookShortcuts {
@@ -455,20 +415,12 @@ export function bindInputEvents(
       if (e.key === "x" || e.key === "X") state.deleteSelected();
       return;
     }
-    // Paste — the browser only fires the `paste` event reliably when an
-    // editable element (input/textarea/contenteditable) is focused. The
-    // canvas page has no such element by default, so without this handler
-    // Cmd+V silently no-ops. Read the clipboard ourselves via the async
-    // API; the document `paste` listener stays as a fallback for when a
-    // paste *is* dispatched (e.g. native Edit > Paste in Tauri), and the
-    // two paths dedupe on `lastPasteAt`.
+    // Paste — see canvas-paste.ts. Whether the key gets cancelled is
+    // the whole question there and not ours to answer: cancelling is
+    // what stops WebKit dispatching the `paste` event that carries the
+    // payload, so on iOS it deliberately isn't.
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === "v" || e.key === "V")) {
-      if (!isClipboardOwner(state)) {
-        logActivity("paste", "info", "Canvas Cmd+V ignored — another surface owns the clipboard");
-        return;
-      }
-      e.preventDefault();
-      void asyncCanvasPaste(state);
+      if (handleCanvasPasteShortcut(state)) e.preventDefault();
       return;
     }
     // Ctrl+Y as alternative redo (not customizable)
@@ -510,81 +462,12 @@ export function bindInputEvents(
     }
   }) as unknown as (e: HTMLElementEventMap["keydown"]) => void);
 
-  // Paste — fires when an editable element is focused (or via native
-  // Edit > Paste in Tauri). The Cmd+V keydown handler above covers the
-  // canvas-focused case via the async clipboard API. Both paths share
-  // `lastPasteAt` to avoid double-pasting if both fire.
-  on(document as unknown as HTMLElement, "paste", (async (e: ClipboardEvent) => {
-    logActivity("paste", "info", "Canvas paste event", {
-      clipboardOwner: isClipboardOwner(state),
-      activeElement: describeActiveElement(),
-      editingText: state.editingText,
-      ...describeClipboard(e.clipboardData),
-    });
-    if (!isClipboardOwner(state)) return;
-    if (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) return;
-    // Skip when focus is in any contenteditable surface — the main Doc
-    // editor (CodeMirror's `.cm-content`) lives outside `.floating-pane`
-    // so without this gate a paste fired into the Doc would also land
-    // on a Notebook-as-pane that happened to be the last-touched canvas.
-    if ((document.activeElement as HTMLElement | null)?.isContentEditable) return;
-    // Skip if focus is inside a floating pane — let the pane handle its own paste
-    if (document.activeElement?.closest(".floating-pane")) return;
-    if (state.editingText) return;
-    e.preventDefault();
-    if (recentlyPasted()) return;
-    const cd = e.clipboardData;
-    if (!cd) return;
-
-    // Started before the text work below, for the same activation
-    // reason as `asyncCanvasPaste` — only consulted if the event's own
-    // payload turns out to carry neither shapes nor an image.
-    const imageP = readClipboardImageDataUrl().catch(() => null);
-    const rawText = extractTextFromDataTransfer(cd);
-    // The window stash is a same-session safety net for when the OS
-    // clipboard write was rejected. If the OS clipboard now carries
-    // *anything* — even plain text from another app — that's the
-    // real payload and the stash must yield. Otherwise an in-app copy
-    // followed by an external copy would still paste the in-app
-    // shapes, because `tryDecode(rawText)` returns null for the
-    // external text and the `??` would fall straight through to the
-    // stale envelope.
-    const env = tryDecode(rawText) ?? (rawText ? null : tryDecode((window as any).__hushNotebookClipboard ?? ""));
-    if (env) {
-      markPasted();
-      state.pasteEnvelope(env);
-      return;
-    }
-
-    for (const item of Array.from(cd.items)) {
-      if (item.type.startsWith("image/")) {
-        const file = item.getAsFile();
-        if (file) {
-          markPasted();
-          const dataUrl = await fileToDataUrl(file);
-          const dims = await getImageDimensions(dataUrl);
-          state.addImageShape(dataUrl, file.name, dims.width, dims.height);
-          return;
-        }
-      }
-    }
-    if (rawText && rawText.trim()) {
-      markPasted();
-      state.addTextShapeAtCenter(cleanLineBreaks(rawText));
-      return;
-    }
-    // The event carried nothing usable — WKWebView strips image bytes
-    // from `clipboardData` often enough that this is the common case for
-    // a native Edit > Paste of an image.
-    const osImage = await imageP;
-    if (osImage) {
-      const dims = await getImageDimensions(osImage);
-      markPasted();
-      state.addImageShape(osImage, "pasted-image", dims.width, dims.height);
-      logActivity("paste", "info", "Canvas paste added an image shape", { via: "clipboard read", ...dims });
-    } else {
-      logActivity("paste", "warn", "Canvas paste found nothing to paste — the event was empty and the clipboard read came back with nothing");
-    }
+  // Paste — fires when an editable element is focused, when the user
+  // confirms iOS's paste UI, and (where the browser obliges) on a plain
+  // ⌘V with nothing editable focused. canvas-paste.ts owns what happens
+  // next; both routes dedupe there.
+  on(document as unknown as HTMLElement, "paste", ((e: ClipboardEvent) => {
+    void handleCanvasPasteEvent(state, e);
   }) as unknown as (e: HTMLElementEventMap["paste"]) => void);
 
   // Drag/drop — direct canvas drops only.
@@ -624,68 +507,4 @@ export function bindInputEvents(
   }) as unknown as (e: HTMLElementEventMap["drop"]) => void);
 
   return () => { for (const fn of cleanups) fn(); };
-}
-
-// Dedupe between the keydown Cmd+V path and the document `paste` listener:
-// browsers vary on whether they dispatch `paste` when nothing editable is
-// focused, so we always run the keydown path and skip the paste-event work
-// if it already ran (or vice-versa).
-let lastPasteAt = 0;
-const PASTE_DEDUP_MS = 400;
-function markPasted() { lastPasteAt = Date.now(); }
-function recentlyPasted(): boolean { return Date.now() - lastPasteAt < PASTE_DEDUP_MS; }
-
-async function asyncCanvasPaste(state: DrawingState) {
-  if (recentlyPasted()) {
-    logActivity("paste", "info", "Canvas Cmd+V skipped — a paste landed within the last " + PASTE_DEDUP_MS + "ms");
-    return;
-  }
-  logActivity("paste", "info", "Canvas Cmd+V", { activeElement: describeActiveElement(), editingText: state.editingText });
-  // Bail early if the focus is in any editable surface — the paste belongs
-  // there, not on the canvas.
-  const activeEl = document.activeElement as HTMLElement | null;
-  if (activeEl) {
-    if (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA") return;
-    if (activeEl.isContentEditable) return;
-    if (activeEl.closest(".floating-pane")) return;
-  }
-  if (state.editingText) return;
-
-  // Start the image read in this task, before the text round trip. Its
-  // browser fallback needs the Cmd+V gesture's transient activation, and
-  // awaiting an IPC text read first is long enough to spend it — which
-  // is why an image paste used to take several attempts before it
-  // landed. Text still decides: a clipboard carrying text is a text
-  // paste (and an in-app shape envelope travels as text), so the image
-  // is only used when there is none.
-  const imageP = readClipboardImageDataUrl().catch(() => null);
-  const text = await readClipboardText();
-
-  // Same-session fallback: only consult the stash when the OS clipboard
-  // truly returned nothing. Any non-empty text wins — without this gate
-  // an in-app copy persisted across subsequent external copies (the
-  // foreign text decoded as `null`, and the `??` fell straight through
-  // to the stale shape envelope).
-  const env = tryDecode(text) ?? (text ? null : tryDecode((window as any).__hushNotebookClipboard ?? ""));
-  if (env) {
-    markPasted();
-    state.pasteEnvelope(env);
-    return;
-  }
-
-  if (text && text.trim()) {
-    markPasted();
-    state.addTextShapeAtCenter(cleanLineBreaks(text));
-    return;
-  }
-
-  const dataUrl = await imageP;
-  if (dataUrl) {
-    const dims = await getImageDimensions(dataUrl);
-    markPasted();
-    state.addImageShape(dataUrl, "pasted-image", dims.width, dims.height);
-    logActivity("paste", "info", "Canvas Cmd+V added an image shape", dims);
-  } else {
-    logActivity("paste", "warn", "Canvas Cmd+V found nothing — no shapes, no text, no image");
-  }
 }

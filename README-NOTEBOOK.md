@@ -14,6 +14,7 @@ src/notebook/
   renderer-selection.ts   Selection / group / crop / lasso highlights, shadow headers
   renderer-background.ts  Background patterns (dot-grid, grid, lined, isometric)
   input-handler.ts        DOM events → state methods; reads shortcuts from Hush settings
+  canvas-paste.ts         Copy/paste onto the canvas — the paste event and the ⌘V clipboard read
   markdown.ts             Inline markdown parser for text shapes
   selection-region.ts     Region → selection hit test shared by marquee + lasso
   splits.ts               Split geometry (pure): units, side assignment, image cuts
@@ -260,6 +261,8 @@ Pinch and two-finger pan are recognized on the canvas via `targetTouches` (not `
 - And, since the notebook rebuilds its own gesture frame (camera at gesture start, "a pinch owns the camera" flag) from those callbacks, `onTouchGestureStart` resets that frame at *burst* recognition. Tying its lifetime to the burst rather than to matched start/end pairs means a leak from any future path costs one gesture instead of every gesture after it. Optional canvas **rotation** rides the same gesture behind a per-notebook toggle: `Camera.rotation` applies between zoom and translation, all screen↔world math funnels through `screenToCanvas`/`canvasToScreen`, exports and gutter mode stay axis-aligned.
 
 Copy/paste serializes the selection (+ contained flow edges) as a `steiner-clipboard` JSON envelope (interchangeable with the Steiner project), stashed on `window.__hushNotebookClipboard` as a fallback when the OS clipboard write is rejected; paste mints fresh ids and remaps parent/group/edge references.
+
+Pasting *into* the canvas has two routes and `canvas-paste.ts` owns both: the browser's own `paste` event, whose `DataTransfer` needs no permission and can't be refused, and a ⌘V keydown that reads the OS clipboard itself, for the platforms that dispatch no paste event when nothing editable is focused. The event wins wherever it exists, and the keydown route is deliberately **not** cancelled on iOS — cancelling it is exactly what stops WebKit dispatching the event, which is why an image paste there used to raise a system "Paste" dialog and take three tries. A short grace timer covers a ⌘V that produces no event. Both routes claim the paste through one dedup so they can never both act on it.
 
 ### Zotero on the canvas
 
