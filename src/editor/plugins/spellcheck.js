@@ -119,7 +119,7 @@ export function createSpellcheckPlugin(stateRef) {
         // loses focus, the rebuild below drops its decorations.
         if (active && update.focusChanged) {
           if (this.view.hasFocus) this.runCheckNow();
-          else if (!spellPopoverHoldsFocus()) closeSpellPopover();
+          else if (!spellPopoverHoldsFocus() && !spellPopoverPressed()) closeSpellPopover();
         }
 
         if (annot || update.viewportChanged || flipped || update.focusChanged) {
@@ -184,6 +184,13 @@ let _popoverEl = null;
 let _popoverHostView = null;
 let _popoverDocListener = null;
 let _popoverKeyListener = null;
+let _popoverPressedAt = 0;
+let _swallowMouseUntil = 0;
+/** How long a press keeps the popover alive against the blur it causes,
+ *  and how long a committed suggestion waits for the compatibility
+ *  `mousedown` that follows it. Sized for iPadOS's synthetic-mouse
+ *  delay, which runs to a few hundred ms after `touchend`. */
+const POPOVER_PRESS_MS = 900;
 
 /** True while the open popover owns the focus. Blurring the editor
  *  normally means the user moved on and the popover should go, but the
@@ -193,6 +200,16 @@ function spellPopoverHoldsFocus() {
   return !!(_popoverEl && _popoverEl.contains(document.activeElement));
 }
 
+/** True for a short window after the user pressed inside the popover.
+ *  On iPadOS the blur that a tap causes and the tap's own handling do
+ *  not arrive together — WebKit delivers the compatibility mouse events
+ *  hundreds of ms after `touchend` — so a blur landing right after a
+ *  press is *part of* that press, not the user moving on. Tearing the
+ *  menu down there is what made picking a suggestion do nothing. */
+function spellPopoverPressed() {
+  return Date.now() - _popoverPressedAt < POPOVER_PRESS_MS;
+}
+
 function closeSpellPopover() {
   if (_popoverEl) {
     _popoverEl.remove();
@@ -200,7 +217,7 @@ function closeSpellPopover() {
   }
   _popoverHostView = null;
   if (_popoverDocListener) {
-    document.removeEventListener("mousedown", _popoverDocListener, true);
+    document.removeEventListener("pointerdown", _popoverDocListener, true);
     _popoverDocListener = null;
   }
   if (_popoverKeyListener) {
@@ -271,12 +288,16 @@ async function openSpellPopover(view, issue, anchorX, anchorY) {
     el.style.visibility = "visible";
   });
 
+  // Dismiss-on-outside listens for `pointerdown`, not `mousedown`: on
+  // iPadOS the synthetic `mousedown` lands hundreds of ms after
+  // `touchend`, well past the rAF that armed this — so a `mousedown`
+  // dismiss self-closes on the very tap that opened the popover.
   _popoverDocListener = (ev) => {
     if (!_popoverEl) return;
     if (_popoverEl.contains(ev.target)) return;
     closeSpellPopover();
   };
-  document.addEventListener("mousedown", _popoverDocListener, true);
+  document.addEventListener("pointerdown", _popoverDocListener, true);
 
   _popoverKeyListener = (ev) => {
     if (ev.key === "Escape") { ev.stopPropagation(); closeSpellPopover(); }
@@ -302,24 +323,31 @@ async function openSpellPopover(view, issue, anchorX, anchorY) {
       row.className = "hush-spellcheck-popover-row";
       row.textContent = sugg;
       const commit = () => {
+        _popoverPressedAt = Date.now();
+        // The popover is about to leave the document, so the tap's
+        // trailing `mousedown` will land on the editor underneath and
+        // drag the caret off the word we just corrected. Claim it.
+        _swallowMouseUntil = Date.now() + POPOVER_PRESS_MS;
         applySpellReplacement(view, issue, sugg);
         closeSpellPopover();
       };
-      // Commit on *mousedown*, with the default prevented so focus never
-      // leaves the editor. Picking a suggestion used to do nothing at
-      // all: pressing the button blurred the editor, the plugin's
-      // focus-change branch tore the popover down, and the row was gone
-      // from the document before the mouse came back up — so no `click`
-      // was ever dispatched. Keeping the caret in the editor also keeps
-      // the underlines painted, since only the focused surface shows
-      // them.
-      row.addEventListener("mousedown", (ev) => {
+      // Commit on *pointerdown* — the gesture's first event, and the
+      // only one that arrives while the row is still in the document.
+      // `mousedown` is not early enough: on iPadOS WebKit delivers the
+      // compatibility mouse events hundreds of ms after `touchend`, and
+      // the tap's blur closes the popover in between, so the row is gone
+      // before `mousedown` (never mind `click`) is dispatched. That is
+      // the whole bug — picking a suggestion did nothing on iPad, and
+      // committing on `mousedown` only moved the failure one event
+      // later. Cancelling the default keeps focus, and so the caret and
+      // the underlines, in the editor.
+      row.addEventListener("pointerdown", (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
         commit();
       });
       // Keyboard activation dispatches a click with no preceding
-      // mousedown; `detail === 0` is how that arrives.
+      // pointer event; `detail === 0` is how that arrives.
       row.addEventListener("click", (ev) => {
         if (ev.detail !== 0) return;
         ev.preventDefault();
@@ -342,28 +370,48 @@ async function openSpellPopover(view, issue, anchorX, anchorY) {
   });
 }
 
-/** Mousedown handler that catches clicks on `.hush-spellcheck-error`
- *  decorations and opens the suggestion popover. Installed via
- *  EditorView.domEventHandlers so we don't fight CodeMirror's own
- *  selection logic — we let the click set the caret, then open the
- *  popover from the resolved doc position. */
+/** The flagged issue under a pointer event, or null. */
+function issueAtEvent(ev, view) {
+  let el = ev.target;
+  while (el && el !== view.dom) {
+    if (el.classList && el.classList.contains("hush-spellcheck-error")) break;
+    el = el.parentNode;
+  }
+  if (!el || el === view.dom) return null;
+  const s = _viewState.get(view);
+  if (!s || !s.issues.length) return null;
+  const pos = view.posAtCoords({ x: ev.clientX, y: ev.clientY });
+  if (pos == null) return null;
+  return s.issues.find((i) => pos >= i.from && pos <= i.to) || null;
+}
+
+/** Opens the suggestion popover for a press on a `.hush-spellcheck-error`
+ *  decoration. Installed via EditorView.domEventHandlers so we don't
+ *  fight CodeMirror's own selection logic.
+ *
+ *  `pointerdown` is the gesture's first event, and the one that fires
+ *  before a tap places the caret and re-renders the decoration out from
+ *  under itself. The `mousedown` half opens nothing — it swallows the
+ *  one compatibility event that follows a committed suggestion, which
+ *  WebKit sends after the popover has already left the document (and
+ *  sends for a mouse even though `pointerdown` was cancelled). Left
+ *  alone it lands on the editor and drags the caret off the corrected
+ *  word. */
 export const spellcheckClickHandler = EditorView.domEventHandlers({
-  mousedown(ev, view) {
-    let el = ev.target;
-    while (el && el !== view.dom) {
-      if (el.classList && el.classList.contains("hush-spellcheck-error")) break;
-      el = el.parentNode;
-    }
-    if (!el || el === view.dom) return false;
-    const s = _viewState.get(view);
-    if (!s || !s.issues.length) return false;
-    const pos = view.posAtCoords({ x: ev.clientX, y: ev.clientY });
-    if (pos == null) return false;
-    const issue = s.issues.find((i) => pos >= i.from && pos <= i.to);
+  pointerdown(ev, view) {
+    const issue = issueAtEvent(ev, view);
     if (!issue) return false;
+    _popoverPressedAt = Date.now();
     ev.preventDefault();
     ev.stopPropagation();
     openSpellPopover(view, issue, ev.clientX, ev.clientY);
+    return true;
+  },
+  mousedown(ev) {
+    if (Date.now() >= _swallowMouseUntil) return false;
+    _swallowMouseUntil = 0; // one event only — the rest are the user's
+    ev.preventDefault();
+    ev.stopPropagation();
     return true;
   },
 });

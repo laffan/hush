@@ -16,7 +16,7 @@ import { createTabMarkerPlugin } from "./plugins/tab-marker.js";
 import { createCheckboxListPlugin } from "./plugins/checkbox-list.js";
 import { createImageDecoratorPlugin } from "./plugins/image-decorator.js";
 import { createStickyHeadersPlugin } from "./plugins/sticky-headers.js";
-import { buildCodeMirrorKeymap, matchesDomEvent } from "../shortcuts.js";
+import { buildCodeMirrorKeymap, parseShortcut, isPhysicalKey, modifiersMatch } from "../shortcuts.js";
 import { buildEditorCommands, buildFixedKeymap } from "./commands.js";
 import { toggleStrikethrough } from "./formatting.js";
 import { headingIndentPlugin } from "./heading-indent.js";
@@ -91,11 +91,26 @@ export function buildShortcutExtension(state) {
 
 /**
  * Catch Cmd+Backquote at the DOM-event layer so the strikethrough toggle
- * fires reliably across keyboard layouts. The grave key registers as a
- * combining-accent dead key on many layouts (`event.key === "Dead"`), and
- * on some platforms / CodeMirror builds the literal "`" doesn't match the
- * stored "Mod+`" binding either, so the user-customizable keymap entry
- * alone isn't enough. Match the physical code instead.
+ * fires reliably across keyboard layouts and platforms. CodeMirror's
+ * keymap matches on `event.key`, and grave is the one key in the app's
+ * bindings that routinely arrives without a usable one — on layouts
+ * where it is a combining accent it reports `event.key === "Dead"`.
+ *
+ * The first version of this fallback swapped one single signal for
+ * another: `event.code === "Backquote"`. That is no more guaranteed to
+ * be populated than `key` is — WebKit has left `code` empty for
+ * hardware keyboards, and the shortcut stayed dead wherever it did.
+ * `isPhysicalKey` walks `code` → `keyCode` → the character itself and
+ * takes whichever the platform actually filled in, so no one of them
+ * has to be the right one.
+ *
+ * Only the modifiers come from the stored binding: once the physical
+ * key is identified, re-checking `event.key` against it is the very
+ * comparison that was failing.
+ *
+ * A binding recorded before `shortcutKeyFromEvent` existed can read
+ * `"...+Dead"` — the same physical key under the name the layout gave
+ * it — so that spelling is honoured too rather than left dead.
  *
  * **Every doc surface needs this, not just the ones built from
  * `createBaseExtensions`.** `editor.js` assembles its own extension list
@@ -108,9 +123,13 @@ export function buildShortcutExtension(state) {
 export function createStrikethroughFallback(state) {
   return EditorView.domEventHandlers({
     keydown(e, view) {
-      if (e.code !== "Backquote") return false;
-      if (!(e.metaKey || e.ctrlKey)) return false;
-      if (!matchesDomEvent(e, state.settings.shortcutStrikethrough)) return false;
+      const binding = parseShortcut(state.settings?.shortcutStrikethrough);
+      // Only stands in for a grave-key binding. Rebind Strikethrough to
+      // anything else and the keymap matches it on `event.key` without
+      // help, so this must not fire for it.
+      if (!binding || (binding.key !== "`" && binding.key !== "Dead")) return false;
+      if (!isPhysicalKey(e, "`")) return false;
+      if (!modifiersMatch(e, binding)) return false;
       toggleStrikethrough(view);
       e.preventDefault();
       return true;

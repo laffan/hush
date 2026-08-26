@@ -19,6 +19,12 @@
  *   3. Nothing: the caller falls back to whatever the paste event's own
  *      `clipboardData` carried (text, usually).
  *
+ * **On iOS the order is (2) alone.** The plugin has no `readImage`
+ * there, so trying it first bought nothing and cost a dynamic module
+ * load plus an IPC round trip — long enough to spend the paste
+ * gesture's transient activation, which is precisely what step 2 needs.
+ * An image paste on iPad landed only every few tries because of it.
+ *
  * Everything comes back as a PNG data URL, which is what both consumers
  * want: `state.createImageFromDataUrl` writes it to the Images folder,
  * and `DrawingState.addImageShape` embeds it in the notebook envelope.
@@ -29,6 +35,17 @@
  */
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__ != null;
+
+/** iOS / iPadOS, including an iPad reporting itself as a Mac. Local copy
+ *  of `settings-ui.js`'s `isIOS` — this module is a leaf on purpose (see
+ *  the header) and importing app modules would drag state across the
+ *  lazily-loaded notebook boundary. */
+function isIOS() {
+  if (typeof navigator === "undefined") return false;
+  if (/iPad|iPhone|iPod/.test(navigator.userAgent || "")) return true;
+  const tp = typeof navigator.maxTouchPoints === "number" ? navigator.maxTouchPoints : 0;
+  return /Mac/i.test(navigator.platform || "") && tp > 0;
+}
 
 /** Raw RGBA + dimensions → a PNG data URL, via a scratch canvas.
  *  `readImage()` hands back unpacked pixels (that is the shape Tauri's
@@ -94,6 +111,15 @@ async function readViaClipboardApi() {
  * it after whatever else the handler needs.
  */
 export async function readClipboardImageDataUrl() {
+  // iOS/iPadOS goes straight to the browser API. The plugin has no
+  // `readImage` there, so asking it costs a dynamic module load and an
+  // IPC round trip to be told so — and spends the paste gesture's
+  // transient activation on the way, which is the one thing the browser
+  // fallback cannot do without. That is why an image paste on iPad took
+  // several tries in a notebook and never landed in a Doc: by the time
+  // `navigator.clipboard.read()` ran, the gesture it needed was gone.
+  // Calling it first, in the caller's own task, is the whole fix.
+  if (isIOS()) return await readViaClipboardApi();
   return (await readViaTauriPlugin()) || (await readViaClipboardApi());
 }
 

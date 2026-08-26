@@ -13,6 +13,11 @@
  *   hyphen-delimited key format (e.g. `Mod-Shift-f`).
  * - `matchesDomEvent(event, str)` — test whether a DOM `KeyboardEvent`
  *   matches a stored shortcut, for use in window-level keydown listeners.
+ * - `modifiersMatch(event, parsed)` / `isPhysicalKey(event, char)` — the
+ *   two halves of that test, for callers that have to identify a key the
+ *   layout won't name (see `createStrikethroughFallback`).
+ * - `shortcutKeyFromEvent(event)` — the character a keypress should be
+ *   *stored* as, for the settings recorder.
  * - `buildCodeMirrorKeymap(state, commands)` — build an array of CodeMirror
  *   `{ key, run }` bindings from the settings + a commands map.
  *
@@ -88,9 +93,45 @@ const CODE_TO_KEY = {
   Slash: "/",
 };
 
-/** Test whether a DOM KeyboardEvent matches a stored shortcut string. */
-export function matchesDomEvent(event, str) {
-  const p = parseShortcut(str);
+/** Legacy `keyCode` → produced character, for the same punctuation keys.
+ *  A third signal for the same physical key: `keyCode` is deprecated but
+ *  still populated by WebKit, and layout-independent in the same way as
+ *  `code`. Worth carrying because `code` is not guaranteed to be filled
+ *  in either — leaning on it alone is what left Cmd+` dead. */
+const KEYCODE_TO_KEY = {
+  189: "-", 187: "=", 219: "[", 221: "]", 220: "\\",
+  186: ";", 222: "'", 188: ",", 190: ".", 191: "/", 192: "`",
+};
+
+/** True when `event` came off the physical key that types `char` on a US
+ *  layout, whatever this layout reports for it. Checked in order of
+ *  reliability: `code`, then `keyCode`, then the character itself — so a
+ *  dead key, a missing `code`, and a plain keypress all resolve to the
+ *  same answer. */
+export function isPhysicalKey(event, char) {
+  if (event.code) return CODE_TO_KEY[event.code] === char;
+  const legacy = KEYCODE_TO_KEY[event.keyCode];
+  if (legacy) return legacy === char;
+  return event.key === char;
+}
+
+/** The character a keypress should be *stored* as in a binding: the
+ *  character it produced, or the physical key's when the layout reports
+ *  a dead key. Recording ⌘` where grave is a combining accent otherwise
+ *  saved `"Cmd+Dead"` — a binding nothing can ever match again. */
+export function shortcutKeyFromEvent(event) {
+  const k = event.key;
+  if (k && k !== "Dead" && k !== "Unidentified") {
+    return k.length === 1 ? k.toUpperCase() : k;
+  }
+  return CODE_TO_KEY[event.code] || KEYCODE_TO_KEY[event.keyCode] || k || "";
+}
+
+/** The modifier half of `matchesDomEvent`, against an already-parsed
+ *  shortcut. Split out so a physical-key fallback (see
+ *  `createStrikethroughFallback`) can apply exactly the same modifier
+ *  rules in the cases where `event.key` is unusable. */
+export function modifiersMatch(event, p) {
   if (!p) return false;
   if (p.mod) {
     // Either-primary form: ⌘ or ⌃ both satisfy it (legacy behaviour).
@@ -103,16 +144,23 @@ export function matchesDomEvent(event, str) {
   }
   if (!!p.shift !== !!event.shiftKey) return false;
   if (!!p.alt !== !!event.altKey) return false;
+  return true;
+}
+
+/** Test whether a DOM KeyboardEvent matches a stored shortcut string. */
+export function matchesDomEvent(event, str) {
+  const p = parseShortcut(str);
+  if (!p) return false;
+  if (!modifiersMatch(event, p)) return false;
   // Normalize key names.  `event.key` is uppercase when Shift is held for
   // letters (`"F"` vs `"f"`), and special keys use CamelCase names which
   // already match our stored format (`"ArrowRight"`, `"Backspace"`, etc.).
   const evKey = event.key.length === 1 ? event.key.toLowerCase() : event.key;
   const shKey = p.key.length === 1 ? p.key.toLowerCase() : p.key;
   if (evKey === shKey) return true;
-  // Dead-key fallback: match the physical code (Cmd+` on layouts where the
+  // Dead-key fallback: match the physical key (Cmd+` on layouts where the
   // grave key produces a combining accent reports `event.key === "Dead"`).
-  const codeKey = CODE_TO_KEY[event.code];
-  return !!codeKey && codeKey === shKey;
+  return isPhysicalKey(event, shKey);
 }
 
 /**

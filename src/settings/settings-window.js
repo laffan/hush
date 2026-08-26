@@ -15,6 +15,7 @@ import {
 } from "./settings-tabs.js";
 import { setSyncSubTab } from "./settings-tabs-sync.js";
 import { installActivityCapture, configureActivityLog } from "../activity-log.js";
+import { shortcutKeyFromEvent } from "../shortcuts.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -604,7 +605,16 @@ function startShortcutRecording(display, settingKey) {
     if (e.ctrlKey) parts.push("Ctrl");
     if (e.shiftKey) parts.push("Shift");
     if (e.altKey) parts.push("Alt");
-    parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);
+    // Store what the key *produced*, not what the layout called it. A
+    // combining-accent key reports `event.key === "Dead"`, so recording
+    // ⌘` on such a layout used to save "Cmd+Dead" — a binding nothing
+    // could ever match again.
+    const recorded = shortcutKeyFromEvent(e);
+    // Nothing nameable came through (no `key`, no `code`, no `keyCode`) —
+    // saving would store a modifier-only string that parses to null.
+    // Keep recording instead so the next press can land.
+    if (!recorded) return;
+    parts.push(recorded);
 
     const shortcut = parts.join("+");
 

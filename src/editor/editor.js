@@ -35,6 +35,7 @@ import { findHighlightField } from "./find-decorations.js";
 import { instanceHighlightField } from "./select-instance-highlight.js";
 import { createMultiLineCommentPlugin, createCommentAfterPlugin } from "./comment-plugins.js";
 import { createCommentAnchorPlugin } from "./plugins/comment-anchors.js";
+import { createImagePasteExtension } from "./image-paste.js";
 import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js";
 import { createGrammarCheckPlugin, createGrammarHoverTooltip } from "./plugins/grammar-check.js";
 import { createSpellcheckPlugin, spellcheckClickHandler } from "./plugins/spellcheck.js";
@@ -298,6 +299,12 @@ export function createEditor(container, state) {
       checkboxListPlugin,
       tableRendererPlugin,
       imageDecoratorPlugin,
+      // Image paste. Lived only in `createBaseExtensions`, so pasting a
+      // screenshot worked in a pane or a stack column and did nothing at
+      // all in the main editor — the surface the user actually writes
+      // in. Same hole as the Cmd+` fallback had; see
+      // `createStrikethroughFallback`.
+      createImagePasteExtension(state),
       createGoogleDocsPasteExtension(),
       headingIndentPlugin,
       findHighlightField,
