@@ -6,7 +6,8 @@ import {
 } from "./external-content";
 import { screenToCanvas } from "./utils";
 import {
-  handleCanvasPasteEvent, handleCanvasPasteShortcut, isClipboardOwner, writeClipboardText,
+  handleCanvasPasteEvent, handleCanvasPasteShortcut, isClipboardOwner,
+  releasePasteCatcher, writeClipboardText,
 } from "./canvas-paste";
 
 /** Shortcut keys read from Hush settings (camelCase field names). */
@@ -506,5 +507,10 @@ export function bindInputEvents(
     if (text && text.trim()) state.addTextShapeAtPosition(formatText(cleanLineBreaks(text)), dropPos, textOpts);
   }) as unknown as (e: HTMLElementEventMap["drop"]) => void);
 
-  return () => { for (const fn of cleanups) fn(); };
+  return () => {
+    // A canvas going away mid-keystroke must not leave the paste
+    // catcher holding the focus.
+    releasePasteCatcher();
+    for (const fn of cleanups) fn();
+  };
 }

@@ -12,17 +12,28 @@
  *     where a non-editable canvas gets no paste event at all, which is
  *     what browsers historically did and why this path exists.
  *
- * The trap this module was extracted to fix: **cancelling the ⌘V keydown
- * is what stops WebKit dispatching the paste event.** Hush cancelled it
- * unconditionally and asked `navigator.clipboard.read()` instead — which
- * on iOS is permission-gated. The read raised a "Paste" dialog and was
- * refused (`NotAllowedError`) while the event carrying the bytes stayed
- * suppressed; the image only landed on the third ⌘V, because the presses
- * after the first went to the dialog and *those* produced real paste
- * events. So on iOS the key is left alone and a short grace timer waits
- * for the event, falling back to the clipboard read only if none comes.
- * Elsewhere the keydown path stays as it was — the desktop reads through
- * the Tauri plugin, which needs no permission and shows no prompt.
+ * Two things had to be true for the event to arrive on iPadOS, and each
+ * was false in its own way:
+ *
+ *   - **Cancelling the ⌘V keydown stops WebKit dispatching the paste
+ *     event.** Hush cancelled it unconditionally and asked
+ *     `navigator.clipboard.read()` instead — which on iOS is
+ *     permission-gated. The read raised a "Paste" dialog and was refused
+ *     (`NotAllowedError`) while the event carrying the bytes stayed
+ *     suppressed. The image landed on the third ⌘V, because the presses
+ *     after the first went to the dialog, and answering that dialog
+ *     *does* deliver a real paste event.
+ *   - **WebKit dispatches `paste` at the focused editable element,** and
+ *     a canvas has none — so leaving the key uncancelled bought nothing
+ *     on its own. See the paste catcher below.
+ *
+ * With both fixed, ⌘V produces an ordinary paste event carrying the
+ * bytes: no permission, no dialog, nothing that can be refused. A short
+ * grace timer still falls back to the clipboard read if no event
+ * arrives, and answering the dialog that read raises now works too,
+ * because the event's own payload is what gets used. Elsewhere the
+ * keydown path stays as it was — the desktop reads through the Tauri
+ * plugin, which needs no permission and shows no prompt.
  *
  * The second rule, in both routes: **spend the event before the OS
  * clipboard.** Asking for a permission you don't need is not free, and
@@ -104,9 +115,78 @@ function claimPaste(): boolean {
   return true;
 }
 
+/* ------------------------------------------------------------------ */
+/* The paste catcher                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * WebKit dispatches `paste` at the *focused editable element*, and a
+ * canvas has none — so on iPadOS a plain ⌘V produced no paste event at
+ * all, whatever we did with the key. (Measured: uncancelled ⌘V, no event
+ * inside the grace window, and the only event of the whole sequence
+ * arriving a beat after the clipboard read was refused — i.e. answering
+ * iOS's own paste dialog, not the keystroke.)
+ *
+ * So give it one to fire at: a 1×1 transparent `contenteditable`,
+ * focused for the duration of the keystroke and handed straight back.
+ * The paste lands on it with a full `clipboardData` — no permission, no
+ * dialog, nothing to refuse — and our handler cancels the event before
+ * anything can be inserted into it.
+ *
+ * Armed only on ⌘V, which can only come from a hardware keyboard, so
+ * the focus never summons the software keyboard (`inputmode="none"`
+ * covers the case where it would try anyway). It cannot be hidden with
+ * `display` or `visibility`: an element WebKit can't focus is an element
+ * it won't paste into.
+ */
+let catcher: HTMLElement | null = null;
+let focusBeforeCatcher: HTMLElement | null = null;
+
+function pasteCatcher(): HTMLElement {
+  if (catcher?.isConnected) return catcher;
+  const el = document.createElement("div");
+  el.className = "hush-paste-catcher";
+  el.setAttribute("contenteditable", "true");
+  el.setAttribute("inputmode", "none");
+  el.setAttribute("aria-hidden", "true");
+  Object.assign(el.style, {
+    position: "fixed", top: "0", left: "0", width: "1px", height: "1px",
+    opacity: "0", pointerEvents: "none", overflow: "hidden", zIndex: "-1",
+  });
+  // Any key that isn't the paste itself means the user has moved on and
+  // is typing at a canvas that no longer has focus. This runs at target
+  // phase, so focus is back before the window-level handlers read it.
+  el.addEventListener("keydown", (ev: KeyboardEvent) => {
+    const isPaste = (ev.metaKey || ev.ctrlKey) && (ev.key === "v" || ev.key === "V");
+    if (!isPaste) releasePasteCatcher();
+  });
+  document.body.appendChild(el);
+  catcher = el;
+  return el;
+}
+
+/** Hand the keystroke's focus to the catcher, remembering where it came
+ *  from. Every exit path releases it again. */
+function armPasteCatcher(): void {
+  const el = pasteCatcher();
+  if (document.activeElement !== el) focusBeforeCatcher = document.activeElement as HTMLElement | null;
+  el.textContent = "";
+  try { el.focus({ preventScroll: true }); } catch { el.focus(); }
+}
+
+export function releasePasteCatcher(): void {
+  if (!catcher) return;
+  catcher.textContent = "";
+  if (document.activeElement !== catcher) return;
+  const back = focusBeforeCatcher;
+  focusBeforeCatcher = null;
+  try { back?.focus({ preventScroll: true }); } catch { /* gone from the DOM */ }
+}
+
 /** How long ⌘V waits for WebKit to dispatch the paste event before
- *  giving up and reading the clipboard itself. The event, when it comes
- *  at all, comes in the same turn; this is slack, not a guess. */
+ *  giving up and reading the clipboard itself. With the catcher focused
+ *  the event arrives in the same turn, so this is slack for a busy main
+ *  thread, not a guess at how slow the platform might be. */
 const PASTE_EVENT_GRACE_MS = 300;
 let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -114,6 +194,10 @@ function armPasteFallback(state: DrawingState): void {
   cancelPasteFallback();
   fallbackTimer = setTimeout(() => {
     fallbackTimer = null;
+    // Give focus back first: `asyncCanvasPaste` reads it to decide
+    // whether the paste is even the canvas's, and the catcher is an
+    // editable element, which is exactly what that test rules out.
+    releasePasteCatcher();
     if (recentlyPasted()) return;
     logActivity("paste", "warn",
       "No paste event followed Cmd+V — falling back to the clipboard read, which iOS may prompt for");
@@ -129,6 +213,8 @@ function cancelPasteFallback(): void {
  *  doc editor, a floating pane, the canvas's own inline text editor. */
 function focusIsElsewhere(state: DrawingState): boolean {
   const el = document.activeElement as HTMLElement | null;
+  // The catcher is this canvas's own focus, held for one keystroke.
+  if (el && el === catcher) return !!state.editingText;
   if (el) {
     if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") return true;
     if (el.isContentEditable) return true;
@@ -183,9 +269,13 @@ export function handleCanvasPasteShortcut(state: DrawingState): boolean {
     return false;
   }
   if (isIOS()) {
-    logActivity("paste", "info", "Canvas Cmd+V — leaving the key uncancelled so the paste event can carry the payload",
-      { graceMs: PASTE_EVENT_GRACE_MS });
+    // Focus the catcher and let the key through: between them that is
+    // what turns ⌘V into a `paste` event carrying the bytes, instead of
+    // a permission prompt that can be refused.
+    armPasteCatcher();
     armPasteFallback(state);
+    logActivity("paste", "info", "Canvas Cmd+V — focused the paste catcher and left the key uncancelled",
+      { graceMs: PASTE_EVENT_GRACE_MS });
     return false;
   }
   void asyncCanvasPaste(state);
@@ -199,6 +289,18 @@ export function handleCanvasPasteShortcut(state: DrawingState): boolean {
  * event has been shown to hold nothing.
  */
 export async function handleCanvasPasteEvent(state: DrawingState, e: ClipboardEvent): Promise<void> {
+  // Whatever this event turns out to be — ours, another surface's, or
+  // nothing at all — the catcher's turn is over the moment one arrives.
+  // `routeCanvasPaste` releases it as soon as it has logged the event;
+  // this is the net for anything that throws on the way there.
+  try {
+    await routeCanvasPaste(state, e);
+  } finally {
+    releasePasteCatcher();
+  }
+}
+
+async function routeCanvasPaste(state: DrawingState, e: ClipboardEvent): Promise<void> {
   const cd = e.clipboardData;
   logActivity("paste", "info", "Canvas paste event", {
     clipboardOwner: isClipboardOwner(state),
@@ -206,6 +308,11 @@ export async function handleCanvasPasteEvent(state: DrawingState, e: ClipboardEv
     editingText: state.editingText,
     ...describeClipboard(cd),
   });
+  // The catcher's whole job was to make this event happen; hand the
+  // focus back now rather than after the awaits below, which can run to
+  // the length of a clipboard read. (The `finally` in the caller is the
+  // net for the paths that return before reaching here.)
+  releasePasteCatcher();
   if (!isClipboardOwner(state)) return;
   // The main Doc editor's `.cm-content` lives outside `.floating-pane`,
   // so without the contentEditable gate a paste into a doc would also
