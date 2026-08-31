@@ -195,42 +195,40 @@ body.notebook-mode .column-resizer {
 /* Proofread page rail — left-edge resize handle.
 
    The strip itself stays invisible: it sits inside the rail's padding,
-   over nothing. The affordance is a short rounded bar in the middle of
-   it — the same grip the toolbar's drag tab uses, in the same
-   currentColor-at-low-opacity language, so the rail's edge reads as
-   draggable the way the toolbar's does. A bare `ew-resize` cursor
-   couldn't do that job on its own: it only appears once the pointer is
-   already on a 8 px strip nobody had a reason to try.
+   over nothing. The affordance is a short rounded bar centred in it —
+   the toolbar drag tab's grip in its vertical form, same 5x36 and same
+   2 px radius, so the two handles in a proof read as one control in two
+   places. A bare `ew-resize` cursor couldn't do that job on its own: it
+   only appears once the pointer is already on an 8 px strip nobody had
+   a reason to try.
+
+   Where it departs from the toolbar's grip is the colour. That one is
+   currentColor at low opacity, drawn over canvas; this one sits on the
+   rail's own panel, so it takes the rail's border colour and reads as
+   part of the same edge. Hover / drag swaps it to currentColor, which
+   is the toolbar's resting language, so lighting up is a step toward
+   the handle you already know rather than a different idiom.
 
    `is-dragging` holds the hover state through the gesture. Pointer
    capture keeps the events coming but not `:hover`, and a widening drag
    leaves the strip immediately. */
-/* A vertical pill straddling the rail's left edge — outlined, filled
-   with the rail's own background so it reads as part of the panel
-   rather than a mark on the canvas. Centred ON the edge, not inside it:
-   half of it overhangs, which is what makes it look like a handle. The
-   rail's rounded-corner clip lives on the scroller for exactly this
-   reason (see proof-thumbnails.ts). No `opacity` on the pill — that
-   would make the fill translucent and let the canvas read through it;
-   the resting state is carried by the border colour instead. */
+.notebook-proof-rail-resizer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .notebook-proof-rail-grip {
-  position: absolute;
-  /* `left` comes from proof-thumbnails.ts — it is the rail's edge in the
-     strip's own coordinates, and the strip starts outboard of it. */
-  top: 50%;
-  transform: translate(-50%, -50%);
   width: 5px;
-  height: 68px;
-  box-sizing: border-box;
-  border: 1px solid var(--proof-rail-border, currentColor);
-  border-radius: 999px;
-  background: var(--proof-rail-bg, transparent);
-  transition: border-color 0.15s;
+  height: 36px;
+  border-radius: 2px;
+  background: var(--proof-rail-border, currentColor);
+  transition: background 0.15s, opacity 0.15s;
   pointer-events: none;
 }
 .notebook-proof-rail-resizer:hover .notebook-proof-rail-grip,
 .notebook-proof-rail-resizer.is-dragging .notebook-proof-rail-grip {
-  border-color: currentColor;
+  background: currentColor;
+  opacity: 0.6;
 }
 
 /* Hold the resize cursor across the whole window for the duration of a
