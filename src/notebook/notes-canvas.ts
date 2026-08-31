@@ -783,6 +783,17 @@ export class NotesCanvas {
 
   // === Public API ===
 
+  /** Point the drawing layer's highlighter at this notebook's answer.
+   *  A proofread notebook is a page of printed words, where a highlight
+   *  has to let them through; an ordinary notebook is as likely to be a
+   *  dark canvas, where multiply would swallow the ink. The `brushSlots`
+   *  notify is what makes the active slot re-resolve — it is not a
+   *  content key, so it can't mark the notebook dirty. */
+  private applyProofDrawingDefaults(): void {
+    this._drawingLayer?.setHighlightBlendDefault(!!this.state.proof);
+    this.state.notify("brushSlots");
+  }
+
   loadShapes(
     shapes: Shape[],
     layers?: import("./types").Layer[],
@@ -795,6 +806,7 @@ export class NotesCanvas {
     this.state.splits = extras?.splits ? extras.splits.slice() : [];
     this.state.proof = extras?.proof ?? null;
     this.state.applyProofTextDefaults();
+    this.applyProofDrawingDefaults();
     this.state.grab = null;
     // Ensure every shape has a layerId; default to the seed / first
     // layer so legacy notebooks render on a real layer.
@@ -858,6 +870,7 @@ export class NotesCanvas {
     if (snapshot.proof !== undefined) {
       this.state.proof = snapshot.proof;
       this.state.applyProofTextDefaults();
+      this.applyProofDrawingDefaults();
     }
     if (snapshot.flowEdges) this.state.flowchart.deserialize(snapshot.flowEdges);
     // Keep whatever part of the selection survived the mirror.

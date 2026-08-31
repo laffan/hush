@@ -599,6 +599,10 @@ export function createDrawingLayer({
     applySlotToEngine(strokeEngine, themeRef, slot);
   }
 
+  function setHighlightBlendDefault(on: boolean): void {
+    strokeEngine.setHighlightBlendDefault(!!on);
+  }
+
   function setLassoHoldMs(ms: number): void {
     strokeEngine.setLongPressMs(ms);
   }
@@ -642,6 +646,7 @@ export function createDrawingLayer({
 
   return {
     setCamera,
+    setHighlightBlendDefault,
     setInputEnabled,
     setTheme,
     setTool,

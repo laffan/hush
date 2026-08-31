@@ -48,6 +48,13 @@ export function createStrokeEngine(opts: {
   getEraserSize(): number;
   setBrush(id: string): void;
   setMode(m: string): void;
+  /** Hush delta #38 — highlighter strokes drawn from here composite
+   *  `multiply` against the page under them. */
+  setBlend(on: boolean): void;
+  getBlend(): boolean;
+  /** Hush delta #38 — what a highlighter stroke with no `blend` of its
+   *  own does. Per notebook; changing it repaints. */
+  setHighlightBlendDefault(on: boolean): void;
   getBrushList(): { id: string; name: string }[];
   getCurrentBrush(): string;
   getCurrentMode(): string;

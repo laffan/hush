@@ -205,11 +205,6 @@ body.notebook-mode .column-resizer {
    `is-dragging` holds the hover state through the gesture. Pointer
    capture keeps the events coming but not `:hover`, and a widening drag
    leaves the strip immediately. */
-.notebook-proof-rail-resizer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 /* A vertical pill straddling the rail's left edge — outlined, filled
    with the rail's own background so it reads as part of the panel
    rather than a mark on the canvas. Centred ON the edge, not inside it:
@@ -220,7 +215,8 @@ body.notebook-mode .column-resizer {
    the resting state is carried by the border colour instead. */
 .notebook-proof-rail-grip {
   position: absolute;
-  left: 0;
+  /* `left` comes from proof-thumbnails.ts — it is the rail's edge in the
+     strip's own coordinates, and the strip starts outboard of it. */
   top: 50%;
   transform: translate(-50%, -50%);
   width: 5px;

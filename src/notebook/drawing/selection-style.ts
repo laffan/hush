@@ -66,6 +66,7 @@ export function createSelectionStyleSession(deps: {
         size: s.size,
         brushId: s.brush,
         mode: s.mode,
+        ...(s.blend !== undefined ? { blend: s.blend } : {}),
         colorIsAuto: !!s.colorIsAuto,
         colorIsHeading: !!s.colorIsHeading,
       });
@@ -89,6 +90,7 @@ export function createSelectionStyleSession(deps: {
     if (patch.size !== undefined) enginePatch.size = patch.size;
     if (patch.brushId !== undefined) enginePatch.brushId = patch.brushId;
     if (patch.mode !== undefined) enginePatch.mode = patch.mode;
+    if (patch.blend !== undefined) enginePatch.blend = patch.blend;
     strokeEngine.setStrokesStyle(ids as Set<number>, enginePatch);
     if (patch.color !== undefined) {
       const isAuto = patch.color === "auto";
@@ -119,6 +121,7 @@ export function createSelectionStyleSession(deps: {
       if (!b) continue;
       if (s.color !== b.color || s.size !== b.size ||
           s.brush !== b.brushId || s.mode !== b.mode ||
+          s.blend !== b.blend ||
           !!s.colorIsAuto !== b.colorIsAuto ||
           !!s.colorIsHeading !== b.colorIsHeading) { changed = true; break; }
     }

@@ -14,6 +14,7 @@ export interface SelectionStyleEntry {
   size: number;
   brushId: string;
   mode: "normal" | "highlighter";
+  blend?: boolean;
   colorIsAuto: boolean;
   colorIsHeading: boolean;
 }
@@ -25,6 +26,7 @@ export interface SelectionStylePatch {
   size?: number;
   brushId?: string;
   mode?: "normal" | "highlighter";
+  blend?: boolean;
 }
 
 /** Returned handle. The drawing-mode controller (toolbar, flyout,
@@ -47,6 +49,10 @@ export interface DrawingLayer {
    *  streamline, spacing) into the engine. `color: "auto"` resolves
    *  to theme.foreground at apply time. */
   applySlot(slot: DrawingSlot): void;
+  /** What a highlighter stroke carrying no `blend` of its own does —
+   *  per notebook (on for a proofread notebook, off otherwise). Changing
+   *  it moves strokes between bake targets, so it repaints. */
+  setHighlightBlendDefault(on: boolean): void;
   /** Configure how long a draw-mode press must hold before it
    *  promotes into a lasso. Exposed as a user setting in the toolbar
    *  (slider 500–2000 ms). */

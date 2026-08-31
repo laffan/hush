@@ -18,6 +18,9 @@ export interface EngineStroke {
   size: number;
   brush: string;                       // engine uses `brush`; we map to `brushId` at the boundary
   mode: "normal" | "highlighter";
+  /** Hush delta #38 — highlighter strokes with this set bake into the
+   *  multiply-blended target. Absent on strokes predating the switch. */
+  blend?: boolean;
   layerId: number;
   isPen: boolean;
   points: DrawPoint[];
@@ -40,6 +43,7 @@ export interface EngineAdapter {
   setStrokesStyleMap(styleMap: Map<number, {
     color?: string; size?: number; brushId?: string;
     mode?: "normal" | "highlighter";
+    blend?: boolean;
   }>): void;
   setStrokePoints(id: number, points: DrawPoint[]): void;
   fullRebake(): void;

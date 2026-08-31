@@ -691,6 +691,17 @@ export class DrawingState extends EventTarget {
     this.newTextStyleOverride = this.proof ? { ...PROOF_TEXT_STYLE } : null;
   }
 
+  /** Does this slot's highlighter blend? A slot that has never been
+   *  switched follows the notebook: a proofread notebook is a page of
+   *  printed words, where a highlight has to let them through, and an
+   *  ordinary notebook is as likely to be a dark canvas, where multiply
+   *  would swallow the ink. Once the user touches the switch the slot
+   *  carries an explicit answer and the notebook stops deciding. */
+  resolveSlotBlend(slot: DrawingSlot): boolean {
+    if (slot.mode !== "highlighter") return false;
+    return slot.blend ?? !!this.proof;
+  }
+
   /** The style a newly created text shape starts from: the canvas
    *  defaults, overlaid with this canvas's override if it has one.
    *  Every `editingText` for a *new* shape spreads this in, so the

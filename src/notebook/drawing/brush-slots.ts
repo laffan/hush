@@ -285,6 +285,31 @@ export function createBrushSlots(
     modeRow.appendChild(btn);
   }
 
+  // Blend Stroke — highlighter only. Multiply is right over a printed
+  // page (a proof) and wrong on a dark canvas, where it swallows light
+  // ink, so which one you get is a switch rather than a rule. A slot the
+  // user has never touched inherits the notebook's answer
+  // (`resolveSlotBlend`); ticking the box makes it explicit and the
+  // notebook stops deciding. Like every other control here except
+  // straight-line capture, it also restyles a live selection.
+  const blendInput = h("input", { attrs: { type: "checkbox" } }) as HTMLInputElement;
+  const blendRow = h("label", {
+    cls: "nbf-check",
+    title: "Composite the highlight against what's under it, so text shows through",
+    children: [blendInput, "Blend Stroke"],
+  });
+  blendRow.addEventListener("pointerdown", (e) => e.stopPropagation());
+  blendInput.addEventListener("change", () => {
+    const idx = state.activeBrushSlot;
+    const on = blendInput.checked;
+    if (drawingLayer.hasSelection()) {
+      const before = drawingLayer.snapshotSelectedStyle();
+      drawingLayer.applyStyleToSelection({ blend: on });
+      drawingLayer.commitStyleHistory(before);
+    }
+    state.updateBrushSlot(idx, { blend: on });
+  });
+
   // Line — freehand vs. ruled. Same two-segment control as Mode, since
   // it's the same shape of choice: how the stroke follows the pointer.
   // Per slot, so one brush can be the ruler while the rest stay
@@ -336,7 +361,7 @@ export function createBrushSlots(
   flyout.appendChild(divider());
   flyout.appendChild(section("Color", [colorRow]));
   flyout.appendChild(divider());
-  flyout.appendChild(section("Mode", [modeRow]));
+  flyout.appendChild(section("Mode", [modeRow, blendRow]));
   flyout.appendChild(divider());
   flyout.appendChild(section("Line", [lineRow]));
 
@@ -452,6 +477,8 @@ export function createBrushSlots(
     for (const { id, btn } of modeBtns) {
       btn.classList.toggle("nbf-active", slot.mode === id);
     }
+    blendRow.style.display = slot.mode === "highlighter" ? "flex" : "none";
+    blendInput.checked = state.resolveSlotBlend(slot);
     for (const { straight, btn } of lineBtns) {
       btn.classList.toggle("nbf-active", !!slot.straightLine === straight);
     }

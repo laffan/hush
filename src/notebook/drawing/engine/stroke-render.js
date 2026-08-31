@@ -81,7 +81,7 @@ export function stampStream(ctx, streamPts, size, tinted, spacingFrac, xform) {
   }
 }
 
-export function createRenderer({ doneCtx, hlCtx, clearCtx, getStrokes, getTintedAtlas, options, isVisible, isActive, blitCanvas, hlBlitCanvas, onHighlightBacking }) {
+export function createRenderer({ doneCtx, hlCtx, clearCtx, getStrokes, getTintedAtlas, options, isVisible, isActive, isBlended, blitCanvas, hlBlitCanvas, onHighlightBacking }) {
   const visible = isVisible || (() => true);
   const activeFn = isActive || (() => false);
 
@@ -106,7 +106,13 @@ export function createRenderer({ doneCtx, hlCtx, clearCtx, getStrokes, getTinted
     : null;
   let hlBacked = false;
 
-  function isHighlightStroke(s) { return (s.mode || 'normal') === 'highlighter'; }
+  // A highlighter stroke only reaches the blended target when the slot
+  // it was drawn with asked for it — multiply is right over a printed
+  // page and wrong on a dark canvas, so it is a switch, not a rule. The
+  // host resolves it (a stroke's own `blend`, else the notebook's
+  // default); the renderer only asks.
+  const blended = isBlended || ((s) => (s.mode || 'normal') === 'highlighter');
+  function isHighlightStroke(s) { return (s.mode || 'normal') === 'highlighter' && blended(s); }
   function targetFor(s) { return (hl && isHighlightStroke(s)) ? hl : done; }
   // Cached so the per-rebake path (an erase drag calls it per pointer
   // move) doesn't allocate an array a frame.

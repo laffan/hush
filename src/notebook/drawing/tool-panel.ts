@@ -463,7 +463,10 @@ export function createDrawingToolPanel(
 
   function applyActiveSlot(): void {
     const slot = state.brushSlots[state.activeBrushSlot];
-    if (slot) drawingLayer.applySlot(slot);
+    // `blend` is resolved here, not in the drawing layer: an untouched
+    // slot inherits the notebook's answer, and only DrawingState knows
+    // whether this canvas is a proof.
+    if (slot) drawingLayer.applySlot({ ...slot, blend: state.resolveSlotBlend(slot) });
   }
 
   const DRAG_STRIP_THICKNESS = 14;

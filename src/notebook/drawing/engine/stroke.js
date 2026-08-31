@@ -239,6 +239,10 @@ export function createStrokeEngine({
     eraserSize: 16,           // dedicated eraser thickness (CSS px radius)
     brush: BRUSH_DEFS[0].id,  // id of the default brush for new strokes
     mode: 'normal',           // stroke composite mode for new strokes (see STROKE_MODES)
+    blend: false,             // Hush delta #38: highlighter strokes drawn from here
+                              //   bake into the multiply-blended target
+    blendDefault: false,      // Hush delta #38: what a stroke with no `blend` of its
+                              //   own does — set per notebook by the host
     strokes: [],              // ordered list of committed strokes (bottom→top by layer)
     active: null,             // in-progress stroke
     activePointerId: null,
@@ -305,7 +309,7 @@ export function createStrokeEngine({
   }
   function syncLiveBlendHost() {
     if (!hlHost || !liveHome) return;
-    liveInHlHost = state.mode === 'highlighter';
+    liveInHlHost = state.mode === 'highlighter' && state.blend;
     const parent = liveInHlHost ? hlHost : liveHome;
     if (liveCanvas.parentElement !== parent) {
       if (parent === hlHost) parent.appendChild(liveCanvas);
@@ -433,6 +437,9 @@ export function createStrokeEngine({
     getTintedAtlas: (brushId, color) => atlas.getTintedAtlas(brushId, color),
     options: OPTIONS,
     isVisible: (s) => !isStrokeHidden(s),
+    // Hush delta #38: a stroke's own switch, else the notebook's default
+    // (strokes drawn before the switch existed carry nothing).
+    isBlended: (s) => (s.blend === undefined ? state.blendDefault : !!s.blend),
     hlBlitCanvas,
     // Hush delta #26: the streamline cache must never serve the active
     // stroke — its points array grows (and its last point mutates) in
@@ -620,6 +627,7 @@ export function createStrokeEngine({
       layerId: state.activeLayerId,
       isPen,
       points: [p],
+      ...(state.mode === 'highlighter' ? { blend: state.blend } : {}),
       ...(state.colorIsAuto ? { colorIsAuto: true } : {}),
       ...(state.colorIsHeading ? { colorIsHeading: true } : {}),
     };
@@ -1074,6 +1082,24 @@ export function createStrokeEngine({
       state.mode = mode;
       syncLiveBlendHost();
     },
+    /** Hush delta #38: whether highlighter strokes drawn from here bake
+     *  into the multiply-blended target. */
+    setBlend(on) {
+      const next = !!on;
+      if (state.blend === next) return;
+      state.blend = next;
+      syncLiveBlendHost();
+    },
+    getBlend() { return state.blend; },
+    /** Hush delta #38: what a stroke with no `blend` of its own does.
+     *  Changing it moves strokes between the two bake targets, so the
+     *  whole canvas has to be repainted. */
+    setHighlightBlendDefault(on) {
+      const next = !!on;
+      if (state.blendDefault === next) return;
+      state.blendDefault = next;
+      renderer.repaintAll();
+    },
     getBrushList() {
       return BRUSH_DEFS.map((b) => ({ id: b.id, name: b.name }));
     },
@@ -1191,6 +1217,7 @@ export function createStrokeEngine({
         if (patch.color !== undefined) s.color = patch.color;
         if (patch.brushId !== undefined) s.brush = patch.brushId;
         if (patch.mode !== undefined && STROKE_MODES[patch.mode]) s.mode = patch.mode;
+        if (patch.blend !== undefined) s.blend = !!patch.blend;
         if (sizeChanged) s.size = +patch.size;
         if (sizeChanged) {
           renderer.removeFromIndex(s);
@@ -1213,6 +1240,7 @@ export function createStrokeEngine({
         if (patch.color !== undefined) s.color = patch.color;
         if (patch.brushId !== undefined) s.brush = patch.brushId;
         if (patch.mode !== undefined && STROKE_MODES[patch.mode]) s.mode = patch.mode;
+        if (patch.blend !== undefined) s.blend = !!patch.blend;
         if (patch.size !== undefined) {
           s.size = +patch.size;
           renderer.removeFromIndex(s);

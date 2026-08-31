@@ -27,8 +27,8 @@
  * every other surface on screen readable, which is the one thing the
  * mode must not do.
  */
-import { ViewPlugin, Decoration, layer, RectangleMarker } from "@codemirror/view";
-import { RangeSetBuilder, StateEffect, EditorSelection } from "@codemirror/state";
+import { ViewPlugin, Decoration, layer, RectangleMarker, Direction } from "@codemirror/view";
+import { RangeSetBuilder, StateEffect } from "@codemirror/state";
 
 /** Dispatched into every live view when privacy is toggled from outside
  *  the editor (the command palette, the shortcut, a settings change) —
@@ -50,34 +50,83 @@ function blackoutActive(stateRef) {
   return !!stateRef.privateMode && privacyModeOf(stateRef) === "blackout";
 }
 
-/** Word rects for everything currently rendered. Walks `visibleRanges`
- *  only, so a fifty-page document costs the same as a one-page one. */
+const BAR_CLASS = "hush-privacy-bar";
+
+function isBlank(ch) {
+  return ch === " " || ch === "\t" || ch === "\n" || ch === "\r" || ch === "\u00a0";
+}
+
+/**
+ * Word rects for everything currently rendered — measured straight off
+ * the DOM with one reused `Range`, not through
+ * `RectangleMarker.forRange`.
+ *
+ * `forRange` is the selection-drawing path, and it is priced for a
+ * handful of ranges, not for one per word: each call re-reads the
+ * content rect, `querySelector`s a line, takes a **`getComputedStyle`**
+ * on it, resolves two block positions and two `coordsAtPos` — every one
+ * of those repeated eight hundred times per keystroke on a full-window
+ * editor. Measured on a 400-paragraph document at 1280x900, that put a
+ * keystroke at 113 ms. Reading the rendered text nodes directly is the
+ * same answer for a fraction of the work: the words are already laid
+ * out, and a `Range` over one of them is a layout query the browser can
+ * serve from the tree it already has.
+ *
+ * A word split across two elements (`**bold**`, a link's inner span)
+ * measures as two rects that abut, which is what one bar looks like.
+ * Coordinates mirror CodeMirror's own `getBase` so the markers land in
+ * the same space the layer positions them in.
+ */
 function blackoutMarkers(view, stateRef) {
   if (!blackoutActive(stateRef)) return [];
   const out = [];
-  const doc = view.state.doc;
-  for (const { from, to } of view.visibleRanges) {
-    let pos = from;
-    while (pos <= to) {
-      const line = doc.lineAt(pos);
-      const start = Math.max(line.from, from);
-      const end = Math.min(line.to, to);
-      let runStart = -1;
-      for (let i = start; i <= end; i++) {
-        const ch = i < line.to ? line.text[i - line.from] : " ";
-        const blank = i >= end || ch === " " || ch === "\t";
-        if (!blank) {
-          if (runStart < 0) runStart = i;
-        } else if (runStart >= 0) {
-          for (const m of RectangleMarker.forRange(
-            view, "hush-privacy-bar", EditorSelection.range(runStart, i),
-          )) out.push(m);
-          runStart = -1;
-          if (out.length >= MAX_BARS) return out;
+  const scroller = view.scrollDOM;
+  const sRect = scroller.getBoundingClientRect();
+  const scaleX = view.scaleX || 1;
+  const scaleY = view.scaleY || 1;
+  const ltr = view.textDirection === Direction.LTR;
+  const baseLeft = (ltr ? sRect.left : sRect.right - scroller.clientWidth * scaleX) -
+    scroller.scrollLeft * scaleX;
+  const baseTop = sRect.top - scroller.scrollTop * scaleY;
+  const range = document.createRange();
+  const lines = view.contentDOM.children;
+  for (let li = 0; li < lines.length; li++) {
+    const lineEl = lines[li];
+    if (!lineEl.classList || !lineEl.classList.contains("cm-line")) continue;
+    // Reject nested editors outright: an inline pane mounts a whole
+    // CodeMirror inside a line, and that editor paints its own privacy
+    // layer. Walking into it would measure every word twice and, since
+    // the pane scrolls independently, could park bars outside the box
+    // they were measured against.
+    const walker = document.createTreeWalker(
+      lineEl, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+      (node) => (node.nodeType === 1
+        ? (node.classList && node.classList.contains("cm-editor")
+            ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP)
+        : NodeFilter.FILTER_ACCEPT),
+    );
+    let node;
+    while ((node = walker.nextNode())) {
+      const text = node.nodeValue;
+      if (!text) continue;
+      let i = 0;
+      while (i < text.length) {
+        while (i < text.length && isBlank(text[i])) i++;
+        if (i >= text.length) break;
+        const wordStart = i;
+        while (i < text.length && !isBlank(text[i])) i++;
+        range.setStart(node, wordStart);
+        range.setEnd(node, i);
+        const rects = range.getClientRects();
+        for (let r = 0; r < rects.length; r++) {
+          const rc = rects[r];
+          if (rc.width <= 0 || rc.height <= 0) continue;
+          out.push(new RectangleMarker(
+            BAR_CLASS, rc.left - baseLeft, rc.top - baseTop, rc.width, rc.height,
+          ));
         }
+        if (out.length >= MAX_BARS) return out;
       }
-      if (line.to >= to) break;
-      pos = line.to + 1;
     }
   }
   return out;

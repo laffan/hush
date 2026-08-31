@@ -158,7 +158,15 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
   // no reason to try. Styling (and the hover / drag states) lives in
   // `styles/notebook.css` beside the toolbar's drag grip, which is the
   // same affordance in the same visual language.
-  const resizeGrip = h("div", { cls: "notebook-proof-rail-grip" });
+  // `left` is the rail's own edge expressed in the strip's coordinates —
+  // the strip starts `GRIP_OVERHANG` px outboard of it — and the pill is
+  // then pulled back by half its width, so it straddles the edge rather
+  // than sitting beside it. Set here rather than in CSS so the overhang
+  // stays a single constant.
+  const resizeGrip = h("div", {
+    cls: "notebook-proof-rail-grip",
+    style: { left: `${GRIP_OVERHANG}px` },
+  });
   // The strip reaches `GRIP_OVERHANG` px past the rail's edge so the
   // half of the pill that sits outboard is grabbable too — a handle you
   // can see and can't grab is worse than no handle.

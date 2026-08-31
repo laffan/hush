@@ -83,6 +83,11 @@ export interface DrawShape extends ShapeBase {
   brushId: string;
   /** Stroke composite behavior. `highlighter` uses multiply + alpha. */
   mode: "normal" | "highlighter";
+  /** Highlighter only: bake into the multiply-blended layer so the
+   *  stroke darkens what is under it (see `DrawingSlot.blend`). Absent
+   *  on strokes drawn before the switch existed, which then follow the
+   *  notebook's default. */
+  blend?: boolean;
   /** Drawing layer the stroke belongs to. See `Layer` below. */
   layerId: string;
   points: DrawPoint[];
@@ -114,6 +119,14 @@ export interface DrawingSlot {
   streamline: number;       // 0..1
   spacing: number;          // 0..1 (fraction of stamp radius)
   mode: "normal" | "highlighter";
+  /** Highlighter only: composite the stroke `multiply` against what is
+   *  under it, so a highlight over a proofread page tints the paper and
+   *  leaves the words readable instead of laying a slab over them.
+   *  Wrong in a dark canvas theme, where multiply eats light ink — hence
+   *  a switch rather than a rule. Undefined means "whatever this
+   *  notebook defaults to": on for a proofread notebook, off otherwise
+   *  (`DrawingState.resolveSlotBlend`). */
+  blend?: boolean;
   /** Ruled-line mode: the stroke collapses to its start point and the
    *  point the pen was released at, so a drag lays down a straight A→B
    *  line instead of the path travelled. Per slot, so one brush can be

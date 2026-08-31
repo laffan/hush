@@ -160,6 +160,7 @@ export function createSyncShim({
       brushId: engineStroke.brush,
       mode: engineStroke.mode,
       layerId: hushLayerId,
+      ...(engineStroke.blend !== undefined ? { blend: engineStroke.blend } : {}),
       // Engine points are wrapper-local; translate to world for the
       // hush DrawShape so all downstream Hush code (box-select,
       // bounds, file I/O) sees true world coords.
@@ -226,6 +227,7 @@ export function createSyncShim({
         mode: engineStroke.mode,
         layerId: findHushLayerIdForEngineLayer(engineStroke.layerId),
         points: engineStroke.points.map(localToWorld),
+        ...(engineStroke.blend !== undefined ? { blend: engineStroke.blend } : {}),
         // A transform rebuilds the record; carry the original creation
         // stamp through rather than re-dating the stroke.
         ...(lastSeen.get(hid)?.createdAt !== undefined ? { createdAt: lastSeen.get(hid)!.createdAt } : {}),
@@ -331,7 +333,7 @@ export function createSyncShim({
     if (toUpdate.length) {
       const styleMap = new Map<number, {
         color?: string; size?: number; brushId?: string;
-        mode?: "normal" | "highlighter";
+        mode?: "normal" | "highlighter"; blend?: boolean;
       }>();
       let pocketedFlagChanged = false;
       // Capture before / after pocketed stroke bboxes so the drawing
@@ -352,10 +354,11 @@ export function createSyncShim({
         if (prev && prev.points !== ds.points) {
           engine.setStrokePoints(eid, ds.points.map(worldToLocal));
         }
-        // Style: detect any of color/size/brushId/mode changed.
+        // Style: detect any of color/size/brushId/mode/blend changed.
         if (!prev ||
             prev.color !== ds.color || prev.size !== ds.size ||
-            prev.brushId !== ds.brushId || prev.mode !== ds.mode) {
+            prev.brushId !== ds.brushId || prev.mode !== ds.mode ||
+            prev.blend !== ds.blend) {
           styleMap.set(eid, {
             color: ds.colorIsHeading
               ? resolveHeadingColor()
@@ -365,6 +368,7 @@ export function createSyncShim({
             size: ds.size,
             brushId: ds.brushId,
             mode: ds.mode,
+            ...(ds.blend !== undefined ? { blend: ds.blend } : {}),
           });
         }
         // Detect pocketed-flag flip so we know to rebake the done
@@ -494,6 +498,7 @@ export function createSyncShim({
       mode: ds.mode,
       layerId: engineLayerId,
       isPen: false,
+      ...(ds.blend !== undefined ? { blend: ds.blend } : {}),
       points: ds.points.map(worldToLocal),
       ...(ds.colorIsAuto ? { colorIsAuto: true } : {}),
       ...(ds.colorIsHeading ? { colorIsHeading: true } : {}),

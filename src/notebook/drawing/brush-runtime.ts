@@ -23,6 +23,7 @@ interface StrokeEngineLike {
   setColorAutoSource(source: "auto" | "heading" | null): void;
   setSize(n: number): void;
   setMode(m: "normal" | "highlighter"): void;
+  setBlend(on: boolean): void;
   setStreamline(v: number): void;
   setSpacing(v: number): void;
   setStraightLine(on: boolean): void;
@@ -62,6 +63,10 @@ export function applySlotToEngine(
   strokeEngine.setColorAutoSource(autoSourceOf(slot.color));
   strokeEngine.setSize(slot.size);
   strokeEngine.setMode(slot.mode);
+  // Resolved by the caller — `slot.blend` is undefined on a slot the
+  // user hasn't switched, and only `DrawingState` knows what this
+  // notebook defaults to.
+  strokeEngine.setBlend(!!slot.blend);
   strokeEngine.setStreamline(slot.streamline);
   strokeEngine.setSpacing(slot.spacing);
   strokeEngine.setStraightLine(!!slot.straightLine);

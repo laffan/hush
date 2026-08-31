@@ -249,6 +249,31 @@ export function ensureBrushFlyoutStyle(): void {
       height: 100%;
       display: block;
     }
+    /* Blend Stroke — a plain checkbox rather than a third segment,
+       because it isn't a choice between modes: it qualifies the
+       highlighter, and it only exists while the highlighter is the
+       mode. */
+    .notebook-brush-flyout .nbf-check {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 8px;
+      font: 500 12px/1.2 var(--ui-font-family, system-ui, sans-serif);
+      color: inherit;
+      opacity: 0.8;
+      cursor: pointer;
+      user-select: none;
+    }
+    .notebook-brush-flyout .nbf-check:hover {
+      opacity: 1;
+    }
+    .notebook-brush-flyout .nbf-check input {
+      width: 13px;
+      height: 13px;
+      margin: 0;
+      accent-color: var(--nbf-accent);
+      cursor: pointer;
+    }
   `;
   document.head.appendChild(style);
 }
