@@ -189,6 +189,28 @@ function setImageBudgetMember(canvas: NotesCanvas, member: boolean): void {
   }
 }
 
+/** How long after the last zoom step the camera counts as still moving.
+ *  Long enough to span the gaps between wheel events in a fast scroll,
+ *  short enough that letting go feels like it finished. */
+const ZOOM_SETTLE_MS = 180;
+
+/** Drop an evicted image's decoded bitmap now rather than at GC's
+ *  convenience.
+ *
+ *  Eviction only releases the last reference; WebKit frees the pixels
+ *  whenever it next collects, and during a fast zoom that is far too
+ *  late — the point of evicting is to make room for what is being
+ *  decoded this frame. Pointing the element at a 1×1 GIF makes it drop
+ *  the big buffer synchronously, and cancels the load if one is still in
+ *  flight. It must be a real image: `src = ""` resolves against the
+ *  document URL and loads the page as an image. `pdf-proofread.js` does
+ *  the same thing to its page canvases, for the same reason. */
+const BLANK_GIF = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+function releaseImage(img: HTMLImageElement | undefined): void {
+  if (!img) return;
+  try { img.src = BLANK_GIF; } catch { /* nothing left to release */ }
+}
+
 let copyListenerAttached = false;
 
 function ensureCopyListener() {
@@ -240,6 +262,21 @@ export class NotesCanvas {
    *  It changes under this canvas's feet whenever another budgeted
    *  canvas mounts or goes away. */
   private _imageKeepShare = 0;
+  /** Whether the keep set was computed with read-ahead, so the settle
+   *  pass after a zoom actually recomputes rather than being gated out. */
+  private _imageKeepReadAhead = true;
+  /** Measured decoded size per image shape, in megapixels, read off the
+   *  element once it loads. Kept across evictions: costing a page as a
+   *  guess while it is out and as its real size while it is in makes the
+   *  budget oscillate around its own boundary, admitting and dropping
+   *  the same page every pass. Pruned with the cache. */
+  private _imagePixels = new Map<string, number>();
+  /** Zoom seen on the previous frame, and the moment it stops counting
+   *  as "moving". A zoom sweep passes through viewports nobody looks at;
+   *  decoding for each one spends the whole budget several times over. */
+  private _lastSeenZoom = 0;
+  private _zoomMovingUntil = 0;
+  private _budgetSettleTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(container: HTMLElement, shortcuts?: Partial<NotebookShortcuts>) {
     this.container = container;
@@ -930,7 +967,10 @@ export class NotesCanvas {
     if (this._proofWheel) { this._proofWheel.destroy(); this._proofWheel = null; }
     if (this._shelfResizer) { this._shelfResizer.remove(); this._shelfResizer = null; }
     this.container.innerHTML = "";
+    if (this._budgetSettleTimer) { clearTimeout(this._budgetSettleTimer); this._budgetSettleTimer = null; }
+    for (const img of this._imageCache.values()) releaseImage(img);
     this._imageCache.clear();
+    this._imagePixels.clear();
     setImageBudgetMember(this, false);
     liveCanvases.delete(this);
     if (lastActiveNotebook === this) lastActiveNotebook = null;
@@ -1113,15 +1153,49 @@ export class NotesCanvas {
     // the other canvases) happens once per edit, not once per frame.
     const shapesChanged = this._imageKeepShapes !== this.state.shapes;
     if (shapesChanged) setImageBudgetMember(this, needsImageBudget(this.state.shapes));
+    const readAhead = this._trackZoomMotion();
     const share = imageBudgetShare(budgetedCanvases.size);
     const view: BudgetView = { camera: this.state.camera, w, h };
     if (!shapesChanged
       && this._imageKeepShare === share
+      && this._imageKeepReadAhead === readAhead
       && !budgetNeedsRecompute(this._imageKeepView, view)) return;
     this._imageKeepShapes = this.state.shapes;
     this._imageKeepView = { camera: { ...this.state.camera }, w, h };
     this._imageKeepShare = share;
-    this._imageKeep = imageKeepSet(this.state.shapes, this.state.camera, w, h, share);
+    this._imageKeepReadAhead = readAhead;
+    this._imageKeep = imageKeepSet(this.state.shapes, this.state.camera, w, h, {
+      maxMegapixels: share,
+      readAhead,
+      costOf: (id) => this._imagePixels.get(id),
+    });
+  }
+
+  /** Note whether the camera is mid-zoom, and return whether the budget
+   *  may read ahead this frame.
+   *
+   *  Zoom is the one gesture that grows the viewport, so it walks the
+   *  keep set straight up to whatever the ceiling allows — and a fast
+   *  sweep does that through a dozen intermediate viewports, none of
+   *  which the reader ever looks at, faster than WebKit frees what the
+   *  last one decoded. So while the zoom is moving the working set is
+   *  what's on screen and nothing else. The settle timer is what refills
+   *  the read-ahead: the loop is dirty-driven and goes idle after the
+   *  last camera change, so without a frame of its own the budget would
+   *  sit in its mid-gesture shape until the user did something else. */
+  private _trackZoomMotion(): boolean {
+    const zoom = this.state.camera.zoom;
+    const now = performance.now();
+    if (zoom !== this._lastSeenZoom) {
+      this._lastSeenZoom = zoom;
+      this._zoomMovingUntil = now + ZOOM_SETTLE_MS;
+      if (this._budgetSettleTimer) clearTimeout(this._budgetSettleTimer);
+      this._budgetSettleTimer = setTimeout(() => {
+        this._budgetSettleTimer = null;
+        this._scheduleRender();
+      }, ZOOM_SETTLE_MS + 20);
+    }
+    return now >= this._zoomMovingUntil;
   }
 
   private _syncImageCache() {
@@ -1150,8 +1224,21 @@ export class NotesCanvas {
         const img = new Image() as HTMLImageElement & { _hushVariant?: string };
         // Repaint once the bytes decode — the loop is dirty-driven now,
         // so without this an async-loaded image wouldn't appear until the
-        // next unrelated state change.
-        img.addEventListener("load", this._scheduleRender);
+        // next unrelated state change. The same handler is where the
+        // budget learns what this image actually costs: a proof page is
+        // 10 MP and a pasted icon a fiftieth of that, and until one has
+        // been decoded once there is nothing to read that off.
+        const id = shape.id;
+        img.addEventListener("load", () => {
+          // Eviction points the element at a 1×1 GIF to free its pixels,
+          // and that fires `load` too. Recording *that* as the image's
+          // measured size would tell the budget a proof page costs
+          // nothing, and it would readmit the whole document.
+          if (img.src === BLANK_GIF) return;
+          const mp = (img.naturalWidth * img.naturalHeight) / 1e6;
+          if (mp > 0) this._imagePixels.set(id, mp);
+          this._scheduleRender();
+        });
         img.src = src;
         img._hushVariant = variant;
         this._imageCache.set(shape.id, img);
@@ -1162,7 +1249,15 @@ export class NotesCanvas {
     }
     const ids = new Set(this.state.shapes.filter((s) => s.type === "image").map((s) => s.id));
     for (const id of this._imageCache.keys()) {
-      if (!ids.has(id) || (keep && !keep.has(id))) this._imageCache.delete(id);
+      if (!ids.has(id) || (keep && !keep.has(id))) {
+        releaseImage(this._imageCache.get(id));
+        this._imageCache.delete(id);
+      }
+    }
+    // Measurements outlive an eviction (that is the point of them), but
+    // not the shape they describe.
+    if (this._imagePixels.size > ids.size) {
+      for (const id of this._imagePixels.keys()) if (!ids.has(id)) this._imagePixels.delete(id);
     }
   }
 
