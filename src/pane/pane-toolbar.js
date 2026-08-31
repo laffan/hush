@@ -24,6 +24,7 @@ import {
   anchorPaneToStackItem, startStackPinSync, stopStackPinSync,
 } from "./pane-attach-sync.js";
 import { isDocked, applyDockGeometry, reflowAllDockedPanes } from "./pane-dock.js";
+import { toggleStretchPaneHeight } from "./pane-layout.js";
 import { schedulePersist } from "./pane-persistence.js";
 
 // ── SVG icons ─────────────────────────────────────────────────────────
@@ -224,7 +225,19 @@ export function buildPaneDOM(pane, deps) {
     notifyPaneDragMove: deps.notifyPaneDragMove,
   });
   titlebar.addEventListener("dblclick", (e) => {
-    if (!e.target.closest(".floating-pane-btn, .fp-title-link")) toggleCollapse(pane, deps);
+    if (e.target.closest(".floating-pane-btn, .fp-title-link")) return;
+    // ⌘ (⌃ on non-Mac keyboards) turns the collapse toggle into a
+    // vertical fill: the pane stretches to the window's height and a
+    // second ⌘-double-click puts it back. Falls through to the plain
+    // collapse when the pane's height isn't its own to set (docked,
+    // gutter, inline) so the gesture is never a dead click.
+    if (e.metaKey || e.ctrlKey) {
+      if (toggleStretchPaneHeight(pane)) {
+        deps.notifyPaneDragMove?.();
+        return;
+      }
+    }
+    toggleCollapse(pane, deps);
   });
   el.addEventListener("pointerdown", () => focusPane(pane.id));
 }

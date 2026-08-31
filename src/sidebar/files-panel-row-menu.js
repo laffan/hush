@@ -12,6 +12,7 @@
 
 import { findNode, findParentOfNode } from "../state/tree-helpers.js";
 import { AppState } from "../state/state.js";
+import { multiWindowAvailable } from "../multi-window.js";
 
 export const ROW_COLORS = [
   { key: "red",    rgba: "rgba(255, 82, 82, 0.13)",   swatch: "#ef5350" },
@@ -210,6 +211,17 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   }
   if (isContainer && !isImagesId(nodeId) && !isArchiveId(nodeId)) {
     entries.push({ action: "open-as-stack", label: "Open as Stack" });
+  }
+  // Every file type opens in a window of its own — docs, notebooks,
+  // stacks, PDFs, and projects (which open as their concatenated
+  // buffer). A plain folder isn't a surface, and neither is an image or
+  // one of the desk specials, so they sit this one out. Native
+  // multi-window is desktop + iPad only, so `multiWindowAvailable()`
+  // decides whether the entry is offered at all.
+  const opensAsSurface = isDoc || isPdf || nodeType === "notebook" || nodeType === "stack"
+    || (nodeType === "project" && !isSpecial);
+  if (opensAsSurface && multiWindowAvailable()) {
+    entries.push({ action: "open-in-new-window", label: "Open in New Window" });
   }
   if (!(isSpecial || isImage || isPdf)) {
     entries.push({ action: "duplicate", label: "Duplicate" });

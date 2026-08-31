@@ -118,9 +118,9 @@
   border-color: rgba(128, 128, 128, 0.3);
 }
 
-/* Replace section: input + checkbox on the first row, action buttons on
-   the second. The left padding pushes both rows past the close + twirl
-   so the inputs / buttons line up vertically with the find input above. */
+/* Replace section: the input on the first row, the action button on the
+   second. The left padding pushes both rows past the close + twirl so the
+   input / button line up vertically with the find input above. */
 .find-panel-replace-wrap {
   display: flex;
   flex-direction: column;
@@ -146,24 +146,6 @@
   flex-wrap: wrap;
 }
 
-.find-panel-global-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  opacity: 0.75;
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-}
-
-.find-panel-global-label input[type="checkbox"] {
-  margin: 0;
-  cursor: pointer;
-  accent-color: var(--fg);
-}
-
-.find-panel-replace-btn,
 .find-panel-replace-all-btn {
   background: rgba(128, 128, 128, 0.08);
   border: 1px solid rgba(128, 128, 128, 0.2);
@@ -178,7 +160,6 @@
   transition: all 0.12s;
 }
 
-.find-panel-replace-btn:hover,
 .find-panel-replace-all-btn:hover {
   opacity: 1;
   background: rgba(128, 128, 128, 0.18);
@@ -330,17 +311,6 @@
   padding: 0 1px;
 }
 
-/* Dimmed file sections when replace is open without "global" — visually
-   signals that replace will only touch the current document. */
-.find-section-dimmed .find-section-header,
-.find-section-dimmed .find-match {
-  opacity: 0.4;
-}
-
-.find-section-dimmed .find-match {
-  pointer-events: auto;
-}
-
 /* ===== Editor decorations driven by the Find panel ===== */
 
 .cm-find-match {
@@ -365,9 +335,12 @@
 .quick-find-bar {
   position: fixed;
   z-index: 9000;
+  /* A column of rows: the find field, and — once the twirl is open —
+     the replacement below it. The bar's fixed width is what makes both
+     rows the same width without either of them having to say so. */
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 5px;
   width: 224px;
   padding: 5px 8px;
   border-radius: 7px;
@@ -377,6 +350,71 @@
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
   font-family: var(--ui-font-family);
   font-size: 13px;
+}
+
+.quick-find-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Beats the row's own `display: flex` on specificity, so the hidden
+   replace row actually stays hidden. */
+.quick-find-row[hidden] {
+  display: none;
+}
+
+/* Hairline between the two rows so the replacement reads as a second
+   stage rather than a second search field. */
+.quick-find-replace-row {
+  padding-top: 5px;
+  border-top: 1px solid var(--theme-border, rgba(0, 0, 0, 0.12));
+}
+
+.quick-find-twirl {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 1px;
+  opacity: 0.5;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
+
+.quick-find-twirl:hover {
+  opacity: 1;
+}
+
+.quick-find-twirl-arrow {
+  font-size: 9px;
+  display: inline-block;
+  width: 10px;
+  text-align: center;
+}
+
+.quick-find-confirm {
+  /* `margin-left: auto` rather than a spacer element: whatever the
+     input does, Confirm sits against the row's right edge. */
+  margin-left: auto;
+  flex: 0 0 auto;
+  border: 1px solid var(--theme-border, rgba(0, 0, 0, 0.15));
+  border-radius: 5px;
+  background: rgba(128, 128, 128, 0.1);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 9px;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.quick-find-confirm:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.2);
 }
 
 .quick-find-input {

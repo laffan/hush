@@ -162,6 +162,7 @@ export function createDefaultSettings() {
     shortcutToggleWordCount: "Mod+Shift+W",
     shortcutToggleProperties: "Mod+;",
     shortcutZenFocus: "Mod+Shift+S",
+    shortcutToggleSpellcheck: "Mod+Shift+C",
     // Literal Ctrl on Mac (not Cmd) so it doesn't clash with Mod+Shift+D
     // (Select previous instance). Translates to Ctrl+Shift+D on every
     // platform.
@@ -205,6 +206,12 @@ export function createDefaultSettings() {
     shortcutFindPrev: "Mod+Shift+G",
     shortcutJoinLines: "Mod+J",
     shortcutJoinLinesUp: "Mod+Shift+J",
+    // A matched pair: ⌘↩ opens a line below the caret's line, ⌘⇧↩ opens
+    // one above it. The "after" half was CodeMirror's built-in
+    // `insertBlankLine` — bound here so it's rebindable and so its
+    // mirror image has somewhere to live.
+    shortcutInsertBreakAfter: "Mod+Enter",
+    shortcutInsertBreakBefore: "Mod+Shift+Enter",
     shortcutJumpNextParagraph: "Mod+ArrowDown",
     shortcutJumpPrevParagraph: "Mod+ArrowUp",
     shortcutZotero: "Mod+Shift+I",

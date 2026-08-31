@@ -269,9 +269,11 @@ function buildCommands(state) {
       // via `index.html#file=…` (iPad multi-window is native since Tauri
       // 2.11 — see MULTI-WINDOW-TAURI.md).
       action: (s) => {
-        const fileId = s.currentNotebookFileId || s.currentStackFileId || s.currentProjectId || s.currentFileId;
+        const fileId = s.currentNotebookFileId || s.currentStackFileId || s.currentPdfFileId
+          || s.currentProjectId || s.currentFileId;
         const fileType = s.currentNotebookFileId ? "notebook"
           : s.currentStackFileId ? "stack"
+          : s.currentPdfFileId ? "pdf"
           : s.currentProjectId ? "project"
           : s.currentFileId ? "document" : null;
         if (!fileId || !fileType) return;

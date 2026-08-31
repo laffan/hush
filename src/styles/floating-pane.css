@@ -156,6 +156,11 @@
 }
 
 /* ── Font-size popover ────────────────────────────────────────────── */
+/* `top` / `left` are written inline by `positionPopover` from the "A"
+   button's own rect — the title bar is a full-width bar in one form and a
+   floating centred pill in another (see the `.docked-*` rules below), so a
+   fixed corner offset only ever lands under one of them. The values here
+   are just the pre-measure fallback. */
 
 .fp-size-popover {
   position: absolute;

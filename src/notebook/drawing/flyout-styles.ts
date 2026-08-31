@@ -15,7 +15,20 @@
  * variables (`--nbf-*`) that brush-slots.ts sets on the flyout root
  * from the active canvas theme, so a theme switch restyles the whole
  * panel without touching per-element inline styles.
+ *
+ * `STRAIGHT_LINE_ICON` — the ruled-line glyph, shared by the brush
+ * flyout's Line segment and the mini-palette's toggle so one mode reads
+ * as one control across both surfaces.
  */
+
+/** A dot inside a circle: the endpoint of a ruled line, ringed. Sized
+ *  by its host through `width` / `height` on the element it's set on,
+ *  and painted in `currentColor` so it inherits whatever the segment or
+ *  strip is tinted with. */
+export const STRAIGHT_LINE_ICON =
+  `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true">` +
+  `<circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/>` +
+  `<circle cx="8" cy="8" r="2" fill="currentColor"/></svg>`;
 
 let _injected = false;
 
@@ -208,6 +221,13 @@ export function ensureBrushFlyoutStyle(): void {
       opacity: 0.65;
       font: 500 12px/1.2 var(--ui-font-family, system-ui, sans-serif);
       cursor: pointer;
+      /* Flex rather than the button default so a segment carrying a
+         glyph centres it beside the label instead of dropping the SVG
+         onto the text baseline. Label-only segments read the same. */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
     }
     .notebook-brush-flyout .nbf-seg.nbf-active {
       background: var(--nbf-accent);
@@ -217,6 +237,17 @@ export function ensureBrushFlyoutStyle(): void {
     }
     .notebook-brush-flyout .nbf-seg:not(.nbf-active):hover {
       opacity: 1;
+    }
+    .notebook-brush-flyout .nbf-seg-icon {
+      display: inline-flex;
+      width: 13px;
+      height: 13px;
+      flex: 0 0 13px;
+    }
+    .notebook-brush-flyout .nbf-seg-icon svg {
+      width: 100%;
+      height: 100%;
+      display: block;
     }
   `;
   document.head.appendChild(style);

@@ -26,7 +26,7 @@ import {
   shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack,
   deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence,
   jumpToPrevParagraph, jumpToNextParagraph, joinLines, joinLinesUp, selectParagraph,
-  selectToParagraphAbove, selectToParagraphBelow,
+  selectToParagraphAbove, selectToParagraphBelow, insertBreakAfter, insertBreakBefore,
 } from "./sentence-navigator.js";
 import {
   toggleBold, toggleItalic, toggleHighlight, toggleComment, toggleStrikethrough,
@@ -189,6 +189,12 @@ export function buildEditorCommands() {
       return toggleModeOnContext(state, "focusMode");
     },
     shortcutZenFocus: (state) => { state.toggleZenFocus(); return true; },
+    // Spellcheck rides `createBaseExtensions`, so it reaches panes and
+    // stack columns as well as the main editor — `toggleSpellcheck`
+    // owns the "is there a doc surface in play" gate (see
+    // state-modes.js), and swallows the key either way so the keystroke
+    // doesn't fall through to the browser on a canvas.
+    shortcutToggleSpellcheck: (state) => { state.toggleSpellcheck(); return true; },
     shortcutToggleWordCount: (state) => toggleWordCount(state),
     // View/Hide properties (metadata frontmatter). Lazy-import keeps the
     // command registry out of the plugin's import cycle with
@@ -297,6 +303,22 @@ export function buildEditorCommands() {
     shortcutDeleteToSentenceEnd: (_state, view) => (view ? deleteToSentenceEnd(view) : false),
     shortcutJoinLines: (_state, view) => (view ? joinLines(view) : false),
     shortcutJoinLinesUp: (_state, view) => (view ? joinLinesUp(view) : false),
+    // ⌘↩ / ⌘⇧↩. The "after" half was CodeMirror's own `insertBlankLine`
+    // riding in with the default keymap; binding it explicitly here puts
+    // it in Settings beside its mirror image and makes both rebindable.
+    // `buildShortcutExtension` wraps these at Prec.highest, so ours wins
+    // over the default without having to unbind it.
+    //
+    // Both check `hasFocus`, which their neighbours here don't need to.
+    // The window-level fallback hands every command `state.editor.view`
+    // — the main editor, which is built once at boot and never torn down
+    // — so on a canvas these would otherwise open a line in the document
+    // hidden behind it. Returning false lets the keystroke fall through
+    // instead.
+    shortcutInsertBreakAfter: (_state, view) =>
+      (view && view.hasFocus ? insertBreakAfter(view) : false),
+    shortcutInsertBreakBefore: (_state, view) =>
+      (view && view.hasFocus ? insertBreakBefore(view) : false),
 
     // ===== Formatting =====
     shortcutBold: (_state, view) => (view ? toggleBold(view) : false),

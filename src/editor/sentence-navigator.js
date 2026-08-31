@@ -533,6 +533,49 @@ export function joinLinesUp(view) {
   return true;
 }
 
+/**
+ * Open a new line below the current one and drop the cursor into it.
+ *
+ * This is the pair to `insertBreakBefore`. ⌘↩ has always done this —
+ * it's CodeMirror's own `insertBlankLine`, which arrives with the
+ * default keymap — but only as a fixed binding nothing in Settings knew
+ * about, so it had no visible partner and couldn't be rebound. Naming it
+ * here puts both halves in the Shortcuts tab under one pair of labels.
+ *
+ * Leading whitespace carries over, so opening a line inside an indented
+ * block lands the caret where the block continues rather than at column
+ * zero.
+ */
+export function insertBreakAfter(view) {
+  const line = view.state.doc.lineAt(view.state.selection.main.head);
+  const indent = line.text.match(/^[ \t]*/)[0];
+  view.dispatch({
+    changes: { from: line.to, to: line.to, insert: "\n" + indent },
+    selection: EditorSelection.cursor(line.to + 1 + indent.length),
+    scrollIntoView: true,
+  });
+  return true;
+}
+
+/**
+ * Open a new line *above* the current one and drop the cursor into it,
+ * leaving the current line's text where it was.
+ *
+ * Written as an insert at the line's start (`indent + "\n"`) rather than
+ * at the previous line's end so it works on line 1, where there is no
+ * previous line to append to.
+ */
+export function insertBreakBefore(view) {
+  const line = view.state.doc.lineAt(view.state.selection.main.head);
+  const indent = line.text.match(/^[ \t]*/)[0];
+  view.dispatch({
+    changes: { from: line.from, to: line.from, insert: indent + "\n" },
+    selection: EditorSelection.cursor(line.from + indent.length),
+    scrollIntoView: true,
+  });
+  return true;
+}
+
 // ===== Internal helpers =====
 
 /** True when the selection covers exactly one full sentence (ignoring

@@ -236,6 +236,28 @@ export async function handleOpenAsStack(nodeId, state, refreshAfter) {
   }
 }
 
+/** Tree-node type → the `fileType` token `openInNewWindow` seeds the
+ *  new window's URL hash with. A project is addressed by its *node* id
+ *  (it has no fileId of its own — `openProject` concatenates its
+ *  children); every other type is addressed by fileId. */
+const NEW_WINDOW_TYPES = new Set(["document", "notebook", "pdf", "stack"]);
+
+/** Open a sidebar row in a window of its own. The new window boots
+ *  straight onto this file (see `getInitialFileFromHash`) and inherits
+ *  the current desk, since a file id means nothing without the desk it
+ *  belongs to. */
+export async function handleOpenInNewWindow(nodeId, state) {
+  const node = findNode(state.fileTree, nodeId);
+  if (!node) return;
+  const isProject = node.type === "project";
+  if (!isProject && !NEW_WINDOW_TYPES.has(node.type)) return;
+  const fileId = isProject ? node.id : node.fileId;
+  if (!fileId) return;
+  const { openInNewWindow } = await import("../multi-window.js");
+  await openInNewWindow(fileId, isProject ? "project" : node.type,
+    state.getActiveDesk?.()?.id || null);
+}
+
 function collectAllNames(nodes) {
   const names = [];
   for (const n of nodes) {

@@ -175,6 +175,9 @@ pub fn default_shortcut_toggle_properties() -> String {
 pub fn default_shortcut_zen_focus() -> String {
     "Mod+Shift+S".to_string()
 }
+pub fn default_shortcut_toggle_spellcheck() -> String {
+    "Mod+Shift+C".to_string()
+}
 pub fn default_zen_focus_font_size() -> u32 {
     30
 }
@@ -298,6 +301,16 @@ pub fn default_shortcut_join_lines() -> String {
 }
 pub fn default_shortcut_join_lines_up() -> String {
     "Mod+Shift+J".to_string()
+}
+/// A matched pair: Mod+Enter opens a line below the caret's line,
+/// Mod+Shift+Enter opens one above it. The "after" half was CodeMirror's
+/// built-in `insertBlankLine` until it was bound explicitly, so this
+/// default reproduces the binding users already have in their fingers.
+pub fn default_shortcut_insert_break_after() -> String {
+    "Mod+Enter".to_string()
+}
+pub fn default_shortcut_insert_break_before() -> String {
+    "Mod+Shift+Enter".to_string()
 }
 pub fn default_shortcut_jump_next_paragraph() -> String {
     "Mod+ArrowDown".to_string()

@@ -11,6 +11,8 @@ import {
   DEFAULT_WIDTH, MIN_WIDTH, MIN_HEIGHT,
 } from "./pane-state.js";
 import { schedulePersist } from "./pane-persistence.js";
+import { isDocked } from "./pane-dock.js";
+import { screenToCanvas, anchorPaneToPdf, anchorPaneToStackItem } from "./pane-attach-sync.js";
 
 /** Width occupied by the sidebar — the grip strip is always there, and
  *  the files panel adds the rest in inset / pinned modes. Pure hover
@@ -119,6 +121,87 @@ export function fitActivePaneToGap(activePaneId) {
   });
   schedulePersist();
   return true;
+}
+
+/** Vertical clearance kept above and below a pane stretched to the
+ *  window's height (⌘ + double-click on its title bar). Enough to leave
+ *  the menu bar / traffic lights above and a strip of the surface
+ *  underneath visible, so the pane still reads as floating over the
+ *  document rather than replacing it. */
+export const STRETCH_MARGIN = 50;
+
+/**
+ * Stretch `pane` to fill the window vertically — top edge `STRETCH_MARGIN`
+ * below the top of the window, bottom edge the same distance above the
+ * bottom. Width and x are untouched.
+ *
+ * A second call restores the geometry the first one replaced, so the
+ * gesture toggles the same way the plain double-click toggles collapse.
+ * Returns false for panes whose height isn't theirs to set: docked panes
+ * (the dock layout owns it), gutters (the doc owns it) and inline panes
+ * (the editor's block widget owns it).
+ */
+export function toggleStretchPaneHeight(pane) {
+  if (!pane || !pane.el) return false;
+  if (pane.inline || pane.gutter || isDocked(pane)) return false;
+
+  // A collapsed pane has no height to stretch — open it first, the same
+  // way `fitActivePaneToGap` does.
+  if (pane.collapsed) {
+    pane.collapsed = false;
+    pane.el.classList.remove("collapsed");
+  }
+
+  if (pane._stretchRestore) {
+    const { y, height } = pane._stretchRestore;
+    pane._stretchRestore = null;
+    applyPaneVerticalGeometry(pane, y, height);
+    return true;
+  }
+
+  // An attached pane over a canvas is drawn scaled by the camera zoom, so
+  // the screen-space span we want converts to layout px through it.
+  const zoom = attachedCanvasZoom(pane);
+  const targetScreenH = Math.max(MIN_HEIGHT, window.innerHeight - STRETCH_MARGIN * 2);
+  pane._stretchRestore = { y: pane.y, height: pane.height };
+  applyPaneVerticalGeometry(pane, STRETCH_MARGIN, targetScreenH / zoom);
+  return true;
+}
+
+/** The camera zoom a canvas-attached pane is being drawn at, or 1. */
+function attachedCanvasZoom(pane) {
+  if (!pane.attached || !appState?.currentNotebookFileId) return 1;
+  const canvas = notebookBridge ? notebookBridge.getCanvasInstance() : null;
+  return (canvas && canvas.state.camera.zoom) || 1;
+}
+
+/** Write a pane's new top / height and re-seat whatever anchor is
+ *  driving its position, so an attached pane doesn't snap back on the
+ *  next sync tick. */
+function applyPaneVerticalGeometry(pane, y, height) {
+  pane.y = y;
+  pane.height = height;
+  pane.el.style.top = y + "px";
+  pane.el.style.height = height + "px";
+  reanchorPane(pane);
+  schedulePersist();
+}
+
+/** Re-derive an attached pane's anchor from where it now sits. Each
+ *  attach mode keeps its own reference — canvas coords, a doc-scroll
+ *  offset, a PDF page fraction, a stack column offset — and the sync
+ *  loop would otherwise drag the pane straight back to the old one. */
+function reanchorPane(pane) {
+  if (pane._stackPin) { anchorPaneToStackItem(pane); return; }
+  if (!pane.attached) return;
+  if (appState?.currentPdfFileId) { anchorPaneToPdf(pane); return; }
+  if (appState?.currentNotebookFileId) {
+    const canvasPos = screenToCanvas(pane.x, pane.y);
+    if (canvasPos) { pane._canvasX = canvasPos.x; pane._canvasY = canvasPos.y; }
+    return;
+  }
+  const scrollTop = appState?.editor?.view.scrollDOM.scrollTop || 0;
+  pane._scrollRelY = pane.y + scrollTop;
 }
 
 /** Reposition a pane so it sits at the centre of the viewport. For

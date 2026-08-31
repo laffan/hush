@@ -67,6 +67,13 @@ export function serializePanes() {
       canvasX: p._canvasX ?? null,
       canvasY: p._canvasY ?? null,
       scrollRelY: p._scrollRelY ?? null,
+      // Geometry the ⌘-double-click vertical stretch replaced, so the
+      // second ⌘-double-click still puts the pane back after a restart.
+      // Without it a pane restored mid-stretch has nothing to return to
+      // and the gesture reads as dead until the pane is moved by hand.
+      stretchRestore: p._stretchRestore
+        ? { y: p._stretchRestore.y, height: p._stretchRestore.height }
+        : null,
       // Editor scroll position inside doc panes — restored on next mount
       // so reopening a pane lands the reader where they left off.
       editorScrollTop: typeof p.editorScrollTop === "number" ? p.editorScrollTop : null,
@@ -213,6 +220,11 @@ export async function restorePanes(deps, listOverride) {
     if (s.canvasX != null) pane._canvasX = s.canvasX;
     if (s.canvasY != null) pane._canvasY = s.canvasY;
     if (s.scrollRelY != null) pane._scrollRelY = s.scrollRelY;
+    if (s.stretchRestore
+        && typeof s.stretchRestore.y === "number"
+        && typeof s.stretchRestore.height === "number") {
+      pane._stretchRestore = { y: s.stretchRestore.y, height: s.stretchRestore.height };
+    }
 
     buildPaneDOM(pane);
     if (pane.desktopPane) pane.el.classList.add("desktop-pane");

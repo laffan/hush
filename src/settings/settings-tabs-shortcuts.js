@@ -22,6 +22,7 @@ export const shortcutCategories = [
       { key: "shortcutToggleDry", label: "Toggle D.R.Y. highlighting" },
       { key: "shortcutToggleFocus", label: "Toggle focus mode" },
       { key: "shortcutZenFocus", label: "Toggle Zen Focus" },
+      { key: "shortcutToggleSpellcheck", label: "Toggle spellcheck" },
       { key: "shortcutToggleWordCount", label: "Toggle word count" },
       { key: "shortcutToggleProperties", label: "View/Hide properties" },
       { key: "shortcutNewFile", label: "New document" },
@@ -59,6 +60,8 @@ export const shortcutCategories = [
       { key: "shortcutDeleteToSentenceEnd", label: "Delete to sentence end" },
       { key: "shortcutJoinLines", label: "Join lines (remove next line break)" },
       { key: "shortcutJoinLinesUp", label: "Join lines (remove previous line break)" },
+      { key: "shortcutInsertBreakAfter", label: "Add break after current line" },
+      { key: "shortcutInsertBreakBefore", label: "Add break before current line" },
     ],
   },
   {
@@ -108,6 +111,7 @@ export const DOC_MODE_SHORTCUT_KEYS = [
   "shortcutToggleWordCount",
   "shortcutToggleProperties",
   "shortcutQuickFind",
+  "shortcutToggleSpellcheck",
 ];
 
 // Dropdown options for the filetype filter (Shortcuts settings tab + modal).

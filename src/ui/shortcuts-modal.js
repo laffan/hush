@@ -50,12 +50,18 @@ const NAVIGATION_KEYS = [
   "shortcutJumpPrevParagraph",
 ];
 // Manipulation leftovers from "Editing" that are neither formatting,
-// selection, nor navigation (move / delete / join).
+// selection, nor navigation (move / delete / join / break). Anything in
+// the "Editing" category that isn't listed in one of the four groups is
+// dropped from this modal entirely, so a new key belongs in exactly one
+// of them.
 const EDITING_KEYS = [
   "shortcutMoveSentenceForward",
   "shortcutMoveSentenceBack",
   "shortcutDeleteToSentenceEnd",
   "shortcutJoinLines",
+  "shortcutJoinLinesUp",
+  "shortcutInsertBreakAfter",
+  "shortcutInsertBreakBefore",
 ];
 
 /** Well-known shortcuts with no settings field — shown without an Edit

@@ -157,6 +157,10 @@ export function setupPaneDrag(pane, deps) {
     if (pane.gutter) return;
     e.preventDefault();
     e.stopPropagation();
+    // Moving the pane by hand retires the geometry ⌘-double-click saved:
+    // restoring to where the pane sat two gestures ago would read as the
+    // pane jumping somewhere the user never put it.
+    pane._stretchRestore = null;
     startX = e.clientX;
     startY = e.clientY;
     // Dragging a docked pane undocks it first — keep its current screen
@@ -317,6 +321,9 @@ export function setupPaneResize(pane, deps) {
         const allowed = allowedDockResizeDir(pane.dockEdge);
         if (dir !== allowed) return;
       }
+      // Same reasoning as the drag path: a hand-set size supersedes the
+      // pre-stretch geometry.
+      pane._stretchRestore = null;
       const startX = e.clientX;
       const startY = e.clientY;
       const startW = pane.width;

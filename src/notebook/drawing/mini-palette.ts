@@ -30,6 +30,7 @@ import type { DrawingState } from "../state";
 import type { DrawingLayer } from "./drawing-layer";
 import { PEN_COLORS } from "../types";
 import { h } from "../ui/dom-helpers";
+import { STRAIGHT_LINE_ICON } from "./flyout-styles";
 
 const MINI_COLORS: { value: string; label?: string }[] = [
   { value: "auto", label: "A" },
@@ -241,6 +242,44 @@ export function createMiniPalette(opts: {
     if (colorFlyoutOpen && e.key === "Escape") closeColorFlyout();
   });
 
+  // ---------- straight-line toggle ----------
+  // A 15 px square carrying the dot-in-circle glyph. Tapping it flips
+  // the active brush between freehand and ruled A→B capture; the same
+  // toggle lives in the full brush flyout's Line section. Sits between
+  // the colour squares and the size readout so the strip reads
+  // colour → shape → size.
+  const straightBtn = h("button", {
+    title: "Straight line mode",
+    style: {
+      width: "15px",
+      height: "15px",
+      flex: "0 0 15px",
+      border: "none",
+      cursor: "pointer",
+      padding: "2px",
+      margin: "0",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      boxSizing: "border-box",
+    },
+    onClick: (e) => {
+      e.stopPropagation();
+      const idx = state.activeBrushSlot;
+      // Capture mode, not stroke style — nothing to apply retroactively
+      // to a live selection (its points are already recorded).
+      state.updateBrushSlot(idx, { straightLine: !state.brushSlots[idx].straightLine });
+    },
+  }) as HTMLButtonElement;
+  straightBtn.innerHTML = STRAIGHT_LINE_ICON;
+  const straightSvg = straightBtn.querySelector("svg");
+  if (straightSvg) {
+    straightSvg.setAttribute("width", "11");
+    straightSvg.setAttribute("height", "11");
+    straightSvg.style.display = "block";
+  }
+  root.appendChild(straightBtn);
+
   const sizeCell = h("div", {
     style: {
       width: "22px",
@@ -391,6 +430,12 @@ export function createMiniPalette(opts: {
       const active = slot.color === value;
       el.style.boxShadow = active ? `inset 0 0 0 2px ${theme.accent}` : "none";
     }
+    // On, the toggle fills with the accent the way an active segment in
+    // the flyout does; off, it sits back as one more cell of the strip.
+    const straightOn = !!slot.straightLine;
+    straightBtn.style.background = straightOn ? theme.accent : theme.uiBackground;
+    straightBtn.style.color = straightOn ? "#fff" : theme.foreground;
+    straightBtn.style.opacity = straightOn ? "1" : "0.6";
     sizeCell.textContent = String(slot.size);
     sizeCell.style.background = theme.uiBackground;
     sizeCell.style.color = theme.foreground;

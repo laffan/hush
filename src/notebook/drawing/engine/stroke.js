@@ -96,6 +96,16 @@
  *      gesture began, dropping the recogniser to one tracked contact —
  *      below the two a pan or pinch needs — so two-finger navigation
  *      intermittently died in pen mode and nowhere else.
+ *  37. Straight-line capture: `setStraightLine(bool)`. With it on, a
+ *      DRAW stroke keeps only two points — where the pointer went
+ *      down and where it is now — so the drag lays a ruled A→B line
+ *      and the live preview is exactly what the release commits.
+ *      The endpoint is replaced in place, which is sound only
+ *      because the active stroke is never streamline-cached (#26).
+ *      Pressure comes from the anchor, not the moving end: a line
+ *      that tapers because the hand eased off reads as a mistake.
+ *      Erase and slice ignore the flag — both act along the path
+ *      the pointer actually travelled.
  *   (Deltas 4 + 5 live in selection.js + gestures.js; #24 in
  *    gestures.js; #26 — the per-stroke streamline cache — in
  *    stroke-render.js; #30 — ImageBitmap tinted atlases, so stamp
@@ -241,6 +251,8 @@ export function createStrokeEngine({
     longPressPointer: null,
     longPressMs: LONG_PRESS_MS_DEFAULT,  // Hush delta #11: configurable via setLongPressMs()
     pencilOnly: false,        // Hush delta #18: when true, only pointerType="pen" can start a stroke
+    straightLine: false,      // Hush delta #37: when true, a draw stroke keeps only its
+                              // anchor + the live point, so a drag reads as a ruled A→B line
     fingerHoldPointer: null,  // Hush delta #19: pointerId of a finger waiting on the long-press timer
     fingerHoldClient: null,   // Hush delta #33: that finger's landing point in client px
                               // (pencil-only mode lets fingers hold-to-select without drawing)
@@ -573,6 +585,24 @@ export function createStrokeEngine({
   function extendStroke(p) {
     const a = state.active;
     if (!a) return;
+    // Hush delta #37: straight-line mode. The stroke is pinned to two
+    // points — where the pen went down and where it is now — so the live
+    // preview is the line the release will commit. Erase and slice are
+    // path-following operations and keep their full sample trail.
+    if (state.straightLine && a.tool === 'draw') {
+      // Pressure comes from the anchor rather than the moving end: a
+      // ruled line that tapers because the user eased off mid-drag reads
+      // as a mistake, not as a line.
+      const end = { ...p, pressure: a.points[0].pressure };
+      if (a.points.length < 2) a.points.push(end);
+      else a.points[1] = end;
+      // The active stroke is never streamline-cached (see delta #26), so
+      // replacing the endpoint in place is safe.
+      state.lastRecorded = { x: p.x, y: p.y };
+      state.dirty = true;
+      checkLongPressDrift(p);
+      return;
+    }
     const last = state.lastRecorded;
     const dx = p.x - last.x, dy = p.y - last.y;
     if (dx * dx + dy * dy < 1) {
@@ -584,11 +614,16 @@ export function createStrokeEngine({
       state.lastRecorded = { x: p.x, y: p.y };
     }
     state.dirty = true;
-    if (state.longPressTimer && state.longPressAnchor) {
-      const ax = p.x - state.longPressAnchor.x;
-      const ay = p.y - state.longPressAnchor.y;
-      if (ax * ax + ay * ay > LONG_PRESS_MOVE_THRESHOLD_2) cancelLongPress();
-    }
+    checkLongPressDrift(p);
+  }
+
+  /** A contact that has wandered past the tap tolerance isn't a hold any
+   *  more — drop the pending hold-to-lasso timer. */
+  function checkLongPressDrift(p) {
+    if (!state.longPressTimer || !state.longPressAnchor) return;
+    const ax = p.x - state.longPressAnchor.x;
+    const ay = p.y - state.longPressAnchor.y;
+    if (ax * ax + ay * ay > LONG_PRESS_MOVE_THRESHOLD_2) cancelLongPress();
   }
 
   function onPointerMove(e) {
@@ -988,6 +1023,11 @@ export function createStrokeEngine({
     // desktop) can start a stroke. Wired by the tauri-plugin-pencil
     // iOS bridge so finger-touches don't draw on iPadOS.
     setPencilOnly(on) { state.pencilOnly = !!on; },
+    // Hush delta #37: straight-line mode for the draw tool. Per brush
+    // slot on the Hush side, so this flips whenever the active slot
+    // changes (`applySlotToEngine`). Erase and slice ignore it — both
+    // act along the path the pointer actually travelled.
+    setStraightLine(on) { state.straightLine = !!on; },
     // Render a brush swatch (atlas cell 0, tinted by color) into targetCtx,
     // centered at (x, y) with the given pixel size. The caller is responsible
     // for clearing targetCtx first. `mode` governs how the thumbnail reads:

@@ -1,11 +1,13 @@
 /**
- * Find & Replace entry points — both Cmd+F and the cross-files variant
- * now mount the sidebar Find panel (see src/sidebar/find-panel.js). The
- * old floating find-bar / find-all overlays have been retired in favour
- * of a single, unified panel that:
- *   - shows current-document matches first, then the rest of the desk
- *   - highlights matches inline in the editor
- *   - supports replace via a twirl-disclosed input + "global" toggle
+ * Find & Replace entry points. The two are separate surfaces, split by
+ * scope rather than by capability — each does find and replace for the
+ * scope it owns:
+ *   - Cmd+F → the quick-find bar (`quick-find.js`), floating over the
+ *     focused editor: matches in that one surface, with a twirl-
+ *     disclosed replacement that rewrites all of them at once.
+ *   - Cmd+Shift+F → the sidebar Find panel (`sidebar/find-panel.js`):
+ *     current document first, then the rest of the desk, with a replace
+ *     that rewrites every match in every document listed.
  */
 
 import { findPanelGoNext, findPanelGoPrev, closeFindPanel } from "../sidebar/find-panel.js";

@@ -21,6 +21,17 @@ import { logActivity } from "./activity-log.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
+/** Whether this build can open a second window at all. Native
+ *  multi-window covers desktop and iPad (Tauri ≥ 2.11) — i.e. every
+ *  Tauri host — but not the browser dev server, where `WebviewWindow`
+ *  doesn't exist. Callers use it to hide affordances that would
+ *  otherwise be dead clicks (the sidebar's "Open in New Window" row
+ *  action; the palette gates the same way through its `multiwindow`
+ *  ctx). */
+export function multiWindowAvailable() {
+  return !!IS_TAURI;
+}
+
 let currentLabel = null;
 let parsedHash = null;
 

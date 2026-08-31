@@ -25,6 +25,7 @@ interface StrokeEngineLike {
   setMode(m: "normal" | "highlighter"): void;
   setStreamline(v: number): void;
   setSpacing(v: number): void;
+  setStraightLine(on: boolean): void;
   renderBrushSwatch(
     brushId: string, color: string, ctx: CanvasRenderingContext2D,
     x: number, y: number, size: number, mode?: string,
@@ -63,6 +64,7 @@ export function applySlotToEngine(
   strokeEngine.setMode(slot.mode);
   strokeEngine.setStreamline(slot.streamline);
   strokeEngine.setSpacing(slot.spacing);
+  strokeEngine.setStraightLine(!!slot.straightLine);
 }
 
 export function renderSwatchToCanvas(

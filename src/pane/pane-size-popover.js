@@ -97,6 +97,7 @@ export function togglePaneSizePopover(pane, anchorBtn, schedulePersist) {
   popover.appendChild(plus);
   popover.addEventListener("pointerdown", (e) => e.stopPropagation());
   pane.el.appendChild(popover);
+  positionPopover(pane, popover, anchorBtn);
 
   // Close when the user taps anywhere outside the popover or its anchor.
   setTimeout(() => {
@@ -108,4 +109,46 @@ export function togglePaneSizePopover(pane, anchorBtn, schedulePersist) {
     };
     document.addEventListener("pointerdown", off, true);
   }, 0);
+}
+
+/**
+ * Park the popover under the button that opened it.
+ *
+ * The CSS used to pin it to the pane's own top-right corner, which is
+ * only where the "A" button is while the title bar runs the full width
+ * of the pane. A docked pane on iPad floats its title bar as a centred
+ * pill (see the `.docked-*` rules in floating-pane.css), so the button
+ * moves and the popover stayed behind — anchored to a header that isn't
+ * there any more. Measuring the button covers both forms, and any
+ * future one, for the cost of two rects.
+ *
+ * Coordinates are pane-relative because the popover is a child of the
+ * pane (which clips with `overflow: hidden`), so the horizontal clamp
+ * keeps it inside the pane's box rather than the viewport's.
+ */
+function positionPopover(pane, popover, anchorBtn) {
+  const paneRect = pane.el.getBoundingClientRect();
+  const btnRect = anchorBtn.getBoundingClientRect();
+  if (!paneRect.width || !btnRect.width) return;
+  // A canvas-attached pane is drawn through `transform: scale(zoom)`, so
+  // its client rects are in screen px while `style.top` is in the pane's
+  // own layout px. Divide the measured offsets back out by that scale.
+  const scale = pane.el.offsetWidth ? paneRect.width / pane.el.offsetWidth : 1;
+  const paneW = pane.el.offsetWidth || paneRect.width;
+  const paneH = pane.el.offsetHeight || paneRect.height;
+  const w = popover.offsetWidth || 0;
+  const h = popover.offsetHeight || 0;
+  const margin = 6;
+  // Right-align to the button, then clamp both edges into the pane.
+  let left = (btnRect.right - paneRect.left) / scale - w;
+  left = Math.max(margin, Math.min(left, paneW - w - margin));
+  // Below the button, unless that would run past the pane's bottom edge
+  // (a short pane, or a title bar docked at the bottom) — then above.
+  let top = (btnRect.bottom - paneRect.top) / scale + margin;
+  if (top + h > paneH - margin) {
+    top = Math.max(margin, (btnRect.top - paneRect.top) / scale - h - margin);
+  }
+  popover.style.top = top + "px";
+  popover.style.left = left + "px";
+  popover.style.right = "auto";
 }

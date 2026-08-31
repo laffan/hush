@@ -1,10 +1,18 @@
 /**
  * Find panel — occupies the left sidebar, replacing the file list.
  *
- * Cmd+F mounts this panel via `state.emit("show-find-panel", { initialQuery })`.
+ * Cmd+Shift+F mounts this panel via `state.emit("show-find-panel", …)`.
  * Current doc's matches list first, then the rest of the active desk under
- * filename + path headers. A twirl arrow reveals the replace input;
- * "global replace" toggles whether replacement applies beyond the current doc.
+ * filename + path headers. A twirl arrow reveals the replace input, whose
+ * one button rewrites every match in every document listed below it.
+ *
+ * Replace here is deliberately whole-desk only. A per-document replace
+ * used to sit beside it (a second button, plus a "Global" checkbox that
+ * scoped this one) and was the weaker half: it acted on one match at a
+ * time and always against the main editor, so with a doc pane focused it
+ * wrote to the wrong surface. Single-document replace now lives in the
+ * ⌘F bar (`editor/quick-find.js`), which is already bound to the surface
+ * the user is reading.
  *
  * Pure search / snippet logic lives in `find-panel-search.js`; tree
  * walking, content loading, and per-kind search adapters live in
@@ -67,14 +75,9 @@ export function createFindPanel(container, state, onClose, opts = {}) {
     <div class="find-panel-replace-wrap" hidden>
       <div class="find-panel-replace-row">
         <input type="text" class="find-panel-replace-input" placeholder="Replace" spellcheck="false" />
-        <label class="find-panel-global-label" title="Apply replacements to every document with matches">
-          <input type="checkbox" class="find-panel-global" />
-          <span>Global</span>
-        </label>
       </div>
       <div class="find-panel-replace-actions">
-        <button class="find-panel-replace-btn" type="button" title="Replace the current match in the current document">Replace in Document</button>
-        <button class="find-panel-replace-all-btn" type="button" title="Replace every match in every document in scope">Replace in All Documents</button>
+        <button class="find-panel-replace-all-btn" type="button" title="Replace every match in every document listed below">Replace in All Documents</button>
       </div>
     </div>
     <div class="find-panel-status"></div>
@@ -88,8 +91,6 @@ export function createFindPanel(container, state, onClose, opts = {}) {
   const findInput = root.querySelector(".find-panel-input");
   const replaceRow = root.querySelector(".find-panel-replace-wrap");
   const replaceInput = root.querySelector(".find-panel-replace-input");
-  const globalCheckbox = root.querySelector(".find-panel-global");
-  const replaceBtn = root.querySelector(".find-panel-replace-btn");
   const replaceAllBtn = root.querySelector(".find-panel-replace-all-btn");
   const statusEl = root.querySelector(".find-panel-status");
   const resultsEl = root.querySelector(".find-panel-results");
@@ -199,7 +200,6 @@ export function createFindPanel(container, state, onClose, opts = {}) {
       const sectionClasses = ["find-section"];
       if (fr.isCurrent) sectionClasses.push("find-section-current");
       if (fr.collapsed) sectionClasses.push("collapsed");
-      if (replaceOpen && !globalCheckbox.checked && !fr.isCurrent) sectionClasses.push("find-section-dimmed");
       const pathStr = fr.pathParts && fr.pathParts.length
         ? fr.pathParts.join(" › ")
         : (fr.kind === "notebook" ? "Notebook" : "Document");
@@ -379,12 +379,16 @@ export function createFindPanel(container, state, onClose, opts = {}) {
     });
   }
 
+  // Neither of these repaints the results any more: the only thing the
+  // disclosure used to change about them was dimming the files a
+  // current-document-only replace wouldn't touch, and there is no such
+  // scope left to signal.
   function openReplace() {
     replaceOpen = true;
     replaceRow.hidden = false;
     twirlBtn.setAttribute("aria-expanded", "true");
     twirlArrow.textContent = "▼";
-    if (fileResults.length > 0) renderResults();
+    replaceInput.focus();
   }
 
   function closeReplace() {
@@ -392,39 +396,21 @@ export function createFindPanel(container, state, onClose, opts = {}) {
     replaceRow.hidden = true;
     twirlBtn.setAttribute("aria-expanded", "false");
     twirlArrow.textContent = "▶";
-    if (fileResults.length > 0) renderResults();
   }
 
-  async function doReplaceCurrent() {
-    if (currentFlat < 0 || flatMatches.length === 0) return;
-    const { fileIdx, matchIdx } = flatMatches[currentFlat];
-    const fr = fileResults[fileIdx];
-    if (!replaceOpen) return;
-    if (!globalCheckbox.checked && !fr.isCurrent) return;
-    // Notebook replace would require editing shape text + re-serialising
-    // the canvas — left out of v1 to keep replace logic local to docs.
-    if (fr.kind === "notebook") return;
-    const replacement = replaceInput.value;
-    const match = fr.matches[matchIdx];
-    if (fr.isCurrent) {
-      const view = state.editor?.view;
-      if (!view) return;
-      view.dispatch({ changes: { from: match.from, to: match.to, insert: replacement } });
-    } else {
-      const newContent = fr.content.slice(0, match.from) + replacement + fr.content.slice(match.to);
-      await writeDocContent(state, fr.fileId, newContent);
-    }
-    await runSearch();
-  }
-
+  // Desk-wide replace is all-or-nothing by design. Narrowing it to the
+  // current document used to live here as a second button (and a
+  // "Global" checkbox that scoped this one), but a single-document
+  // replace belongs where the user is reading that document — it's now
+  // the ⌘F bar's own replace row (`editor/quick-find.js`), which acts on
+  // the focused surface. This button does exactly what it says.
   async function doReplaceAll() {
     if (fileResults.length === 0) return;
     if (!replaceOpen) return;
     const replacement = replaceInput.value;
-    const scope = (globalCheckbox.checked
-      ? fileResults
-      : fileResults.filter(f => f.isCurrent))
-      .filter(f => f.kind !== "notebook");
+    // Notebook replace would require editing shape text + re-serialising
+    // the canvas — left out to keep replace logic local to docs.
+    const scope = fileResults.filter(f => f.kind !== "notebook");
     for (const fr of scope) {
       const sorted = fr.matches.slice().sort((a, b) => a.from - b.from);
       if (fr.isCurrent) {
@@ -461,10 +447,7 @@ export function createFindPanel(container, state, onClose, opts = {}) {
   });
   replaceInput.addEventListener("keydown", (e) => {
     if (e.key === "Escape") { e.preventDefault(); doClose(); return; }
-    if (e.key === "Enter") {
-      e.preventDefault();
-      if (e.metaKey || e.ctrlKey) doReplaceAll(); else doReplaceCurrent();
-    }
+    if (e.key === "Enter") { e.preventDefault(); doReplaceAll(); }
   });
 
   toggleBtns.forEach(btn => {
@@ -478,11 +461,6 @@ export function createFindPanel(container, state, onClose, opts = {}) {
     });
   });
 
-  globalCheckbox.addEventListener("change", () => {
-    if (fileResults.length > 0) renderResults();
-  });
-
-  replaceBtn.addEventListener("click", () => doReplaceCurrent());
   replaceAllBtn.addEventListener("click", () => doReplaceAll());
 
   function onFileOpened() {

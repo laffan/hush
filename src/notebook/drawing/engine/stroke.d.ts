@@ -50,6 +50,8 @@ export function createStrokeEngine(opts: {
   setSmoothing(v: number): void;
   setSpacing(v: number): void;
   setLongPressMs(ms: number): void;
+  /** Hush delta #37 — ruled-line capture for the draw tool. */
+  setStraightLine(on: boolean): void;
   renderBrushSwatch(
     brushId: string,
     color: string,

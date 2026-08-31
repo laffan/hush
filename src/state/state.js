@@ -209,9 +209,19 @@ export class AppState {
           // project surface based on the seeded fields below; we don't
           // touch persisted lastFileId so the main window's session is
           // unaffected when this window closes.
+          // Notebooks, stacks and PDFs are surfaces main.js mounts off
+          // these seed fields — the same three the "restore last file"
+          // branch below sets. Only docs go through `openFile`; routing
+          // a stack or a PDF there opened its raw bytes as markdown.
           if (initialFile.fileType === "notebook"
               && this.files.some(f => f.id === initialFile.fileId)) {
             this.currentNotebookFileId = initialFile.fileId;
+          } else if (initialFile.fileType === "stack"
+              && findNodeByFileId(this.fileTree, initialFile.fileId)) {
+            this.currentStackFileId = initialFile.fileId;
+          } else if (initialFile.fileType === "pdf"
+              && findNodeByFileId(this.fileTree, initialFile.fileId)) {
+            this.currentPdfFileId = initialFile.fileId;
           } else if (initialFile.fileType === "project"
               && findNode(this.fileTree, initialFile.fileId)) {
             await phase("open project (new window)", () => this.openProject(initialFile.fileId));

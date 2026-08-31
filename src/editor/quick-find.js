@@ -1,5 +1,6 @@
 /**
- * Quick find — an extremely minimal, current-document-only search.
+ * Quick find — an extremely minimal, current-document-only search and
+ * replace.
  *
  * Bound to Cmd+F (see `shortcutQuickFind`). Unlike the sidebar Find panel
  * (Cmd+Shift+F), this is a tiny floating input anchored to the focused
@@ -7,6 +8,15 @@
  * the first instance at or after the cursor. Cmd+G / Cmd+Shift+G (the
  * find-next / find-prev shortcuts) step through matches, wrapping at the
  * ends. Esc closes and returns focus to the editor.
+ *
+ * A twirl arrow discloses a second row carrying a replacement and a
+ * Confirm button. Confirm rewrites **every** match in the document in
+ * one transaction, so the whole replace is a single undo step, and it
+ * acts on `activeView` — the surface the bar was opened against. That
+ * last part is the substance of the feature, not a detail: this is where
+ * per-document replace lives now, having moved out of the desk-wide
+ * panel, where it worked one match at a time and always dispatched into
+ * the main editor even when a pane held the caret.
  *
  * Highlighting reuses the shared `findHighlightField` decorations
  * (`cm-find-match` / `cm-find-match-current`) so we don't need a second
@@ -24,8 +34,14 @@ let currentIdx = -1;
 let barEl = null;
 let inputEl = null;
 let countEl = null;
+let replaceRowEl = null;
+let replaceInputEl = null;
+let twirlEl = null;
 let repositionHandler = null;
 let escHandler = null;
+// Disclosure state outlives the bar: it's rebuilt from scratch on every
+// open, and a user who is replacing tends to keep replacing.
+let replaceOpen = false;
 
 export function isQuickFindOpen() {
   return !!barEl && !!activeView;
@@ -57,7 +73,11 @@ export function openQuickFind(view) {
 
 export function closeQuickFind() {
   if (activeView) clearFindHighlights(activeView);
-  if (barEl) { barEl.remove(); barEl = null; inputEl = null; countEl = null; }
+  if (barEl) {
+    barEl.remove();
+    barEl = null; inputEl = null; countEl = null;
+    replaceRowEl = null; replaceInputEl = null; twirlEl = null;
+  }
   if (repositionHandler) {
     window.removeEventListener("resize", repositionHandler, true);
     window.removeEventListener("scroll", repositionHandler, true);
@@ -92,6 +112,22 @@ export function quickFindGoPrev() {
 function buildBar() {
   barEl = document.createElement("div");
   barEl.className = "quick-find-bar";
+
+  // Row 1 — the find field, unchanged apart from the twirl at its head.
+  const findRow = document.createElement("div");
+  findRow.className = "quick-find-row";
+  twirlEl = document.createElement("button");
+  twirlEl.type = "button";
+  twirlEl.className = "quick-find-twirl";
+  twirlEl.setAttribute("aria-label", "Show replace");
+  twirlEl.innerHTML = `<span class="quick-find-twirl-arrow">▶</span>`;
+  twirlEl.addEventListener("click", (e) => {
+    e.preventDefault();
+    setReplaceOpen(!replaceOpen);
+    // The disclosure is a detour on the way to typing a replacement, so
+    // land the caret where the user is heading.
+    (replaceOpen ? replaceInputEl : inputEl).focus();
+  });
   inputEl = document.createElement("input");
   inputEl.type = "text";
   inputEl.className = "quick-find-input";
@@ -105,10 +141,39 @@ function buildBar() {
   closeBtn.setAttribute("aria-label", "Close find");
   closeBtn.textContent = "×";
   closeBtn.addEventListener("click", () => closeQuickFind());
-  barEl.appendChild(inputEl);
-  barEl.appendChild(countEl);
-  barEl.appendChild(closeBtn);
+  findRow.appendChild(twirlEl);
+  findRow.appendChild(inputEl);
+  findRow.appendChild(countEl);
+  findRow.appendChild(closeBtn);
+
+  // Row 2 — the replacement. Spans the bar's full width like the row
+  // above it, with Confirm parked against the right edge.
+  replaceRowEl = document.createElement("div");
+  replaceRowEl.className = "quick-find-row quick-find-replace-row";
+  replaceRowEl.hidden = true;
+  replaceInputEl = document.createElement("input");
+  replaceInputEl.type = "text";
+  replaceInputEl.className = "quick-find-input quick-find-replace-input";
+  replaceInputEl.placeholder = "Replace";
+  replaceInputEl.spellcheck = false;
+  const confirmBtn = document.createElement("button");
+  confirmBtn.type = "button";
+  confirmBtn.className = "quick-find-confirm";
+  confirmBtn.textContent = "Confirm";
+  confirmBtn.title = "Replace every match in this document";
+  confirmBtn.addEventListener("click", (e) => { e.preventDefault(); replaceAllInDocument(); });
+  replaceRowEl.appendChild(replaceInputEl);
+  replaceRowEl.appendChild(confirmBtn);
+
+  replaceInputEl.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); closeQuickFind(); return; }
+    if (e.key === "Enter") { e.preventDefault(); replaceAllInDocument(); }
+  });
+
+  barEl.appendChild(findRow);
+  barEl.appendChild(replaceRowEl);
   document.body.appendChild(barEl);
+  setReplaceOpen(replaceOpen);
 
   inputEl.addEventListener("input", () => {
     queryStr = inputEl.value;
@@ -161,6 +226,48 @@ function buildBar() {
     }
   };
   document.addEventListener("keydown", escHandler, true);
+}
+
+/** Show or hide the replace row and point the twirl at its state.
+ *  Re-positions the bar afterwards: growing it by a row changes its
+ *  height, and `position()` centres it on the editor from its own
+ *  measured box. */
+function setReplaceOpen(open) {
+  replaceOpen = !!open;
+  if (!barEl) return;
+  replaceRowEl.hidden = !replaceOpen;
+  barEl.classList.toggle("replace-open", replaceOpen);
+  twirlEl.setAttribute("aria-expanded", replaceOpen ? "true" : "false");
+  twirlEl.setAttribute("aria-label", replaceOpen ? "Hide replace" : "Show replace");
+  const arrow = twirlEl.querySelector(".quick-find-twirl-arrow");
+  if (arrow) arrow.textContent = replaceOpen ? "▼" : "▶";
+  position();
+}
+
+/**
+ * Rewrite every match in the document the bar is attached to.
+ *
+ * One dispatch, not one per match: CodeMirror maps a change set's own
+ * offsets for us, so the whole replace collapses to a single undo step
+ * and no offset has to be adjusted for the edits ahead of it. Matches
+ * are non-overlapping by construction (`recompute` advances past each
+ * hit), which is what makes them legal as one change set.
+ *
+ * The search then re-runs against the rewritten text, so the count
+ * settles on whatever the replacement itself matches — replacing "in"
+ * with "into" leaves the hits it just created visible rather than
+ * quietly looping over them.
+ */
+function replaceAllInDocument() {
+  if (!activeView || matches.length === 0) return false;
+  const insert = replaceInputEl ? replaceInputEl.value : "";
+  activeView.dispatch({
+    changes: matches.map((m) => ({ from: m.from, to: m.to, insert })),
+  });
+  // Offsets are stale the instant the document changes — rebuild from
+  // the new text rather than mapping the old hits forward.
+  recompute(/*selectAfterCursor=*/true);
+  return true;
 }
 
 function position() {

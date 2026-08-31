@@ -114,6 +114,12 @@ export interface DrawingSlot {
   streamline: number;       // 0..1
   spacing: number;          // 0..1 (fraction of stamp radius)
   mode: "normal" | "highlighter";
+  /** Ruled-line mode: the stroke collapses to its start point and the
+   *  point the pen was released at, so a drag lays down a straight A→B
+   *  line instead of the path travelled. Per slot, so one brush can be
+   *  a ruler while the others stay freehand. Optional — a slot written
+   *  before this existed reads as off. */
+  straightLine?: boolean;
 }
 
 export interface TextShape extends ShapeBase {

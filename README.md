@@ -51,7 +51,7 @@ Notebooks export as `.hushnote` (lossless), PNG, JPG, or PDF.
 - **Floating panes** open any file as a reference window over your work: dock them to an edge, pin them across documents, attach them to canvas positions, or embed them inline under a wikilink. A **Gutter** docks a notebook beside a document, scroll-locked to it, for marginalia.
 - **Sticky notes** are small scoped reminders (per file, project, desk, or global) that float above everything and never appear in the file tree. They keep their paper colours whatever theme you're in, but switch to a dark-paper palette in a dark appearance so a bright sticky isn't the only thing glowing on the screen. A note shows in one window at a time: the window already displaying it keeps it, and a second window opened onto the same file or desk leaves it alone.
 - **YOU ARE HERE** — type `YOUAREHERE` anywhere and the sidebar pins a red resume-reading row that jumps straight back to the marker. One per desk.
-- **Find** (`⌘F` in-document, `⌘⇧F` across the desk) with regex, whole-word, and replace; **Versions** keeps automatic snapshots of every doc and notebook with a diff view and one-click restore; flags, color tints, multi-select batch actions, and a per-desk Recent Files list round out the sidebar.
+- **Find** (`⌘F` in-document, `⌘⇧F` across the desk) with regex, whole-word, and replace — the in-document bar twirls open a replacement row with a Confirm button that rewrites every match in the document you're reading, and the desk-wide panel's replace covers every document it lists; **Versions** keeps automatic snapshots of every doc and notebook with a diff view and one-click restore; flags, color tints, multi-select batch actions, and a per-desk Recent Files list round out the sidebar.
 
 ## Research
 

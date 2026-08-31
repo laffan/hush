@@ -25,7 +25,7 @@ import {
   handleRename, handleRevealInFinder, handleConvertContainer,
   handleDuplicate, handleDelete, handleEmptyTrash, handleOpenAsStack,
   handleConvertProjectToDoc, handleConvertDocToProject,
-  handleRestore, handlePermanentDelete, handleDeskAction,
+  handleRestore, handlePermanentDelete, handleDeskAction, handleOpenInNewWindow,
 } from "./files-panel-actions.js";
 import { isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree, renderTabMarkerRow, openDocAtTab } from "./files-panel-tabs.js";
 import { isHeadingItem, augmentTreeWithHeadings, stripHeadingsFromTree, renderHeadingRow, openDocAtHeading } from "./files-panel-headings.js";
@@ -397,6 +397,8 @@ function dispatchRowAction(action, nodeId, opts) {
     import("../desktop/desktop-view.js").then((m) => m.openDesktop(storedState, nodeId));
   } else if (action === "open-as-stack") {
     handleOpenAsStack(nodeId, storedState, refresh);
+  } else if (action === "open-in-new-window") {
+    handleOpenInNewWindow(nodeId, storedState);
   } else if (action === "convert-project-to-doc") {
     handleConvertProjectToDoc(nodeId, storedState, refresh);
   } else if (action === "convert-doc-to-project") {

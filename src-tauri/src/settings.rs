@@ -160,6 +160,8 @@ pub struct AppSettings {
     pub shortcut_toggle_properties: String,
     #[serde(default = "default_shortcut_zen_focus")]
     pub shortcut_zen_focus: String,
+    #[serde(default = "default_shortcut_toggle_spellcheck")]
+    pub shortcut_toggle_spellcheck: String,
     #[serde(default = "default_zen_focus_font_size")]
     pub zen_focus_font_size: u32,
     #[serde(default = "default_selection_focus_font_multiplier")]
@@ -365,6 +367,10 @@ pub struct AppSettings {
     pub shortcut_join_lines: String,
     #[serde(default = "default_shortcut_join_lines_up")]
     pub shortcut_join_lines_up: String,
+    #[serde(default = "default_shortcut_insert_break_after")]
+    pub shortcut_insert_break_after: String,
+    #[serde(default = "default_shortcut_insert_break_before")]
+    pub shortcut_insert_break_before: String,
     #[serde(default = "default_shortcut_jump_next_paragraph")]
     pub shortcut_jump_next_paragraph: String,
     #[serde(default = "default_shortcut_jump_prev_paragraph")]
@@ -641,6 +647,7 @@ impl Default for AppSettings {
             shortcut_toggle_word_count: default_shortcut_toggle_word_count(),
             shortcut_toggle_properties: default_shortcut_toggle_properties(),
             shortcut_zen_focus: default_shortcut_zen_focus(),
+            shortcut_toggle_spellcheck: default_shortcut_toggle_spellcheck(),
             zen_focus_font_size: default_zen_focus_font_size(),
             selection_focus_font_multiplier: default_selection_focus_font_multiplier(),
             word_count_visible: false,
@@ -720,6 +727,8 @@ impl Default for AppSettings {
             shortcut_find_prev: default_shortcut_find_prev(),
             shortcut_join_lines: default_shortcut_join_lines(),
             shortcut_join_lines_up: default_shortcut_join_lines_up(),
+            shortcut_insert_break_after: default_shortcut_insert_break_after(),
+            shortcut_insert_break_before: default_shortcut_insert_break_before(),
             shortcut_jump_next_paragraph: default_shortcut_jump_next_paragraph(),
             shortcut_jump_prev_paragraph: default_shortcut_jump_prev_paragraph(),
             shortcut_style_default: default_shortcut_style_default(),

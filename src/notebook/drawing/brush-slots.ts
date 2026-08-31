@@ -20,7 +20,10 @@ import type { DrawingSlot } from "../types";
 import { PEN_COLORS } from "../types";
 import { h } from "../ui/dom-helpers";
 import { createMiniPalette } from "./mini-palette";
-import { ensureFlyoutSliderStyle, ensureBrushFlyoutStyle, applyFlyoutSliderTheme, accentTint } from "./flyout-styles";
+import {
+  ensureFlyoutSliderStyle, ensureBrushFlyoutStyle, applyFlyoutSliderTheme, accentTint,
+  STRAIGHT_LINE_ICON,
+} from "./flyout-styles";
 
 // Color sentinels + explicit palette (PEN_COLORS in types.ts — shared
 // with the mini-palette's secondary selector). "auto" resolves to the
@@ -282,6 +285,42 @@ export function createBrushSlots(
     modeRow.appendChild(btn);
   }
 
+  // Line — freehand vs. ruled. Same two-segment control as Mode, since
+  // it's the same shape of choice: how the stroke follows the pointer.
+  // Per slot, so one brush can be the ruler while the rest stay
+  // freehand. Straight mode carries the dot-in-circle glyph the
+  // mini-palette's toggle uses, so the two read as one control.
+  const lineRow = h("div");
+  lineRow.classList.add("nbf-mode");
+  const lineBtns: { straight: boolean; btn: HTMLButtonElement }[] = [];
+  for (const opt of [{ straight: false, label: "Freehand" }, { straight: true, label: "Straight" }]) {
+    const btn = h("button", {
+      title: opt.straight
+        ? "Straight line — the stroke runs from where you press to where you lift"
+        : "Freehand — the stroke follows the pointer",
+      onClick: (e) => {
+        e.stopPropagation();
+        const idx = state.activeBrushSlot;
+        if (!!state.brushSlots[idx].straightLine === opt.straight) return;
+        // Straight-line mode governs how a stroke is *captured*, so
+        // there's nothing retroactive to apply — an existing stroke's
+        // points are already recorded. Unlike every other control here,
+        // it deliberately leaves a live selection alone.
+        state.updateBrushSlot(idx, { straightLine: opt.straight });
+      },
+    }) as HTMLButtonElement;
+    btn.classList.add("nbf-seg");
+    if (opt.straight) {
+      const glyph = h("span");
+      glyph.classList.add("nbf-seg-icon");
+      glyph.innerHTML = STRAIGHT_LINE_ICON;
+      btn.appendChild(glyph);
+    }
+    btn.appendChild(document.createTextNode(opt.label));
+    lineBtns.push({ straight: opt.straight, btn });
+    lineRow.appendChild(btn);
+  }
+
   // Demo stroke replaces the "Pen" section header — a live preview of
   // the active slot's brush, color, size, and spacing so the user can
   // see what they're configuring.
@@ -298,6 +337,8 @@ export function createBrushSlots(
   flyout.appendChild(section("Color", [colorRow]));
   flyout.appendChild(divider());
   flyout.appendChild(section("Mode", [modeRow]));
+  flyout.appendChild(divider());
+  flyout.appendChild(section("Line", [lineRow]));
 
   function redrawDemoStroke(): void {
     if (!flyoutOpen) return;
@@ -410,6 +451,9 @@ export function createBrushSlots(
     }
     for (const { id, btn } of modeBtns) {
       btn.classList.toggle("nbf-active", slot.mode === id);
+    }
+    for (const { straight, btn } of lineBtns) {
+      btn.classList.toggle("nbf-active", !!slot.straightLine === straight);
     }
     redrawBrushCells();
     redrawDemoStroke();
