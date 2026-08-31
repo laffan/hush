@@ -141,12 +141,25 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
     children: [column],
   });
 
+  // The rail's left edge resizes it. The strip is exactly `RAIL_PAD`
+  // wide so it lands inside the scroller's padding and never covers a
+  // page piece: the rail is a navigation surface too, and taking a few
+  // px off every cell's click target for a handle would be the wrong
+  // trade. The grip inside it is the whole point of this element being
+  // visible at all — an `ew-resize` cursor only tells you the edge is
+  // draggable once you have already put the pointer somewhere you had
+  // no reason to try. Styling (and the hover / drag states) lives in
+  // `styles/notebook.css` beside the toolbar's drag grip, which is the
+  // same affordance in the same visual language.
+  const resizeGrip = h("div", { cls: "notebook-proof-rail-grip" });
   const resizer = h("div", {
+    cls: "notebook-proof-rail-resizer",
     title: "Drag to resize",
     style: {
-      position: "absolute", left: "0", top: "0", bottom: "0", width: "7px",
+      position: "absolute", left: "0", top: "0", bottom: "0", width: `${RAIL_PAD}px`,
       cursor: "ew-resize", zIndex: "2",
     },
+    children: [resizeGrip],
   });
 
   const root = h("div", {
@@ -427,6 +440,13 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
     const startX = e.clientX;
     const startW = width;
     resizer.setPointerCapture(e.pointerId);
+    // Pointer capture routes the events here, but it does not carry
+    // `:hover` or the strip's cursor with it — and the first thing a
+    // widening drag does is leave the strip. Without both of these the
+    // grip dims and the cursor reverts to the canvas's the moment the
+    // gesture starts, which reads as having lost the handle.
+    resizer.classList.add("is-dragging");
+    document.body.classList.add("notebook-proof-rail-resizing");
     const onMove = (ev: PointerEvent) => {
       // The rail is right-anchored, so dragging its left edge LEFT makes
       // it wider — the delta is inverted relative to the pointer.
@@ -437,6 +457,8 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
       resizer.removeEventListener("pointermove", onMove);
       resizer.removeEventListener("pointerup", onUp);
       resizer.removeEventListener("pointercancel", onUp);
+      resizer.classList.remove("is-dragging");
+      document.body.classList.remove("notebook-proof-rail-resizing");
       const app = (window as unknown as { __hushState__?: { updateSettings?: (p: Record<string, unknown>) => void } }).__hushState__;
       app?.updateSettings?.({ notebookProofRailWidth: width });
     };
@@ -550,6 +572,14 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
       state.removeEventListener("change", onChange);
       if (inkTimer) { clearTimeout(inkTimer); inkTimer = null; }
       if (tweenRaf) { cancelAnimationFrame(tweenRaf); tweenRaf = 0; }
+      // A rail torn down mid-drag would otherwise leave the whole app
+      // wearing a resize cursor, since the class is on <body> and the
+      // pointerup that clears it is going to a detached element.
+      // Checked per rail: a second proof open elsewhere may be the one
+      // actually being dragged.
+      if (resizer.classList.contains("is-dragging")) {
+        document.body.classList.remove("notebook-proof-rail-resizing");
+      }
       root.remove();
     },
   };

@@ -192,6 +192,46 @@ body.notebook-mode .column-resizer {
   opacity: 0.6;
 }
 
+/* Proofread page rail — left-edge resize handle.
+
+   The strip itself stays invisible: it sits inside the rail's padding,
+   over nothing. The affordance is a short rounded bar in the middle of
+   it — the same grip the toolbar's drag tab uses, in the same
+   currentColor-at-low-opacity language, so the rail's edge reads as
+   draggable the way the toolbar's does. A bare `ew-resize` cursor
+   couldn't do that job on its own: it only appears once the pointer is
+   already on a 8 px strip nobody had a reason to try.
+
+   `is-dragging` holds the hover state through the gesture. Pointer
+   capture keeps the events coming but not `:hover`, and a widening drag
+   leaves the strip immediately. */
+.notebook-proof-rail-resizer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.notebook-proof-rail-grip {
+  width: 3px;
+  height: 34px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.25;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.notebook-proof-rail-resizer:hover .notebook-proof-rail-grip,
+.notebook-proof-rail-resizer.is-dragging .notebook-proof-rail-grip {
+  opacity: 0.6;
+}
+
+/* Hold the resize cursor across the whole window for the duration of a
+   rail drag — the pointer spends the gesture out over the canvas, whose
+   own cursor would otherwise take over mid-drag. */
+body.notebook-proof-rail-resizing,
+body.notebook-proof-rail-resizing * {
+  cursor: ew-resize !important;
+}
+
 /* Responsive compaction — when the bar can't fit at full size in the
    visible canvas, every interactive child shrinks to ~75% and the bar
    wraps to two rows. Triggered by toolbar.ts (.notebook-toolbar-compact
