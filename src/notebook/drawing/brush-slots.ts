@@ -541,6 +541,9 @@ export function createBrushSlots(
       positionFlyout();
     }
     if (keys.includes("drawingMode") && !state.drawingMode) closeFlyout();
+    // Minimizing the bar takes the slot row with it; an open flyout is
+    // anchored to a button that is no longer on screen.
+    if (keys.includes("drawingToolbarMinimized") && state.drawingToolbarMinimized) closeFlyout();
     // Mini-palette tracks the same state surface as the flyout — slot
     // changes, theme, sub-tool, orientation, drag offset all matter.
     // The rAF pass catches the second-frame layout settle in

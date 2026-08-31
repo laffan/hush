@@ -29,6 +29,8 @@
 
 import type { DrawingState } from "../state";
 import { h } from "./dom-helpers";
+// @ts-ignore — sibling JS module
+import { applyTooltip } from "../../tooltips.js";
 import { icon } from "./icons";
 import { createBgSettingsPopup, emitNotebookBgChange } from "./bg-settings-popup";
 
@@ -178,7 +180,7 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
     _lastRailKey = key;
     railBtn.style.display = isProof ? "flex" : "none";
     if (!isProof) return;
-    railBtn.title = on ? "Hide page rail" : "Show page rail";
+    applyTooltip(railBtn, on ? "Hide page rail" : "Show page rail");
     railBtn.style.color = on ? theme.accent : theme.foreground;
     railBtn.style.opacity = on ? "1" : "0.6";
     railBtn.style.border = `1px solid ${on ? theme.accent : theme.uiBorder}`;

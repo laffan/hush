@@ -81,9 +81,53 @@ export function stampStream(ctx, streamPts, size, tinted, spacingFrac, xform) {
   }
 }
 
-export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, options, isVisible, isActive, blitCanvas }) {
+export function createRenderer({ doneCtx, hlCtx, clearCtx, getStrokes, getTintedAtlas, options, isVisible, isActive, blitCanvas, hlBlitCanvas, onHighlightBacking }) {
   const visible = isVisible || (() => true);
   const activeFn = isActive || (() => false);
+
+  // Hush delta #38: TWO bake targets. `multiply` inside a canvas can only
+  // see ink already on that canvas — which is why the highlighter's own
+  // composite (see STROKE_MODES) gives it an even density and a proper
+  // multiply against other strokes, and nothing at all against a
+  // proofread page, because the page is an ImageShape on the notebook's
+  // canvas one DOM layer down. Highlighter strokes therefore bake into
+  // their own canvas, which the host blends `multiply` against that page
+  // (see drawing-layer-dom.ts). Everything else about them is unchanged:
+  // same tile index, same z-order within the stroke list, same erase and
+  // selection paths.
+  //
+  // The highlight target stays UNBACKED until a highlighter stroke
+  // actually exists (`onHighlightBacking` asks the host to size the
+  // pair), so a notebook that never reaches for the tool pays neither
+  // the two world-sized backings nor a second clear/repaint per rebake.
+  const done = { ctx: doneCtx, spare: blitCanvas ? blitCanvas.getContext('2d') : null };
+  const hl = hlCtx
+    ? { ctx: hlCtx, spare: hlBlitCanvas ? hlBlitCanvas.getContext('2d') : null }
+    : null;
+  let hlBacked = false;
+
+  function isHighlightStroke(s) { return (s.mode || 'normal') === 'highlighter'; }
+  function targetFor(s) { return (hl && isHighlightStroke(s)) ? hl : done; }
+  // Cached so the per-rebake path (an erase drag calls it per pointer
+  // move) doesn't allocate an array a frame.
+  const DONE_ONLY = [done];
+  const BOTH = hl ? [done, hl] : DONE_ONLY;
+  /** Targets that currently hold (or may hold) pixels. */
+  function bakeTargets() { return (hl && hlBacked) ? BOTH : DONE_ONLY; }
+  /** First highlighter stroke wins the backing, permanently. */
+  function ensureHighlightBacking() {
+    if (!hl || hlBacked) return;
+    hlBacked = true;
+    if (onHighlightBacking) onHighlightBacking();
+  }
+  /** O(N) only while the highlight target is still unbacked — one pass
+   *  of property reads, and it stops running the moment it succeeds. */
+  function scanForHighlight() {
+    if (!hl || hlBacked) return;
+    for (const s of getStrokes()) {
+      if (isHighlightStroke(s)) { ensureHighlightBacking(); return; }
+    }
+  }
 
   // Hush delta #26: per-stroke streamline cache. getStrokePoints used to
   // be recomputed from scratch on EVERY render of every stroke — on a
@@ -224,22 +268,7 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
     if (!tileKeys) return;
     const uniq = tileKeys instanceof Set ? tileKeys : new Set(tileKeys);
     if (uniq.size === 0) return;
-    doneCtx.save();
-    // Build clip region from tile rects.
-    doneCtx.beginPath();
-    for (const key of uniq) {
-      const comma = key.indexOf(',');
-      const tx = +key.slice(0, comma);
-      const ty = +key.slice(comma + 1);
-      doneCtx.rect(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-    }
-    doneCtx.clip();
-    for (const key of uniq) {
-      const comma = key.indexOf(',');
-      const tx = +key.slice(0, comma);
-      const ty = +key.slice(comma + 1);
-      doneCtx.clearRect(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-    }
+    scanForHighlight();
     // Collect the set of strokes that touch any of the dirty tiles. Walk the
     // canonical strokes array in order so z-ordering is preserved.
     const touched = new Set();
@@ -248,16 +277,37 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
       if (!set) continue;
       for (const id of set) touched.add(id);
     }
-    for (const s of getStrokes()) {
-      if (!touched.has(s.id)) continue;
-      if (excludeIds && excludeIds.has(s.id)) continue;
-      if (!visible(s)) continue;
-      renderStroke(doneCtx, s);
+    for (const t of bakeTargets()) {
+      const ctx = t.ctx;
+      ctx.save();
+      // Build clip region from tile rects.
+      ctx.beginPath();
+      for (const key of uniq) {
+        const comma = key.indexOf(',');
+        const tx = +key.slice(0, comma);
+        const ty = +key.slice(comma + 1);
+        ctx.rect(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      }
+      ctx.clip();
+      for (const key of uniq) {
+        const comma = key.indexOf(',');
+        const tx = +key.slice(0, comma);
+        const ty = +key.slice(comma + 1);
+        ctx.clearRect(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      }
+      for (const s of getStrokes()) {
+        if (!touched.has(s.id)) continue;
+        if (excludeIds && excludeIds.has(s.id)) continue;
+        if (!visible(s)) continue;
+        if (targetFor(s) !== t) continue;
+        renderStroke(ctx, s);
+      }
+      ctx.restore();
     }
-    doneCtx.restore();
   }
 
-  // Paint every stroke into doneCtx from scratch. Does not touch the index;
+  // Paint every stroke into its bake target from scratch. Does not touch
+  // the index;
   // used by texture-slider changes where the stroke geometry is unchanged but
   // every brush bitmap has been invalidated.
   //
@@ -269,33 +319,39 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
   // computed bbox (newly inserted, pre-index) fall back to the unconditional
   // path so we don't silently drop them.
   function repaintAll() {
+    scanForHighlight();
+    for (const t of bakeTargets()) repaintTarget(t);
+  }
+
+  function repaintTarget(t) {
     // Delta #31 extension: full repaints also go through the spare.
     // Painting every stroke into the VISIBLE canvas fully dirties it —
     // the ~235 ms commit upload — so resize re-anchors (zoom
     // crossings), theme retints, and bulk loads paint into the
     // near-invisible spare and swap roles instead, same as the shift.
-    let target = doneCtx;
-    if (spareCtx) {
-      const spare = spareCtx.canvas;
-      const current = doneCtx.canvas;
+    let target = t.ctx;
+    if (t.spare) {
+      const spare = t.spare.canvas;
+      const current = t.ctx.canvas;
       if (spare.width !== current.width) spare.width = current.width;
       if (spare.height !== current.height) spare.height = current.height;
-      spareCtx.setTransform(doneCtx.getTransform());
-      spareCtx.imageSmoothingEnabled = true;
-      target = spareCtx;
+      t.spare.setTransform(t.ctx.getTransform());
+      t.spare.imageSmoothingEnabled = true;
+      target = t.spare;
     }
     clearCtx(target);
-    const t = target.getTransform();
-    const dpr = t.a || 1;
+    const tr = target.getTransform();
+    const dpr = tr.a || 1;
     const rectW = target.canvas.width / dpr;
     const rectH = target.canvas.height / dpr;
     for (const s of getStrokes()) {
       if (!visible(s)) continue;
+      if (targetFor(s) !== t) continue;
       const b = s.bbox;
       if (b && (b.maxX < 0 || b.maxY < 0 || b.minX > rectW || b.minY > rectH)) continue;
       renderStroke(target, s);
     }
-    if (target === spareCtx) swapRoles();
+    if (target === t.spare) swapRoles(t);
   }
 
   // Delta #31: swap the done/spare roles — opacity + class flips and a
@@ -303,20 +359,20 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
   // the frame-to-display into the spare. Class names follow the role so
   // external queries (perf HUD, tooling) keep resolving; the DPR
   // transform + smoothing carry over to the new target.
-  function swapRoles() {
-    const spare = spareCtx.canvas;
-    const current = doneCtx.canvas;
+  function swapRoles(t) {
+    const spare = t.spare.canvas;
+    const current = t.ctx.canvas;
     spare.style.opacity = '1';
     current.style.opacity = '0.01';
     const cls = spare.className;
     spare.className = current.className;
     current.className = cls;
-    const carried = doneCtx.getTransform();
-    const tmp = doneCtx;
-    doneCtx = spareCtx;
-    spareCtx = tmp;
-    doneCtx.setTransform(carried);
-    doneCtx.imageSmoothingEnabled = true;
+    const carried = t.ctx.getTransform();
+    const tmp = t.ctx;
+    t.ctx = t.spare;
+    t.spare = tmp;
+    t.ctx.setTransform(carried);
+    t.ctx.imageSmoothingEnabled = true;
   }
 
   // Rebuild the index from the canonical stroke list and repaint. Used for
@@ -340,29 +396,34 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
   // rebakeTiles semantics.
   function rebakeRects(rects) {
     if (!rects || !rects.length) return;
-    doneCtx.save();
-    doneCtx.beginPath();
-    for (const r of rects) {
-      doneCtx.rect(r.minX, r.minY, r.maxX - r.minX, r.maxY - r.minY);
-    }
-    doneCtx.clip();
-    for (const r of rects) {
-      doneCtx.clearRect(r.minX, r.minY, r.maxX - r.minX, r.maxY - r.minY);
-    }
-    for (const s of getStrokes()) {
-      if (!visible(s)) continue;
-      const b = s.bbox;
-      if (!b) { renderStroke(doneCtx, s); continue; }
-      let hit = false;
+    scanForHighlight();
+    for (const t of bakeTargets()) {
+      const ctx = t.ctx;
+      ctx.save();
+      ctx.beginPath();
       for (const r of rects) {
-        if (b.minX <= r.maxX && b.maxX >= r.minX && b.minY <= r.maxY && b.maxY >= r.minY) {
-          hit = true;
-          break;
-        }
+        ctx.rect(r.minX, r.minY, r.maxX - r.minX, r.maxY - r.minY);
       }
-      if (hit) renderStroke(doneCtx, s);
+      ctx.clip();
+      for (const r of rects) {
+        ctx.clearRect(r.minX, r.minY, r.maxX - r.minX, r.maxY - r.minY);
+      }
+      for (const s of getStrokes()) {
+        if (!visible(s)) continue;
+        if (targetFor(s) !== t) continue;
+        const b = s.bbox;
+        if (!b) { renderStroke(ctx, s); continue; }
+        let hit = false;
+        for (const r of rects) {
+          if (b.minX <= r.maxX && b.maxX >= r.minX && b.minY <= r.maxY && b.maxY >= r.minY) {
+            hit = true;
+            break;
+          }
+        }
+        if (hit) renderStroke(ctx, s);
+      }
+      ctx.restore();
     }
-    doneCtx.restore();
   }
 
   // Hush delta #25 (support): slide the done canvas's pixels by (dx, dy)
@@ -382,8 +443,8 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
   // self-snapshot), then swap the two canvases' roles — opacity +
   // class flips and the ctx rebind are compositor-cheap and land in
   // the same commit as the wrapper-transform change. The visible
-  // canvas is never fully dirtied. `doneCtx` is a reassignable
-  // binding: every other renderer function reads the current target
+  // canvas is never fully dirtied. A target's `ctx` is a mutable
+  // field: every other renderer function reads the current target
   // through it automatically.
   //
   // Fallbacks when no attached helper exists: self-drawImage under
@@ -392,7 +453,6 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
   // guarantees dx·dpr / dy·dpr are integers so the copy is pixel-exact
   // (a fractional device-pixel shift would resample — and, re-anchor
   // after re-anchor, progressively blur — the baked ink).
-  let spareCtx = blitCanvas ? blitCanvas.getContext('2d') : null;
   let selfBlitOk = null;
   function testSelfBlit() {
     try {
@@ -412,47 +472,51 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
     }
   }
   function shiftDoneCanvas(dx, dy) {
-    const t = doneCtx.getTransform();
-    const dpr = t.a || 1;
+    for (const t of bakeTargets()) shiftTarget(t, dx, dy);
+  }
+
+  function shiftTarget(t, dx, dy) {
+    const xf = t.ctx.getTransform();
+    const dpr = xf.a || 1;
     const devX = Math.round(dx * dpr);
     const devY = Math.round(dy * dpr);
     // Delta #31 swap path — see the comment block above.
-    if (spareCtx) {
-      const spare = spareCtx.canvas;
-      const current = doneCtx.canvas;
+    if (t.spare) {
+      const spare = t.spare.canvas;
+      const current = t.ctx.canvas;
       if (spare.width !== current.width) spare.width = current.width;
       if (spare.height !== current.height) spare.height = current.height;
-      spareCtx.save();
-      spareCtx.setTransform(1, 0, 0, 1, 0, 0);
-      spareCtx.globalCompositeOperation = 'copy';
-      spareCtx.drawImage(current, devX, devY);
-      spareCtx.restore();
-      swapRoles();
+      t.spare.save();
+      t.spare.setTransform(1, 0, 0, 1, 0, 0);
+      t.spare.globalCompositeOperation = 'copy';
+      t.spare.drawImage(current, devX, devY);
+      t.spare.restore();
+      swapRoles(t);
       return;
     }
     if (selfBlitOk === null) selfBlitOk = testSelfBlit();
     if (selfBlitOk) {
-      doneCtx.save();
-      doneCtx.setTransform(1, 0, 0, 1, 0, 0);
-      doneCtx.globalCompositeOperation = 'copy';
-      doneCtx.drawImage(doneCtx.canvas, devX, devY);
-      doneCtx.restore();
+      t.ctx.save();
+      t.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      t.ctx.globalCompositeOperation = 'copy';
+      t.ctx.drawImage(t.ctx.canvas, devX, devY);
+      t.ctx.restore();
       return;
     }
     // Fallback: scratch round-trip (two full-surface copies).
-    const w = doneCtx.canvas.width;
-    const h = doneCtx.canvas.height;
-    const sCtx = ensureScratch(doneCtx);
+    const w = t.ctx.canvas.width;
+    const h = t.ctx.canvas.height;
+    const sCtx = ensureScratch(t.ctx);
     sCtx.save();
     sCtx.setTransform(1, 0, 0, 1, 0, 0);
     sCtx.clearRect(0, 0, w, h);
-    sCtx.drawImage(doneCtx.canvas, 0, 0);
+    sCtx.drawImage(t.ctx.canvas, 0, 0);
     sCtx.restore();
-    doneCtx.save();
-    doneCtx.setTransform(1, 0, 0, 1, 0, 0);
-    doneCtx.clearRect(0, 0, w, h);
-    doneCtx.drawImage(scratchCanvas, devX, devY);
-    doneCtx.restore();
+    t.ctx.save();
+    t.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    t.ctx.clearRect(0, 0, w, h);
+    t.ctx.drawImage(scratchCanvas, devX, devY);
+    t.ctx.restore();
   }
 
   // Collect the union of tile keys for an iterable of strokes.
@@ -467,8 +531,18 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
 
   function clearIndex() { tileIndex.clear(); }
 
+  /** Bake one freshly-committed stroke into whichever target owns it.
+   *  Callers used to reach for `getDoneCtx()` directly; with two targets
+   *  the choice belongs here. */
+  function bakeStroke(stroke) {
+    const t = targetFor(stroke);
+    if (t === hl) ensureHighlightBacking();
+    renderStroke(t.ctx, stroke);
+  }
+
   return {
     renderStroke,
+    bakeStroke,
     addToIndex,
     removeFromIndex,
     rebuildIndex,
@@ -482,8 +556,13 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
     // Delta #31: the done target swaps between two canvases; every
     // consumer that draws to or reads "the done canvas" must resolve
     // it through these instead of a captured reference.
-    getDoneCtx: () => doneCtx,
-    getSpareCtx: () => spareCtx,
-    getDoneCanvas: () => doneCtx.canvas,
+    getDoneCtx: () => done.ctx,
+    getSpareCtx: () => done.spare,
+    getDoneCanvas: () => done.ctx.canvas,
+    // Delta #38: the highlight pair, for the host's sizing / transform
+    // passes. `getHighlightCtxs` returns an empty list while the pair is
+    // still unbacked, so nothing walks canvases that hold no pixels.
+    isHighlightBacked: () => hlBacked,
+    getHighlightCtxs: () => (hl && hlBacked ? [hl.ctx, hl.spare].filter(Boolean) : []),
   };
 }

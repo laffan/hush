@@ -30,6 +30,8 @@ import type { DrawingState } from "../state";
 import type { DrawingLayer } from "./drawing-layer";
 import type { DrawingSubTool } from "../types";
 import { h } from "../ui/dom-helpers";
+// @ts-ignore — sibling JS module
+import { applyTooltip } from "../../tooltips.js";
 import { icon } from "../ui/icons";
 import { createBrushSlots } from "./brush-slots";
 import { createSnapZones } from "./tool-panel-snap";
@@ -140,7 +142,7 @@ export function createDrawingToolPanel(
   // short rounded bar centered inside the strip.
 
   const dragTab = document.createElement("button") as HTMLButtonElement;
-  dragTab.title = "Drag toolbar";
+  applyTooltip(dragTab, "Drag toolbar");
   Object.assign(dragTab.style, {
     position: "absolute",
     border: "none",
@@ -218,10 +220,16 @@ export function createDrawingToolPanel(
     // child of the bar), so mirror the minimized state on the tab so
     // CSS can style the grip when the bar is collapsed.
     dragTab.classList.toggle("notebook-tool-panel-drag-tab-minimized", !wasMinimized);
-    // Keep the state flag in lockstep with the DOM (silent — no notify /
-    // tool side-effects) so a programmatic `setDrawingToolbarMinimized`
-    // (e.g. gutter init) and this button stay consistent.
+    // Keep the state flag in lockstep with the DOM, bypassing
+    // `setDrawingToolbarMinimized`'s tool side-effects (which would flip
+    // the user out of the pen) so a programmatic minimize (e.g. gutter
+    // init) and this button stay consistent. The notify still has to
+    // fire: the bar's satellites — the mini-palette strip, the brush and
+    // lasso flyouts — are siblings of the toolbar rather than children,
+    // so the `notebook-toolbar-minimized` class never reaches them and
+    // they read the flag themselves off this event.
     state.drawingToolbarMinimized = !wasMinimized;
+    state.notify("drawingToolbarMinimized");
     applyLayout();
   }
   /** Apply `state.drawingToolbarMinimized` to the DOM. Driven both at setup
@@ -634,7 +642,8 @@ export function createDrawingToolPanel(
       applyActiveSlot();
     }
     if (lassoFlyoutOpen) {
-      const lassoLive = state.tool === "pen" && state.drawingSubTool === "select";
+      const lassoLive = state.tool === "pen" && state.drawingSubTool === "select" &&
+        !state.drawingToolbarMinimized;
       if (!lassoLive) closeLassoFlyout();
     }
     if (keys.includes("drawingToolbarMinimized")) applyMinimizedFromState();

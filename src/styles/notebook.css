@@ -210,18 +210,31 @@ body.notebook-mode .column-resizer {
   align-items: center;
   justify-content: center;
 }
+/* A vertical pill straddling the rail's left edge — outlined, filled
+   with the rail's own background so it reads as part of the panel
+   rather than a mark on the canvas. Centred ON the edge, not inside it:
+   half of it overhangs, which is what makes it look like a handle. The
+   rail's rounded-corner clip lives on the scroller for exactly this
+   reason (see proof-thumbnails.ts). No `opacity` on the pill — that
+   would make the fill translucent and let the canvas read through it;
+   the resting state is carried by the border colour instead. */
 .notebook-proof-rail-grip {
-  width: 3px;
-  height: 34px;
-  border-radius: 2px;
-  background: currentColor;
-  opacity: 0.25;
-  transition: opacity 0.15s;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 5px;
+  height: 68px;
+  box-sizing: border-box;
+  border: 1px solid var(--proof-rail-border, currentColor);
+  border-radius: 999px;
+  background: var(--proof-rail-bg, transparent);
+  transition: border-color 0.15s;
   pointer-events: none;
 }
 .notebook-proof-rail-resizer:hover .notebook-proof-rail-grip,
 .notebook-proof-rail-resizer.is-dragging .notebook-proof-rail-grip {
-  opacity: 0.6;
+  border-color: currentColor;
 }
 
 /* Hold the resize cursor across the whole window for the duration of a

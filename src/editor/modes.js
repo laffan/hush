@@ -62,6 +62,12 @@ export function applyModes(state) {
   // Dummy mode neutralizes heading styles so the dummy text looks like plain prose
   const isDummy = state.privateMode && (state.settings.privacyMode === "dummy");
   app.classList.toggle("dummy-mode", isDummy);
+  // Privacy rides <body> for the same reason focus mode does, and for a
+  // sharper one: a pane, a Zen overlay or a stack column left readable
+  // is the mode failing at the only thing it does. The `#app` classes
+  // above stay for anything still keyed to them.
+  document.body.classList.toggle("private-mode", state.privateMode);
+  document.body.classList.toggle("dummy-mode", isDummy);
 }
 
 export async function applyFullscreen(state) {

@@ -8,6 +8,7 @@ import { wrapOnSelection } from "./wrap-on-selection.js";
 import { getActiveTheme } from "../themes/index.js";
 import { createFootnotePlugin } from "./plugins/footnotes.js";
 import { createFocusModePlugin } from "./plugins/focus-mode.js";
+import { createPrivacyExtensions } from "./plugins/private-mode.js";
 import { createCalloutPlugin } from "./plugins/callouts.js";
 import { createLinkDecoratorPlugin } from "./plugins/link-decorator.js";
 import { createWikilinkPlugin } from "./plugins/wikilink-decorator.js";
@@ -254,6 +255,10 @@ export function createBaseExtensions(state, onChange, opts) {
     createFoldArrowPlugin(),
     createPropertiesPlugin(state),
     createFocusModePlugin(state),
+    // Privacy has to reach every doc surface on screen, not just the one
+    // in `#editor-container`: a floating pane or a Zen overlay left
+    // readable defeats the whole mode.
+    createPrivacyExtensions(state),
     keymap.of([...defaultKeymap, ...historyKeymap]),
     Prec.highest(keymap.of(buildFixedKeymap(state))),
     placeholder("Start writing..."),

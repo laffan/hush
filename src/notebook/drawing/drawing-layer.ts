@@ -115,7 +115,8 @@ export function createDrawingLayer({
   // the live values without indirection through individual getters.
   const dom = createDrawingDom(container, WORLD_SIZE_MIN);
   const {
-    wrapper, doneCanvas, previewCanvas, liveCanvas, blitHelper,
+    wrapper, hlWrapper, hlCanvas, hlBlitHelper,
+    doneCanvas, previewCanvas, liveCanvas, blitHelper,
     pocketStash, pocketStashCtx,
     svg, eraserCursor, selectionLayer, selectHint,
   } = dom;
@@ -177,9 +178,14 @@ export function createDrawingLayer({
     // translate(camera) · rotate · scale(zoom) · translate(origin) —
     // matches canvasToScreen: screen = c + R·(zoom·world). rotate(0)
     // is a no-op so the unrotated case is unchanged.
-    wrapper.style.transform =
+    const t =
       `translate(${cam.x}px, ${cam.y}px) rotate(${cam.rotation || 0}rad) ` +
       `scale(${cam.zoom}) translate(${anchor.originX}px, ${anchor.originY}px)`;
+    wrapper.style.transform = t;
+    // The highlight group is a second wrapper on the same camera (see
+    // drawing-layer-dom.ts) — it has to move in the same frame, or a pan
+    // slides highlights out from under the ink they belong to.
+    hlWrapper.style.transform = t;
   }
 
   function setCamera(next: Camera): void {
@@ -227,6 +233,9 @@ export function createDrawingLayer({
     doneCanvas,
     previewCanvas,
     liveCanvas,
+    hlCanvas,
+    hlBlitCanvas: hlBlitHelper,
+    hlHost: hlWrapper,
     eraserCursor,
     getRect: () => svg.getBoundingClientRect(),
     pointToLocal,
@@ -410,11 +419,16 @@ export function createDrawingLayer({
     const dpr = currentDpr();
     const w = anchor.worldSize;
     const px = Math.round(w * dpr);
-    for (const c of [doneCanvas, previewCanvas, liveCanvas, blitHelper]) {
+    // The highlight pair's *backing* is the engine's to allocate (it stays
+    // 1x1 until a highlighter stroke exists); only its CSS box is set
+    // here, alongside the wrapper it lives in.
+    for (const c of [doneCanvas, previewCanvas, liveCanvas, blitHelper, hlCanvas, hlBlitHelper]) {
       // Mirror engine delta #27: skip the backing write when unchanged
       // (re-assigning identical dimensions clears + can reallocate).
-      if (c.width !== px) c.width = px;
-      if (c.height !== px) c.height = px;
+      if (c !== hlCanvas && c !== hlBlitHelper) {
+        if (c.width !== px) c.width = px;
+        if (c.height !== px) c.height = px;
+      }
       c.style.left = "0px";
       c.style.top = "0px";
       c.style.width = w + "px";
@@ -422,6 +436,8 @@ export function createDrawingLayer({
     }
     wrapper.style.width = w + "px";
     wrapper.style.height = w + "px";
+    hlWrapper.style.width = w + "px";
+    hlWrapper.style.height = w + "px";
     svg.setAttribute("viewBox", `0 0 ${w} ${w}`);
     svg.style.width = w + "px";
     svg.style.height = w + "px";
@@ -619,6 +635,7 @@ export function createDrawingLayer({
     region.destroy();
     selectionBridge.destroy();
     wrapper.remove();
+    hlWrapper.remove();
     if (selectHintTimer) { clearTimeout(selectHintTimer); selectHintTimer = null; }
     selectHint.remove();
   }

@@ -45,6 +45,9 @@ export const RAIL_DEFAULT_WIDTH = 92;
 
 /** Horizontal padding inside the rail, each side. */
 const RAIL_PAD = 8;
+/** How far the resize strip (and the outboard half of its grip) reaches
+ *  past the rail's left edge, over the canvas. */
+const GRIP_OVERHANG = 4;
 
 /** Space between two pieces, in rail px: the world gap to scale, but
  *  clamped hard at both ends.
@@ -137,6 +140,10 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
     style: {
       flex: "1", overflowY: "auto", overflowX: "hidden",
       padding: `${RAIL_PAD}px ${RAIL_PAD}px`, boxSizing: "border-box",
+      // The rounded-corner clip lives here rather than on the root: the
+      // grip straddles the root's left edge, and a clip up there would
+      // shave the outboard half of it off.
+      borderRadius: "10px 0 0 10px",
     },
     children: [column],
   });
@@ -152,11 +159,15 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
   // `styles/notebook.css` beside the toolbar's drag grip, which is the
   // same affordance in the same visual language.
   const resizeGrip = h("div", { cls: "notebook-proof-rail-grip" });
+  // The strip reaches `GRIP_OVERHANG` px past the rail's edge so the
+  // half of the pill that sits outboard is grabbable too — a handle you
+  // can see and can't grab is worse than no handle.
   const resizer = h("div", {
     cls: "notebook-proof-rail-resizer",
     title: "Drag to resize",
     style: {
-      position: "absolute", left: "0", top: "0", bottom: "0", width: `${RAIL_PAD}px`,
+      position: "absolute", left: `${-GRIP_OVERHANG}px`, top: "0", bottom: "0",
+      width: `${RAIL_PAD + GRIP_OVERHANG}px`,
       cursor: "ew-resize", zIndex: "2",
     },
     children: [resizeGrip],
@@ -169,9 +180,13 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
       // host sets after this constructor has already run.
       position: "absolute",
       display: "none", flexDirection: "column", boxSizing: "border-box",
-      // Below the shelf (150) so the shelf's rounded edge stays on top,
-      // above the toolbar (100) so a centred bar can't cover the rail.
-      zIndex: "149", borderRadius: "10px 0 0 10px", overflow: "hidden",
+      // Below floating panes (--z-pane: 90) — the rail is canvas chrome
+      // and a pane is the thing the user pulled to the front, so the
+      // rail covering one reads as the pane having gone missing. The
+      // trade is that the notebook toolbar (100) now stacks over the
+      // rail where a centred bar reaches it; the bar is draggable and
+      // the rail's foot already stops short of the corner buttons.
+      zIndex: "89", borderRadius: "10px 0 0 10px",
       boxShadow: "0 2px 12px rgba(0,0,0,0.12)", backdropFilter: "blur(8px)",
     },
     children: [resizer, scroller],
@@ -527,6 +542,11 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
       root.style.background = theme.uiBackground;
       root.style.borderLeft = `1px solid ${theme.uiBorder}`;
       root.style.color = theme.foreground;
+      // The grip is a filled pill, not a bar, so it needs the rail's own
+      // background to sit on — it straddles the edge and half of it is
+      // over the canvas.
+      root.style.setProperty("--proof-rail-bg", theme.uiBackground);
+      root.style.setProperty("--proof-rail-border", theme.uiBorder);
     }
     // `rightInset` is the canvas-right-edge → shelf-left-edge distance,
     // measured live by the canvas controller, so it already folds in the

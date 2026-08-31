@@ -1,56 +1,104 @@
-/* ===== Private Mode ===== */
+/* ===== Private Mode =====
 
-/* Force ALL text in the editor to be transparent when private mode is active.
-   This is necessary because CodeMirror's syntax highlighting creates inner
-   spans with explicit colors (heading color, link color, etc.) that override
-   the color:transparent on the .hush-private-char wrapper via CSS inheritance
-   rules (a child's explicit color beats a parent's inherited !important).
-   The blackout boxes remain visible via background on .hush-private-char.
-   The dummy text remains visible via ::after on .hush-dummy-char. */
-.private-mode #editor-container .cm-line,
-.private-mode #editor-container .cm-line span {
+   The classes ride `<body>`, not `#app`: floating panes, the Zen and
+   Selection-Focus overlays and the sticky layer are all siblings of
+   `#app`, and a privacy rule scoped inside it left every one of them
+   readable. `#app` keeps the classes too, for anything still selecting
+   on them.
+
+   Text goes transparent; the visible redaction is painted by the
+   `hush-privacy-layer` (see editor/plugins/private-mode.js), which
+   measures word rectangles instead of wrapping characters in spans —
+   that is what keeps the document from re-wrapping (and growing
+   several lines longer) the moment privacy comes on. Nothing here may
+   change a metric: no font-size, no line-height, no letter-spacing.
+   Colour is free. */
+body.private-mode .cm-content .cm-line,
+body.private-mode .cm-content .cm-line * {
   color: transparent !important;
-  font-size: var(--font-size) !important;
-  line-height: var(--line-height) !important;
-  text-decoration: none !important;
-}
-
-.hush-private-char {
-  background: var(--private-box);
-  border-radius: 0;
-  opacity: 0.5;
 }
 
 /* Cursor should still be visible in private mode */
-.private-mode #editor-container .cm-cursor {
+body.private-mode .cm-cursor {
   border-left-color: var(--cursor);
 }
 
 /* Hide footnote overlays and marginalia in private mode. Heading markers
    are already hidden by the heading plugin unless the cursor is on the
    heading line, which we don't try to defeat here. */
-.private-mode .footnote-overlay,
-.private-mode .footnote-marginalia {
+body.private-mode .footnote-overlay,
+body.private-mode .footnote-marginalia {
   display: none;
 }
 
-/* ===== Dummy Text Mode ===== */
-.hush-dummy-char {
-  position: relative;
-}
+/* One bar per word, positioned by the layer in document coordinates.
+   The layer sits above the text inside each surface's own scroller, so
+   it stacks correctly in a pane without any z-index arithmetic.
 
-/* The dummy char is rendered via ::after with an explicit color,
-   so it stays visible even though the parent text is transparent. */
-.hush-dummy-char::after {
-  content: attr(data-dummy);
-  position: absolute;
-  left: 0;
-  color: var(--fg);
+   The blur-in is on the container, not on the bars: a few hundred
+   individually filtered elements is a few hundred compositor layers,
+   where one filter on the box that holds them is one pass. */
+.hush-privacy-layer {
   pointer-events: none;
+  opacity: 0;
+  filter: blur(8px);
+  transition: opacity 200ms ease-out, filter 200ms ease-out;
 }
 
-/* Normalize font-style and decoration in dummy mode */
-.dummy-mode #editor-container .cm-line span {
+.hush-privacy-layer.is-on {
+  opacity: 1;
+  /* `none`, not `blur(0)`: the resting state should carry no filter at
+     all, so the steady case costs nothing and never depends on how an
+     engine computes a filter region for a `contain: size` box (which
+     `.cm-layer` is — its bars are all overflow). The transition still
+     interpolates, treating `none` as the identity blur. */
+  filter: none;
+}
+
+.hush-privacy-bar {
+  background: var(--private-box);
+  opacity: 0.5;
+  border-radius: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hush-privacy-layer { transition: none; }
+}
+
+/* ===== Dummy Text Mode =====
+
+   Dummy mode is the one privacy mode that must reach the glyphs, so it
+   stays a per-character decoration. Metrics are normalized here (a
+   substitute document reads as plain prose, not as headings) — unlike
+   blackout, where any metric change is the bug. */
+body.dummy-mode .cm-content .cm-line,
+body.dummy-mode .cm-content .cm-line span {
+  font-size: var(--font-size) !important;
+  line-height: var(--line-height) !important;
+  text-decoration: none !important;
   font-style: normal !important;
   opacity: 1 !important;
+}
+
+/* The real character is collapsed to nothing and the stand-in is laid
+   out IN FLOW, so each substitute owns its own advance width. The
+   previous form drew the stand-in in an absolutely-positioned ::after
+   over the real character's box, which meant the box was sized by the
+   character being hidden: a wide glyph standing in for a narrow one
+   spilled over its neighbour and the line read as overlapping letters.
+   Worst in a serif face, where the spread between `i` and `W` is
+   widest. Higher specificity than the normalization above so the
+   collapse wins. */
+body.dummy-mode .cm-content .cm-line span.hush-dummy-char {
+  font-size: 0 !important;
+  letter-spacing: 0 !important;
+}
+
+body.dummy-mode .cm-content .cm-line span.hush-dummy-char::after {
+  content: attr(data-dummy);
+  font-size: var(--font-size);
+  line-height: var(--line-height);
+  letter-spacing: normal;
+  color: var(--fg);
+  pointer-events: none;
 }

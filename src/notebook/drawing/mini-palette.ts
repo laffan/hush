@@ -485,7 +485,12 @@ export function createMiniPalette(opts: {
   }
 
   function update(): void {
-    const live = state.tool === "pen" && state.drawingSubTool === "draw" && !isFlyoutOpen();
+    // The strip is a sibling of the toolbar, not a child, so the
+    // `notebook-toolbar-minimized` class that hides the bar's own
+    // children never reaches it — it has to read the flag itself or it
+    // is left floating over the canvas with nothing to attach to.
+    const live = state.tool === "pen" && state.drawingSubTool === "draw" &&
+      !state.drawingToolbarMinimized && !isFlyoutOpen();
     if (!live) {
       root.style.display = "none";
       closeColorFlyout();

@@ -6,7 +6,7 @@ import { Strikethrough, Table } from "@lezer/markdown";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { wrapOnSelection } from "./wrap-on-selection.js";
 import { getActiveTheme } from "../themes/index.js";
-import { createPrivateModePlugin } from "./plugins/private-mode.js";
+import { createPrivacyExtensions } from "./plugins/private-mode.js";
 import { createDryHighlightPlugin } from "./plugins/dry-highlight.js";
 import { createFootnotePlugin } from "./plugins/footnotes.js";
 import { createProjectViewField, createSeparatorFilter, bypassSeparatorFilter } from "./plugins/project-view.js";
@@ -219,7 +219,7 @@ export function createEditor(container, state) {
   const activeTheme = getActiveTheme(state.settings);
   const initialCmTheme = activeTheme ? activeTheme.extension : [];
 
-  const privateModePlugin = createPrivateModePlugin(state);
+  const privacyExtensions = createPrivacyExtensions(state);
   const dryHighlightPlugin = createDryHighlightPlugin(state);
   const footnotePlugin = createFootnotePlugin(state);
   const focusModePlugin = createFocusModePlugin(state);
@@ -281,7 +281,7 @@ export function createEditor(container, state) {
       shortcutCompartment.of(initialShortcuts),
       readOnlyCompartment.of([]),
       ratchetExtensions,
-      privateModePlugin,
+      privacyExtensions,
       dryHighlightPlugin,
       focusModePlugin,
       calloutPlugin,

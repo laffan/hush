@@ -174,6 +174,11 @@ export function createStrokeEngine({
   doneCanvas,
   previewCanvas,
   liveCanvas,
+  hlCanvas,              // Hush delta #38: optional highlighter bake target
+  hlBlitCanvas,          // Hush delta #38: that target's swap spare
+  hlHost,                // Hush delta #38: the multiply-blended wrapper the
+                         //   two live in; the live canvas is reparented into
+                         //   it while a highlighter slot is active
   eraserCursor,
   getRect,               // () => DOMRect-ish (cached by the app)
   pointToLocal,          // Hush delta #1: optional (clientPt) => localPt for world-space hosts
@@ -275,6 +280,39 @@ export function createStrokeEngine({
   const doneCtx = doneCanvas.getContext('2d');
   const previewCtx = previewCanvas.getContext('2d');
   const liveCtx = liveCanvas.getContext('2d');
+  const hlCtx = hlCanvas ? hlCanvas.getContext('2d') : null;
+  // Hush delta #38: the live canvas moves between the ordinary wrapper and
+  // the multiply-blended highlight wrapper so an in-progress highlighter
+  // stroke reads exactly like the baked one — otherwise it paints as flat
+  // slab ink for the length of the drag and snaps to the blended look on
+  // release. Reparenting an element does not touch its backing store, and
+  // it happens on a brush switch, never per frame.
+  const liveHome = liveCanvas.parentElement;
+  // Where in the ordinary wrapper the live canvas belongs: BEFORE the SVG
+  // overlay. `appendChild` would put it back at the end, i.e. above the
+  // eraser cursor and the selection chrome, so the ink would paint over
+  // the very affordances it is meant to sit under.
+  const liveAnchor = liveCanvas.nextSibling;
+  let liveInHlHost = false;
+  /** The wrapper only blends (and only gets promoted) while it has
+   *  something in it: baked highlighter ink, or the live canvas during a
+   *  highlighter stroke. */
+  function setHighlightHostActive() {
+    if (!hlHost) return;
+    const active = liveInHlHost || renderer.isHighlightBacked();
+    hlHost.style.mixBlendMode = active ? 'multiply' : 'normal';
+    hlHost.style.willChange = active ? 'transform' : 'auto';
+  }
+  function syncLiveBlendHost() {
+    if (!hlHost || !liveHome) return;
+    liveInHlHost = state.mode === 'highlighter';
+    const parent = liveInHlHost ? hlHost : liveHome;
+    if (liveCanvas.parentElement !== parent) {
+      if (parent === hlHost) parent.appendChild(liveCanvas);
+      else parent.insertBefore(liveCanvas, liveAnchor);
+    }
+    setHighlightHostActive();
+  }
   // Hush delta #31: the done target swaps between doneCanvas and
   // blitCanvas at each re-anchor, so anything touching "the done
   // canvas" after engine construction resolves it via
@@ -297,7 +335,13 @@ export function createStrokeEngine({
     const pxH = Math.max(1, Math.round(height * dpr));
     // Both members of the delta-#31 swap pair get sized (roles are
     // irrelevant for sizing — identity-guarded either way).
-    for (const canvas of [doneCanvas, ...(blitCanvas ? [blitCanvas] : []), previewCanvas, liveCanvas]) {
+    // Delta #38: the highlight pair joins the sizing pass only once it
+    // holds ink; before that it is 1x1 and sizing it would allocate two
+    // world-sized backings for a notebook that has no highlighter in it.
+    const hlBackedCanvases = hlCanvas && renderer.isHighlightBacked()
+      ? [hlCanvas, ...(hlBlitCanvas ? [hlBlitCanvas] : [])]
+      : [];
+    for (const canvas of [doneCanvas, ...(blitCanvas ? [blitCanvas] : []), previewCanvas, liveCanvas, ...hlBackedCanvases]) {
       // Hush delta #27: skip the backing-store write when the pixel
       // size is unchanged — assigning canvas.width always clears the
       // canvas AND can reallocate the backing (multi-hundred-MB
@@ -313,7 +357,8 @@ export function createStrokeEngine({
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
     }
-    for (const ctx of [renderer.getDoneCtx(), renderer.getSpareCtx(), previewCtx, liveCtx]) {
+    for (const ctx of [renderer.getDoneCtx(), renderer.getSpareCtx(), previewCtx, liveCtx,
+                       ...renderer.getHighlightCtxs()]) {
       if (!ctx) continue;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = true;
@@ -361,11 +406,34 @@ export function createStrokeEngine({
 
   const renderer = createRenderer({
     doneCtx,
+    hlCtx,
+    // Hush delta #38: the highlight pair is 1x1 until the first
+    // highlighter stroke needs it. Sizing it here (rather than in the
+    // host's own pass) keeps the "backed" decision and the backing write
+    // in one place, and re-uses the DPR / transform the stage canvases
+    // already agreed on.
+    onHighlightBacking: () => {
+      if (!hlCanvas) return;
+      const pxW = Math.max(1, Math.round(cssWidth * dpr));
+      const pxH = Math.max(1, Math.round(cssHeight * dpr));
+      for (const canvas of [hlCanvas, ...(hlBlitCanvas ? [hlBlitCanvas] : [])]) {
+        if (canvas.width !== pxW) canvas.width = pxW;
+        if (canvas.height !== pxH) canvas.height = pxH;
+        canvas.style.width = `${cssWidth}px`;
+        canvas.style.height = `${cssHeight}px`;
+      }
+      for (const ctx of renderer.getHighlightCtxs()) {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.imageSmoothingEnabled = true;
+      }
+      setHighlightHostActive();
+    },
     clearCtx,
     getStrokes: () => state.strokes,
     getTintedAtlas: (brushId, color) => atlas.getTintedAtlas(brushId, color),
     options: OPTIONS,
     isVisible: (s) => !isStrokeHidden(s),
+    hlBlitCanvas,
     // Hush delta #26: the streamline cache must never serve the active
     // stroke — its points array grows (and its last point mutates) in
     // place while the array identity stays stable, which is exactly the
@@ -681,8 +749,10 @@ export function createStrokeEngine({
       eraser.endSliceSession();
       return;
     }
-    // Commit: draw to done and clear live on the same frame so there's no gap.
-    renderer.renderStroke(renderer.getDoneCtx(), a);
+    // Commit: draw to the stroke's bake target and clear live on the same
+    // frame so there's no gap. Delta #38: which target that is depends on
+    // the stroke's mode, so the renderer picks.
+    renderer.bakeStroke(a);
     clearCtx(liveCtx);
     const insertIdx = insertStrokeIntoLayer(a, a.layerId);
     renderer.addToIndex(a);
@@ -1002,6 +1072,7 @@ export function createStrokeEngine({
     setMode(mode) {
       if (!STROKE_MODES[mode]) return;
       state.mode = mode;
+      syncLiveBlendHost();
     },
     getBrushList() {
       return BRUSH_DEFS.map((b) => ({ id: b.id, name: b.name }));

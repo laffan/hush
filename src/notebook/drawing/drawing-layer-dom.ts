@@ -1,17 +1,40 @@
 /**
  * DOM scaffolding for the drawing layer. Builds the transform wrapper,
- * three stacked canvases (done / preview / live), the offscreen pocket
- * stash, the SVG overlay (eraser cursor + selection layer), and the
- * "Selecting" hint pill.
+ * three stacked canvases (done / preview / live), the highlight wrapper
+ * and its own bake pair, the offscreen pocket stash, the SVG overlay
+ * (eraser cursor + selection layer), and the "Selecting" hint pill.
  *
  * Pulled out of drawing-layer.ts so the factory can focus on engine
  * wiring rather than element construction.
+ *
+ * **Two transform wrappers, not one.** Highlighter ink bakes into its
+ * own pair of canvases under `mix-blend-mode: multiply`, so a highlight
+ * drawn over a proofread page darkens the words instead of painting a
+ * translucent slab over them. The blend has to live on a *wrapper*
+ * rather than on the canvas: the main wrapper carries
+ * `will-change: transform`, which makes it a stacking context, and a
+ * blend inside a stacking context only sees that group's own backdrop —
+ * it would never reach the notebook canvas one layer down. Blending the
+ * wrapper itself composites the whole group against the page. Both
+ * wrappers carry the same camera transform, and the highlight pair
+ * stays unbacked (1x1) until a highlighter stroke exists, so the
+ * ordinary notebook pays neither the memory nor the compositing.
  */
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 export interface DrawingDom {
   wrapper: HTMLDivElement;
+  /** Sibling of `wrapper`, painted beneath it and blended `multiply`
+   *  against the notebook canvas. Holds the highlight bake pair, and
+   *  the live canvas is reparented into it while the active brush slot
+   *  is a highlighter so an in-progress stroke reads the same as the
+   *  baked one. Always sized and transformed with `wrapper`; its
+   *  canvases are backed lazily by the engine. */
+  hlWrapper: HTMLDivElement;
+  hlCanvas: HTMLCanvasElement;
+  /** The highlight pair's swap spare — same role as `blitHelper`. */
+  hlBlitHelper: HTMLCanvasElement;
   doneCanvas: HTMLCanvasElement;
   previewCanvas: HTMLCanvasElement;
   liveCanvas: HTMLCanvasElement;
@@ -36,8 +59,14 @@ export interface DrawingDom {
 export function createDrawingDom(container: HTMLElement, worldSize: number): DrawingDom {
   // ---------- DOM: transform wrapper + engine stage ----------
 
-  const wrapper = document.createElement("div");
-  wrapper.className = "notebook-drawing-wrapper";
+  function mkWrapper(cls: string): HTMLDivElement {
+    const el = document.createElement("div");
+    el.className = cls;
+    return el;
+  }
+
+  const hlWrapper = mkWrapper("notebook-drawing-wrapper notebook-drawing-highlight-wrapper");
+  const wrapper = mkWrapper("notebook-drawing-wrapper");
   Object.assign(wrapper.style, {
     position: "absolute",
     top: "0",
@@ -54,6 +83,26 @@ export function createDrawingDom(container: HTMLElement, worldSize: number): Dra
     // cost is just GPU memory while idle — no extra compute.
     willChange: "transform",
   });
+  // The highlight group is painted first so ordinary ink stacks over it —
+  // a pen note written on top of a highlight stays legible.
+  Object.assign(hlWrapper.style, {
+    position: "absolute",
+    top: "0",
+    left: "0",
+    width: worldSize + "px",
+    height: worldSize + "px",
+    transformOrigin: "0 0",
+    pointerEvents: "none",
+    // Both are switched on by the engine the moment the group has
+    // something to show (`setHighlightHostActive`). A permanently
+    // blended, permanently promoted layer would make the compositor
+    // read the page behind it every frame of every pan for a notebook
+    // that has never seen a highlighter — the blend is the whole point
+    // of this wrapper, and it is also the only thing it costs.
+    willChange: "auto",
+    mixBlendMode: "normal",
+  });
+  container.appendChild(hlWrapper);
   container.appendChild(wrapper);
 
   // Center the wrapper on the current viewport so the default cursor
@@ -82,6 +131,18 @@ export function createDrawingDom(container: HTMLElement, worldSize: number): Dra
   const blitHelper = mkStageCanvas("draw-canvas drawing-blit-helper");
   blitHelper.style.opacity = "0.01";
   wrapper.appendChild(blitHelper);
+  // Highlight pair, same spare-then-visible order. Left at 1x1 until the
+  // engine sizes them — a notebook with no highlighter ink never pays
+  // for two more world-sized backings.
+  const hlBlitHelper = mkStageCanvas("draw-canvas drawing-highlight-blit-helper");
+  hlBlitHelper.style.opacity = "0.01";
+  hlBlitHelper.width = 1;
+  hlBlitHelper.height = 1;
+  const hlCanvas = mkStageCanvas("draw-canvas drawing-highlight");
+  hlCanvas.width = 1;
+  hlCanvas.height = 1;
+  hlWrapper.appendChild(hlBlitHelper);
+  hlWrapper.appendChild(hlCanvas);
   const doneCanvas = mkStageCanvas("draw-canvas drawing-done");
   const previewCanvas = mkStageCanvas("draw-canvas drawing-preview");
   const liveCanvas = mkStageCanvas("draw-canvas drawing-live");
@@ -171,7 +232,8 @@ export function createDrawingDom(container: HTMLElement, worldSize: number): Dra
   container.appendChild(selectHint);
 
   return {
-    wrapper, doneCanvas, previewCanvas, liveCanvas, blitHelper,
+    wrapper, hlWrapper, hlCanvas, hlBlitHelper,
+    doneCanvas, previewCanvas, liveCanvas, blitHelper,
     pocketStash, pocketStashCtx,
     svg, eraserCursor, selectionLayer,
     selectHint,
