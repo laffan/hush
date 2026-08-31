@@ -450,6 +450,14 @@ export function createDrawingLayer({
     pocketStash, pocketStashCtx,
     sizeCanvases,
     getDpr: currentDpr,
+    // The host box, not the window — a stack column or a pane is a
+    // fraction of it, and the coverage math turns that difference into
+    // canvas reallocations. Falls back to the window while the container
+    // has no box of its own (mid-mount, or hidden).
+    getViewportSize: () => ({
+      w: container.clientWidth || window.innerWidth || 1200,
+      h: container.clientHeight || window.innerHeight || 800,
+    }),
   });
   function ensureCoverage(cam: Camera): void { reanchorCtl.ensureCoverage(cam); }
 

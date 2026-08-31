@@ -14,7 +14,8 @@ import { createBrainstormInput } from "./ui/brainstorm-input";
 import { createGrabPopup } from "./ui/grab-popup";
 import { createProofThumbnails, type ProofThumbnailRail } from "./ui/proof-thumbnails";
 import { createProofScrollWheel, type ProofScrollWheel } from "./ui/proof-scrollwheel";
-import { budgetNeedsRecompute, imageKeepSet } from "./image-budget";
+import { budgetNeedsRecompute, imageBudgetShare, imageKeepSet, needsImageBudget } from "./image-budget";
+import type { BudgetView } from "./image-budget";
 // @ts-ignore — JS module, no type declaration file
 import { registerNotebookDropTarget } from "../pane/text-drag.js";
 // @ts-ignore — JS module, no type declaration file
@@ -167,6 +168,27 @@ export function toggleNotebookEraser(): void {
   }
 }
 
+/** Live canvases whose notebook is big enough to be under the image
+ *  budget (`image-budget.ts`). The decode allowance is global, because
+ *  the memory is: two stack columns showing the same fifty-page proof
+ *  are two full sets of decoded pages, and each one taking a whole
+ *  budget is how "add it to the stack a second time" became a crash.
+ *  Membership is recomputed by `_syncImageBudget` and cleared by
+ *  `destroy`. */
+const budgetedCanvases = new Set<NotesCanvas>();
+
+/** Add or remove a canvas from the budgeted set, nudging the others
+ *  when the membership actually changes: their share of the allowance
+ *  just moved, and an idle canvas has no reason of its own to notice. */
+function setImageBudgetMember(canvas: NotesCanvas, member: boolean): void {
+  if (budgetedCanvases.has(canvas) === member) return;
+  if (member) budgetedCanvases.add(canvas);
+  else budgetedCanvases.delete(canvas);
+  for (const other of budgetedCanvases) {
+    if (other !== canvas) other._nudgeImageBudget();
+  }
+}
+
 let copyListenerAttached = false;
 
 function ensureCopyListener() {
@@ -206,13 +228,18 @@ export class NotesCanvas {
   /** Image ids currently worth holding decoded, or null when the
    *  notebook is small enough to keep every image. See image-budget.ts. */
   private _imageKeep: Set<string> | null = null;
-  /** Camera the keep set was computed against, so a pan only
-   *  recomputes once it has actually travelled. */
-  private _imageKeepCamera: Camera | null = null;
+  /** Camera + canvas box the keep set was computed against, so a pan
+   *  only recomputes once it has actually travelled — and a canvas that
+   *  gets its box after its first frame recomputes when it does. */
+  private _imageKeepView: BudgetView | null = null;
   /** Shapes array the keep set was computed from. Identity, not count:
    *  a split drag moves pages without adding or removing any, and the
    *  budget has to follow content that slid out of range. */
   private _imageKeepShapes: Shape[] | null = null;
+  /** Share of the global decode allowance the keep set was sized to.
+   *  It changes under this canvas's feet whenever another budgeted
+   *  canvas mounts or goes away. */
+  private _imageKeepShare = 0;
 
   constructor(container: HTMLElement, shortcuts?: Partial<NotebookShortcuts>) {
     this.container = container;
@@ -709,6 +736,14 @@ export class NotesCanvas {
     if (this._drawingLayer) this._drawingLayer.setPencilOnly(on);
   }
 
+  /** Internal — another canvas joined or left the shared image budget,
+   *  so this one's share of it changed. Schedule a frame: the budget is
+   *  refreshed from the render pass, and a canvas nobody is touching
+   *  would otherwise sit on an allowance it no longer has. */
+  _nudgeImageBudget(): void {
+    this._scheduleRender();
+  }
+
   // === Public API ===
 
   loadShapes(
@@ -895,6 +930,8 @@ export class NotesCanvas {
     if (this._proofWheel) { this._proofWheel.destroy(); this._proofWheel = null; }
     if (this._shelfResizer) { this._shelfResizer.remove(); this._shelfResizer = null; }
     this.container.innerHTML = "";
+    this._imageCache.clear();
+    setImageBudgetMember(this, false);
     liveCanvases.delete(this);
     if (lastActiveNotebook === this) lastActiveNotebook = null;
     // The text-editor mirrors its active handle onto window for
@@ -1066,15 +1103,25 @@ export class NotesCanvas {
   }
 
   /** Refresh the viewport-scoped image budget when it can have changed:
-   *  a different set of images, or a camera that has travelled far
-   *  enough for the margin to have moved off something. */
+   *  a different set of images, a camera (or a canvas box) that has
+   *  moved far enough for the margin to have shifted off something, or a
+   *  share of the global allowance that another canvas just changed. */
   private _syncImageBudget() {
     const w = this._canvas.clientWidth, h = this._canvas.clientHeight;
-    if (this._imageKeepShapes === this.state.shapes
-      && !budgetNeedsRecompute(this._imageKeepCamera, this.state.camera, w, h)) return;
+    // Membership can only change with the shapes, and every mutation
+    // replaces the array — so this walk (and the notify it can send to
+    // the other canvases) happens once per edit, not once per frame.
+    const shapesChanged = this._imageKeepShapes !== this.state.shapes;
+    if (shapesChanged) setImageBudgetMember(this, needsImageBudget(this.state.shapes));
+    const share = imageBudgetShare(budgetedCanvases.size);
+    const view: BudgetView = { camera: this.state.camera, w, h };
+    if (!shapesChanged
+      && this._imageKeepShare === share
+      && !budgetNeedsRecompute(this._imageKeepView, view)) return;
     this._imageKeepShapes = this.state.shapes;
-    this._imageKeepCamera = { ...this.state.camera };
-    this._imageKeep = imageKeepSet(this.state.shapes, this.state.camera, w, h);
+    this._imageKeepView = { camera: { ...this.state.camera }, w, h };
+    this._imageKeepShare = share;
+    this._imageKeep = imageKeepSet(this.state.shapes, this.state.camera, w, h, share);
   }
 
   private _syncImageCache() {

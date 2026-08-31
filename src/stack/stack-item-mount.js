@@ -16,28 +16,92 @@ async function tauriInvoke(cmd, args) {
   return invoke(cmd, args);
 }
 
+/**
+ * Mount a column's content, claiming its slot in `liveColumns` **before
+ * the first await**.
+ *
+ * Everything below this line is asynchronous — dynamic imports, and a
+ * `load_file` that for a fifty-page proofread notebook is tens of
+ * megabytes of base64 page rasters coming across the IPC boundary. The
+ * caller is the virtualization pass, which re-runs on every scroll
+ * frame, and it decides whether to mount by asking `liveColumns.has()`.
+ * Registering only on completion therefore meant that for as long as a
+ * column took to load, every frame started *another* mount of it: a
+ * smooth `scrollIntoView` (how `insertItemNear` reveals a new column)
+ * or the scroll-to-end `addItem` fires is thirty-odd frames, so a
+ * single large notebook could be mounted thirty-odd times over.
+ *
+ * Only the last of those mounts ended up in `liveColumns`, and only
+ * what is in `liveColumns` is ever torn down. The rest stayed alive and
+ * unreachable: each one a whole `NotesCanvas` — a drawing layer's
+ * canvas backings, a 2 s save interval holding the closure, an entry in
+ * the module's live-canvas registry — and, because their container had
+ * been detached by the next mount's `innerHTML = ""`, each one measured
+ * itself at zero and so fell out of the viewport image budget
+ * (`notebook/image-budget.ts`) and decoded *every* page it held. A few
+ * hundred megabytes per orphan is what killed the webview's content
+ * process.
+ *
+ * Claiming the slot up front makes the mount idempotent per column. The
+ * cost is that the slot is occupied by a half-built column for the
+ * duration of the load, so everything that reads `liveColumns` has to
+ * tolerate a `liveData` whose fields aren't there yet (they all use
+ * optional access), and an unmount that lands mid-flight can't call a
+ * `cleanup` that doesn't exist — see `unmountItemContent`.
+ */
 export async function mountItemContent(contentEl, item, state, liveColumns) {
   if (liveColumns.has(item.id)) return;
   contentEl.innerHTML = "";
 
   const type = item.fileType;
-  const liveData = { type, getScrollState: null };
+  const liveData = { type, getScrollState: null, mounting: true, cancelled: false };
+  liveColumns.set(item.id, liveData);
 
-  if (type === "document") {
-    await mountDocContent(contentEl, item, state, liveData);
-  } else if (type === "notebook") {
-    await mountNotebookContent(contentEl, item, state, liveData);
-  } else if (type === "pdf") {
-    await mountPdfContent(contentEl, item, state, liveData);
-  } else if (type === "stack") {
-    await mountNestedStack(contentEl, item, state, liveData);
-  } else if (type === "project") {
-    await mountProjectContent(contentEl, item, state, liveData);
-  } else {
-    contentEl.innerHTML = `<div class="stack-placeholder">Unknown type: ${type}</div>`;
+  try {
+    if (type === "document") {
+      await mountDocContent(contentEl, item, state, liveData);
+    } else if (type === "notebook") {
+      await mountNotebookContent(contentEl, item, state, liveData);
+    } else if (type === "pdf") {
+      await mountPdfContent(contentEl, item, state, liveData);
+    } else if (type === "stack") {
+      await mountNestedStack(contentEl, item, state, liveData);
+    } else if (type === "project") {
+      await mountProjectContent(contentEl, item, state, liveData);
+    } else {
+      contentEl.innerHTML = `<div class="stack-placeholder">Unknown type: ${type}</div>`;
+    }
+  } catch (e) {
+    // Every mounter has its own try/catch and its own placeholder; this
+    // is the backstop for anything that escapes one. The slot stays
+    // claimed on purpose — releasing it would put the failing mount
+    // back in the visibility pass's path and retry it on every frame.
+    console.error("Failed to mount stack column:", e);
+  } finally {
+    liveData.mounting = false;
   }
 
-  liveColumns.set(item.id, liveData);
+  // Scrolled out of view (or the whole stack was torn down) while we
+  // were loading. `unmountItemContent` had nothing to call at the time,
+  // so the teardown is ours. The box is only ours to empty if nothing
+  // else has claimed the slot since: a column scrolled off and straight
+  // back on starts a fresh mount that clears the box for itself, and
+  // blanking it here would leave that one showing nothing.
+  if (liveData.cancelled) {
+    teardownLive(liveColumns.has(item.id) ? null : contentEl, liveData);
+  }
+}
+
+/** Run a live column's cleanup, and empty its box when `contentEl` is
+ *  given. Cleanup runs first: it is what stops a canvas's render loop
+ *  and save timer, and detaching the DOM alone stops neither. */
+function teardownLive(contentEl, liveData) {
+  try {
+    if (liveData.cleanup) liveData.cleanup();
+  } catch (e) {
+    console.error("Stack column cleanup failed:", e);
+  }
+  if (contentEl) contentEl.innerHTML = "";
 }
 
 /**
@@ -67,9 +131,15 @@ export function unmountItemContent(contentEl, item, liveColumns) {
   const liveData = liveColumns.get(item.id);
   if (!liveData) return;
 
-  if (liveData.cleanup) liveData.cleanup();
   liveColumns.delete(item.id);
-  contentEl.innerHTML = "";
+  if (liveData.mounting) {
+    // Still loading: there is no `cleanup` yet, and building one out of
+    // half-initialised parts is guesswork. Flag it instead — the
+    // mount's own tail tears it down the moment it finishes.
+    liveData.cancelled = true;
+    return;
+  }
+  teardownLive(contentEl, liveData);
 }
 
 /** Capture all view state from a live column back onto the item. */

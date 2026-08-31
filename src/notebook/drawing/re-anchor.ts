@@ -110,6 +110,19 @@ export interface ReanchorOptions {
   sizeCanvases: () => void;
   /** Live DPR getter (capped against MAX_BACKING_PIXELS). */
   getDpr: () => number;
+  /** Size of the box this canvas actually fills, in CSS px.
+   *
+   *  Not the window: a canvas hosted in a stack column or a floating
+   *  pane covers a fraction of it, and sizing its backing to the window
+   *  makes every zoom step ask for a world size several times what the
+   *  host can show. That is not just wasted pixels — `wantWorldSize`
+   *  scales with 1 / zoom, so zooming a proof out inside a 400 px column
+   *  crossed the resize threshold repeatedly and each crossing is a full
+   *  canvas reallocation plus an O(visible ink) rebake, which is what a
+   *  fast pinch on a proofread notebook felt (and, on iPad, died) like.
+   *  Measured against the host box the same pinch stays at
+   *  WORLD_SIZE_MIN and costs nothing. */
+  getViewportSize?: () => { w: number; h: number };
 }
 
 export interface ReanchorController {
@@ -128,6 +141,8 @@ export interface ReanchorController {
 
 export function createReanchor(opts: ReanchorOptions): ReanchorController {
   const { anchor, strokeEngine, refreshSelectionBBox, pocketStash, pocketStashCtx, sizeCanvases, getDpr } = opts;
+  const getViewportSize = opts.getViewportSize
+    ?? (() => ({ w: window.innerWidth || 1200, h: window.innerHeight || 800 }));
 
   /** World-space axis-aligned bbox of the visible viewport. For an
    *  unrotated camera this is the plain rect the old inline math
@@ -135,8 +150,7 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
    *  the inverse transform and takes their AABB (up to √2× larger at
    *  45°, which the coverage math absorbs like any other size). */
   function viewportWorldBounds(cam: Camera): { left: number; top: number; right: number; bottom: number } {
-    const vw = window.innerWidth || 1200;
-    const vh = window.innerHeight || 800;
+    const { w: vw, h: vh } = getViewportSize();
     const rot = cam.rotation || 0;
     if (!rot) {
       const left = -cam.x / cam.zoom;
