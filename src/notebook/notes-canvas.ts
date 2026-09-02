@@ -575,6 +575,12 @@ export class NotesCanvas {
         // holding space over a drawing would do nothing because the
         // SVG was still swallowing the pointerdown.
         this._drawingLayer.setInputEnabled(this.state.drawingMode && !this.state.isPanning);
+        // Drawing mode itself, not who currently owns the pointer: the
+        // engine's live / preview overlays are two world-sized canvases
+        // (delta #39), and a transient pan must not hand them back and
+        // take them again. Ordered after `setInputEnabled` so its cancel
+        // of an in-flight stroke happens before any release.
+        this._drawingLayer.setDrawingActive(this.state.drawingMode);
       }
       if (keys.includes("lassoHoldMs")) {
         this._drawingLayer.setLassoHoldMs(this.state.lassoHoldMs);

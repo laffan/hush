@@ -64,6 +64,12 @@
  *      composited canvas takes ~one frame. Two cross-canvas 'copy'
  *      draws through the attached helper avoid self-reference (and the
  *      CPU-backed detached scratch) entirely.
+ *  39. Live / preview overlays are backed lazily — 1x1 until drawing
+ *      mode is entered (`setOverlaysBacked`), released when it is left,
+ *      and out of resize() in between. Same trade as delta #38's
+ *      highlight pair: reading a document fills neither, and on a
+ *      proofread PDF the two of them are 134 MB of a 502 MB page,
+ *      competing with the page rasters.
  *  31. Opacity-swap double buffer. shiftDoneCanvas (stroke-render.js)
  *      draws the SHIFTED frame into the near-invisible spare with one
  *      cross-canvas 'copy', then swaps the two canvases' roles
@@ -324,6 +330,52 @@ export function createStrokeEngine({
   // is only the INITIAL binding handed to the renderer.
   let cssWidth = 0, cssHeight = 0, dpr = 1;
 
+  /** Hush delta #39: the live and preview overlays are backed lazily.
+   *
+   *  Each is a world-sized canvas — 67 MB at 4096² — and each is empty
+   *  except while a stroke is in flight (live) or a selection is
+   *  mid-transform (preview). Reading a document touches neither, and
+   *  the document that can least afford to carry them is a proofread
+   *  PDF, where fifty page rasters compete for the same memory and the
+   *  user is scrolling rather than drawing. Measured on a fifty-page
+   *  proof at an iPad-sized viewport, the two of them are 134 MB of a
+   *  502 MB page. So both start at 1x1 and are backed only while the
+   *  user can draw — the same trade delta #38 makes for the highlight
+   *  pair.
+   *
+   *  Every other site touching them is a `clearCtx`, which on a 1x1
+   *  canvas is a correct no-op.
+   *
+   *  **Backed on the tool switch, not on the first stamp.** Assigning
+   *  `canvas.width` reallocates the backing — the IOSurface churn delta
+   *  #27 exists to avoid — so doing it on the first pointermove of a
+   *  stroke puts that stall inside the gesture. Measured in a browser
+   *  harness, it dropped the stroke outright on a third of attempts.
+   *  `setOverlaysBacked` moves it to the host's `setDrawingActive`, i.e.
+   *  entering and leaving drawing mode, where a stall is expected and
+   *  invisible — and deliberately *not* to `setInputEnabled`, which also
+   *  flips off for a transient pan and would churn 134 MB twice per pan
+   *  gesture. The calls at the two paint sites stay as a safety net: a
+   *  no-op once backed, and a guarantee that no stamp can land on a 1x1
+   *  canvas if some path reaches them without the mode signal. */
+  function ensureOverlayBacked(canvas, ctx) {
+    const pxW = Math.max(1, Math.round(cssWidth * dpr));
+    const pxH = Math.max(1, Math.round(cssHeight * dpr));
+    if (canvas.width === pxW && canvas.height === pxH) return;
+    canvas.width = pxW;
+    canvas.height = pxH;
+    canvas.style.width = `${cssWidth}px`;
+    canvas.style.height = `${cssHeight}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+  }
+
+  function releaseOverlay(canvas) {
+    if (canvas.width <= 1) return;
+    canvas.width = 1;
+    canvas.height = 1;
+  }
+
   function clearCtx(ctx) {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -345,7 +397,10 @@ export function createStrokeEngine({
     const hlBackedCanvases = hlCanvas && renderer.isHighlightBacked()
       ? [hlCanvas, ...(hlBlitCanvas ? [hlBlitCanvas] : [])]
       : [];
-    for (const canvas of [doneCanvas, ...(blitCanvas ? [blitCanvas] : []), previewCanvas, liveCanvas, ...hlBackedCanvases]) {
+    // Delta #39: same rule for the live / preview overlays — they join
+    // the sizing pass only once something has painted into them.
+    const lazyOverlays = [previewCanvas, liveCanvas].filter((c) => c.width > 1);
+    for (const canvas of [doneCanvas, ...(blitCanvas ? [blitCanvas] : []), ...lazyOverlays, ...hlBackedCanvases]) {
       // Hush delta #27: skip the backing-store write when the pixel
       // size is unchanged — assigning canvas.width always clears the
       // canvas AND can reallocate the backing (multi-hundred-MB
@@ -490,6 +545,7 @@ export function createStrokeEngine({
     // live on an iPad Pro, and avoids the ghost-stamp problem that a partial
     // incremental redraw would hit whenever the streamliner retroactively
     // nudges a recent point.
+    ensureOverlayBacked(liveCanvas, liveCtx); // delta #39
     clearCtx(liveCtx);
     renderer.renderStroke(liveCtx, a);
   }
@@ -869,6 +925,7 @@ export function createStrokeEngine({
       state.previewingIds = new Set(idsSet);
       state.previewingTiles = tiles;
     }
+    ensureOverlayBacked(previewCanvas, previewCtx); // delta #39
     clearCtx(previewCtx);
     const xf = xformFromDescriptor(transform);
     for (const s of state.strokes) {
@@ -1156,6 +1213,19 @@ export function createStrokeEngine({
     // pipeline defers file writes while the pen is down so the IPC
     // marshal can't starve pointer events mid-stroke.
     hasActiveStroke() { return !!state.active; },
+    /** Delta #39: back / release the live + preview overlays. Called by
+     *  the drawing layer as drawing mode is entered and left, so the
+     *  134 MB the pair costs is held only while the user can draw.
+     *  Identity-guarded on both sides, so repeat calls are free. */
+    setOverlaysBacked(on) {
+      if (on) {
+        ensureOverlayBacked(previewCanvas, previewCtx);
+        ensureOverlayBacked(liveCanvas, liveCtx);
+      } else {
+        releaseOverlay(previewCanvas);
+        releaseOverlay(liveCanvas);
+      }
+    },
 
     // --- mutations (used by erase, selection, history) ---
     removeStrokes(ids) {

@@ -104,6 +104,10 @@ export interface ReanchorOptions {
   refreshSelectionBBox: () => void;
   pocketStash: HTMLCanvasElement;
   pocketStashCtx: CanvasRenderingContext2D;
+  /** Back / release the stash's world-sized buffer. It is 1×1 until a
+   *  stroke is pocketed — see `drawing-layer.ts#ensurePocketStash`. */
+  ensurePocketStash: () => void;
+  releasePocketStash: () => void;
   /** Resize the three stage canvases + wrapper + svg to the current
    *  `anchor.worldSize` and current DPR. Owned by the drawing layer
    *  because it also touches the wrapper / svg attributes. */
@@ -140,7 +144,8 @@ export interface ReanchorController {
 }
 
 export function createReanchor(opts: ReanchorOptions): ReanchorController {
-  const { anchor, strokeEngine, refreshSelectionBBox, pocketStash, pocketStashCtx, sizeCanvases, getDpr } = opts;
+  const { anchor, strokeEngine, refreshSelectionBBox, pocketStash, pocketStashCtx,
+    ensurePocketStash, releasePocketStash, sizeCanvases, getDpr } = opts;
   const getViewportSize = opts.getViewportSize
     ?? (() => ({ w: window.innerWidth || 1200, h: window.innerHeight || 800 }));
 
@@ -199,7 +204,11 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
     for (const s of strokes) {
       if (s.pocketed) { anyPocketed = true; break; }
     }
-    if (!anyPocketed) return;
+    // Nothing pocketed: hand the buffer back rather than repainting an
+    // empty one. This runs after every re-anchor, so un-pocketing the
+    // last stroke returns the memory at the next camera move.
+    if (!anyPocketed) { releasePocketStash(); return; }
+    ensurePocketStash();
     const dpr = getDpr();
     pocketStashCtx.save();
     pocketStashCtx.setTransform(1, 0, 0, 1, 0, 0);

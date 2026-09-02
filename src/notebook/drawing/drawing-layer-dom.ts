@@ -144,8 +144,17 @@ export function createDrawingDom(container: HTMLElement, worldSize: number): Dra
   hlWrapper.appendChild(hlBlitHelper);
   hlWrapper.appendChild(hlCanvas);
   const doneCanvas = mkStageCanvas("draw-canvas drawing-done");
+  // Engine delta #39: the two overlays start unbacked, exactly like the
+  // highlight pair above, and the engine sizes them when drawing mode is
+  // entered. A fresh canvas defaults to 300x150 — small, but not
+  // *nothing*, and it is what the "already backed?" tests key off, so it
+  // has to be the same 1x1 sentinel the highlight pair uses.
   const previewCanvas = mkStageCanvas("draw-canvas drawing-preview");
+  previewCanvas.width = 1;
+  previewCanvas.height = 1;
   const liveCanvas = mkStageCanvas("draw-canvas drawing-live");
+  liveCanvas.width = 1;
+  liveCanvas.height = 1;
   wrapper.appendChild(doneCanvas);
   wrapper.appendChild(previewCanvas);
   wrapper.appendChild(liveCanvas);

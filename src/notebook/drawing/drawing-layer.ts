@@ -156,7 +156,10 @@ export function createDrawingLayer({
   // re-anchors mid-session so any of these can shift between calls.
   // Created up here so the sync-shim's `engineAdapter` (further down)
   // can wire stash / unstash directly into the pocket pipeline.
-  const { blitWorldRegion, blitDoneCanvasAtWorldOrigin, stashPocketRegion, unstashPocketRegion } = createPocketBlit({
+  const {
+    blitWorldRegion, blitDoneCanvasAtWorldOrigin, stashPocketRegion, unstashPocketRegion,
+    ensurePocketStash, releasePocketStash,
+  } = createPocketBlit({
     // Per-call resolve — delta #31 swaps the done role each re-anchor.
     getDoneCanvas: () => (strokeEngine ? strokeEngine.getDoneCanvas() : doneCanvas),
     pocketStash, pocketStashCtx,
@@ -422,10 +425,16 @@ export function createDrawingLayer({
     // The highlight pair's *backing* is the engine's to allocate (it stays
     // 1x1 until a highlighter stroke exists); only its CSS box is set
     // here, alongside the wrapper it lives in.
+    // Backed lazily by the engine and left at 1x1 until something paints
+    // into them: the highlight pair (delta #38) and the live / preview
+    // overlays (delta #39). Sizing them here would undo that and hand a
+    // notebook nobody is drawing on four world-sized buffers it never
+    // reads. Once backed they resize with everything else.
+    const lazilyBacked = new Set([hlCanvas, hlBlitHelper, previewCanvas, liveCanvas]);
     for (const c of [doneCanvas, previewCanvas, liveCanvas, blitHelper, hlCanvas, hlBlitHelper]) {
       // Mirror engine delta #27: skip the backing write when unchanged
       // (re-assigning identical dimensions clears + can reallocate).
-      if (c !== hlCanvas && c !== hlBlitHelper) {
+      if (!lazilyBacked.has(c) || c.width > 1) {
         if (c.width !== px) c.width = px;
         if (c.height !== px) c.height = px;
       }
@@ -441,7 +450,9 @@ export function createDrawingLayer({
     svg.setAttribute("viewBox", `0 0 ${w} ${w}`);
     svg.style.width = w + "px";
     svg.style.height = w + "px";
-    if (pocketStash.width !== px || pocketStash.height !== px) {
+    // Only if it is carrying something — an unbacked stash stays 1×1
+    // and is re-created at the right size by `ensurePocketStash`.
+    if (pocketStash.width > 1 && (pocketStash.width !== px || pocketStash.height !== px)) {
       pocketStash.width = px;
       pocketStash.height = px;
     }
@@ -464,6 +475,7 @@ export function createDrawingLayer({
     // the whole selection rather than just recomputing stroke bounds.
     refreshSelectionBBox: () => selectionBridge.refresh(),
     pocketStash, pocketStashCtx,
+    ensurePocketStash, releasePocketStash,
     sizeCanvases,
     getDpr: currentDpr,
     // The host box, not the window — a stack column or a pane is a
@@ -551,6 +563,16 @@ export function createDrawingLayer({
     // so a desktop spacebar-drag pan can't keep stamping new stamps
     // along the cursor's screen path until the next pointerup.
     if (!enabled) (strokeEngine as unknown as { cancelActiveStroke: () => boolean }).cancelActiveStroke();
+  }
+
+  /** Engine delta #39: back / release the live + preview overlays, two
+   *  world-sized canvases (134 MB at 4096², a quarter of what a
+   *  fifty-page proof holds) that nothing but drawing fills. Not wired
+   *  to `setInputEnabled`, which also flips off for a transient pan —
+   *  assigning `canvas.width` reallocates, so that would churn 134 MB
+   *  twice per pan for anyone holding the pen. */
+  function setDrawingActive(on: boolean): void {
+    (strokeEngine as unknown as { setOverlaysBacked: (v: boolean) => void }).setOverlaysBacked(on);
   }
 
   function setTheme(next: CanvasTheme): void {
@@ -648,6 +670,7 @@ export function createDrawingLayer({
     setCamera,
     setHighlightBlendDefault,
     setInputEnabled,
+    setDrawingActive,
     setTheme,
     setTool,
     applySlot,

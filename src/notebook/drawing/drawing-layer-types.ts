@@ -38,6 +38,11 @@ export interface DrawingLayer {
    *  turns this on; everything else leaves it off so the notebook
    *  canvas owns input. */
   setInputEnabled(enabled: boolean): void;
+  /** Drawing mode on / off. Distinct from `setInputEnabled`, which also
+   *  flips for a transient pan — this one gates the engine's
+   *  world-sized live / preview overlays (delta #39), which must not be
+   *  reallocated once per pan gesture. */
+  setDrawingActive(on: boolean): void;
   /** Apply a theme change. Strokes with colorIsAuto adopt the new
    *  theme.foreground; the done canvas rebakes. */
   setTheme(theme: CanvasTheme): void;

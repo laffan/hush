@@ -57,15 +57,50 @@ export interface PocketBlit {
   /** Clear a world-bbox region from the stash so it doesn't accumulate
    *  stale pixels after an unpocket. */
   unstashPocketRegion(worldBbox: WorldBbox): void;
+  /** Back the stash's world-sized buffer, and hand it back. The stash is
+   *  1×1 until something is actually pocketed — the write paths above
+   *  call these for themselves, and the re-anchor controller calls them
+   *  around its full restash. */
+  ensurePocketStash(): void;
+  releasePocketStash(): void;
 }
 
 export function createPocketBlit(opts: PocketBlitOptions): PocketBlit {
   const { getDoneCanvas, pocketStash, pocketStashCtx, getOriginX, getOriginY, getWorldSize, getDpr } = opts;
 
+  /** Nothing has ever been stashed, so there is nothing to read out of
+   *  it or clear from it. */
+  function stashEmpty(): boolean { return pocketStash.width <= 1; }
+
+  /** Back the stash, if it isn't already.
+   *
+   *  It mirrors the done canvas's pixel layout, so a world-sized backing
+   *  is the same 67 MB at 4096² that every other stage canvas costs —
+   *  and it is only ever read for strokes the user has actually
+   *  pocketed, which on the notebook that can least afford it (a
+   *  proofread PDF: fifty page rasters competing for the same memory) is
+   *  none of them. So it stays 1×1 until something is stashed, the same
+   *  trade the engine's highlight pair and its live / preview overlays
+   *  make (deltas #38 and #39). */
+  function ensurePocketStash(): void {
+    const px = Math.round(getWorldSize() * getDpr());
+    if (pocketStash.width === px && pocketStash.height === px) return;
+    pocketStash.width = px;
+    pocketStash.height = px;
+  }
+
+  /** Hand the memory back when the last pocketed stroke leaves. */
+  function releasePocketStash(): void {
+    if (stashEmpty()) return;
+    pocketStash.width = 1;
+    pocketStash.height = 1;
+  }
+
   function blitWorldRegion(
     ctx: CanvasRenderingContext2D,
     worldBbox: WorldBbox,
   ): void {
+    if (stashEmpty()) return;
     const dpr = getDpr();
     const sx = (worldBbox.minX - getOriginX()) * dpr;
     const sy = (worldBbox.minY - getOriginY()) * dpr;
@@ -89,6 +124,7 @@ export function createPocketBlit(opts: PocketBlitOptions): PocketBlit {
   }
 
   function stashPocketRegion(worldBbox: WorldBbox): void {
+    ensurePocketStash();
     const doneCanvas = getDoneCanvas();
     const dpr = getDpr();
     const sx = Math.max(0, Math.floor((worldBbox.minX - getOriginX()) * dpr));
@@ -101,6 +137,7 @@ export function createPocketBlit(opts: PocketBlitOptions): PocketBlit {
   }
 
   function unstashPocketRegion(worldBbox: WorldBbox): void {
+    if (stashEmpty()) return;
     const dpr = getDpr();
     const sx = Math.max(0, Math.floor((worldBbox.minX - getOriginX()) * dpr));
     const sy = Math.max(0, Math.floor((worldBbox.minY - getOriginY()) * dpr));
@@ -110,5 +147,8 @@ export function createPocketBlit(opts: PocketBlitOptions): PocketBlit {
     pocketStashCtx.clearRect(sx, sy, sw, sh);
   }
 
-  return { blitWorldRegion, blitDoneCanvasAtWorldOrigin, stashPocketRegion, unstashPocketRegion };
+  return {
+    blitWorldRegion, blitDoneCanvasAtWorldOrigin, stashPocketRegion, unstashPocketRegion,
+    ensurePocketStash, releasePocketStash,
+  };
 }
