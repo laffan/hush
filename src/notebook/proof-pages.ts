@@ -40,5 +40,8 @@ export function makeProofPageLookup(state: ProofSource): (img: ImageShape) => nu
  *  isn't one (a notebook that isn't a proof, or an index the envelope
  *  doesn't carry). */
 export function proofThumbDataUrl(state: ProofSource, pageIndex: number): string {
-  return state.proof?.pages.find((p) => p.index === pageIndex)?.thumbDataUrl || "";
+  // `?.pages.find` would only guard the `proof`, and a proof envelope
+  // that survived a partial write (the codec preserves fields it does
+  // not know) can carry no `pages` at all.
+  return state.proof?.pages?.find((p) => p.index === pageIndex)?.thumbDataUrl || "";
 }

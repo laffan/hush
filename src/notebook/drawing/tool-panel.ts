@@ -174,6 +174,18 @@ export function createDrawingToolPanel(
     const parentRect = parent.getBoundingClientRect();
     const tbRect = bottomToolbar.getBoundingClientRect();
     if (tbRect.width === 0) return { x: desiredX, y: desiredY };
+    // A parent with no box has no bounds to clamp against, and the
+    // `minX > maxX` collapse below then answers with a midpoint that
+    // never settles: `applyLayout` writes it back through
+    // `setDrawingToolbarOffset`, that notifies, the notify re-runs
+    // `applyLayout`, and sub-pixel drift means the next answer differs
+    // again. Measured at ~700 notifies a second per canvas, each one
+    // running every `change` listener the notebook has — the image
+    // budget, the proof rail's whole-document walk, the shelf. A
+    // notebook whose container measures zero (mid-mount, hidden, a
+    // detached stack column) is exactly where that happens, and on a
+    // fifty-page proof it is enough on its own to take the tab down.
+    if (parentRect.width === 0 || parentRect.height === 0) return { x: desiredX, y: desiredY };
     const rects = [tbRect, dragTab.getBoundingClientRect()];
     const cur = state.drawingToolbarOffset || { x: 0, y: 0 };
     const left = Math.min(...rects.map((r) => r.left));

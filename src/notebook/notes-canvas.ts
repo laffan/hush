@@ -17,7 +17,7 @@ import { createProofScrollWheel, type ProofScrollWheel } from "./ui/proof-scroll
 import {
   ASSUMED_MEGAPIXELS, ASSUMED_PROXY_MEGAPIXELS, MAX_INFLIGHT_MEGAPIXELS,
   PROXY_MARGIN_SCREENS, budgetNeedsRecompute, imageBudgetShare, imageKeepSet,
-  needsImageBudget, proxyBudgetShare,
+  needsImageBudget, proxyReserve,
 } from "./image-budget";
 import type { BudgetView } from "./image-budget";
 import { makeProofPageLookup, proofThumbDataUrl } from "./proof-pages";
@@ -290,12 +290,17 @@ export class NotesCanvas {
    *  indexes the thumbnail exactly as it indexes the full raster. */
   private _proxyCache = new Map<string, HTMLImageElement>();
   private _proxyPixels = new Map<string, number>();
+  /** Megapixels of this canvas's share held back for the proxy tier. */
+  private _proxyReserve = 0;
   /** Camera seen on the previous budget pass. Zoom is the one gesture
    *  that grows the viewport, so it is what gates the read-ahead. */
   private _lastCam: { x: number; y: number; zoom: number } | null = null;
   private _zoomMovingUntil = 0;
   private _budgetTimer: ReturnType<typeof setTimeout> | null = null;
   private _budgetTimerAt = 0;
+  /** Watches the canvas box, which the budget is measured against and
+   *  which nothing else reports a change to. */
+  private _boxObserver: ResizeObserver | null = null;
 
   constructor(container: HTMLElement, shortcuts?: Partial<NotebookShortcuts>) {
     this.container = container;
@@ -328,6 +333,19 @@ export class NotesCanvas {
       touchAction: "none",
     });
     container.appendChild(this._canvas);
+
+    // The image budget is measured against this box, and a canvas can be
+    // constructed before it has one — a stack column mounts into a
+    // content area the stack has not laid out yet. With no box the keep
+    // set is empty by definition, so that first pass evicts everything
+    // and, since the budget runs on state changes and the box arriving
+    // is not one, nothing would ever bring the pages back: the column
+    // would sit there blank until the reader touched it. Observing the
+    // element is the missing edge.
+    if (typeof ResizeObserver === "function") {
+      this._boxObserver = new ResizeObserver(() => this._armBudgetPass(0));
+      this._boxObserver.observe(this._canvas);
+    }
 
     // Store canvas ref in state for pointer handlers
     this.state.canvasEl = this._canvas;
@@ -1003,6 +1021,7 @@ export class NotesCanvas {
     if (this._proofWheel) { this._proofWheel.destroy(); this._proofWheel = null; }
     if (this._shelfResizer) { this._shelfResizer.remove(); this._shelfResizer = null; }
     this.container.innerHTML = "";
+    if (this._boxObserver) { this._boxObserver.disconnect(); this._boxObserver = null; }
     if (this._budgetTimer) { clearTimeout(this._budgetTimer); this._budgetTimer = null; }
     for (const img of this._imageCache.values()) releaseImage(img);
     this._imageCache.clear();
@@ -1194,6 +1213,11 @@ export class NotesCanvas {
     const shapesChanged = this._imageKeepShapes !== this.state.shapes;
     if (shapesChanged) setImageBudgetMember(this, needsImageBudget(this.state.shapes));
     const share = imageBudgetShare(budgetedCanvases.size);
+    // Set aside out of the share, not left over from it — and only for a
+    // proof, which is the only notebook with small rasters to fall back
+    // on. Held on the instance so the proxy pass spends the same number
+    // the page pass was sized against.
+    this._proxyReserve = this.state.proof ? proxyReserve(share, budgetedCanvases.size) : 0;
     const view: BudgetView = { camera: this.state.camera, w, h };
     if (!shapesChanged
       && this._imageKeepShare === share
@@ -1204,7 +1228,7 @@ export class NotesCanvas {
     this._imageKeepShare = share;
     this._imageKeepReadAhead = readAhead;
     this._imageKeep = imageKeepSet(this.state.shapes, this.state.camera, w, h, {
-      maxMegapixels: share,
+      maxMegapixels: share - this._proxyReserve,
       readAhead,
       costOf: (id) => this._imagePixels.get(id),
     });
@@ -1265,6 +1289,13 @@ export class NotesCanvas {
     }, ms);
   }
 
+  private _clearProxyCache(): void {
+    if (!this._proxyCache.size) return;
+    for (const img of this._proxyCache.values()) releaseImage(img);
+    this._proxyCache.clear();
+    this._proxyPixels.clear();
+  }
+
   /** Drop a decoded image, releasing its pixels now rather than at GC's
    *  convenience. Its measured size survives (see `_imagePixels`) — that
    *  is what stops the budget oscillating around its own boundary. */
@@ -1276,6 +1307,12 @@ export class NotesCanvas {
   private _syncImageCache() {
     const readAhead = this._trackZoomMotion();
     const recomputed = this._syncImageBudget(readAhead);
+    // No box: the keep set is empty by construction, so the only work
+    // left is releasing what is held. Do that and stop — in particular
+    // arm no timers. A canvas measuring zero is one nobody is looking
+    // at, and it is also the state a stuck relayout can spin in, so
+    // this is the pass that must stay cheap.
+    const boxed = this._canvas.clientWidth > 0 && this._canvas.clientHeight > 0;
     const keep = this._imageKeep;
     const variant = this.state.theme.variant;
 
@@ -1363,12 +1400,16 @@ export class NotesCanvas {
       for (const id of this._imagePixels.keys()) if (!images.has(id)) this._imagePixels.delete(id);
     }
 
-    if (recomputed) this._syncProxyCache(images, keep);
+    if (recomputed) this._syncProxyCache(images, boxed ? keep : null);
 
     // Come back for whatever this pass deliberately left undone. Nothing
     // else will: the budget runs on the state-change pass, and a camera
-    // that has stopped moving stops producing those.
+    // that has stopped moving stops producing those — so a queued
+    // decode, and the read-ahead that a zoom switched off, each need a
+    // timer of their own.
+    if (!boxed) return;
     if (queued) this._armBudgetPass(BUDGET_RETRY_MS);
+    else if (!readAhead) this._armBudgetPass(Math.max(16, this._zoomMovingUntil - performance.now()));
   }
 
   /** Keep the proxy tier in step with the page tier.
@@ -1382,19 +1423,13 @@ export class NotesCanvas {
    *  cache empty and pays nothing. */
   private _syncProxyCache(images: Map<string, ImageShape>, pageKeep: Set<string> | null) {
     // Proxies exist to cover what the page tier had to drop. A notebook
-    // small enough that it drops nothing — and any notebook that isn't a
-    // proof, which has no small rasters to draw — wants none of this.
-    if (!pageKeep || !this.state.proof) {
-      if (this._proxyCache.size) {
-        for (const img of this._proxyCache.values()) releaseImage(img);
-        this._proxyCache.clear();
-        this._proxyPixels.clear();
-      }
-      return;
-    }
+    // small enough that it drops nothing, a notebook that isn't a proof
+    // (no small rasters to draw), and a canvas whose share is being
+    // divided with others (see `proxyReserve`) all want none of this.
+    if (!pageKeep || !this.state.proof || !this._proxyReserve) { this._clearProxyCache(); return; }
     const w = this._canvas.clientWidth, h = this._canvas.clientHeight;
     const keep = imageKeepSet(this.state.shapes, this.state.camera, w, h, {
-      maxMegapixels: proxyBudgetShare(budgetedCanvases.size),
+      maxMegapixels: this._proxyReserve,
       marginScreens: PROXY_MARGIN_SCREENS,
       assumedMegapixels: ASSUMED_PROXY_MEGAPIXELS,
       costOf: (id) => this._proxyPixels.get(id),

@@ -66,10 +66,13 @@
  *    as the band slid over them — which reads as the canvas failing, and
  *    is most of what "scrolling is jerky" means here. A proof already
  *    carries a 480 px thumbnail of every page (baked for the rail), and
- *    a thumbnail is a **thirty-fourth** of a page: `MAX_PROXY_MEGAPIXELS`
- *    buys twenty of them for what two pages cost. So the
- *    budget has two tiers — a narrow band of sharp pages inside a wide
- *    band of soft ones — and the reader always sees their document.
+ *    a thumbnail is a **thirty-fourth** of a page, so a slice of the
+ *    ceiling too small to hold one more page holds a dozen of them
+ *    (`proxyReserve`). So the budget has two tiers — a narrow band
+ *    of sharp pages inside a wide band of soft ones — the reader always
+ *    sees their document, and the whole thing costs nothing against the
+ *    ceiling, which matters because the configuration that needs it
+ *    most (several proofs in a stack) is the one with no room to spare.
  *    Being able to fall back on the proxy is also what lets the page
  *    tier stay this tight without the tightness showing.
  *
@@ -135,16 +138,16 @@ const IS_IOS = typeof navigator !== "undefined" && (
  *  the size — still go in a batch. */
 export const MAX_INFLIGHT_MEGAPIXELS = IS_IOS ? 12 : 24;
 
-/** Decoded thumbnail held at once across every budgeted canvas, in
- *  megapixels — the proxy tier (see the header). 6 MP is ~24 MB, and a
- *  proof page's thumbnail is 480 px wide (`pdf-proofread.js`), so it is
- *  about twenty pages — for what two full-resolution pages cost.
+/** Ceiling on what `proxyReserve` will set aside for the proxy tier,
+ *  in megapixels. A proof page's thumbnail is 480 px wide
+ *  (`pdf-proofread.js`), so 6 MP is about twenty pages.
  *
- *  Sized off the worst case the page tier has to cope with rather than
- *  off ordinary reading: pages pulled apart by splits can put fifteen of
- *  them on screen at zoom 0.25, and a tier that can't cover what is
- *  *visible* leaves exactly the holes it exists to fill. Ordinary
- *  reading needs a third of it. */
+ *  Sized for the worst case the page tier has to cope with rather than
+ *  for ordinary reading: splits can put fifteen pages on screen at zoom
+ *  0.25, and a soft tier that can't cover what is *visible* leaves
+ *  exactly the holes it exists to fill. Ordinary reading uses a third
+ *  of it. It comes out of the page tier's own ceiling, not on top —
+ *  see `proxyReserve`. */
 export const MAX_PROXY_MEGAPIXELS = 6;
 
 /** Proxy read-ahead, in viewport multiples per side. Far wider than the
@@ -205,11 +208,32 @@ export function imageBudgetShare(budgetedCanvases: number): number {
   return Math.max(MIN_DECODED_MEGAPIXELS, MAX_DECODED_MEGAPIXELS / n);
 }
 
-/** The same, for the proxy tier. No floor under it: a share that shrinks
- *  narrows the soft band, which is a page or two less read-ahead — not a
- *  hole, the way it would be for the page tier. */
-export function proxyBudgetShare(budgetedCanvases: number): number {
-  return MAX_PROXY_MEGAPIXELS / Math.max(1, budgetedCanvases);
+/** Megapixels set aside out of a canvas's `share` for the proxy tier —
+ *  taken off the page tier's ceiling before it admits anything, so the
+ *  two tiers together never exceed the share and the whole two-tier
+ *  scheme costs nothing against the global ceiling.
+ *
+ *  **Reserved, not left over.** Sizing the soft tier from whatever the
+ *  page tier didn't spend sounds tidier and fails in the one state that
+ *  matters: pages are admitted at `ASSUMED_MEGAPIXELS` until they have
+ *  been measured, so a scroll into fresh pages fills the share exactly,
+ *  leaves no slack, and the soft tier vanishes — during scrolling,
+ *  which is the only time anything needed it.
+ *
+ *  **Zero whenever the ceiling is shared.** `MIN_DECODED_MEGAPIXELS` is
+ *  a floor under each canvas's share, so with several budgeted canvases
+ *  the shares already sum past the global ceiling and a reserve on each
+ *  is memory the old policy never took. Several proofs in a stack is
+ *  also the tightest thing the app can be asked to hold — three columns
+ *  is three drawing layers before a page decodes — and a soft tier is a
+ *  comfort, which is the first thing to give up when documents are
+ *  sharing memory. A stack therefore gets exactly the page tier, and
+ *  exactly the footprint it had before this tier existed. */
+export function proxyReserve(share: number, budgetedCanvases: number): number {
+  if (budgetedCanvases > 1) return 0;
+  // Never more than a quarter of the share, so the reserve can't crowd
+  // out the pages on a canvas with a small one.
+  return Math.min(MAX_PROXY_MEGAPIXELS, share / 4);
 }
 
 /** Gap between a shape's world rect and the visible rect — 0 when they
