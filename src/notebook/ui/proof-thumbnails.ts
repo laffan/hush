@@ -36,6 +36,7 @@
 
 import type { DrawingState } from "../state";
 import type { ImageShape } from "../types";
+import { makeProofPageLookup, proofThumbDataUrl } from "../proof-pages";
 import { h } from "./dom-helpers";
 import { type RailSegment, drawProofRailInk, railToWorld } from "./proof-rail-ink";
 
@@ -83,28 +84,17 @@ interface Piece {
   x: number; y: number; w: number; h: number;
 }
 
-/** Page pieces in document order: down the page, then across.
- *
- *  `proofPageIndex` is the normal route — it rides every cut for free,
- *  which is what makes a split show up here as two pieces. Proofs baked
- *  before that field existed fall back to matching the page entries'
- *  recorded `shapeId`, so an old proof still gets a rail (its uncut
- *  pages, at least) instead of silently losing one. */
+/** Page pieces in document order: down the page, then across. Which
+ *  page a piece came from is `proof-pages.ts`'s job — the canvas's proxy
+ *  tier resolves it the same way, out of the same rasters. */
 function collectPieces(state: DrawingState): Piece[] {
   const out: Piece[] = [];
-  let legacy: Map<string, number> | null = null;
+  const pageOf = makeProofPageLookup(state);
   for (const s of state.shapes) {
     if (s.type !== "image" || s.pocketed) continue;
     const img = s as ImageShape;
-    let pageIndex = img.proofPageIndex;
-    if (typeof pageIndex !== "number") {
-      if (!legacy) {
-        legacy = new Map();
-        for (const p of state.proof?.pages || []) legacy.set(p.shapeId, p.index);
-      }
-      pageIndex = legacy.get(img.id);
-      if (typeof pageIndex !== "number") continue;
-    }
+    const pageIndex = pageOf(img);
+    if (typeof pageIndex !== "number") continue;
     out.push({
       shape: img,
       pageIndex,
@@ -215,7 +205,7 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
   }
 
   function thumbFor(pageIndex: number): string {
-    return state.proof?.pages.find((p) => p.index === pageIndex)?.thumbDataUrl || "";
+    return proofThumbDataUrl(state, pageIndex);
   }
 
   function rebuild(pieces: Piece[]) {

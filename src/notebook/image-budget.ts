@@ -44,6 +44,40 @@
  * 4. **The ceiling is shared.** Two columns of the same proof are two
  *    full sets of bitmaps, so each budgeted canvas takes a share of one
  *    global allowance rather than a whole allowance of its own.
+ *
+ * The ceiling says what may be *held*. It says nothing about how fast
+ * the working set may turn over, and on a long proof that is the half
+ * the reader feels — so admission and eviction are deliberately not
+ * symmetric:
+ *
+ *  - **Admission is rate-limited, not just size-limited.** The keep set
+ *    iterates nearest-first (see `imageKeepSet`) and the caller keeps at
+ *    most `MAX_INFLIGHT_MEGAPIXELS` of them decoding at a time. A
+ *    ceiling alone bounds what is resident and not what is *in flight*,
+ *    and a wheel flick across ten pages turned the set over faster than
+ *    the decodes finished — ten 40 MB buffers alive at once, several
+ *    times the ceiling they were being admitted under. That peak is what
+ *    iPadOS answers, and on a transparent window the answer looks like
+ *    the page briefly not painting at all.
+ *  - **What the ceiling can't hold is drawn small, not dropped.** Three
+ *    sharp pages is all a fifty-page proof gets, and the fourth used to
+ *    paint as the renderer's grey "broken image" card. Scrolling a proof
+ *    therefore *flickered* — pages popping between paper and grey slab
+ *    as the band slid over them — which reads as the canvas failing, and
+ *    is most of what "scrolling is jerky" means here. A proof already
+ *    carries a 480 px thumbnail of every page (baked for the rail), and
+ *    a thumbnail is a **thirty-fourth** of a page: `MAX_PROXY_MEGAPIXELS`
+ *    buys twenty of them for what two pages cost. So the
+ *    budget has two tiers — a narrow band of sharp pages inside a wide
+ *    band of soft ones — and the reader always sees their document.
+ *    Being able to fall back on the proxy is also what lets the page
+ *    tier stay this tight without the tightness showing.
+ *
+ * Both rules come from `pdf/pdf-viewer-render.js`, which solved them for
+ * the PDF viewer: rendering drains "a small priority queue ... with
+ * limited concurrency ... so a fling never stacks up stale raster work",
+ * and a drag "only *stretches* existing rasters" rather than showing the
+ * reader a hole.
  */
 
 import type { Camera, Shape } from "./types";
@@ -75,8 +109,55 @@ const MIN_DECODED_MEGAPIXELS = 12;
 /** What an image not yet decoded is assumed to cost, in megapixels.
  *  Pessimistic on purpose — it is a proof page, the case that matters —
  *  and self-correcting: the visible rect is ranked first and so decodes
- *  regardless, and `costOf` reports its real size from then on. */
-const ASSUMED_MEGAPIXELS = 10;
+ *  regardless, and `costOf` reports its real size from then on. Also
+ *  what the caller costs a cached image it has somehow never measured,
+ *  so the two halves of the accounting agree. */
+export const ASSUMED_MEGAPIXELS = 10;
+
+const IS_IOS = typeof navigator !== "undefined" && (
+  /iP(ad|hone|od)/.test(navigator.userAgent)
+  || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+
+/** Decoded bitmap allowed to be *arriving* at once, in megapixels.
+ *
+ *  The ceiling bounds what a canvas holds; this bounds what is on its
+ *  way in, which is the other half of the same memory and the half
+ *  nothing was counting. A flick down a fifty-page proof turns the keep
+ *  set over faster than a 40 MB page decodes, so every pass started
+ *  another one — for pages the camera had already passed — and the
+ *  resident peak became the ceiling plus however many the gesture had
+ *  managed to stack up. `pdf-viewer-render.js` bounds its render queue
+ *  the same way ("a fling never stacks up stale raster work").
+ *
+ *  In megapixels rather than in images, for the reason the ceiling is:
+ *  one proof page is fifty pasted screenshots. 12 is one page at a time
+ *  on iOS and two elsewhere, while a Desktop's thumbnails — a fiftieth
+ *  the size — still go in a batch. */
+export const MAX_INFLIGHT_MEGAPIXELS = IS_IOS ? 12 : 24;
+
+/** Decoded thumbnail held at once across every budgeted canvas, in
+ *  megapixels — the proxy tier (see the header). 6 MP is ~24 MB, and a
+ *  proof page's thumbnail is 480 px wide (`pdf-proofread.js`), so it is
+ *  about twenty pages — for what two full-resolution pages cost.
+ *
+ *  Sized off the worst case the page tier has to cope with rather than
+ *  off ordinary reading: pages pulled apart by splits can put fifteen of
+ *  them on screen at zoom 0.25, and a tier that can't cover what is
+ *  *visible* leaves exactly the holes it exists to fill. Ordinary
+ *  reading needs a third of it. */
+export const MAX_PROXY_MEGAPIXELS = 6;
+
+/** Proxy read-ahead, in viewport multiples per side. Far wider than the
+ *  page tier's, because that is the whole point of it: the band a
+ *  fifty-page proof can hold *sharp* is three pages, and the band it can
+ *  hold *at all* is most of a chapter. */
+export const PROXY_MARGIN_SCREENS = 8;
+
+/** What a thumbnail not yet decoded is assumed to cost. A page's is
+ *  480 × ~620 (`pdf-proofread.js#THUMB_RASTER_WIDTH`); rounding up keeps
+ *  the first pass from over-admitting before anything has been
+ *  measured. */
+export const ASSUMED_PROXY_MEGAPIXELS = 0.35;
 
 /** Zoom ratio that has to be exceeded before the keep set is recomputed.
  *  Recomputing on every zoom step is what a trackpad pinch does sixty
@@ -124,6 +205,13 @@ export function imageBudgetShare(budgetedCanvases: number): number {
   return Math.max(MIN_DECODED_MEGAPIXELS, MAX_DECODED_MEGAPIXELS / n);
 }
 
+/** The same, for the proxy tier. No floor under it: a share that shrinks
+ *  narrows the soft band, which is a page or two less read-ahead — not a
+ *  hole, the way it would be for the page tier. */
+export function proxyBudgetShare(budgetedCanvases: number): number {
+  return MAX_PROXY_MEGAPIXELS / Math.max(1, budgetedCanvases);
+}
+
 /** Gap between a shape's world rect and the visible rect — 0 when they
  *  overlap, otherwise the larger of the two axis gaps. Used only to rank
  *  candidates, so the cheap metric is the right one. */
@@ -141,7 +229,7 @@ export interface KeepSetOptions {
   maxMegapixels?: number;
   /** Measured decoded size of an image, in megapixels — whatever the
    *  caller has actually seen. Undefined for one never decoded here,
-   *  which is costed at `ASSUMED_MEGAPIXELS`. Callers should remember
+   *  which is costed at `assumedMegapixels`. Callers should remember
    *  measurements across an eviction: costing a page as a guess while it
    *  is out and as its real size while it is in makes the budget
    *  oscillate around the boundary. */
@@ -149,6 +237,13 @@ export interface KeepSetOptions {
   /** False while the camera is mid-zoom: keep what is on screen and
    *  nothing else, and let the read-ahead refill when it settles. */
   readAhead?: boolean;
+  /** Viewport multiples kept beyond the visible rect, per side. The
+   *  proxy tier reads much further ahead than the page tier — its
+   *  entries cost a thirty-fourth as much, so the band that is worth
+   *  holding is correspondingly wider. */
+  marginScreens?: number;
+  /** Cost assumed for an entry the caller has never measured. */
+  assumedMegapixels?: number;
 }
 
 /**
@@ -169,6 +264,13 @@ export interface KeepSetOptions {
  * the reader is looking is a bad outcome; dying is a worse one. The
  * nearest image is always admitted, whatever it costs, so a canvas can
  * never paint nothing at all.
+ *
+ * **The returned set iterates in that rank order**, and the caller's
+ * decode queue depends on it: with only `MAX_INFLIGHT_MEGAPIXELS`
+ * decoding at a time, the order the ids come out in is the order the
+ * reader gets their pages back. (Shapes with no bytes and pocketed ones
+ * are added ahead of the ranking, which costs nothing — neither starts a
+ * page decode.)
  */
 export function imageKeepSet(
   shapes: Shape[],
@@ -180,6 +282,8 @@ export function imageKeepSet(
   const maxMegapixels = opts?.maxMegapixels ?? MAX_DECODED_MEGAPIXELS;
   const readAhead = opts?.readAhead !== false;
   const costOf = opts?.costOf;
+  const marginScreens = opts?.marginScreens ?? MARGIN_SCREENS;
+  const assumed = opts?.assumedMegapixels ?? ASSUMED_MEGAPIXELS;
   if (!needsImageBudget(shapes)) return null;
   // No box: nothing is on screen, so nothing needs to be decoded. This
   // is the detached-canvas case (a torn-down column, a surface replaced
@@ -189,8 +293,8 @@ export function imageKeepSet(
   if (!canvasW || !canvasH) return new Set();
 
   const view = viewportWorldRect(camera, canvasW, canvasH);
-  const padX = (view.maxX - view.minX) * MARGIN_SCREENS;
-  const padY = (view.maxY - view.minY) * MARGIN_SCREENS;
+  const padX = (view.maxX - view.minX) * marginScreens;
+  const padY = (view.maxY - view.minY) * marginScreens;
   const minX = view.minX - padX, maxX = view.maxX + padX;
   const minY = view.minY - padY, maxY = view.maxY + padY;
 
@@ -213,7 +317,7 @@ export function imageKeepSet(
       id: s.id,
       onScreen,
       dist: Math.hypot((x0 + x1) / 2 - cx, (y0 + y1) / 2 - cy),
-      mp: costOf?.(s.id) ?? ASSUMED_MEGAPIXELS,
+      mp: costOf?.(s.id) ?? assumed,
     });
   }
 

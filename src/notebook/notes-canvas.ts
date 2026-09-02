@@ -1,4 +1,4 @@
-import type { Camera, Shape } from "./types";
+import type { Camera, ImageShape, Shape } from "./types";
 import type { BackgroundPattern } from "./state";
 import type { AppearanceMode } from "./themes";
 import { DrawingState } from "./state";
@@ -14,8 +14,13 @@ import { createBrainstormInput } from "./ui/brainstorm-input";
 import { createGrabPopup } from "./ui/grab-popup";
 import { createProofThumbnails, type ProofThumbnailRail } from "./ui/proof-thumbnails";
 import { createProofScrollWheel, type ProofScrollWheel } from "./ui/proof-scrollwheel";
-import { budgetNeedsRecompute, imageBudgetShare, imageKeepSet, needsImageBudget } from "./image-budget";
+import {
+  ASSUMED_MEGAPIXELS, ASSUMED_PROXY_MEGAPIXELS, MAX_INFLIGHT_MEGAPIXELS,
+  PROXY_MARGIN_SCREENS, budgetNeedsRecompute, imageBudgetShare, imageKeepSet,
+  needsImageBudget, proxyBudgetShare,
+} from "./image-budget";
 import type { BudgetView } from "./image-budget";
+import { makeProofPageLookup, proofThumbDataUrl } from "./proof-pages";
 // @ts-ignore — JS module, no type declaration file
 import { registerNotebookDropTarget } from "../pane/text-drag.js";
 // @ts-ignore — JS module, no type declaration file
@@ -194,6 +199,13 @@ function setImageBudgetMember(canvas: NotesCanvas, member: boolean): void {
  *  short enough that letting go feels like it finished. */
 const ZOOM_SETTLE_MS = 180;
 
+/** How long before re-running a pass that left a decode queued behind
+ *  the in-flight ceiling. The completing decode's own handler normally
+ *  hands the slot on; this is the belt to that brace, for a `src` that
+ *  fires neither `load` nor `error`. The pass only re-arms while work
+ *  is still waiting, so the chain ends with the queue. */
+const BUDGET_RETRY_MS = 150;
+
 /** Drop an evicted image's decoded bitmap now rather than at GC's
  *  convenience.
  *
@@ -271,12 +283,19 @@ export class NotesCanvas {
    *  budget oscillate around its own boundary, admitting and dropping
    *  the same page every pass. Pruned with the cache. */
   private _imagePixels = new Map<string, number>();
-  /** Zoom seen on the previous frame, and the moment it stops counting
-   *  as "moving". A zoom sweep passes through viewports nobody looks at;
-   *  decoding for each one spends the whole budget several times over. */
-  private _lastSeenZoom = 0;
+  /** The proxy tier: a proof page's small rail raster, decoded and drawn
+   *  in place of the page itself wherever the page tier can't afford to
+   *  hold it sharp. Keyed by shape id like `_imageCache`, so a piece cut
+   *  out of a page resolves to its own entry and its `crop` window
+   *  indexes the thumbnail exactly as it indexes the full raster. */
+  private _proxyCache = new Map<string, HTMLImageElement>();
+  private _proxyPixels = new Map<string, number>();
+  /** Camera seen on the previous budget pass. Zoom is the one gesture
+   *  that grows the viewport, so it is what gates the read-ahead. */
+  private _lastCam: { x: number; y: number; zoom: number } | null = null;
   private _zoomMovingUntil = 0;
-  private _budgetSettleTimer: ReturnType<typeof setTimeout> | null = null;
+  private _budgetTimer: ReturnType<typeof setTimeout> | null = null;
+  private _budgetTimerAt = 0;
 
   constructor(container: HTMLElement, shortcuts?: Partial<NotebookShortcuts>) {
     this.container = container;
@@ -774,11 +793,15 @@ export class NotesCanvas {
   }
 
   /** Internal — another canvas joined or left the shared image budget,
-   *  so this one's share of it changed. Schedule a frame: the budget is
-   *  refreshed from the render pass, and a canvas nobody is touching
-   *  would otherwise sit on an allowance it no longer has. */
+   *  so this one's share of it changed. Run a budget pass: a canvas
+   *  nobody is touching would otherwise sit on an allowance it no longer
+   *  has, which is how "open the same proof in a second stack column"
+   *  ended up holding two full sets of pages.
+   *
+   *  Deferred rather than immediate, because the caller is part-way
+   *  through iterating the membership set that this pass can mutate. */
   _nudgeImageBudget(): void {
-    this._scheduleRender();
+    this._armBudgetPass(0);
   }
 
   // === Public API ===
@@ -980,10 +1003,13 @@ export class NotesCanvas {
     if (this._proofWheel) { this._proofWheel.destroy(); this._proofWheel = null; }
     if (this._shelfResizer) { this._shelfResizer.remove(); this._shelfResizer = null; }
     this.container.innerHTML = "";
-    if (this._budgetSettleTimer) { clearTimeout(this._budgetSettleTimer); this._budgetSettleTimer = null; }
+    if (this._budgetTimer) { clearTimeout(this._budgetTimer); this._budgetTimer = null; }
     for (const img of this._imageCache.values()) releaseImage(img);
     this._imageCache.clear();
     this._imagePixels.clear();
+    for (const img of this._proxyCache.values()) releaseImage(img);
+    this._proxyCache.clear();
+    this._proxyPixels.clear();
     setImageBudgetMember(this, false);
     liveCanvases.delete(this);
     if (lastActiveNotebook === this) lastActiveNotebook = null;
@@ -1107,6 +1133,7 @@ export class NotesCanvas {
         creatingDragArea: this.state.creatingDragArea,
         editingShapeId: this.state.editingText?.shapeId ?? null,
         imageCache: this._imageCache,
+        proxyImageCache: this._proxyCache,
         theme: this.state.theme,
         canvasBackgroundOverride: this.state.canvasBackgroundOverride,
         backgroundImage: (this.state as any).backgroundImage,
@@ -1159,20 +1186,19 @@ export class NotesCanvas {
    *  a different set of images, a camera (or a canvas box) that has
    *  moved far enough for the margin to have shifted off something, or a
    *  share of the global allowance that another canvas just changed. */
-  private _syncImageBudget() {
+  private _syncImageBudget(readAhead: boolean): boolean {
     const w = this._canvas.clientWidth, h = this._canvas.clientHeight;
     // Membership can only change with the shapes, and every mutation
     // replaces the array — so this walk (and the notify it can send to
     // the other canvases) happens once per edit, not once per frame.
     const shapesChanged = this._imageKeepShapes !== this.state.shapes;
     if (shapesChanged) setImageBudgetMember(this, needsImageBudget(this.state.shapes));
-    const readAhead = this._trackZoomMotion();
     const share = imageBudgetShare(budgetedCanvases.size);
     const view: BudgetView = { camera: this.state.camera, w, h };
     if (!shapesChanged
       && this._imageKeepShare === share
       && this._imageKeepReadAhead === readAhead
-      && !budgetNeedsRecompute(this._imageKeepView, view)) return;
+      && !budgetNeedsRecompute(this._imageKeepView, view)) return false;
     this._imageKeepShapes = this.state.shapes;
     this._imageKeepView = { camera: { ...this.state.camera }, w, h };
     this._imageKeepShare = share;
@@ -1182,50 +1208,111 @@ export class NotesCanvas {
       readAhead,
       costOf: (id) => this._imagePixels.get(id),
     });
+    return true;
   }
 
-  /** Note whether the camera is mid-zoom, and return whether the budget
-   *  may read ahead this frame.
+  /** Note where the camera is, and report whether the budget may read
+   *  ahead this pass.
    *
    *  Zoom is the one gesture that grows the viewport, so it walks the
    *  keep set straight up to whatever the ceiling allows — and a fast
    *  sweep does that through a dozen intermediate viewports, none of
    *  which the reader ever looks at, faster than WebKit frees what the
    *  last one decoded. So while the zoom is moving the working set is
-   *  what's on screen and nothing else. The settle timer is what refills
-   *  the read-ahead: the loop is dirty-driven and goes idle after the
-   *  last camera change, so without a frame of its own the budget would
-   *  sit in its mid-gesture shape until the user did something else. */
+   *  what's on screen and nothing else. A *pan* deliberately doesn't
+   *  gate it: panning is how a proof is read, and the read-ahead is the
+   *  whole reason the next page is already there when you reach it. */
   private _trackZoomMotion(): boolean {
-    const zoom = this.state.camera.zoom;
+    const cam = this.state.camera;
     const now = performance.now();
-    if (zoom !== this._lastSeenZoom) {
-      this._lastSeenZoom = zoom;
-      this._zoomMovingUntil = now + ZOOM_SETTLE_MS;
-      if (this._budgetSettleTimer) clearTimeout(this._budgetSettleTimer);
-      this._budgetSettleTimer = setTimeout(() => {
-        this._budgetSettleTimer = null;
-        this._scheduleRender();
-      }, ZOOM_SETTLE_MS + 20);
+    const last = this._lastCam;
+    if (!last || last.x !== cam.x || last.y !== cam.y || last.zoom !== cam.zoom) {
+      // A canvas's first pass is not a zoom — seeding from nothing and
+      // reading the difference as motion started every notebook with its
+      // read-ahead switched off for the first 180 ms of its life.
+      if (last && last.zoom !== cam.zoom) this._zoomMovingUntil = now + ZOOM_SETTLE_MS;
+      this._lastCam = { x: cam.x, y: cam.y, zoom: cam.zoom };
     }
     return now >= this._zoomMovingUntil;
   }
 
+  /** Re-run the budget pass in `ms`, unless one is already pending.
+   *
+   *  The budget lives on the state-change pass, not the render pass, so
+   *  a canvas whose camera has stopped moving gets no further passes of
+   *  its own: the render loop is dirty-driven and goes idle, and nothing
+   *  else calls `_syncImageCache`. Both deadlines this controller sets —
+   *  a decode waiting for room, and another canvas changing this one's
+   *  share of the allowance — therefore need a real timer behind them.
+   *  Scheduling a *frame* instead, which is what the zoom-settle timer
+   *  and `_nudgeImageBudget` both used to do, refreshed nothing at all:
+   *  a pinch left the read-ahead switched off until the next unrelated
+   *  notify, and a second stack column never took its half of the
+   *  ceiling off the first one. */
+  private _armBudgetPass(ms: number): void {
+    const at = performance.now() + ms;
+    // Keep whichever deadline comes first: a share nudge from another
+    // canvas is due now and must not sit behind a queued decode's retry.
+    if (this._budgetTimer) {
+      if (this._budgetTimerAt <= at) return;
+      clearTimeout(this._budgetTimer);
+    }
+    this._budgetTimerAt = at;
+    this._budgetTimer = setTimeout(() => {
+      this._budgetTimer = null;
+      this._syncImageCache();
+      this._scheduleRender();
+    }, ms);
+  }
+
+  /** Drop a decoded image, releasing its pixels now rather than at GC's
+   *  convenience. Its measured size survives (see `_imagePixels`) — that
+   *  is what stops the budget oscillating around its own boundary. */
+  private _evictImage(id: string): void {
+    releaseImage(this._imageCache.get(id));
+    this._imageCache.delete(id);
+  }
+
   private _syncImageCache() {
+    const readAhead = this._trackZoomMotion();
+    const recomputed = this._syncImageBudget(readAhead);
+    const keep = this._imageKeep;
+    const variant = this.state.theme.variant;
+
+    // One pass over the shapes, indexed by id: the admission loop walks
+    // the keep set (which is in rank order) rather than the shape array,
+    // and the eviction loop needs the same lookup to tell a shape that
+    // is gone from one that has only scrolled away.
+    const images = new Map<string, ImageShape>();
+    for (const s of this.state.shapes) if (s.type === "image") images.set(s.id, s);
+
+    // ---- eviction ----
+    for (const id of [...this._imageCache.keys()]) {
+      if (!images.has(id) || (keep && !keep.has(id))) this._evictImage(id);
+    }
+
+    // ---- admission ----
+    // Nearest first (the keep set iterates in rank order), and never
+    // more than MAX_INFLIGHT_MEGAPIXELS arriving at once. The ceiling
+    // bounds what is held; without this the pages *arriving* were
+    // unbounded, and a flick down a fifty-page proof started a 40 MB
+    // decode every few frames for pages the camera had already passed.
+    // `img.complete` is the in-flight test: it flips true on error as
+    // well as on load, so a broken data URL frees its slot.
+    //
     // Appearance-aware images (dataUrlDark present) load the variant
     // matching the active theme; a light/dark switch swaps the src in
     // place. The loaded variant is tracked on the element so the check
     // is a cheap string compare rather than a data-URL diff.
-    this._syncImageBudget();
-    const keep = this._imageKeep;
-    const variant = this.state.theme.variant;
-    for (const shape of this.state.shapes) {
-      if (shape.type !== "image") continue;
-      // Out of budget: don't decode it. The renderer paints a
-      // placeholder card for an uncached image, and scrolling back
-      // brings the bytes in again — the dataUrl never left the shape.
-      if (keep && !keep.has(shape.id)) continue;
-      const cached = this._imageCache.get(shape.id) as (HTMLImageElement & { _hushVariant?: string }) | undefined;
+    let inFlightMp = 0;
+    for (const [id, img] of this._imageCache) {
+      if (!img.complete) inFlightMp += this._imagePixels.get(id) ?? ASSUMED_MEGAPIXELS;
+    }
+    let queued = false;
+    for (const id of keep ?? images.keys()) {
+      const shape = images.get(id);
+      if (!shape) continue;
+      const cached = this._imageCache.get(id) as (HTMLImageElement & { _hushVariant?: string }) | undefined;
       // Nothing to decode yet (a Desktop pane's placeholder, mid
       // hydration). Setting `src = ""` would resolve against the
       // document URL and load the page as an image — a broken element
@@ -1234,15 +1321,21 @@ export class NotesCanvas {
       const src = shape.dataUrlDark && variant === "dark" ? shape.dataUrlDark : shape.dataUrl;
       if (!cached && !src) continue;
       if (!cached) {
+        // Always let the first one through, whatever it costs — the
+        // nearest image is the one the reader is looking at, and a
+        // canvas that decodes nothing paints nothing.
+        const mp = this._imagePixels.get(id) ?? ASSUMED_MEGAPIXELS;
+        if (inFlightMp > 0 && inFlightMp + mp > MAX_INFLIGHT_MEGAPIXELS) { queued = true; continue; }
+        inFlightMp += mp;
         const img = new Image() as HTMLImageElement & { _hushVariant?: string };
         // Repaint once the bytes decode — the loop is dirty-driven now,
         // so without this an async-loaded image wouldn't appear until the
         // next unrelated state change. The same handler is where the
-        // budget learns what this image actually costs: a proof page is
+        // budget learns what this image actually costs (a proof page is
         // 10 MP and a pasted icon a fiftieth of that, and until one has
-        // been decoded once there is nothing to read that off.
-        const id = shape.id;
-        img.addEventListener("load", () => {
+        // been decoded once there is nothing to read that off) and where
+        // the next queued decode gets its slot.
+        const done = () => {
           // Eviction points the element at a 1×1 GIF to free its pixels,
           // and that fires `load` too. Recording *that* as the image's
           // measured size would tell the budget a proof page costs
@@ -1250,27 +1343,91 @@ export class NotesCanvas {
           if (img.src === BLANK_GIF) return;
           const mp = (img.naturalWidth * img.naturalHeight) / 1e6;
           if (mp > 0) this._imagePixels.set(id, mp);
+          this._syncImageCache();
           this._scheduleRender();
-        });
+        };
+        img.addEventListener("load", done);
+        img.addEventListener("error", done);
         img.src = src;
         img._hushVariant = variant;
-        this._imageCache.set(shape.id, img);
+        this._imageCache.set(id, img);
       } else if (shape.dataUrlDark && cached._hushVariant !== variant) {
         cached.src = variant === "dark" ? shape.dataUrlDark : shape.dataUrl;
         cached._hushVariant = variant;
       }
     }
-    const ids = new Set(this.state.shapes.filter((s) => s.type === "image").map((s) => s.id));
-    for (const id of this._imageCache.keys()) {
-      if (!ids.has(id) || (keep && !keep.has(id))) {
-        releaseImage(this._imageCache.get(id));
-        this._imageCache.delete(id);
-      }
-    }
+
     // Measurements outlive an eviction (that is the point of them), but
     // not the shape they describe.
-    if (this._imagePixels.size > ids.size) {
-      for (const id of this._imagePixels.keys()) if (!ids.has(id)) this._imagePixels.delete(id);
+    if (this._imagePixels.size > images.size) {
+      for (const id of this._imagePixels.keys()) if (!images.has(id)) this._imagePixels.delete(id);
+    }
+
+    if (recomputed) this._syncProxyCache(images, keep);
+
+    // Come back for whatever this pass deliberately left undone. Nothing
+    // else will: the budget runs on the state-change pass, and a camera
+    // that has stopped moving stops producing those.
+    if (queued) this._armBudgetPass(BUDGET_RETRY_MS);
+  }
+
+  /** Keep the proxy tier in step with the page tier.
+   *
+   *  Same shape as the pass above and a much cheaper one, because a
+   *  thumbnail is a thirty-fourth of a page: a far wider band, no
+   *  concurrency limit (there is nothing to serialise — the whole tier
+   *  costs less than half a page), and no read-ahead gate, since the
+   *  reason to gate read-ahead mid-zoom is a cost this tier doesn't
+   *  have. Only proofs have proxies; every other notebook leaves the
+   *  cache empty and pays nothing. */
+  private _syncProxyCache(images: Map<string, ImageShape>, pageKeep: Set<string> | null) {
+    // Proxies exist to cover what the page tier had to drop. A notebook
+    // small enough that it drops nothing — and any notebook that isn't a
+    // proof, which has no small rasters to draw — wants none of this.
+    if (!pageKeep || !this.state.proof) {
+      if (this._proxyCache.size) {
+        for (const img of this._proxyCache.values()) releaseImage(img);
+        this._proxyCache.clear();
+        this._proxyPixels.clear();
+      }
+      return;
+    }
+    const w = this._canvas.clientWidth, h = this._canvas.clientHeight;
+    const keep = imageKeepSet(this.state.shapes, this.state.camera, w, h, {
+      maxMegapixels: proxyBudgetShare(budgetedCanvases.size),
+      marginScreens: PROXY_MARGIN_SCREENS,
+      assumedMegapixels: ASSUMED_PROXY_MEGAPIXELS,
+      costOf: (id) => this._proxyPixels.get(id),
+    });
+    for (const id of [...this._proxyCache.keys()]) {
+      if (!images.has(id) || (keep && !keep.has(id))) {
+        releaseImage(this._proxyCache.get(id));
+        this._proxyCache.delete(id);
+      }
+    }
+    if (this._proxyPixels.size > images.size) {
+      for (const id of this._proxyPixels.keys()) if (!images.has(id)) this._proxyPixels.delete(id);
+    }
+    const pageOf = makeProofPageLookup(this.state);
+    for (const id of keep ?? images.keys()) {
+      const shape = images.get(id);
+      if (!shape || this._proxyCache.has(id)) continue;
+      const pageIndex = pageOf(shape);
+      // Not a page: a pasted screenshot on the notes layer has no small
+      // raster to stand in for it, and gets the placeholder card as
+      // before.
+      if (typeof pageIndex !== "number") continue;
+      const src = proofThumbDataUrl(this.state, pageIndex);
+      if (!src) continue;
+      const img = new Image();
+      img.addEventListener("load", () => {
+        if (img.src === BLANK_GIF) return;
+        const mp = (img.naturalWidth * img.naturalHeight) / 1e6;
+        if (mp > 0) this._proxyPixels.set(id, mp);
+        this._scheduleRender();
+      });
+      img.src = src;
+      this._proxyCache.set(id, img);
     }
   }
 

@@ -19,6 +19,13 @@ export interface RenderState {
   creatingDragArea: { start: Point; end: Point } | null;
   editingShapeId: string | null;
   imageCache: Map<string, HTMLImageElement>;
+  /** Proofread notebooks only: the small page rasters the rail is built
+   *  from, drawn in place of a page the decode budget can't hold at full
+   *  size (`image-budget.ts`). A proof is fifty 40 MB pages and only
+   *  three of them fit, so without this the other forty-seven paint as
+   *  the grey "broken image" card below — which is what made scrolling a
+   *  proof flicker between paper and slab. Absent everywhere else. */
+  proxyImageCache?: Map<string, HTMLImageElement>;
   theme: CanvasTheme;
   croppingImageId: string | null;
   backgroundPattern: "grid" | "dot-grid" | "lined" | "isometric" | "blank";
@@ -266,7 +273,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       // Desktop reads as cards laid on a surface (stacked piles get it
       // for free — each member is a thumbnail).
       else if (shape.type === "image") {
-        drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId, theme, !!(shape as ImageShape).fileRef);
+        drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId, theme, !!(shape as ImageShape).fileRef, state.proxyImageCache);
         const fr = (shape as ImageShape).fileRef;
         if (fr && state.fileStickies) {
           drawThumbStickies(ctx, shape as ImageShape, state.fileStickies(fr.kind, fr.fileId || ""), state.fontFamily);
@@ -762,15 +769,31 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
   ctx.restore();
 }
 
-export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape, imageCache: Map<string, HTMLImageElement>, isCropping?: boolean, theme?: CanvasTheme, shadow?: boolean) {
-  const img = imageCache.get(shape.id);
+function isReady(img: HTMLImageElement | undefined): img is HTMLImageElement {
   // `complete` alone isn't "ready": a decode that *failed* is complete
   // too, with `naturalWidth === 0`, and `drawImage` on a broken image
   // throws InvalidStateError — which aborts the rest of the paint pass
   // and takes every later shape (and its sticky badges) down with it.
   // A Desktop pane hydrates progressively, so empty-src placeholders
   // are normal there; treat them as not-ready and draw the card.
-  if (img && img.complete && img.naturalWidth > 0) {
+  return !!img && img.complete && img.naturalWidth > 0;
+}
+
+export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape, imageCache: Map<string, HTMLImageElement>, isCropping?: boolean, theme?: CanvasTheme, shadow?: boolean, proxyCache?: Map<string, HTMLImageElement>) {
+  // The proxy stands in for a page the budget hasn't got room to hold
+  // sharp. Substituting the element is the whole change: `crop` is in
+  // fractions of the source, so the same window indexes a 480 px
+  // thumbnail exactly as it indexes the 2800 px page it was cut from,
+  // and a split piece stays the piece it is. It draws soft, which is
+  // the honest reading — sharpening a moment later when the page tier
+  // reaches it — where the alternative was a grey card with the page's
+  // name on it.
+  let img = imageCache.get(shape.id);
+  if (!isReady(img)) {
+    const proxy = proxyCache?.get(shape.id);
+    if (isReady(proxy)) img = proxy;
+  }
+  if (isReady(img)) {
     const c = shape.crop || { x: 0, y: 0, w: 1, h: 1 };
     if (isCropping) {
       // Show the full image at 50% opacity behind the crop
