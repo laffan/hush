@@ -493,6 +493,12 @@ pub struct AppSettings {
     /// Files-panel desk view: "single" (active desk only) or "all".
     #[serde(default = "default_desk_display_mode")]
     pub desk_display_mode: String,
+    /// Per-desk arrangement of the canvas file views (icon positions and
+    /// which folders are ringed open), keyed by desk id. Per-device, not
+    /// synced — which *view* a desk uses rides `desks_meta` instead.
+    /// Opaque JSON owned by the JS side.
+    #[serde(default)]
+    pub file_view_layouts: serde_json::Value,
     /// Last-opened Local Folder file for this window. Opaque JSON.
     #[serde(default)]
     pub last_local_sync: serde_json::Value,
@@ -781,6 +787,7 @@ impl Default for AppSettings {
             desks_meta: serde_json::json!({}),
             active_desk_id: None,
             desk_display_mode: default_desk_display_mode(),
+            file_view_layouts: serde_json::json!({}),
             last_local_sync: serde_json::Value::Null,
             desk_last_local_sync: serde_json::json!({}),
             shortcut_nb_select: default_nb_select(),

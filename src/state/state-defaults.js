@@ -116,11 +116,17 @@ export function createDefaultSettings() {
     // Per-desk synced metadata, keyed by desk id. Carries the slot of
     // settings that diverge per desk: active style, Ratchet mode
     // (`ratchet: true` puts every Doc in the desk in forward-only
-    // writing), desktop slot, persisted panes (panes are owned by their
-    // host desk per spec).
+    // writing), file view (`fileView: "list" | "desktop" | "drone"`),
+    // desktop slot, persisted panes (panes are owned by their host desk
+    // per spec).
     // Local-only fields like lastFileId / scrollPosition stay on the
     // top-level `settings` so they per-device-per-window restore.
     desksMeta: {},
+    // Per-desk file-view arrangement (local, per-device), keyed by desk
+    // id: `{ positions: { [nodeId]: {x,y} }, openIds: [] }`. Which view a
+    // desk uses is synced (desksMeta.fileView, riding `.hushdesk`); where
+    // this screen happens to have dragged its icons is not.
+    fileViewLayouts: {},
     // Per-desk sidebar toggle state (local, per-device), keyed by desk id:
     // `{ left, leftPinned, right }`. Switching desks restores that desk's
     // saved left files-panel and right outline-panel open/closed state.

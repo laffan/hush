@@ -15,7 +15,7 @@ Extension of [README-TECHNICAL.md](README-TECHNICAL.md). Covers how Hush stores 
 ```
 <desk root>/
 ├── .hushdesk                 desk identity + portable meta (style, last file,
-│                             ratchet flag, desk stickies)
+│                             ratchet flag, file view, desk stickies)
 ├── .hush/
 │   ├── index.json            fileId ↔ relative path
 │   ├── tree.json             structure + ordering + row decoration
@@ -152,7 +152,7 @@ The external-store hooks on `AppState` (`syncFileToExternal`, `syncCreateNode`, 
 
 ## Portable desk meta (`desk_meta.rs`, `sync/desk-meta.js`)
 
-Desk-scoped preferences ride inside the desk so a handed-off folder feels like the one you left: `.hushdesk` carries `{ styleId, ratchet, lastFileId, lastFileType, stickies }` (field-merged via `desk_meta_get` / `desk_meta_set`; values stored verbatim, `null` included — "no last file" is an explicit choice). `settings.desksMeta` / `settings.stickyNotes` remain the runtime store: JS pushes after each desk-scoped mutation (de-duped per desk) and pulls **disk-wins** at boot, after adopt, and after every reconcile; pushes are gated until the first pull so a boot re-persist can't clobber another device's newer meta. A pull that changes stickies emits `desk-meta-pulled`; one that flips `ratchet` emits `mode-changed` (the open buffer must re-lock immediately). Google-Doc links follow the same pattern via `.hush/gdoc-links.json` — the per-desk sidecar is durable, `settings.googleDocLinks` is the merged read cache (`refresh_gdoc_link_cache` at boot/adopt/reconcile), and an install without Google credentials keeps the links in a disabled state. `settings.activeDeskId` is deliberately local-only — each device picks its own.
+Desk-scoped preferences ride inside the desk so a handed-off folder feels like the one you left: `.hushdesk` carries `{ styleId, ratchet, fileView, lastFileId, lastFileType, stickies }` (field-merged via `desk_meta_get` / `desk_meta_set`; values stored verbatim, `null` included — "no last file" is an explicit choice). `settings.desksMeta` / `settings.stickyNotes` remain the runtime store: JS pushes after each desk-scoped mutation (de-duped per desk) and pulls **disk-wins** at boot, after adopt, and after every reconcile; pushes are gated until the first pull so a boot re-persist can't clobber another device's newer meta. A pull that changes stickies emits `desk-meta-pulled`; one that flips `ratchet` emits `mode-changed` (the open buffer must re-lock immediately); one that changes `fileView` emits `file-view-changed`, but only for the desk actually on screen — a background desk's pull is a preference write, not a sidebar rebuild. Note the split with `settings.fileViewLayouts`, which is where the canvas views' *arrangement* lives and is deliberately per-device: which representation a desk uses travels with it, where one screen dragged its icons does not. Google-Doc links follow the same pattern via `.hush/gdoc-links.json` — the per-desk sidecar is durable, `settings.googleDocLinks` is the merged read cache (`refresh_gdoc_link_cache` at boot/adopt/reconcile), and an install without Google credentials keeps the links in a disabled state. `settings.activeDeskId` is deliberately local-only — each device picks its own.
 
 ## Versions (`snapshots.rs`)
 

@@ -1,6 +1,6 @@
 /**
- * Portable per-desk metadata — style choice, Ratchet mode, last-open
- * file, desk stickies — mirrored into each desk's `.hushdesk` "meta"
+ * Portable per-desk metadata — style choice, Ratchet mode, file view,
+ * last-open file, desk stickies — mirrored into each desk's `.hushdesk` "meta"
  * object so the preferences ride along when a desk is handed off to
  * another install or synced through a shared folder.
  *
@@ -46,6 +46,7 @@ function payloadFor(state, deskId) {
   return {
     styleId: meta.globalStyleId ?? null,
     ratchet: !!meta.ratchet,
+    fileView: meta.fileView ?? null,
     lastFileId: meta.lastFileId ?? null,
     lastFileType: meta.lastFileType ?? null,
     stickies: deskStickies(state, deskId),
@@ -94,6 +95,7 @@ export async function pullDeskMeta(state, deskId) {
   const next = { ...current };
   if ("styleId" in meta) next.globalStyleId = meta.styleId ?? null;
   if ("ratchet" in meta) next.ratchet = !!meta.ratchet;
+  if ("fileView" in meta) next.fileView = meta.fileView ?? null;
   if ("lastFileId" in meta) next.lastFileId = meta.lastFileId ?? null;
   if ("lastFileType" in meta) next.lastFileType = meta.lastFileType ?? null;
   if (JSON.stringify(next) !== JSON.stringify(current)) {
@@ -113,6 +115,7 @@ export async function pullDeskMeta(state, deskId) {
   }
 
   const ratchetChanged = "ratchet" in meta && !!meta.ratchet !== !!current.ratchet;
+  const viewChanged = "fileView" in meta && (meta.fileView ?? null) !== (current.fileView ?? null);
 
   if (Object.keys(patch).length > 0) {
     await state.updateSettings(patch);
@@ -123,6 +126,12 @@ export async function pullDeskMeta(state, deskId) {
   // open editor, not just a settings write — it has to re-lock the
   // buffer it's already showing.
   if (ratchetChanged) state.emit("mode-changed");
+  // A desk that arrived in a different file view has to rebuild the
+  // sidebar body, not just record the preference — but only when it is
+  // the desk on screen. A background desk's pull is a preference write.
+  if (viewChanged && deskId === state.settings?.activeDeskId) {
+    state.emit("file-view-changed", { deskId, mode: next.fileView || "list" });
+  }
 }
 
 /** Boot pull across every desk. Unlocks pushes afterwards. */

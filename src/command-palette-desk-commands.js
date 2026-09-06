@@ -11,6 +11,7 @@
 
 import { getDeskRatchet } from "./state/state-desks.js";
 import { toggleDeskRatchet } from "./state/state-modes.js";
+import { getDeskFileView, setDeskFileView, FILE_VIEW_LABELS } from "./fileviews/file-view-mode.js";
 
 export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, enterDeskPicker, currentFileTreeNodeId }) {
   const multiDesk = (s) => (s.settings?.desks || []).length >= 2;
@@ -23,6 +24,23 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
     { id: "desk-ratchet", icon: icons.ratchet, shortcutKey: null, ctx: "shared",
       label: getDeskRatchet(state) ? "Stop Desk ratchet mode" : "Start Desk ratchet mode",
       action: (s) => toggleDeskRatchet(s) },
+    // File views — how this desk's files are drawn in the sidebar. The
+    // choice is per desk (it rides `.hushdesk`, like the desk's style),
+    // so a reference desk can stay a list while a drafting desk stays a
+    // desktop. Each entry hides itself when its view is already on, so
+    // the palette only ever offers the two you aren't looking at.
+    { id: "file-view-list", label: `Files: ${FILE_VIEW_LABELS.list} view`, icon: icons.files, shortcutKey: null, ctx: "shared",
+      keywords: "sidebar file manager tree outline default",
+      hiddenIf: (s) => getDeskFileView(s) === "list",
+      action: (s) => setDeskFileView(s, "list") },
+    { id: "file-view-desktop", label: `Files: ${FILE_VIEW_LABELS.desktop} view`, icon: icons.files, shortcutKey: null, ctx: "shared",
+      keywords: "sidebar file manager canvas icons folders ring bloom spatial",
+      hiddenIf: (s) => getDeskFileView(s) === "desktop",
+      action: (s) => setDeskFileView(s, "desktop") },
+    { id: "file-view-drone", label: `Files: ${FILE_VIEW_LABELS.drone} view`, icon: icons.files, shortcutKey: null, ctx: "shared",
+      keywords: "sidebar file manager 3d map aerial overhead city plan spatial",
+      hiddenIf: (s) => getDeskFileView(s) === "drone",
+      action: (s) => setDeskFileView(s, "drone") },
     { id: "desk-switch", label: "Switch Desks", icon: icons.desk, shortcutKey: "shortcutSwitchDesks", ctx: "shared",
       hiddenIf: (s) => !multiDesk(s),
       keepOpen: true,

@@ -1,0 +1,117 @@
+/* ===== File views — canvas representations of the files panel =====
+ *
+ * The desktop / drone views take over `.panel-overlay-body` wholesale,
+ * so the body's list padding and vertical scroll have to come off: a
+ * canvas pans itself, and a scrollbar over it would fight the gesture.
+ * `panel-file-view` is set on #panel-overlay beside `panel-find-mode`,
+ * which does the same job for the Find panel.
+ */
+
+#panel-overlay.panel-file-view .panel-overlay-body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.file-view-host {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  /* The canvas is one big gesture target; the sidebar's own drag-select
+     and text selection have nothing to do here. */
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.file-view-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+/* Chrome layer — DOM affordances over the canvas. Transparent to the
+   pointer except where a control actually sits, so a click on empty
+   chrome still pans the canvas underneath. */
+.file-view-chrome {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.file-view-chrome > * {
+  pointer-events: auto;
+}
+
+/* The view-cycling chip: List → Desktop → Drone. The one affordance
+   that keeps a canvas view from being a dead end for someone who hasn't
+   found the command palette entries. */
+.file-view-chip {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 3px 9px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.3));
+  background: var(--panel-bg, rgba(30, 30, 30, 0.9));
+  color: var(--fg, #888);
+  font-family: var(--ui-font-family);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.file-view-chip:hover {
+  opacity: 1;
+}
+
+/* Drone view breadcrumb — the path flown into, and the way back out. */
+.file-view-breadcrumb {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  font-family: var(--ui-font-family);
+  font-size: 10.5px;
+}
+
+.file-view-crumb {
+  border: none;
+  background: none;
+  padding: 1px 4px;
+  border-radius: 4px;
+  color: var(--fg, #888);
+  font: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-view-crumb:hover { opacity: 1; }
+.file-view-crumb.current { opacity: 0.95; cursor: default; }
+
+.file-view-crumb-sep {
+  color: var(--fg, #888);
+  opacity: 0.35;
+}
+
+/* iPad / iPhone: the sidebar runs edge to edge, so the chip and the
+   breadcrumb clear the system bands the same way the panel header and
+   footer do. */
+html.ios .file-view-breadcrumb {
+  top: calc(8px + var(--ipad-safe-top, 0px));
+}
+
+html.ios .file-view-chip {
+  bottom: calc(10px + var(--ipad-safe-bottom, 0px));
+}

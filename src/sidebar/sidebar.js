@@ -17,6 +17,8 @@ import { mountDeskSwitcher } from "./desk-switcher.js";
 import { mountAddPopup } from "./add-popup.js";
 import { mountProgressCenter } from "./sidebar-progress.js";
 import { createRecentFilesPanel } from "./recent-files-panel.js";
+import { getDeskFileView } from "../fileviews/file-view-mode.js";
+import { mountFileView } from "../fileviews/file-view-host.js";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
 
 function svgInner(raw) {
@@ -27,10 +29,15 @@ export function createSidebar(state) {
   const panelOverlay = document.getElementById("panel-overlay");
   let panelOpen = false;
   let panelPinned = false;
-  // "files" (default) or "find" — the body content swaps wholesale when
-  // the Find panel takes over the sidebar.
+  // "files" (the tree), "fileview" (a canvas representation of the same
+  // tree — see fileviews/) or "find". The body content swaps wholesale
+  // between them; `panelMode` is what every refresh listener routes on.
   let panelMode = "files";
   let findPanelHandle = null;
+  let fileViewHandle = null;
+  // Which representation the body is currently built from — desks each
+  // carry their own, so a desk switch can change it under us.
+  let mountedView = "list";
 
   let _suppressStatePersist = true;
   function persistSidebarState() {
@@ -194,15 +201,54 @@ export function createSidebar(state) {
     return window.innerWidth > 700;
   }
 
+  // The desk's file view decides what the body holds: the tree, or one
+  // of the canvas representations of it.
   function mountFilesBody() {
-    panelMode = "files";
+    teardownFileView();
     panelOverlay.classList.remove("panel-find-mode");
     if (findPanelHandle) findPanelHandle = null;
+    const view = getDeskFileView(state);
+    mountedView = view;
     body.innerHTML = "";
-    createFilesPanel(body, state, hidePanel);
+    if (view === "list") {
+      panelMode = "files";
+      panelOverlay.classList.remove("panel-file-view");
+      createFilesPanel(body, state, hidePanel);
+      return;
+    }
+    panelMode = "fileview";
+    panelOverlay.classList.add("panel-file-view");
+    fileViewHandle = mountFileView(body, state, view, hidePanel);
+  }
+
+  function teardownFileView() {
+    if (!fileViewHandle) return;
+    fileViewHandle.destroy();
+    fileViewHandle = null;
+    panelOverlay.classList.remove("panel-file-view");
+  }
+
+  /** Repaint whatever the body is currently showing. Every listener that
+   *  used to call `refreshFilesPanel` routes through here — a canvas view
+   *  is a body mode like any other, and the files panel's own refresh is
+   *  a no-op-with-side-effects when its list isn't mounted.
+   *
+   *  It also catches the case where the desk's chosen representation no
+   *  longer matches what is mounted (a desk switch, or a sibling window
+   *  or another device changing the view): that is a rebuild, and every
+   *  caller gets it for free rather than each having to remember. */
+  function refreshBody() {
+    // A closed panel has nothing to repaint, and rebuilding into one
+    // would leave a live canvas view observing a zero-height box —
+    // `openPanel` builds from scratch anyway.
+    if (!panelOpen || panelMode === "find") return;
+    if (getDeskFileView(state) !== mountedView) { mountFilesBody(); return; }
+    if (panelMode === "files") refreshFilesPanel(state);
+    else if (fileViewHandle) fileViewHandle.refresh();
   }
 
   function mountFindBody(opts = {}) {
+    teardownFileView();
     panelMode = "find";
     panelOverlay.classList.add("panel-find-mode");
     body.innerHTML = "";
@@ -229,6 +275,7 @@ export function createSidebar(state) {
     }
     panelOpen = false;
     cleanupVersionsPanel();
+    teardownFileView();
     if (panelMode === "find") {
       closeFindPanel();
       panelMode = "files";
@@ -260,6 +307,14 @@ export function createSidebar(state) {
       closeFindPanel();
       mountFilesBody();
     }
+  });
+  // The desk changed representation. A command the user just ran opens
+  // the panel to show the result; the same change arriving from another
+  // device through `.hushdesk` only rebuilds a panel already on screen.
+  state.on("file-view-changed", (info) => {
+    if (!panelOpen) { if (info?.userInitiated) openPanel(); return; }
+    if (panelMode === "find") closeFindPanel();
+    mountFilesBody();
   });
   state.on("show-find-panel", (opts) => {
     // Sidebar opens (if not already) and switches to Find. The Files panel
@@ -308,7 +363,7 @@ export function createSidebar(state) {
     await openDocExportModal(state);
   });
 
-  state.on("files-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
+  state.on("files-changed", () => { refreshBody(); });
   state.on("multi-select-changed", () => {
     if (!panelOpen) return;
     const selected = new Set(state.selectedDocIds || []);
@@ -332,9 +387,11 @@ export function createSidebar(state) {
       }
       if (saved.left) openPanel(); else hidePanel();
     }
-    if (panelOpen && panelMode === "files") refreshFilesPanel(state);
+    // The new desk may keep its files in a different representation than
+    // the one on screen; `refreshBody` handles that as a rebuild.
+    refreshBody();
   });
-  state.on("desks-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
+  state.on("desks-changed", () => { refreshBody(); });
 
   let _lastLocalSyncSerialised = JSON.stringify(state.settings.localSyncFolders || []);
   let _lastGoogleLinksSerialised = JSON.stringify(state.settings.googleDocLinks || {});
@@ -344,40 +401,40 @@ export function createSidebar(state) {
     const next = JSON.stringify(state.settings.localSyncFolders || []);
     if (next !== _lastLocalSyncSerialised) {
       _lastLocalSyncSerialised = next;
-      if (panelMode === "files") refreshFilesPanel(state);
+      refreshBody();
     }
     const nextGdoc = JSON.stringify(state.settings.googleDocLinks || {});
     if (nextGdoc !== _lastGoogleLinksSerialised) {
       _lastGoogleLinksSerialised = nextGdoc;
-      if (panelMode === "files") refreshFilesPanel(state);
+      refreshBody();
     }
     // Switching between "single desk" and "all desks" reshapes the whole
     // tree (desks become top-level rows or fold away), so repaint.
     const nextMode = state.settings.deskDisplayMode || "single";
     if (nextMode !== _lastDeskDisplayMode) {
       _lastDeskDisplayMode = nextMode;
-      if (panelMode === "files") refreshFilesPanel(state);
+      refreshBody();
     }
     // Toggling the per-doc heading rows adds / removes synthetic children
     // across the whole tree, so repaint on change.
     const nextHeadings = !!state.settings.showProjectHeadings;
     if (nextHeadings !== _lastShowHeadings) {
       _lastShowHeadings = nextHeadings;
-      if (panelMode === "files") refreshFilesPanel(state);
+      refreshBody();
     }
   });
-  state.on("local-sync-changed", () => { if (panelMode === "files") refreshFilesPanel(state); });
-  state.on("file-opened", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
-  state.on("notebook-open", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
-  state.on("stack-open", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
-  state.on("pdf-open", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
-  state.on("panes-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
-  state.on("panes-hidden-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
-  state.on("stickies-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
-  state.on("you-are-here-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
+  state.on("local-sync-changed", () => { refreshBody(); });
+  state.on("file-opened", () => { refreshBody(); });
+  state.on("notebook-open", () => { refreshBody(); });
+  state.on("stack-open", () => { refreshBody(); });
+  state.on("pdf-open", () => { refreshBody(); });
+  state.on("panes-changed", () => { refreshBody(); });
+  state.on("panes-hidden-changed", () => { refreshBody(); });
+  state.on("stickies-changed", () => { refreshBody(); });
+  state.on("you-are-here-changed", () => { refreshBody(); });
   // Cross-window settings merge — a sibling's sticky / pane / marker
   // writes landed in state.settings; repaint the indicator squares.
-  state.on("remote-settings-merged", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
+  state.on("remote-settings-merged", () => { refreshBody(); });
 
   // Replay persisted open state. Any truthy value reopens the Files
   // panel since that's the only panel that lives in the sidebar now.
