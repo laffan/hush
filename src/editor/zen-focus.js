@@ -71,6 +71,29 @@ function pickZenSource(state) {
   return null;
 }
 
+/** Which document the Zen buffer is standing in for, as a fileId — the
+ *  word cap is per-document, and Zen is a full editing surface over
+ *  whatever it seeded from, so it has to enforce the same cap the
+ *  source does. A notebook text shape and a project column are not one
+ *  document, and neither is a Local Folder file (no tree node), so they
+ *  name nothing and Zen is uncapped over them. */
+function zenSourceFileId(state, source) {
+  if (source.kind === "main") return state.currentFileId || null;
+  if (source.kind === "pane") return source.pane.localSync ? null : (source.pane.fileId || null);
+  if (source.kind === "stack") return getActiveStackDocFileId();
+  return null;
+}
+
+/** The active stack column's fileId, when that column is a plain doc. */
+function getActiveStackDocFileId() {
+  try {
+    const inst = getStackInstance();
+    const item = inst?.getActiveItem();
+    if (!item || item.fileType !== "document") return null;
+    return item.fileId || null;
+  } catch (_) { return null; }
+}
+
 function getActiveStackEditorView() {
   try {
     const inst = getStackInstance();
@@ -269,7 +292,14 @@ export function enterZenFocus(state) {
   // a few other doc-only plugins) because panes don't need them.
   // Zen *does* want sentence-level dim, so we add focus mode here on
   // top of the base set.
-  const { extensions } = createBaseExtensions(state, () => { /* no per-keystroke sync */ });
+  // Zen writes its whole buffer back over the source on exit, so a cap
+  // it didn't enforce would be enforced on the write-back instead —
+  // trimming the tail of the document rather than the words the user
+  // just typed. It carries the source's cap for the duration.
+  const zenFileId = zenSourceFileId(state, source);
+  const { extensions } = createBaseExtensions(state, () => { /* no per-keystroke sync */ }, {
+    getFileId: () => zenFileId,
+  });
   // Cursor follows a configurable typewriter window. Window=1 keeps
   // the cursor pinned to the centre line (the existing behaviour);
   // larger odd values (3, 5) let it drift `(window-1)/2` lines either

@@ -77,6 +77,9 @@ async function loadDocumentPane(pane) {
     updatePaneWordCount(pane);
   }, {
     modeContext: mc.proxy,
+    // The document this pane holds, for its word cap. A Local Folder
+    // file isn't in the tree, so it can't carry one.
+    getFileId: () => (pane.localSync ? null : pane.fileId),
     getLocalSyncContext: () => {
       const ls = pane.localSync;
       if (!ls || !ls.folderId || !ls.relPath) return null;

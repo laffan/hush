@@ -30,7 +30,6 @@ import {
 } from "./pane/pane-manager.js";
 import { panes } from "./pane/pane-state.js";
 import { isActivePaneAGutter } from "./project/gutter.js";
-import { isCommentsHidden } from "./google-docs/comments-visibility.js";
 import { arePanesHiddenForActive } from "./state/state-panes.js";
 import { createNewFromSelected } from "./selection-extract.js";
 import { openInNewWindow } from "./multi-window.js";
@@ -60,7 +59,9 @@ import {
   foldAllSections, unfoldAllSections, foldAllAtLevel,
 } from "./editor/folding.js";
 import { insertDate, insertDateTime } from "./editor/insert-date.js";
+import { currentWordLimit, setWordLimit, wordLimitTargetFileId } from "./editor/word-limit.js";
 import { buildDeskCommands } from "./command-palette-desk-commands.js";
+import { buildGoogleCommands } from "./command-palette-google-commands.js";
 
 /** Resolve the editor view the fold commands should act on: the focused
  *  pane / stack column if one owns the active mode context, else the
@@ -105,14 +106,6 @@ function wrapSvg(inner, viewBox = "0 0 24 24") {
 
 function svgInner(raw) {
   return raw.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>[\s\S]*$/, "").trim();
-}
-
-/** Lazy-import a Google Docs link-command and return an action fn that
- *  surfaces auth/API errors via window.alert (cheap, accessible). */
-function _gdocAction(method) {
-  return (s) => import("./google-docs/link-command.js")
-    .then((m) => m[method](s))
-    .catch((e) => { if (e) { console.error("[google-docs]", e); window.alert(e.message || String(e)); } });
 }
 
 /** Each icon is the full `<svg …>…</svg>` markup so a row can drop it
@@ -497,6 +490,23 @@ function buildCommands(state) {
       action: (s) => openShuffleEditor(s, "list-current") },
     { id: "word-count", label: "Toggle word count", icon: null, shortcutKey: "shortcutToggleWordCount", ctx: "doc",
       action: async (s) => { const { toggleWordCount } = await import("./editor/plugins/word-count.js"); toggleWordCount(s); } },
+    // The cap belongs to a document, so both entries name the doc the
+    // main editor is showing — `wordLimitTargetFileId` is null for a
+    // project's joined buffer, a Local Folder file and every non-doc
+    // surface, none of which can carry one. Enforcement is wider than
+    // the command: a pane or stack column over the capped doc holds the
+    // same cap (editor/word-limit.js).
+    { id: "word-limit-set", label: "Set word count limit", icon: null, shortcutKey: null, ctx: "doc",
+      keywords: "word count cap maximum target",
+      hiddenIf: (s) => !wordLimitTargetFileId(s),
+      action: async (s) => {
+        const { openWordLimitModal } = await import("./ui/word-limit-modal.js");
+        openWordLimitModal(s);
+      } },
+    { id: "word-limit-clear", label: "Clear word count limit", icon: null, shortcutKey: null, ctx: "doc",
+      keywords: "word count cap remove reset",
+      hiddenIf: (s) => !currentWordLimit(s),
+      action: (s) => { void setWordLimit(s, wordLimitTargetFileId(s), null); } },
     { id: "outline", label: "Outline view", icon: null, shortcutKey: "shortcutToggleOutline", ctx: "doc",
       action: (s) => s.emit("toggle-outline-panel") },
     { id: "proofread", label: "Proofread mode", icon: icons.proofread, shortcutKey: null, ctx: "doc",
@@ -525,32 +535,7 @@ function buildCommands(state) {
     { id: "close-gutter", label: "Close Gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => gutterCloseHidden(s),
       action: (s) => closeGutter(s) },
-    { id: "google-import", label: "Import from Google Doc", icon: icons.export, shortcutKey: null, ctx: "shared", action: _gdocAction("importFromGoogleDoc") },
-    { id: "google-link", label: "Link Document to Google Doc", icon: icons.export, shortcutKey: null, ctx: "doc",
-      hiddenIf: (s) => !!s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("linkCurrentDocument") },
-    { id: "google-create-from-current", label: "Create Google Doc from current", icon: icons.export, shortcutKey: null, ctx: "doc",
-      hiddenIf: (s) => !!s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("createGoogleDocFromCurrent") },
-    { id: "google-unlink", label: "Unlink Document from Google Doc", icon: icons.trash, shortcutKey: null, ctx: "doc",
-      hiddenIf: (s) => !s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("unlinkCurrentDocument") },
-    { id: "google-hide-comments", label: "Google : Hide comments", icon: icons.export, shortcutKey: null, ctx: "doc",
-      hiddenIf: (s) => !s.settings?.googleDocLinks?.[s.currentFileId] || isCommentsHidden(s.currentFileId),
-      action: _gdocAction("hideGoogleComments") },
-    { id: "google-show-comments", label: "Google : Show comments", icon: icons.export, shortcutKey: null, ctx: "doc",
-      hiddenIf: (s) => !s.settings?.googleDocLinks?.[s.currentFileId] || !isCommentsHidden(s.currentFileId),
-      action: _gdocAction("showGoogleComments") },
-    { id: "remove-all-comments", label: "Remove all Comments", icon: icons.trash, shortcutKey: null, ctx: "doc",
-      hiddenIf: (s) => !/\{>[\s\S]*?<[A-Za-z0-9]+\}|^\[>[A-Za-z0-9]+\]:/m.test(s.editor?.view?.state?.doc?.toString() || ""),
-      action: async (s) => {
-        const view = s.editor?.view;
-        if (!view) return;
-        const { stripCommentSyntax } = await import("./editor/comment-syntax.js");
-        const text = view.state.doc.toString();
-        const cleaned = stripCommentSyntax(text);
-        if (cleaned === text) return;
-        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: cleaned } });
-        s.markDirty?.();
-        await s.saveCurrentFile?.();
-      } },
+    ...buildGoogleCommands({ icons }),
 
     // === ACTIVE PANE ONLY (doc or notebook) ===
     { id: "fit-pane-gap", label: "Fit pane to gap", icon: icons.pane, shortcutKey: null, ctx: "pane",

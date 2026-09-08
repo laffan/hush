@@ -38,6 +38,7 @@ import { createFoldArrowPlugin } from "./fold-arrow.js";
 import { createPropertiesPlugin } from "./plugins/properties.js";
 import { createTableRendererPlugin } from "./plugins/table-renderer.js";
 import { createRatchetExtensions } from "./ratchet.js";
+import { createWordLimitExtensions } from "./word-limit.js";
 
 /**
  * Marks a transaction as app-driven rather than user-typed: file loads,
@@ -164,6 +165,13 @@ export function createStrikethroughFallback(state) {
  *   outside its text column for the line indicator's arrows / border
  *   stripes to hang in (a pane, a stack column), so they attach to the
  *   surface's own edges and the highlight runs edge to edge.
+ * @param {function} [opts.getFileId] Which document this surface is
+ *   showing, as a fileId. The word-count limit is per-document, and a
+ *   surface can't work out which document it holds on its own — the
+ *   main editor's `currentFileId` is the main editor's file, not this
+ *   pane's. A caller with nothing to name (the Selection Focus
+ *   fragment, a Local Folder file that has no tree node) passes none
+ *   and the surface is uncapped.
  * @returns {{ extensions: Extension[], themeComp, highlightComp, shortcutComp }}
  */
 export function createBaseExtensions(state, onChange, opts) {
@@ -225,6 +233,12 @@ export function createBaseExtensions(state, onChange, opts) {
     // programmatic jump (shelf search hit, scrollToPosition) can still
     // move a reference surface's cursor.
     createRatchetExtensions(state, { fragment: !!opts?.fragment }),
+    // A per-document word cap reaches every doc surface for the same
+    // reason forward-only writing does: a pane or a stack column over a
+    // capped doc would otherwise be the way around the cap. A fragment
+    // holds a slice of a document, and a whole-doc count can't be taken
+    // from a slice, so it stays uncapped.
+    createWordLimitExtensions(state, { getFileId: opts?.fragment ? null : opts?.getFileId }),
     _shortcutComp.of(buildShortcutExtension(state)),
     createCalloutPlugin(),
     createFootnotePlugin(state),

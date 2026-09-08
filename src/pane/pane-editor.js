@@ -40,10 +40,15 @@ export function createPaneEditor(container, appState, onChange, opts) {
   // `flushLineIndicator`: a pane / stack column has no gutter for the
   // arrow + border indicators to hang in, and its host clips — so they
   // attach to this surface's own edges instead of to the text column.
+  // `getFileId` names the document this surface holds, for the
+  // per-document word cap. It has to come from the caller: `modeRef`
+  // inherits the main editor's `currentFileId`, which is a different
+  // document than the one in this pane.
   const { extensions, themeComp, highlightComp, shortcutComp, editableComp } =
     createBaseExtensions(modeRef, onChange ? () => onChange() : null, {
       getImageContext,
       flushLineIndicator: true,
+      getFileId: opts?.getFileId,
     });
 
   const dryPlugin = createDryHighlightPlugin(modeRef);

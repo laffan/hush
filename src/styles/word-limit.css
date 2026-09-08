@@ -1,0 +1,45 @@
+/* Word count limit — the countdown that appears once a capped document
+   is within ten words of its limit, and the numeric field in the
+   "Set word count limit" modal. */
+
+/* The countdown mounts inside the surface's own `.cm-editor` (which
+   CodeMirror keeps `position: relative`), so the main window, a
+   floating pane and a stack column each carry their own — a pane over
+   a capped doc says how much room is left in the pane, not in the
+   window behind it.
+
+   Its own red rather than a theme colour, like the sidebar's stale-file
+   warning and the YOU ARE HERE marker: this is a limit being reached,
+   and it has to read the same in all 16 themes. */
+.word-limit-countdown {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #d2453b;
+  background: var(--theme-bg, var(--bg));
+  padding: 2px 8px;
+  border-radius: 6px;
+  /* Click-through, like the word-count pill: a drag-select that runs to
+     the bottom of the surface must not catch on it. */
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* At (or past) the cap the number stops counting down and starts
+   stating the fact — weight it so the change is visible at a glance. */
+.word-limit-countdown.at-limit {
+  font-weight: 600;
+}
+
+/* Note under the modal's field: the count the user is choosing against. */
+.word-limit-modal-note {
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: 0.6;
+}

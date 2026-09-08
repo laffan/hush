@@ -56,6 +56,7 @@ import {
   bypassRatchet, createRatchetExtensions, setRatchetAnchor,
   deskRatchetActive, deskOnlyRatchet,
 } from "./ratchet.js";
+import { createWordLimitExtensions } from "./word-limit.js";
 import { bindLineIndicatorToContainer, createLineIndicatorPlugin } from "./line-indicator.js";
 import { buildFoldingExtension } from "./folding.js";
 import { createFoldArrowPlugin } from "./fold-arrow.js";
@@ -281,6 +282,13 @@ export function createEditor(container, state) {
       shortcutCompartment.of(initialShortcuts),
       readOnlyCompartment.of([]),
       ratchetExtensions,
+      // The word cap has to be in this list as well as the shared one:
+      // a feature only `createBaseExtensions` carries reaches panes,
+      // stack columns and the overlays but not the surface the user
+      // actually types in. `currentFileId` is the main editor's file by
+      // definition, and it is null for every other surface (notebook,
+      // project buffer, Local Folder file) — all of which are uncapped.
+      createWordLimitExtensions(state, { getFileId: () => state.currentFileId }),
       privacyExtensions,
       dryHighlightPlugin,
       focusModePlugin,

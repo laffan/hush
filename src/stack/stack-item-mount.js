@@ -176,7 +176,12 @@ async function mountDocContent(contentEl, item, state, liveData) {
     // version-snapshot cadence — like panes, their edits never reach
     // the main editor's counter.
     let snapKeystrokes = 0;
-    const editor = createPaneEditor(wrapper, state, () => { dirty = true; snapKeystrokes++; }, { modeContext: mc.proxy });
+    const editor = createPaneEditor(wrapper, state, () => { dirty = true; snapKeystrokes++; }, {
+      modeContext: mc.proxy,
+      // The doc this column holds, for its word cap — a column over a
+      // capped doc is as much a way into it as a pane is.
+      getFileId: () => item.fileId,
+    });
     editor.setContent(content);
     // Apply the active style's theme + colour overrides to the column's
     // editor. Unlike floating panes (handled by pane-content), stack
