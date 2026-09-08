@@ -3,12 +3,19 @@
  *
  * The cap itself (and everything that reads one) lives in
  * `word-limit-store.js`; this file is the half that holds the line.
- * Once a doc is at its cap a transaction that would add words is
- * refused, and a paste that would overshoot lands truncated to the
- * words that still fit. Nothing is ever taken away: a doc that arrives
+ * Below the cap a paste that would overshoot lands truncated to the
+ * words that still fit; **at** the cap the document takes nothing at
+ * all — not a word, not a letter, not a space. A cap that let spaces
+ * through would be a counter that stopped counting rather than a wall,
+ * so the test at the cap is not "does this add a word" but "does this
+ * add anything".
+ *
+ * Nothing is ever taken away, and nothing is frozen: a doc that arrives
  * longer than its cap (a version restore, a sync pull, a Google Docs
  * pull — the cap can't be *set* below the count) keeps every word it
- * has, and only growth is refused.
+ * has, and an edit that replaces text rather than adding to it is the
+ * user rewriting their own document, which the cap has no opinion
+ * about.
  *
  * The count is `countWords`, the very function the word-count pill
  * shows, so "1,000 words" means the same thing in both places
@@ -131,23 +138,50 @@ function wordLimitFilter(limitOf) {
 
     let changeCount = 0;
     let insertedLen = 0;
+    let deletedLen = 0;
     let only = null;
     tr.changes.iterChanges((fromA, toA, _fromB, _toB, insert) => {
       changeCount++;
       insertedLen += insert.length;
+      deletedLen += toA - fromA;
       if (changeCount === 1) only = { from: fromA, to: toA, insert: insert.toString() };
     });
     // A pure deletion can only take the count down — never worth a pass
     // over the document to confirm it.
     if (insertedLen === 0) return tr;
 
+    const before = countWordsInDoc(tr.startState.doc);
+    // **At the cap, nothing goes in.** Not another word, not another
+    // letter on the one being typed, not a space — a transaction that
+    // only adds material is refused outright rather than measured. A
+    // space adds no word, so measuring would let it through, and a wall
+    // the caret walks through is not a wall: the document keeps growing
+    // while the count sits still.
+    //
+    // "Only adds" is the whole test. A transaction that also *removes*
+    // material is the user rewriting what they already wrote, which the
+    // cap has never had an opinion about — it falls through to the count
+    // rule below, so a capped document stays editable (and so does the
+    // half-typed word the wall lands in the middle of: select it and
+    // retype it whole).
+    if (deletedLen === 0 && before >= limit) {
+      // A refused keystroke says nothing: the word count is sitting
+      // there in red reading "limit reached", which is the standing
+      // answer to "why did that not land", and a toast per key would
+      // cover that very number (both live at the top of the column).
+      // A paste is worth a word, since it can be a lot of text going
+      // nowhere.
+      if (insertedLen > 1) notice(`Word limit reached — ${limit.toLocaleString()} words.`);
+      return [];
+    }
+
     const after = countWordsInDoc(tr.newDoc);
     if (after <= limit) return tr;
     // Past the cap already: a doc can arrive over its limit (a version
-    // restored over it, a sync pull), and the rule is "no more words",
-    // not "no more editing". An edit that doesn't grow the count is the
-    // user working inside what they've already written.
-    if (after <= countWordsInDoc(tr.startState.doc)) return tr;
+    // restored over it, a sync pull), and the rule is "nothing more
+    // added", not "no more editing". An edit that doesn't grow the count
+    // is the user working inside what they've already written.
+    if (after <= before) return tr;
 
     // More than one insertion point (multi-cursor typing, a replace-all)
     // has no single place to trim, so the whole transaction is refused.
