@@ -15,6 +15,7 @@ import { findLockedStyleForFile } from "./pane-locked-style.js";
 export { findLockedStyleForFile };
 import { attachEditorTextDrag, attachNotebookTextShapeDrag, attachNotebookImageShapeDrag } from "./text-drag.js";
 import { countWords } from "../editor/plugins/word-count.js";
+import { getWordLimit, LIMIT_WARN_WORDS } from "../editor/word-limit-store.js";
 import { createModeContext } from "../state/mode-context.js";
 import { loadPdfPane, loadStackPane } from "./pane-media.js";
 import { logActivity } from "../activity-log.js";
@@ -22,20 +23,30 @@ import { logActivity } from "../activity-log.js";
 /** Update a pane's word-count chip from the current editor content.
  *  Notebook panes don't have a word count. The chip itself is created
  *  in `buildPaneDOM` (pane-manager.js); this function just refreshes its
- *  text and visibility. */
+ *  text and visibility.
+ *
+ *  A capped document carries its cap here the way the main editor's pill
+ *  carries it: "<n> / <limit>", red inside the last `LIMIT_WARN_WORDS`,
+ *  "<n> - limit reached" at the cap — and the chip shows itself for
+ *  those last words even with the word count switched off, since the
+ *  pane is a surface the cap is enforced on. */
 export function updatePaneWordCount(pane) {
   const el = pane._wordCountEl;
   if (!el) return;
-  const visible = !!appState?.settings?.wordCountVisible
-    && pane.fileType === "document"
-    && !!pane.editor;
-  if (!visible) {
+  const countable = pane.fileType === "document" && !!pane.editor;
+  const limit = countable && !pane.localSync ? getWordLimit(appState, pane.fileId) : null;
+  const n = countable ? countWords(pane.editor.getContent()) : 0;
+  const warn = limit !== null && n >= limit - LIMIT_WARN_WORDS;
+  if (!countable || (!appState?.settings?.wordCountVisible && !warn)) {
     el.style.display = "none";
     el.textContent = "";
+    el.classList.remove("limit-warning");
     return;
   }
-  const n = countWords(pane.editor.getContent());
-  el.textContent = `${n.toLocaleString()} ${n === 1 ? "word" : "words"}`;
+  if (limit === null) el.textContent = `${n.toLocaleString()} ${n === 1 ? "word" : "words"}`;
+  else if (n >= limit) el.textContent = `${n.toLocaleString()} - limit reached`;
+  else el.textContent = `${n.toLocaleString()} / ${limit.toLocaleString()} words`;
+  el.classList.toggle("limit-warning", warn);
   el.style.display = "";
 }
 

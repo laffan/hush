@@ -1,26 +1,20 @@
 /**
- * Word count limit — a per-document cap on how many words a doc holds.
+ * Word count limit — enforcement of the per-document cap.
  *
- * Set from the command palette ("Set word count limit"), stored on the
- * doc's tree node as `wordLimit` so it travels with the file, and
- * enforced on every doc surface: once the doc is at its cap a
- * transaction that would add words is refused, and a paste that would
- * overshoot lands truncated to the words that still fit. Nothing is
- * ever taken away — a cap set on a doc that is already longer than it
- * leaves the text alone and only refuses growth.
+ * The cap itself (and everything that reads one) lives in
+ * `word-limit-store.js`; this file is the half that holds the line.
+ * Once a doc is at its cap a transaction that would add words is
+ * refused, and a paste that would overshoot lands truncated to the
+ * words that still fit. Nothing is ever taken away: a doc that arrives
+ * longer than its cap (a version restore, a sync pull, a Google Docs
+ * pull — the cap can't be *set* below the count) keeps every word it
+ * has, and only growth is refused.
  *
- * Three pieces:
- *
- *   - **the store** — `getWordLimit` / `setWordLimit` read and write the
- *     tree node, the same per-doc metadata channel `lockedStyleId` uses,
- *     so the cap round-trips through `save_file_tree` and rides along
- *     when the desk folder syncs to another device.
- *   - **the filter** — one `transactionFilter` per surface. It counts
- *     with `countWords`, the very function the word-count pill shows, so
- *     "1,000 words" means the same thing in both places (comments,
- *     image markdown and `---%` regions don't count in either).
- *   - **the countdown** — a red pill at the bottom of the surface once
- *     the doc is within `COUNTDOWN_THRESHOLD` words of the cap.
+ * The count is `countWords`, the very function the word-count pill
+ * shows, so "1,000 words" means the same thing in both places
+ * (comments, image markdown and `---%` regions don't count in either) —
+ * and the pill is where the user sees the cap, which is why nothing
+ * here draws anything.
  *
  * **Every doc surface has to carry this**, not just the main editor: a
  * floating pane or a stack column over a capped doc would otherwise be
@@ -35,15 +29,11 @@
  */
 
 import { EditorState, Transaction } from "@codemirror/state";
-import { ViewPlugin } from "@codemirror/view";
 import { countWords } from "./plugins/word-count.js";
+import { getWordLimit } from "./word-limit-store.js";
 import { programmaticChange } from "./base-extensions.js";
 import { typewriterRunwayAnnotation } from "./plugins/typewriter.js";
-import { findNodeByFileId } from "../state/tree-helpers.js";
 import { showImportToast } from "./import-toast.js";
-
-/** How near the cap the countdown starts showing itself. */
-export const COUNTDOWN_THRESHOLD = 10;
 
 /**
  * Word counts memoised per `Text` instance. A cap means counting the
@@ -55,61 +45,13 @@ export const COUNTDOWN_THRESHOLD = 10;
 const countCache = new WeakMap();
 
 /** `countWords` over a CodeMirror document, memoised. */
-export function countWordsInDoc(doc) {
+function countWordsInDoc(doc) {
   let n = countCache.get(doc);
   if (n === undefined) {
     n = countWords(doc.toString());
     countCache.set(doc, n);
   }
   return n;
-}
-
-/** A stored limit as a usable number, or null for "no cap". Anything
- *  absent, zero, negative or unparseable reads as no cap. */
-export function normalizeWordLimit(value) {
-  const n = Math.floor(Number(value));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-/** The cap on `fileId`'s document, or null. */
-export function getWordLimit(state, fileId) {
-  if (!fileId || !state?.fileTree) return null;
-  const node = findNodeByFileId(state.fileTree, fileId);
-  return node ? normalizeWordLimit(node.wordLimit) : null;
-}
-
-/**
- * The document the palette commands act on: whatever plain doc the main
- * editor is showing. `currentFileId` is nulled for every other surface
- * (notebook, project, stack, PDF, Local Folder file), so this is also
- * the "can this be capped at all?" test — a project's joined buffer is
- * many documents at once, and a Local Folder file has no tree node to
- * carry the cap.
- */
-export function wordLimitTargetFileId(state) {
-  return state?.currentFileId || null;
-}
-
-/** The cap on the doc the main editor is showing, or null. */
-export function currentWordLimit(state) {
-  return getWordLimit(state, wordLimitTargetFileId(state));
-}
-
-/**
- * Set (or, with a null limit, clear) the cap on `fileId`'s tree node.
- * Written as `undefined` when cleared so the key drops out of the saved
- * tree entirely rather than persisting as a zero.
- */
-export async function setWordLimit(state, fileId, limit) {
-  if (!fileId || !state?.fileTree) return;
-  const node = findNodeByFileId(state.fileTree, fileId);
-  if (!node) return;
-  const next = normalizeWordLimit(limit);
-  node.wordLimit = next === null ? undefined : next;
-  await state.saveFileTree();
-  // Every surface showing this doc re-reads its cap: the countdown has
-  // to appear (or go) without waiting for the next keystroke.
-  state.emit("word-limit-changed", fileId);
 }
 
 // A refused or trimmed insert says so, once — a rate limit like the
@@ -174,7 +116,7 @@ function fitWords(head, insert, tail, limit) {
  * Refuse — or trim — any transaction that would push the document past
  * its cap.
  */
-function wordLimitFilter(state, limitOf) {
+function wordLimitFilter(limitOf) {
   return EditorState.transactionFilter.of((tr) => {
     if (!tr.docChanged) return tr;
     // App-driven writes aren't the user adding words: a file load, a
@@ -201,10 +143,10 @@ function wordLimitFilter(state, limitOf) {
 
     const after = countWordsInDoc(tr.newDoc);
     if (after <= limit) return tr;
-    // Past the cap already: a doc can be over its limit (one set after
-    // the writing, a version restored over it), and the rule is "no
-    // more words", not "no more editing". An edit that doesn't grow the
-    // count is the user working inside what they've already written.
+    // Past the cap already: a doc can arrive over its limit (a version
+    // restored over it, a sync pull), and the rule is "no more words",
+    // not "no more editing". An edit that doesn't grow the count is the
+    // user working inside what they've already written.
     if (after <= countWordsInDoc(tr.startState.doc)) return tr;
 
     // More than one insertion point (multi-cursor typing, a replace-all)
@@ -225,8 +167,8 @@ function wordLimitFilter(state, limitOf) {
       return [];
     }
     // A single typed character that didn't fit is refused in silence —
-    // the countdown sitting at the bottom of the surface is already
-    // saying why, and a toast per keystroke would be its own problem.
+    // the word count, red and reading "limit reached", is already saying
+    // why, and a toast per keystroke would be its own problem.
     if (only.insert.length > 1) {
       const fit = countWords(kept);
       notice(fit
@@ -244,79 +186,15 @@ function wordLimitFilter(state, limitOf) {
   });
 }
 
-/** The countdown's wording, from how many words are left. */
-function countdownLabel(remaining) {
-  if (remaining > 0) return `${remaining.toLocaleString()} ${remaining === 1 ? "word" : "words"} left`;
-  if (remaining === 0) return "Word limit reached";
-  const over = -remaining;
-  return `${over.toLocaleString()} ${over === 1 ? "word" : "words"} over limit`;
-}
-
 /**
- * The red countdown at the bottom of the surface, from
- * `COUNTDOWN_THRESHOLD` words out. It mounts into the editor's own
- * `.cm-editor` (position: relative, per CodeMirror's base theme) rather
- * than the window, so the pane or stack column showing a capped doc
- * carries its own countdown instead of the main window speaking for it.
- */
-class WordLimitCountdown {
-  constructor(view, state, limitOf) {
-    this.view = view;
-    this.state = state;
-    this.limitOf = limitOf;
-    this.el = null;
-    // The cap can change with the document sitting still (the palette
-    // command), and the main editor can be handed a different file.
-    this.onRefresh = () => this.render();
-    state.on("word-limit-changed", this.onRefresh);
-    state.on("file-opened", this.onRefresh);
-    this.render();
-  }
-
-  update(update) {
-    if (update.docChanged) this.render();
-  }
-
-  destroy() {
-    this.state.off("word-limit-changed", this.onRefresh);
-    this.state.off("file-opened", this.onRefresh);
-    this.clear();
-  }
-
-  clear() {
-    if (this.el) { this.el.remove(); this.el = null; }
-  }
-
-  /** Write-only DOM: no layout reads, no dispatches — this runs inside
-   *  `ViewPlugin.update`, where both are a hazard. */
-  render() {
-    const limit = this.limitOf();
-    if (!limit) { this.clear(); return; }
-    const remaining = limit - countWordsInDoc(this.view.state.doc);
-    if (remaining > COUNTDOWN_THRESHOLD) { this.clear(); return; }
-    if (!this.el) {
-      this.el = document.createElement("div");
-      this.el.className = "word-limit-countdown";
-      this.view.dom.appendChild(this.el);
-    }
-    this.el.classList.toggle("at-limit", remaining <= 0);
-    this.el.textContent = countdownLabel(remaining);
-  }
-}
-
-/**
- * Build the word-limit extensions for one editing surface.
+ * Build the word-limit extension for one editing surface.
  *
  * `getFileId` names the document this surface is showing; a caller with
  * nothing to name (a fragment, a notebook) passes none and gets no
- * extensions at all, which is why this returns a list rather than
- * gating internally.
+ * extension at all, which is why this returns a list rather than gating
+ * internally.
  */
 export function createWordLimitExtensions(state, { getFileId } = {}) {
   if (typeof getFileId !== "function") return [];
-  const limitOf = () => getWordLimit(state, getFileId());
-  return [
-    wordLimitFilter(state, limitOf),
-    ViewPlugin.define((view) => new WordLimitCountdown(view, state, limitOf)),
-  ];
+  return [wordLimitFilter(() => getWordLimit(state, getFileId()))];
 }

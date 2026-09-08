@@ -9,6 +9,13 @@
  * words the document holds right now, which is the number the user is
  * actually choosing against.
  *
+ * **The document's own count is the floor.** A cap under it would be a
+ * cap the document is already past — nothing to write towards, every
+ * key refused, and no way back other than deleting words that were
+ * fine when they were written. The field refuses those numbers rather
+ * than accepting one and leaving the user stuck in it, and the note
+ * says which number it is refusing them for.
+ *
  * Re-running the command on a doc that already has a cap opens the
  * modal seeded with it — that is the "change the limit" path; clearing
  * one is its own palette entry.
@@ -17,7 +24,7 @@
 import { escHtml } from "../sidebar/files-panel-shared.js";
 import {
   getWordLimit, setWordLimit, wordLimitTargetFileId, normalizeWordLimit,
-} from "../editor/word-limit.js";
+} from "../editor/word-limit-store.js";
 import { countWords } from "../editor/plugins/word-count.js";
 
 /** Digits only, and never a leading zero — the field's whole vocabulary. */
@@ -52,19 +59,26 @@ export function openWordLimitModal(state) {
   document.body.appendChild(backdrop);
 
   const input = modal.querySelector("input");
+  const note = modal.querySelector(".word-limit-modal-note");
   const confirmBtn = modal.querySelector(".tree-prompt-modal-confirm");
   input.value = existing ? String(existing) : "";
-  const sync = () => { confirmBtn.disabled = normalizeWordLimit(input.value) === null; };
+  const wordsNote = `This document has ${words.toLocaleString()} ${words === 1 ? "word" : "words"}.`;
+  const sync = () => {
+    const limit = normalizeWordLimit(input.value);
+    const tooLow = limit !== null && limit < words;
+    confirmBtn.disabled = limit === null || tooLow;
+    note.textContent = tooLow
+      ? `Already ${words.toLocaleString()} ${words === 1 ? "word" : "words"} — a limit can't be lower.`
+      : wordsNote;
+    note.classList.toggle("invalid", tooLow);
+  };
   sync();
 
   const cleanup = () => backdrop.remove();
   const submit = () => {
     const limit = normalizeWordLimit(input.value);
-    if (limit === null) return;
+    if (limit === null || limit < words) return;
     cleanup();
-    // A cap over a doc that is already longer holds the line where it
-    // is: nothing is deleted, and the countdown reads "n over limit"
-    // until the user writes their way back under it.
     void setWordLimit(state, fileId, limit);
   };
   const cancel = () => cleanup();

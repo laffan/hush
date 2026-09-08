@@ -72,6 +72,9 @@ export function initPaneManager(state) {
   // Pick up newly-set / cleared `lockedStyleId` on tree nodes.
   state.on("files-changed", syncPaneThemes);
   state.on("settings-changed", syncAllPaneWordCounts);
+  // A cap set or cleared on a doc changes what every pane showing it
+  // says — and whether its chip is on screen at all.
+  state.on("word-limit-changed", syncAllPaneWordCounts);
   import("./pane-dock.js").then((m) => m.installDockReflowListeners());
   getNotebookBridge().catch(() => {});
   // Zen Focus reparents the editor out of `.floating-pane`, so the

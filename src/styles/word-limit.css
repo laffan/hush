@@ -1,45 +1,45 @@
-/* Word count limit — the countdown that appears once a capped document
-   is within ten words of its limit, and the numeric field in the
-   "Set word count limit" modal. */
+/* Word count limit — how a cap shows itself, and the numeric field in
+   the "Set word count limit" modal.
 
-/* The countdown mounts inside the surface's own `.cm-editor` (which
-   CodeMirror keeps `position: relative`), so the main window, a
-   floating pane and a stack column each carry their own — a pane over
-   a capped doc says how much room is left in the pane, not in the
-   window behind it.
+   There is no indicator of its own: a capped document says so through
+   the word count it already has (the pill above the text column, the
+   chip in a pane's titlebar), which is why the only rules here are the
+   colour those two take on near the cap.
 
    Its own red rather than a theme colour, like the sidebar's stale-file
-   warning and the YOU ARE HERE marker: this is a limit being reached,
-   and it has to read the same in all 16 themes. */
-.word-limit-countdown {
-  position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 2;
-  font-family: system-ui, sans-serif;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
+   warning and the YOU ARE HERE marker: a limit being reached has to
+   read the same in all 16 themes. */
+.word-count-display.limit-warning,
+.fp-wordcount.limit-warning {
   color: #d2453b;
-  background: var(--theme-bg, var(--bg));
-  padding: 2px 8px;
-  border-radius: 6px;
-  /* Click-through, like the word-count pill: a drag-select that runs to
-     the bottom of the surface must not catch on it. */
-  pointer-events: none;
-  user-select: none;
-  white-space: nowrap;
-}
-
-/* At (or past) the cap the number stops counting down and starts
-   stating the fact — weight it so the change is visible at a glance. */
-.word-limit-countdown.at-limit {
+  /* Opacity goes back up with the colour — a dimmed warning is not a
+     warning. The chip normally sits at 0.7. */
+  opacity: 1;
   font-weight: 600;
 }
 
-/* Note under the modal's field: the count the user is choosing against. */
+/* The pane's titlebar carries `opacity: 0.6` for the filename, and a
+   child can't climb back out of an ancestor's opacity — so lift the
+   whole title when the chip is warning and hand the 0.6 back to the
+   filename alone. Without this the one red thing on screen is the
+   faintest thing on screen. */
+.floating-pane-title:has(.fp-wordcount.limit-warning) {
+  opacity: 1;
+}
+.floating-pane-title:has(.fp-wordcount.limit-warning) .fp-title-link {
+  opacity: 0.6;
+}
+
+/* Note under the modal's field: the count the cap is chosen against. */
 .word-limit-modal-note {
   margin-top: 6px;
   font-size: 12px;
   opacity: 0.6;
+}
+
+/* The same note when it is refusing the typed number (a cap below what
+   the document already holds). */
+.word-limit-modal-note.invalid {
+  color: #d2453b;
+  opacity: 1;
 }

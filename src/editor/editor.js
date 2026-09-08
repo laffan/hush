@@ -534,7 +534,14 @@ export function createEditor(container, state) {
   applyBlockCursor(state);
   bindLineIndicatorToContainer(document.getElementById("editor-container"), state);
   updateWordCountDisplay(state);
-  state.on("file-opened", () => scheduleWordCountRecompute(state));
+  state.on("file-opened", () => updateWordCountDisplay(state));
+  // Setting or clearing a cap changes what the pill says — and whether
+  // there is a pill at all, since a capped doc shows one for its last
+  // words with the word count switched off. `no-file-state` matters for
+  // the same reason: a pill the cap put on screen has to leave with the
+  // document it was counting (deleted file, emptied desk).
+  state.on("word-limit-changed", () => updateWordCountDisplay(state));
+  state.on("no-file-state", () => updateWordCountDisplay(state));
 
   state.on("style-changed", () => applyBlockCursor(state));
 
