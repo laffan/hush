@@ -4,11 +4,12 @@
  * The cap itself (and everything that reads one) lives in
  * `word-limit-store.js`; this file is the half that holds the line.
  * Below the cap a paste that would overshoot lands truncated to the
- * words that still fit; **at** the cap the document takes nothing at
- * all — not a word, not a letter, not a space. A cap that let spaces
- * through would be a counter that stopped counting rather than a wall,
- * so the test at the cap is not "does this add a word" but "does this
- * add anything".
+ * words that still fit. **At** the cap the document takes no new word
+ * and no added whitespace — the word under the caret is still the
+ * user's to finish, and the space that would start the next one is
+ * refused. Whitespace needs refusing by name: it adds no word, so the
+ * count alone would wave it through, and a wall the caret walks
+ * through is not a wall.
  *
  * Nothing is ever taken away, and nothing is frozen: a doc that arrives
  * longer than its cap (a version restore, a sync pull, a Google Docs
@@ -139,38 +140,45 @@ function wordLimitFilter(limitOf) {
     let changeCount = 0;
     let insertedLen = 0;
     let deletedLen = 0;
+    let insertsWhitespace = false;
     let only = null;
     tr.changes.iterChanges((fromA, toA, _fromB, _toB, insert) => {
       changeCount++;
-      insertedLen += insert.length;
+      const text = insert.toString();
+      if (changeCount === 1) only = { from: fromA, to: toA, insert: text };
+      insertedLen += text.length;
       deletedLen += toA - fromA;
-      if (changeCount === 1) only = { from: fromA, to: toA, insert: insert.toString() };
+      if (/\s/.test(text)) insertsWhitespace = true;
     });
     // A pure deletion can only take the count down — never worth a pass
     // over the document to confirm it.
     if (insertedLen === 0) return tr;
 
     const before = countWordsInDoc(tr.startState.doc);
-    // **At the cap, nothing goes in.** Not another word, not another
-    // letter on the one being typed, not a space — a transaction that
-    // only adds material is refused outright rather than measured. A
-    // space adds no word, so measuring would let it through, and a wall
-    // the caret walks through is not a wall: the document keeps growing
-    // while the count sits still.
+    // **At the cap, no added whitespace.** The count rule below can't
+    // refuse a space on its own — a space adds no word, so it measures
+    // as harmless — and a wall the caret walks through is not a wall:
+    // the document would keep growing while the count sat still at
+    // "limit reached", one space at a time, and the next word would be
+    // written the moment a letter followed one.
     //
-    // "Only adds" is the whole test. A transaction that also *removes*
+    // Everything that isn't whitespace still goes to the count rule,
+    // which is what leaves the word under the caret open: finishing
+    // `fin` into `finally` doesn't add a word (a part-typed word is
+    // already a word to `countWords`), so it lands, and the space that
+    // would start the next one doesn't. Refusing that too would leave
+    // every capped document ending mid-word.
+    //
+    // Only an addition is refused. A transaction that also *removes*
     // material is the user rewriting what they already wrote, which the
-    // cap has never had an opinion about — it falls through to the count
-    // rule below, so a capped document stays editable (and so does the
-    // half-typed word the wall lands in the middle of: select it and
-    // retype it whole).
-    if (deletedLen === 0 && before >= limit) {
-      // A refused keystroke says nothing: the word count is sitting
-      // there in red reading "limit reached", which is the standing
-      // answer to "why did that not land", and a toast per key would
-      // cover that very number (both live at the top of the column).
-      // A paste is worth a word, since it can be a lot of text going
-      // nowhere.
+    // cap has no opinion about, so a capped document stays editable —
+    // a paragraph break in place of a selected word still lands.
+    if (deletedLen === 0 && insertsWhitespace && before >= limit) {
+      // A refused space says nothing: the word count is sitting there
+      // in red reading "limit reached", which is the standing answer to
+      // "why did that not land", and a toast per key would cover that
+      // very number (both live at the top of the column). A paste is
+      // worth a word, since it can be a lot of text going nowhere.
       if (insertedLen > 1) notice(`Word limit reached — ${limit.toLocaleString()} words.`);
       return [];
     }
