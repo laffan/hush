@@ -24,7 +24,7 @@ export function buildAppearanceCommands(state) {
     ["auto", "System Appearance"],
   ];
   return modes.map(([id, label]) => ({
-    id: `appearance-${id}`, label: `${label}${current === id ? " ✓" : ""}`,
+    id: `appearance-${id}`, section: "Styles", label: `${label}${current === id ? " ✓" : ""}`,
     icon: _appearanceIcons[id], shortcutKey: null, ctx: "shared",
     action: (s) => {
       if ((s.settings?.appearance || "auto") === id) return;

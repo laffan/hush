@@ -30,6 +30,7 @@ import {
 import { isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree, renderTabMarkerRow, openDocAtTab } from "./files-panel-tabs.js";
 import { isHeadingItem, augmentTreeWithHeadings, stripHeadingsFromTree, renderHeadingRow, openDocAtHeading } from "./files-panel-headings.js";
 import { renderFlaggedSection } from "./files-panel-flagged.js";
+import { renderDeskYouAreHere } from "./files-panel-you-are-here.js";
 
 let sortableInstance = null;
 let flaggedContainerEl = null;
@@ -261,12 +262,13 @@ export function createFilesPanel(container, state, hidePanel) {
     onCollapseChange: (ids) => {
       state.updateSettings({ collapsedFolderIds: ids }); // persist folder open/closed state
       // The toggle re-rendered the tree — re-nest Local Folders after.
-      queueMicrotask(() => positionLocalSync(state));
+      queueMicrotask(() => positionNestedSections(state));
     },
     // Drag-end snap-backs and external/outside drops re-render the list
-    // without an onChange, which would strand the Local Folders section
-    // (it lives inside the list, just above Trash) — re-place it after.
-    onDragEnd: () => { queueMicrotask(() => positionLocalSync(state)); },
+    // without an onChange, which would strand the sections that live
+    // inside it (Local Folders, the desk YOU ARE HERE row) — re-place
+    // them after.
+    onDragEnd: () => { queueMicrotask(() => positionNestedSections(state)); },
     // Images can always escape the panel (no Cmd required) so the drop
     // lands in whatever editor/notebook is under the pointer.
     forceDragOutside: (item) => item && item.type === "image",
@@ -319,7 +321,7 @@ export function createFilesPanel(container, state, hidePanel) {
         state.reconcileSync();
         state.syncProjectOrdering(state.currentProjectId || null);
         if (state.currentProjectId) state.openProject(state.currentProjectId);
-        queueMicrotask(() => positionLocalSync(state)); // re-nest Local Folders after the re-render
+        queueMicrotask(() => positionNestedSections(state)); // re-nest Local Folders + YOU ARE HERE after the re-render
         return;
       }
       normalizeProjectChildren(cleaned);
@@ -348,7 +350,7 @@ export function createFilesPanel(container, state, hidePanel) {
       for (const id of allSpecialIds(state, k)) sortableInstance.state.collapsedIds.add(id);
   }
   sortableInstance.render();
-  positionLocalSync(state);
+  positionNestedSections(state);
 
   // Render the virtual Flagged folder (files-panel-flagged.js — the refs
   // let its fold / reveal interactions re-render and expand the tree).
@@ -477,7 +479,13 @@ function onActionClick(e) {
 
 /** Re-place the Local Folders section above Trash. Thin wrapper over the
  *  impl in files-panel-local-sync.js (which owns the localSync container). */
-function positionLocalSync(state) { positionLocalSyncImpl(state, treeListEl, panelRootEl); }
+/** Re-place the sections that live *inside* the tree list and are wiped
+ *  by every SortableList render: the Local Folders mount point, and — in
+ *  the all-desks view — the active desk's YOU ARE HERE row. */
+function positionNestedSections(state) {
+  positionLocalSyncImpl(state, treeListEl, panelRootEl);
+  renderDeskYouAreHere(state, treeListEl, storedHidePanel);
+}
 
 function refreshList(state) {
   if (sortableInstance) {
@@ -493,7 +501,7 @@ function refreshList(state) {
     numberLabels = computeNumberLabels(sorted, numberSkip, isInboxId);
     sortableInstance.setData(sorted);
   }
-  positionLocalSync(state);
+  positionNestedSections(state);
   renderFlaggedSection(state, {
     container: flaggedContainerEl,
     hidePanel: storedHidePanel,

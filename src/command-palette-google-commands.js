@@ -21,20 +21,20 @@ function _gdocAction(method) {
 
 export function buildGoogleCommands({ icons }) {
   return [
-    { id: "google-import", label: "Import from Google Doc", icon: icons.export, shortcutKey: null, ctx: "shared", action: _gdocAction("importFromGoogleDoc") },
-    { id: "google-link", label: "Link Document to Google Doc", icon: icons.export, shortcutKey: null, ctx: "doc",
+    { id: "google-import", section: "Google", label: "Import from Google Doc", icon: icons.export, shortcutKey: null, ctx: "shared", action: _gdocAction("importFromGoogleDoc") },
+    { id: "google-link", section: "Google", label: "Link Document to Google Doc", icon: icons.export, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !!s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("linkCurrentDocument") },
-    { id: "google-create-from-current", label: "Create Google Doc from current", icon: icons.export, shortcutKey: null, ctx: "doc",
+    { id: "google-create-from-current", section: "Google", label: "Create Google Doc from current", icon: icons.export, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !!s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("createGoogleDocFromCurrent") },
-    { id: "google-unlink", label: "Unlink Document from Google Doc", icon: icons.trash, shortcutKey: null, ctx: "doc",
+    { id: "google-unlink", section: "Google", label: "Unlink Document from Google Doc", icon: icons.trash, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("unlinkCurrentDocument") },
-    { id: "google-hide-comments", label: "Google : Hide comments", icon: icons.export, shortcutKey: null, ctx: "doc",
+    { id: "google-hide-comments", section: "Google", label: "Google : Hide comments", icon: icons.export, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !s.settings?.googleDocLinks?.[s.currentFileId] || isCommentsHidden(s.currentFileId),
       action: _gdocAction("hideGoogleComments") },
-    { id: "google-show-comments", label: "Google : Show comments", icon: icons.export, shortcutKey: null, ctx: "doc",
+    { id: "google-show-comments", section: "Google", label: "Google : Show comments", icon: icons.export, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !s.settings?.googleDocLinks?.[s.currentFileId] || !isCommentsHidden(s.currentFileId),
       action: _gdocAction("showGoogleComments") },
-    { id: "remove-all-comments", label: "Remove all Comments", icon: icons.trash, shortcutKey: null, ctx: "doc",
+    { id: "remove-all-comments", section: "Google", label: "Remove all Comments", icon: icons.trash, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !/\{>[\s\S]*?<[A-Za-z0-9]+\}|^\[>[A-Za-z0-9]+\]:/m.test(s.editor?.view?.state?.doc?.toString() || ""),
       action: async (s) => {
         const view = s.editor?.view;

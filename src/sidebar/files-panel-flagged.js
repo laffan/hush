@@ -1,8 +1,8 @@
 /**
  * The sidebar's virtual Flagged folder — a synthetic section above the
  * main tree listing every flagged item in the visible desk(s), with the
- * YOU ARE HERE marker row(s) pinned above it. Split out of
- * files-panel.js for the 700-line cap.
+ * current desk's YOU ARE HERE marker row pinned above it (single-desk
+ * view only). Split out of files-panel.js for the 700-line cap.
  *
  * `renderFlaggedSection(state, refs)` re-renders the whole section into
  * `refs.container`; internal interactions (fold arrows, folder toggles)
@@ -30,9 +30,10 @@ export function renderFlaggedSection(state, refs) {
   if (!container) return;
   container.innerHTML = "";
 
-  // YOU ARE HERE — one red marker row per visible desk, pinned above
-  // the Flagged list (rendered before the flagged early-return so a
-  // desk with no flags still shows its marker).
+  // YOU ARE HERE — the current desk's marker row, pinned above the
+  // Flagged list (rendered before the flagged early-return so a desk
+  // with no flags still shows its marker). No-op in the all-desks view,
+  // where the row hangs under its own desk instead.
   renderYouAreHereRows(state, container, _refs.hidePanel);
 
   // Scope to the visible desk(s) so flagged items stay desk-specific.

@@ -12,7 +12,7 @@ export function buildActiveModeTurnoffs(state) {
   // notebook context too (you can be Zen-focusing a text shape).
   if (state.zenFocus) {
     const zen = [{
-      id: "turnoff-zenFocus", label: "Turn off Zen Focus", icon: icons.focus,
+      id: "turnoff-zenFocus", section: "Active Modes", label: "Turn off Zen Focus", icon: icons.focus,
       shortcutKey: "shortcutZenFocus", action: (s) => s.toggleZenFocus(),
     }];
     if (state.currentNotebookFileId) return [...zen, ...notebookModeTurnoffs(state)];
@@ -43,5 +43,5 @@ function docModeTurnoffs(state) {
   ];
   return modes
     .filter(m => state[m.flag])
-    .map(m => ({ id: `turnoff-${m.flag}`, label: m.label, icon: m.icon, shortcutKey: m.shortcutKey || null, action: m.action }));
+    .map(m => ({ id: `turnoff-${m.flag}`, section: "Active Modes", label: m.label, icon: m.icon, shortcutKey: m.shortcutKey || null, action: m.action }));
 }

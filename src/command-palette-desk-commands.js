@@ -20,22 +20,22 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
     // One row whose label reads the current state rather than a pair of
     // start / stop entries, and `shared` context so it can be turned
     // off from a notebook (which the mode never touched anyway).
-    { id: "desk-ratchet", icon: icons.ratchet, shortcutKey: null, ctx: "shared",
+    { id: "desk-ratchet", section: "Desks", icon: icons.ratchet, shortcutKey: null, ctx: "shared",
       label: getDeskRatchet(state) ? "Stop Desk ratchet mode" : "Start Desk ratchet mode",
       action: (s) => toggleDeskRatchet(s) },
-    { id: "desk-switch", label: "Switch Desks", icon: icons.desk, shortcutKey: "shortcutSwitchDesks", ctx: "shared",
+    { id: "desk-switch", section: "Desks", label: "Switch Desks", icon: icons.desk, shortcutKey: "shortcutSwitchDesks", ctx: "shared",
       hiddenIf: (s) => !multiDesk(s),
       keepOpen: true,
       action: (s, p) => enterDeskPicker(p, s) },
     // Forks Internal / Local before anything else — a local desk is
     // named by the folder it lands in, so the two branches ask for
     // different things. See sidebar/new-desk-flow.js.
-    { id: "desk-new", label: "New desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
+    { id: "desk-new", section: "Desks", label: "New desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const { startNewDeskFlow } = await import("./sidebar/new-desk-flow.js");
         await startNewDeskFlow(s);
       } },
-    { id: "desk-send", label: "Send this file to another desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
+    { id: "desk-send", section: "Desks", label: "Send this file to another desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !multiDesk(s) || !currentFileTreeNodeId(s),
       action: async (s) => {
         const id = currentFileTreeNodeId(s);
@@ -43,7 +43,7 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
         const m = await import("./sidebar/send-to-desk-modal.js");
         m.openSendToDeskModal(s, id, "send");
       } },
-    { id: "desk-copy", label: "Copy this file to another desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
+    { id: "desk-copy", section: "Desks", label: "Copy this file to another desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !multiDesk(s) || !currentFileTreeNodeId(s),
       action: async (s) => {
         const id = currentFileTreeNodeId(s);
@@ -53,7 +53,7 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
       } },
     // Two-column planner: pick material out of every *other* desk, drop
     // it into the active desk's tree, then copy the whole batch at once.
-    { id: "desk-copy-files", label: "Copy Files from other Desks", icon: icons.desk, shortcutKey: null, ctx: "shared",
+    { id: "desk-copy-files", section: "Desks", label: "Copy Files from other Desks", icon: icons.desk, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !multiDesk(s),
       action: async (s) => {
         const m = await import("./sidebar/copy-from-desks-modal.js");
@@ -62,19 +62,19 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
     // Local desks (desktop only until the iPad bookmark path lands):
     // move the active desk's folder out of app data / back in, reveal
     // it, or adopt a desk folder another install produced.
-    { id: "desk-make-local", label: "Make Desk Local…", icon: icons.desk, shortcutKey: null, ctx: "shared",
+    { id: "desk-make-local", section: "Desks", label: "Make Desk Local…", icon: icons.desk, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => (!desktop && !ipad) || !s.getActiveDesk?.() || !!s.deskRoots?.[s.getActiveDesk()?.id],
       action: async (s) => {
         const desk = s.getActiveDesk();
         if (desk) await (await import("./sync/desk-roots.js")).makeDeskLocal(s, desk.id);
       } },
-    { id: "desk-make-internal", label: "Make Desk Internal", icon: icons.desk, shortcutKey: null, ctx: "shared",
+    { id: "desk-make-internal", section: "Desks", label: "Make Desk Internal", icon: icons.desk, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => (!desktop && !ipad) || !s.deskRoots?.[s.getActiveDesk?.()?.id],
       action: async (s) => {
         const desk = s.getActiveDesk();
         if (desk) await (await import("./sync/desk-roots.js")).makeDeskInternal(s, desk.id);
       } },
-    { id: "desk-reveal-folder", label: "Reveal Desk Folder", icon: icons.desk, shortcutKey: null, ctx: "shared",
+    { id: "desk-reveal-folder", section: "Desks", label: "Reveal Desk Folder", icon: icons.desk, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !desktop || !s.deskRoots?.[s.getActiveDesk?.()?.id],
       action: async (s) => {
         const desk = s.getActiveDesk();
@@ -86,20 +86,20 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
     // desk, same identity, files and history intact. Named for that
     // second job as well as the first, since it's the one people go
     // looking for; `keywords` keeps the old wording finding it.
-    { id: "desk-adopt", label: "Use Local Folder as Desk…", icon: icons.desk, shortcutKey: null, ctx: "shared",
+    { id: "desk-adopt", section: "Desks", label: "Use Local Folder as Desk…", icon: icons.desk, shortcutKey: null, ctx: "shared",
       keywords: "open folder as desk adopt existing icloud dropbox syncthing sync between devices local",
       hiddenIf: () => !desktop && !ipad,
       action: async (s) => (await import("./sync/desk-roots.js")).adoptDeskFolder(s) },
-    { id: "desk-convert-folder", label: "Convert folder to desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
+    { id: "desk-convert-folder", section: "Desks", label: "Convert folder to desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: async (s, p) => (await import("./state/state-desks-ops.js")).enterConvertFolderPicker(p, s, { typeIcons, fallbackIcon: icons.desk }) },
-    { id: "desk-collapse", label: "Collapse desk into folder", icon: icons.desk, shortcutKey: null, ctx: "shared",
+    { id: "desk-collapse", section: "Desks", label: "Collapse desk into folder", icon: icons.desk, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       hiddenIf: (s) => !multiDesk(s),
       action: async (s, p) => (await import("./state/state-desks-ops.js")).enterCollapseDeskPicker(p, s, { fallbackIcon: icons.desk }) },
     // Archiving replaces deleting a desk, so there has to be somewhere to
     // find what was archived — and to build a new desk back out of it.
-    { id: "desk-archives", label: "View archived desks", icon: icons.desk, shortcutKey: null, ctx: "shared",
+    { id: "desk-archives", section: "Desks", label: "View archived desks", icon: icons.desk, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const m = await import("./sidebar/desk-archive.js");
         await m.openArchivedDesksModal(s);

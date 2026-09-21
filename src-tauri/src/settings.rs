@@ -260,6 +260,10 @@ pub struct AppSettings {
     /// JSON owned by the JS side (`{ [deskId]: [fileId, …] }`).
     #[serde(default)]
     pub recent_file_ids_by_desk: serde_json::Value,
+    /// MRU of command-palette command ids (newest first) behind the
+    /// palette's "Recent" section. Capped JS-side.
+    #[serde(default)]
+    pub recent_command_ids: Vec<String>,
 
     // Styles
     #[serde(default)] pub styles: Vec<Style>,
@@ -692,6 +696,7 @@ impl Default for AppSettings {
             show_project_headings: false,
             recent_file_ids: Vec::new(),
             recent_file_ids_by_desk: serde_json::json!({}),
+            recent_command_ids: Vec::new(),
             styles: Vec::new(),
             active_style_id: None,
             global_style_id: None,

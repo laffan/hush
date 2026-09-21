@@ -352,6 +352,8 @@ export function createDefaultSettings() {
     // the Recent Files panel, both of which are desk-scoped. Each desk's
     // list is capped at 50; per-device, not synced.
     recentFileIdsByDesk: {},
+    // Command-palette MRU behind its "Recent" section (newest first).
+    recentCommandIds: [],
     // Sidebar Recent Files panel — when on, the panel mounts above the
     // bottom footer and lists the active desk's recent files. Height is
     // user-resizable via the panel's top border.

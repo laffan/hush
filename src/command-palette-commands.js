@@ -168,6 +168,7 @@ function buildUseStyleCommands(state) {
     const isActive = (id || null) === (activeId || null);
     return {
       id: id ? `use-style-${id}` : "use-style-default",
+      section: "Styles",
       label: `Use Style: ${name}${isActive ? " ✓" : ""}`,
       icon: icons.styles,
       shortcutKey: null,
@@ -202,12 +203,12 @@ function buildCommands(state) {
 
   const all = [
     // === SHARED ===
-    { id: "new-doc", label: "New document", icon: icons.doc, shortcutKey: "shortcutNewFile", ctx: "shared",
+    { id: "new-doc", section: "Create", label: "New document", icon: icons.doc, shortcutKey: "shortcutNewFile", ctx: "shared",
       action: (s) => s.newFile() },
-    { id: "new-notebook", label: "New notebook", icon: icons.notebook, shortcutKey: "shortcutNewNotebook", ctx: "shared",
+    { id: "new-notebook", section: "Create", label: "New notebook", icon: icons.notebook, shortcutKey: "shortcutNewNotebook", ctx: "shared",
       action: (s) => promptNewNotebookName((name) => s.createNotebook(name)) },
-    { id: "new-stack", label: "New stack", icon: icons.stack, shortcutKey: null, ctx: "shared", action: (s) => promptNewStackName((name) => s.createStack(name)) },
-    { id: "new-doc-pane", label: "New document as pane", icon: icons.pane, shortcutKey: "shortcutNewFilePane", ctx: "shared",
+    { id: "new-stack", section: "Create", label: "New stack", icon: icons.stack, shortcutKey: null, ctx: "shared", action: (s) => promptNewStackName((name) => s.createStack(name)) },
+    { id: "new-doc-pane", section: "Create", label: "New document as pane", icon: icons.pane, shortcutKey: "shortcutNewFilePane", ctx: "shared",
       action: async (s) => {
         const created = await s.newFile(null, { openImmediately: false });
         if (created) {
@@ -215,7 +216,7 @@ function buildCommands(state) {
           createPane(created.fileId, created.name, "document", x, y);
         }
       } },
-    { id: "new-notebook-pane", label: "New notebook as pane", icon: icons.pane, shortcutKey: "shortcutNewNotebookPane", ctx: "shared",
+    { id: "new-notebook-pane", section: "Create", label: "New notebook as pane", icon: icons.pane, shortcutKey: "shortcutNewNotebookPane", ctx: "shared",
       action: (s) => promptNewNotebookName(async (name) => {
         const created = await s.createNotebook(name, null, { openImmediately: false });
         if (created) {
@@ -223,7 +224,7 @@ function buildCommands(state) {
           createPane(created.fileId, created.name, "notebook", x, y);
         }
       }) },
-    { id: "open-file", label: "Open document, notebook, or project", icon: icons.files, shortcutKey: null, ctx: "shared",
+    { id: "open-file", section: "Open", label: "Open document, notebook, or project", icon: icons.files, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: (s, p) => enterFilePicker(p, s, "Open file…", (f) => {
         if (f.type === "notebook") s.openNotebook(f.fileId);
@@ -231,7 +232,7 @@ function buildCommands(state) {
         else if (f.type === "stack") s.openStack(f.fileId);
         else s.openFile(f.fileId);
       }, { includeProjects: true }) },
-    { id: "open-pane", label: "Open as pane", icon: icons.pane, shortcutKey: null, ctx: "shared",
+    { id: "open-pane", section: "Open", label: "Open as pane", icon: icons.pane, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: (s, p) => enterFilePicker(p, s, "Open as pane…", (f) => {
         // Place the pane in the gap opposite the editor column shift —
@@ -241,33 +242,33 @@ function buildCommands(state) {
         createPane(f.fileId, f.name, f.type, x, y);
       }) },
     // === DESKTOPS (canvas overview of a project) ===
-    { id: "open-project-desktop", label: "Open Project Desktop", icon: icons.project, shortcutKey: null, ctx: "shared",
+    { id: "open-project-desktop", section: "Desktops", label: "Open Project Desktop", icon: icons.project, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.currentProjectId,
       action: async (s) => {
         (await import("./desktop/desktop-view.js")).openDesktop(s, s.currentProjectId);
       } },
     // Shown while a file that lives inside a project is open: jumps to
     // that project's Desktop with the file's thumbnail selected + centred.
-    { id: "view-in-desktop", label: "View in Desktop", icon: icons.project, shortcutKey: null, ctx: "shared",
+    { id: "view-in-desktop", section: "Desktops", label: "View in Desktop", icon: icons.project, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !currentFileDesktopTarget(s),
       action: async (s) => {
         const target = currentFileDesktopTarget(s);
         if (!target) return;
         (await import("./desktop/desktop-view.js")).openDesktop(s, target.projectId, { focusKey: target.focusKey });
       } },
-    { id: "refresh-desktop-thumbnails", label: "Refresh Desktop Thumbnails", icon: icons.files, shortcutKey: null, ctx: "shared",
+    { id: "refresh-desktop-thumbnails", section: "Desktops", label: "Refresh Desktop Thumbnails", icon: icons.files, shortcutKey: null, ctx: "shared",
       // Shown only while a Desktop is open (checked via the body class so
       // the palette doesn't pull the notebook renderer into its graph).
       hiddenIf: () => !document.body.classList.contains("desktop-active"),
       action: async () => {
         (await import("./desktop/desktop-view.js")).refreshDesktopThumbnails();
       } },
-    { id: "extract-selected", label: "Create New From Selected", icon: icons.newFile, shortcutKey: null, ctx: "shared",
+    { id: "extract-selected", section: "Create", label: "Create New From Selected", icon: icons.newFile, shortcutKey: null, ctx: "shared",
       action: (s) => createNewFromSelected(s) },
-    { id: "send-selected", label: "Send Selected", icon: icons.export, shortcutKey: null, ctx: "shared",
+    { id: "send-selected", section: "Document", label: "Send Selected", icon: icons.export, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: (s, p) => enterSendSelectedPicker(p, s) },
-    { id: "open-in-new-window", label: "Open in new window", icon: icons.files, shortcutKey: null, ctx: "multiwindow",
+    { id: "open-in-new-window", section: "Open", label: "Open in new window", icon: icons.files, shortcutKey: null, ctx: "multiwindow",
       // Opens the active file/project in a real second window. Desktop and
       // iPad share the same path now: a wry-managed WebviewWindow seeded
       // via `index.html#file=…` (iPad multi-window is native since Tauri
@@ -285,7 +286,7 @@ function buildCommands(state) {
         // where the user is working (desks stay independent afterwards).
         openInNewWindow(fileId, fileType, s.getActiveDesk?.()?.id || null);
       } },
-    { id: "delete-current", label: "Delete current file", icon: icons.trash, shortcutKey: null, ctx: "shared",
+    { id: "delete-current", section: "Document", label: "Delete current file", icon: icons.trash, shortcutKey: null, ctx: "shared",
       // In-app modal, not `window.confirm`: the native dialog doesn't
       // reliably block in the WebView — it can return before the user has
       // answered, so the file was already in the Trash behind the prompt
@@ -301,9 +302,9 @@ function buildCommands(state) {
           () => { void deleteTreeNode(s, node.id); },
         );
       } },
-    { id: "files", label: "Files", icon: icons.files, shortcutKey: "shortcutToggleSidebar", ctx: "shared",
+    { id: "files", section: "Open", label: "Files", icon: icons.files, shortcutKey: "shortcutToggleSidebar", ctx: "shared",
       action: (s) => s.emit("toggle-left-panel") },
-    { id: "styles-edit", label: "Edit Styles", icon: icons.styles, shortcutKey: null, ctx: "shared",
+    { id: "styles-edit", section: "Styles", label: "Edit Styles", icon: icons.styles, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const { openStyleEditorModal } = await import("./sidebar/style-modal.js");
         openStyleEditorModal(s);
@@ -313,44 +314,44 @@ function buildCommands(state) {
     // in the old sidebar list.
     ...buildUseStyleCommands(state),
     ...buildAppearanceCommands(state),
-    { id: "style-lock", label: "Lock style to document", icon: icons.styles, shortcutKey: null, ctx: "shared",
+    { id: "style-lock", section: "Styles", label: "Lock style to document", icon: icons.styles, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.currentFileId || !!getLockedStyleId(s),
       action: async (s) => { await setLockedStyleId(s, s.settings.activeStyleId || "__default__"); } },
-    { id: "use-as-note", label: "Use as note", icon: icons.doc, shortcutKey: null, ctx: "shared",
+    { id: "use-as-note", section: "Document", label: "Use as note", icon: icons.doc, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !canUseAsNote(s, false),
       action: async (s) => { const n = findNodeByFileId(s.fileTree, s.currentFileId); if (n) await s.toggleUseAsNote(n.id); } },
-    { id: "stop-use-as-note", label: "Stop using as note", icon: icons.doc, shortcutKey: null, ctx: "shared",
+    { id: "stop-use-as-note", section: "Document", label: "Stop using as note", icon: icons.doc, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !canUseAsNote(s, true),
       action: async (s) => { const n = findNodeByFileId(s.fileTree, s.currentFileId); if (n) await s.toggleUseAsNote(n.id); } },
-    { id: "style-unlock", label: "Unlock style from document", icon: icons.styles, shortcutKey: null, ctx: "shared",
+    { id: "style-unlock", section: "Styles", label: "Unlock style from document", icon: icons.styles, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.currentFileId || !getLockedStyleId(s),
       // After clearing the lock, fall back to the active desk's saved
       // style (file-opened does the same on switches; here we don't fire it).
       action: async (s) => { await setLockedStyleId(s, null); (await import("./style-application.js")).applyDeskGlobalStyle(s); } },
-    { id: "zotero", label: "Zotero: Insert reference", icon: icons.zotero, shortcutKey: "shortcutZotero", ctx: "shared",
+    { id: "zotero", section: "Research", label: "Zotero: Insert reference", icon: icons.zotero, shortcutKey: "shortcutZotero", ctx: "shared",
       action: async (s) => {
         const { openZoteroModal } = await import("./zotero.js");
         openZoteroModal(s.editor ? s.editor.view : null, s);
       } },
-    { id: "zotero-highlights", label: "Zotero: Create highlight browser", icon: icons.zotero, shortcutKey: null, ctx: "shared",
+    { id: "zotero-highlights", section: "Research", label: "Zotero: Create highlight browser", icon: icons.zotero, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const { openZoteroHighlightPane } = await import("./zotero/highlight-pane.js");
         openZoteroHighlightPane(s);
       } },
-    { id: "zotero-save-pdf", label: "Zotero: Save PDF", icon: icons.zotero, shortcutKey: null, ctx: "shared",
+    { id: "zotero-save-pdf", section: "Research", label: "Zotero: Save PDF", icon: icons.zotero, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.settings.zoteroUserId || !s.settings.zoteroApiKey,
       action: async (s) => {
         const { openZoteroSavePdfModal } = await import("./pdf/zotero-save-pdf.js");
         openZoteroSavePdfModal(s);
       } },
-    { id: "proofread-pdf", label: "Create Proofread Notebook", icon: icons.proofreadPdf, shortcutKey: null, ctx: "shared",
+    { id: "proofread-pdf", section: "Research", label: "Create Proofread Notebook", icon: icons.proofreadPdf, shortcutKey: null, ctx: "shared",
       keywords: "proofread pdf proof annotate mark up pages notebook split grab",
       hiddenIf: (s) => !s.currentPdfFileId,
       action: async (s) => {
         const { createProofNotebook } = await import("./pdf/pdf-proofread.js");
         await createProofNotebook(s, s.currentPdfFileId);
       } },
-    { id: "pdf-update-annotations", label: "PDF: Update Annotations", icon: icons.zotero, shortcutKey: null, ctx: "shared",
+    { id: "pdf-update-annotations", section: "Research", label: "PDF: Update Annotations", icon: icons.zotero, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => {
         if (!s.currentPdfFileId) return true;
         const node = findNodeByFileId(s.fileTree, s.currentPdfFileId);
@@ -360,19 +361,19 @@ function buildCommands(state) {
         const { refreshPdfAnnotations } = await import("./pdf/pdf-bridge.js");
         await refreshPdfAnnotations(s);
       } },
-    { id: "zotero-update", label: "Update Zotero References", icon: icons.zotero, shortcutKey: null, ctx: "shared",
+    { id: "zotero-update", section: "Research", label: "Update Zotero References", icon: icons.zotero, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.settings.zoteroUserId || !s.settings.zoteroApiKey,
       action: async (s) => {
         const { startZoteroUpdate } = await import("./sidebar/sidebar-progress.js");
         startZoteroUpdate(s);
       } },
-    { id: "convert-project-to-doc", label: "Convert this Project to Doc", icon: icons.doc, shortcutKey: null, ctx: "doc",
+    { id: "convert-project-to-doc", section: "Document", label: "Convert this Project to Doc", icon: icons.doc, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !s.currentProjectId,
       action: async (s) => {
         const ok = window.confirm("Convert this project to a tabbed document? Each document in the project will become a tab.");
         if (ok) await s.convertProjectToDoc(s.currentProjectId);
       } },
-    { id: "convert-doc-to-project", label: "Convert this Doc to Project", icon: icons.project, shortcutKey: null, ctx: "doc",
+    { id: "convert-doc-to-project", section: "Document", label: "Convert this Doc to Project", icon: icons.project, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !s.currentFileId,
       action: async (s) => {
         const { findNodeByFileId } = await import("./state/tree-helpers.js");
@@ -381,125 +382,125 @@ function buildCommands(state) {
         const ok = window.confirm("Convert this document to a project? Each tab will become a separate document.");
         if (ok) await s.convertDocToProject(node.id);
       } },
-    { id: "split-at-headings", label: "Split Headings to Files", icon: icons.doc, shortcutKey: null, ctx: "doc",
+    { id: "split-at-headings", section: "Document", label: "Split Headings to Files", icon: icons.doc, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !s.currentFileId,
       action: async (s) => {
         const { openSplitAtHeadingsModal } = await import("./sidebar/split-at-headings-modal.js");
         await openSplitAtHeadingsModal(s);
       } },
-    { id: "convert-headings-to-tabs", label: "Convert Headings to Tabs", icon: icons.doc, shortcutKey: null, ctx: "doc",
+    { id: "convert-headings-to-tabs", section: "Document", label: "Convert Headings to Tabs", icon: icons.doc, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !s.currentFileId,
       action: async (s) => {
         const { openConvertHeadingsToTabsModal } = await import("./sidebar/convert-headings-to-tabs-modal.js");
         await openConvertHeadingsToTabsModal(s);
       } },
-    { id: "fold-section", label: "Fold current section", icon: icons.fold, shortcutKey: null, ctx: "doc",
+    { id: "fold-section", section: "Folding", label: "Fold current section", icon: icons.fold, shortcutKey: null, ctx: "doc",
       action: (s) => { const v = foldView(s); if (v) foldCurrentSection(v); } },
-    { id: "unfold-section", label: "Unfold current section", icon: icons.unfold, shortcutKey: null, ctx: "doc",
+    { id: "unfold-section", section: "Folding", label: "Unfold current section", icon: icons.unfold, shortcutKey: null, ctx: "doc",
       action: (s) => { const v = foldView(s); if (v) unfoldCurrentSection(v); } },
-    { id: "fold-selection", label: "Fold selection", icon: icons.fold, shortcutKey: null, ctx: "doc",
+    { id: "fold-selection", section: "Folding", label: "Fold selection", icon: icons.fold, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => { const v = foldView(s); return !v || v.state.selection.main.empty; },
       action: (s) => { const v = foldView(s); if (v) foldSelection(v); } },
-    { id: "fold-all", label: "Fold all sections", icon: icons.fold, shortcutKey: null, ctx: "doc",
+    { id: "fold-all", section: "Folding", label: "Fold all sections", icon: icons.fold, shortcutKey: null, ctx: "doc",
       action: (s) => { const v = foldView(s); if (v) foldAllSections(v); } },
-    { id: "unfold-all", label: "Unfold all sections", icon: icons.unfold, shortcutKey: null, ctx: "doc",
+    { id: "unfold-all", section: "Folding", label: "Unfold all sections", icon: icons.unfold, shortcutKey: null, ctx: "doc",
       action: (s) => { const v = foldView(s); if (v) unfoldAllSections(v); } },
-    { id: "fold-h1", label: "Fold all H1", icon: icons.fold, shortcutKey: null, ctx: "doc",
+    { id: "fold-h1", section: "Folding", label: "Fold all H1", icon: icons.fold, shortcutKey: null, ctx: "doc",
       action: (s) => { const v = foldView(s); if (v) foldAllAtLevel(v, 1); } },
-    { id: "fold-h2", label: "Fold all H2", icon: icons.fold, shortcutKey: null, ctx: "doc",
+    { id: "fold-h2", section: "Folding", label: "Fold all H2", icon: icons.fold, shortcutKey: null, ctx: "doc",
       action: (s) => { const v = foldView(s); if (v) foldAllAtLevel(v, 2); } },
-    { id: "fold-h3", label: "Fold all H3", icon: icons.fold, shortcutKey: null, ctx: "doc",
+    { id: "fold-h3", section: "Folding", label: "Fold all H3", icon: icons.fold, shortcutKey: null, ctx: "doc",
       action: (s) => { const v = foldView(s); if (v) foldAllAtLevel(v, 3); } },
     // === PROPERTIES (metadata frontmatter) ===
-    { id: "properties-view", label: "View properties", icon: icons.doc, shortcutKey: "shortcutToggleProperties", ctx: "doc",
+    { id: "properties-view", section: "Document", label: "View properties", icon: icons.doc, shortcutKey: "shortcutToggleProperties", ctx: "doc",
       hiddenIf: (s) => !!s.settings?.propertiesVisible,
       action: (s) => import("./editor/plugins/properties.js").then((m) => m.togglePropertiesVisibility(s)) },
-    { id: "properties-hide", label: "Hide properties", icon: icons.doc, shortcutKey: "shortcutToggleProperties", ctx: "doc",
+    { id: "properties-hide", section: "Document", label: "Hide properties", icon: icons.doc, shortcutKey: "shortcutToggleProperties", ctx: "doc",
       hiddenIf: (s) => !s.settings?.propertiesVisible,
       action: (s) => import("./editor/plugins/properties.js").then((m) => m.togglePropertiesVisibility(s)) },
-    { id: "properties-add", label: "Add property", icon: icons.doc, shortcutKey: null, ctx: "doc",
+    { id: "properties-add", section: "Document", label: "Add property", icon: icons.doc, shortcutKey: null, ctx: "doc",
       action: (s) => import("./editor/plugins/properties.js").then((m) => m.addPropertyFromPalette(s)) },
     // === STICKY NOTES ===
     // Temporary reminders floating above every surface. File + project
     // stickies show while their target (or any file in the project) is
     // open; desk stickies while their desk is active; global always.
-    { id: "sticky-file", label: "Add File Sticky", icon: icons.sticky, shortcutKey: null, ctx: "shared",
+    { id: "sticky-file", section: "Sticky Notes", label: "Add File Sticky", icon: icons.sticky, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !canAddFileSticky(s),
       action: (s) => addSticky(s, "file") },
-    { id: "sticky-project", label: "Add Project Sticky", icon: icons.sticky, shortcutKey: null, ctx: "shared",
+    { id: "sticky-project", section: "Sticky Notes", label: "Add Project Sticky", icon: icons.sticky, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !canAddProjectSticky(s),
       action: (s) => addSticky(s, "project") },
-    { id: "sticky-desk", label: "Add Desk Sticky", icon: icons.sticky, shortcutKey: null, ctx: "shared",
+    { id: "sticky-desk", section: "Sticky Notes", label: "Add Desk Sticky", icon: icons.sticky, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.getActiveDesk?.(),
       action: (s) => addSticky(s, "desk") },
-    { id: "sticky-global", label: "Add Global Sticky", icon: icons.sticky, shortcutKey: null, ctx: "shared",
+    { id: "sticky-global", section: "Sticky Notes", label: "Add Global Sticky", icon: icons.sticky, shortcutKey: null, ctx: "shared",
       action: (s) => addSticky(s, "global") },
-    { id: "versions", label: "Versions", icon: icons.versions, shortcutKey: null, ctx: "shared",
+    { id: "versions", section: "Document", label: "Versions", icon: icons.versions, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("show-versions-panel") },
-    { id: "history", label: "History", icon: icons.history, shortcutKey: null, ctx: "shared",
+    { id: "history", section: "Document", label: "History", icon: icons.history, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("show-history-panel") },
-    { id: "export", label: "Export", icon: icons.export, shortcutKey: null, ctx: "shared",
+    { id: "export", section: "Document", label: "Export", icon: icons.export, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("export-current-file") },
-    { id: "export-hushproject", label: "Export Project (.hushproject)", icon: icons.export, shortcutKey: null, ctx: "doc",
+    { id: "export-hushproject", section: "Document", label: "Export Project (.hushproject)", icon: icons.export, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !s.currentProjectId,
       action: (s) => import("./project/project-export.js").then((m) => m.exportCurrentProject(s)) },
-    { id: "fullscreen", label: "Toggle fullscreen", icon: icons.expand, shortcutKey: "shortcutOpenFullscreen", ctx: "shared",
+    { id: "fullscreen", section: "View", label: "Toggle fullscreen", icon: icons.expand, shortcutKey: "shortcutOpenFullscreen", ctx: "shared",
       action: (s) => s.toggleFullscreen() },
-    { id: "find", label: "Find & replace", icon: icons.search, shortcutKey: "shortcutFind", ctx: "shared",
+    { id: "find", section: "Document", label: "Find & replace", icon: icons.search, shortcutKey: "shortcutFind", ctx: "shared",
       action: (s) => { if (s.editor) openFindReplace(s.editor.view, s); } },
-    { id: "find-in-doc", label: "Find in document", icon: icons.search, shortcutKey: "shortcutQuickFind", ctx: "doc",
+    { id: "find-in-doc", section: "Document", label: "Find in document", icon: icons.search, shortcutKey: "shortcutQuickFind", ctx: "doc",
       action: (s) => { if (s.editor) openQuickFindBar(s.editor.view, s); } },
-    { id: "show-shortcuts", label: "Show Shortcuts", icon: icons.keyboard, shortcutKey: null, ctx: "shared",
+    { id: "show-shortcuts", section: "App", label: "Show Shortcuts", icon: icons.keyboard, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const { openShortcutsModal } = await import("./ui/shortcuts-modal.js");
         openShortcutsModal(s);
       } },
-    { id: "settings", label: "Settings", icon: icons.settings, shortcutKey: null, ctx: "shared",
+    { id: "settings", section: "App", label: "Settings", icon: icons.settings, shortcutKey: null, ctx: "shared",
       action: (s) => openSettingsWindow(s) },
-    { id: "backup", label: "Backup App Data", icon: icons.export, shortcutKey: null, ctx: "shared",
+    { id: "backup", section: "App", label: "Backup App Data", icon: icons.export, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const { openBackupAppDataModal } = await import("./backup.js");
         openBackupAppDataModal(s);
       } },
     // Drop the current date / date-time at the cursor of whatever editing
     // surface is in focus (doc, pane, stack column, or notebook text shape).
-    { id: "insert-date", label: "Insert Date", icon: icons.calendar, shortcutKey: null, ctx: "shared",
+    { id: "insert-date", section: "Writing", label: "Insert Date", icon: icons.calendar, shortcutKey: null, ctx: "shared",
       action: (s) => insertDate(s) },
-    { id: "insert-date-time", label: "Insert Date/Time", icon: icons.calendar, shortcutKey: null, ctx: "shared",
+    { id: "insert-date-time", section: "Writing", label: "Insert Date/Time", icon: icons.calendar, shortcutKey: null, ctx: "shared",
       action: (s) => insertDateTime(s) },
 
     // === DOC ONLY ===
-    { id: "ratchet", label: "Ratchet mode", icon: icons.ratchet, shortcutKey: null, ctx: "doc",
+    { id: "ratchet", section: "Writing", label: "Ratchet mode", icon: icons.ratchet, shortcutKey: null, ctx: "doc",
       action: (s) => s.emit("show-ratchet-dropdown") },
-    { id: "private", label: "Private mode", icon: icons.private, shortcutKey: "shortcutTogglePrivate", ctx: "doc",
+    { id: "private", section: "Writing", label: "Private mode", icon: icons.private, shortcutKey: "shortcutTogglePrivate", ctx: "doc",
       action: (s) => s.togglePrivate() },
     // Routed through the per-editor mode context (same helper the
     // shortcut uses) so running this with a pane or stack column
     // focused toggles that surface rather than the main editor behind
     // it. Falls back to the global toggle when the main editor is the
     // active surface.
-    { id: "typewriter", label: "Typewriter mode", icon: icons.typewriter, shortcutKey: "shortcutTypewriter", ctx: "doc",
+    { id: "typewriter", section: "Writing", label: "Typewriter mode", icon: icons.typewriter, shortcutKey: "shortcutTypewriter", ctx: "doc",
       action: (s) => toggleModeOnContext(s, "typewriterMode") },
-    { id: "dry", label: "Show repeats", icon: icons.dry, shortcutKey: "shortcutToggleDry", ctx: "doc",
+    { id: "dry", section: "Writing", label: "Show repeats", icon: icons.dry, shortcutKey: "shortcutToggleDry", ctx: "doc",
       action: (s) => s.toggleDry() },
-    { id: "focus", label: "Focus mode", icon: icons.focus, shortcutKey: "shortcutToggleFocus", ctx: "doc",
+    { id: "focus", section: "Writing", label: "Focus mode", icon: icons.focus, shortcutKey: "shortcutToggleFocus", ctx: "doc",
       action: (s) => s.toggleFocus() },
-    { id: "zen", label: "Zen Focus", icon: icons.focus, shortcutKey: "shortcutZenFocus", ctx: "shared",
+    { id: "zen", section: "Writing", label: "Zen Focus", icon: icons.focus, shortcutKey: "shortcutZenFocus", ctx: "shared",
       action: (s) => s.toggleZenFocus() },
     // Sentence mode only for now; word / paragraph are planned but not yet
     // surfaced. Shown only when there's a live selection to break apart.
     // Three start configs: explode (all in margins), or seed the column
     // with every sentence shuffled / in original order.
-    { id: "shuffle-sentences-explode", label: "Shuffle Editor: Sentences (explode)", icon: icons.shuffle, shortcutKey: null, ctx: "shared",
+    { id: "shuffle-sentences-explode", section: "Writing", label: "Shuffle Editor: Sentences (explode)", icon: icons.shuffle, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !shuffleSelectionAvailable(s),
       action: (s) => openShuffleEditor(s, "explode") },
-    { id: "shuffle-sentences-list-shuffle", label: "Shuffle Editor: Sentences (list shuffle)", icon: icons.shuffle, shortcutKey: null, ctx: "shared",
+    { id: "shuffle-sentences-list-shuffle", section: "Writing", label: "Shuffle Editor: Sentences (list shuffle)", icon: icons.shuffle, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !shuffleSelectionAvailable(s),
       action: (s) => openShuffleEditor(s, "list-shuffle") },
-    { id: "shuffle-sentences-list-current", label: "Shuffle Editor: Sentences (list current)", icon: icons.shuffle, shortcutKey: "shortcutShuffleSentences", ctx: "shared",
+    { id: "shuffle-sentences-list-current", section: "Writing", label: "Shuffle Editor: Sentences (list current)", icon: icons.shuffle, shortcutKey: "shortcutShuffleSentences", ctx: "shared",
       hiddenIf: (s) => !shuffleSelectionAvailable(s),
       action: (s) => openShuffleEditor(s, "list-current") },
-    { id: "word-count", label: "Toggle word count", icon: icons.wordCount, shortcutKey: "shortcutToggleWordCount", ctx: "doc",
+    { id: "word-count", section: "Writing", label: "Toggle word count", icon: icons.wordCount, shortcutKey: "shortcutToggleWordCount", ctx: "doc",
       action: async (s) => { const { toggleWordCount } = await import("./editor/plugins/word-count.js"); toggleWordCount(s); } },
     // The cap belongs to a document, so both entries name the doc the
     // main editor is showing — `wordLimitTargetFileId` is null for a
@@ -508,69 +509,69 @@ function buildCommands(state) {
     // the command: a pane or stack column over the capped doc holds the
     // same cap (editor/word-limit.js), and the word count is where a
     // cap shows itself (editor/plugins/word-count.js).
-    { id: "word-limit-set", label: "Set word count limit", icon: icons.wordLimit, shortcutKey: null, ctx: "doc",
+    { id: "word-limit-set", section: "Writing", label: "Set word count limit", icon: icons.wordLimit, shortcutKey: null, ctx: "doc",
       keywords: "word count cap maximum target",
       hiddenIf: (s) => !wordLimitTargetFileId(s),
       action: async (s) => {
         const { openWordLimitModal } = await import("./ui/word-limit-modal.js");
         openWordLimitModal(s);
       } },
-    { id: "word-limit-clear", label: "Clear word count limit", icon: icons.trash, shortcutKey: null, ctx: "doc",
+    { id: "word-limit-clear", section: "Writing", label: "Clear word count limit", icon: icons.trash, shortcutKey: null, ctx: "doc",
       keywords: "word count cap remove reset",
       hiddenIf: (s) => !currentWordLimit(s),
       action: (s) => { void setWordLimit(s, wordLimitTargetFileId(s), null); } },
-    { id: "outline", label: "Outline view", icon: null, shortcutKey: "shortcutToggleOutline", ctx: "doc",
+    { id: "outline", section: "View", label: "Outline view", icon: null, shortcutKey: "shortcutToggleOutline", ctx: "doc",
       keywords: "headings navigation panel longview",
       action: (s) => s.emit("toggle-outline-panel") },
     // Turns the list under the caret into an outline: checkboxes on the
     // items that lack them, `outline: true` in the frontmatter. Hidden
     // once every item already has one — there would be nothing to do.
-    { id: "outline-convert-doc", label: "Convert to Outline", icon: null, shortcutKey: null, ctx: "doc",
+    { id: "outline-convert-doc", section: "Outline", label: "Convert to Outline", icon: null, shortcutKey: null, ctx: "doc",
       keywords: "checklist task list nested outline convert",
       hiddenIf: (s) => !canConvertDocToOutline(s),
       action: (s) => convertDocToOutline(s) },
-    { id: "proofread", label: "Proofread mode", icon: icons.proofread, shortcutKey: null, ctx: "doc",
+    { id: "proofread", section: "Writing", label: "Proofread mode", icon: icons.proofread, shortcutKey: null, ctx: "doc",
       action: (s) => s.toggleProofread() },
     // Not `ctx: "doc"`: spellcheck rides the shared extension set, so a
     // doc pane over an open notebook can be spellchecked even though the
     // main surface is a canvas. The gate is whether any doc surface is
     // in play.
-    { id: "spellcheck", label: "Spellcheck", icon: icons.proofread, shortcutKey: null, ctx: "shared",
+    { id: "spellcheck", section: "Writing", label: "Spellcheck", icon: icons.proofread, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !hasActiveDocSurface(s),
       action: (s) => s.toggleSpellcheck() },
-    { id: "copy-as-google-doc", label: "Copy as Google Doc", icon: icons.export, shortcutKey: null, ctx: "doc",
+    { id: "copy-as-google-doc", section: "Google", label: "Copy as Google Doc", icon: icons.export, shortcutKey: null, ctx: "doc",
       action: (s) => import("./editor/google-docs/copy-command.js").then((m) => s.editor?.view && m.copyAsGoogleDoc(s.editor.view)) },
-    { id: "copy-as-html", label: "Copy as HTML", icon: icons.export, shortcutKey: null, ctx: "doc",
+    { id: "copy-as-html", section: "Document", label: "Copy as HTML", icon: icons.export, shortcutKey: null, ctx: "doc",
       action: (s) => import("./editor/google-docs/copy-command.js").then((m) => s.editor?.view && m.copyAsHtml(s.editor.view)) },
-    { id: "add-gutter", label: "Add Gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
+    { id: "add-gutter", section: "Panes", label: "Add Gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => gutterAddHidden(s),
       action: (s) => addGutter(s) },
-    { id: "add-notebook-as-gutter", label: "Add notebook as gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
+    { id: "add-notebook-as-gutter", section: "Panes", label: "Add notebook as gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
       keepOpen: true,
       hiddenIf: (s) => gutterAddHidden(s),
       action: (s, p) => enterNotebookGutterPicker(p, s) },
-    { id: "open-gutter", label: "Open Gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
+    { id: "open-gutter", section: "Panes", label: "Open Gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => gutterOpenHidden(s),
       action: (s) => openGutter(s) },
-    { id: "close-gutter", label: "Close Gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
+    { id: "close-gutter", section: "Panes", label: "Close Gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => gutterCloseHidden(s),
       action: (s) => closeGutter(s) },
     ...buildGoogleCommands({ icons }),
 
     // === ACTIVE PANE ONLY (doc or notebook) ===
-    { id: "fit-pane-gap", label: "Fit pane to gap", icon: icons.pane, shortcutKey: null, ctx: "pane",
+    { id: "fit-pane-gap", section: "Panes", label: "Fit pane to gap", icon: icons.pane, shortcutKey: null, ctx: "pane",
       hiddenIf: () => isActivePaneAGutter(),
       action: () => fitActivePaneToGap() },
-    { id: "replace-pane-content", label: "Replace pane content", icon: icons.pane, shortcutKey: null, ctx: "pane",
+    { id: "replace-pane-content", section: "Panes", label: "Replace pane content", icon: icons.pane, shortcutKey: null, ctx: "pane",
       keepOpen: true,
       action: (s, p) => enterFilePicker(p, s, "Replace pane content with…", (f) => {
         const id = getActivePaneId();
         if (id) replacePaneContent(id, f.fileId, f.name, f.type);
       }) },
-    { id: "pane-pin", label: "Pin pane across documents", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !!panes.get(getActivePaneId())?.pinned, action: () => setActivePanePinned(true) },
-    { id: "pane-unpin", label: "Unpin pane", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !panes.get(getActivePaneId())?.pinned, action: () => setActivePanePinned(false) },
-    { id: "pane-close-current", label: "Close current pane", icon: icons.trash, shortcutKey: null, ctx: "pane", action: () => { const id = getActivePaneId(); if (id) closePane(id); } },
-    { id: "pane-close-and-delete", label: "Close pane and delete document", icon: icons.trash, shortcutKey: null, ctx: "pane",
+    { id: "pane-pin", section: "Panes", label: "Pin pane across documents", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !!panes.get(getActivePaneId())?.pinned, action: () => setActivePanePinned(true) },
+    { id: "pane-unpin", section: "Panes", label: "Unpin pane", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !panes.get(getActivePaneId())?.pinned, action: () => setActivePanePinned(false) },
+    { id: "pane-close-current", section: "Panes", label: "Close current pane", icon: icons.trash, shortcutKey: null, ctx: "pane", action: () => { const id = getActivePaneId(); if (id) closePane(id); } },
+    { id: "pane-close-and-delete", section: "Panes", label: "Close pane and delete document", icon: icons.trash, shortcutKey: null, ctx: "pane",
       // Same in-app modal as Delete current file, and for the same
       // reason — see there.
       action: (s) => {
@@ -588,60 +589,60 @@ function buildCommands(state) {
       } },
 
     // === PANE SET (current document's panes) ===
-    { id: "panes-hide", label: "Hide panes", icon: icons.pane, shortcutKey: null, ctx: "shared",
+    { id: "panes-hide", section: "Panes", label: "Hide panes", icon: icons.pane, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !activeContextHasPanes(s) || arePanesHiddenForActive(s),
       action: (s) => s.hidePanesForActive() },
-    { id: "panes-show", label: "Show panes", icon: icons.pane, shortcutKey: null, ctx: "shared",
+    { id: "panes-show", section: "Panes", label: "Show panes", icon: icons.pane, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !activeContextHasPanes(s) || !arePanesHiddenForActive(s),
       action: (s) => s.showPanesForActive() },
-    { id: "panes-clear", label: "Close all panes", icon: icons.trash, shortcutKey: null, ctx: "shared",
+    { id: "panes-clear", section: "Panes", label: "Close all panes", icon: icons.trash, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !activeContextHasPanes(s),
       action: (s) => { const ctx = activeContextId(s); if (ctx) clearPanesForContext(ctx); } },
-    { id: "panes-copy-to", label: "Copy panes to Document", icon: icons.pane, shortcutKey: null, ctx: "shared",
+    { id: "panes-copy-to", section: "Panes", label: "Copy panes to Document", icon: icons.pane, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       hiddenIf: (s) => !activeContextHasPanes(s),
       action: (s, p) => enterPaneCopyPicker(p, s, /*switchAfter=*/false) },
-    { id: "panes-switch-to", label: "Switch panes to Document", icon: icons.pane, shortcutKey: null, ctx: "shared",
+    { id: "panes-switch-to", section: "Panes", label: "Switch panes to Document", icon: icons.pane, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       hiddenIf: (s) => !activeContextHasPanes(s),
       action: (s, p) => enterPaneCopyPicker(p, s, /*switchAfter=*/true) },
 
     // === STACK ONLY ===
-    { id: "stack-add-file", label: "Stack: Add file", icon: icons.stack, shortcutKey: null, ctx: "stack",
+    { id: "stack-add-file", section: "Stacks", label: "Stack: Add file", icon: icons.stack, shortcutKey: null, ctx: "stack",
       action: async (s) => { const { getStackInstance } = await import("./stack/stack-bridge.js"); const inst = getStackInstance(); if (inst) inst._openAddPicker(); } },
-    { id: "stack-scroll-vertical", label: "Stack : Scroll vertically", icon: icons.stack, shortcutKey: null, ctx: "stack",
+    { id: "stack-scroll-vertical", section: "Stacks", label: "Stack : Scroll vertically", icon: icons.stack, shortcutKey: null, ctx: "stack",
       hiddenIf: (s) => s.stackScrollDirection === "vertical",
       action: async (s) => { const { getStackInstance } = await import("./stack/stack-bridge.js"); const inst = getStackInstance(); if (inst) inst.setScrollDirection("vertical"); } },
-    { id: "stack-scroll-horizontal", label: "Stack : Scroll horizontally", icon: icons.stack, shortcutKey: null, ctx: "stack",
+    { id: "stack-scroll-horizontal", section: "Stacks", label: "Stack : Scroll horizontally", icon: icons.stack, shortcutKey: null, ctx: "stack",
       hiddenIf: (s) => s.stackScrollDirection !== "vertical",
       action: async (s) => { const { getStackInstance } = await import("./stack/stack-bridge.js"); const inst = getStackInstance(); if (inst) inst.setScrollDirection("horizontal"); } },
     // === NOTEBOOK ONLY ===
     // The notebook half of the same command: the selected flowchart
     // becomes one outline shape holding the tree as a nested checklist.
-    { id: "outline-convert-nb", label: "Convert to Outline", icon: null, shortcutKey: null, ctx: "notebook",
+    { id: "outline-convert-nb", section: "Outline", label: "Convert to Outline", icon: null, shortcutKey: null, ctx: "notebook",
       keywords: "flowchart checklist task nested outline convert",
       hiddenIf: () => !canConvertNotebookToOutline(),
       action: () => convertNotebookToOutline() },
-    { id: "nb-shelf", label: "Open shelf", icon: null, shortcutKey: null, ctx: "notebook",
+    { id: "nb-shelf", section: "Notebook", label: "Open shelf", icon: null, shortcutKey: null, ctx: "notebook",
       action: (s) => s.emit("notebook-toggle-shelf") },
-    { id: "nb-brainstorm", label: "Start brainstorm", icon: null, shortcutKey: "shortcutNbBrainstorm", ctx: "notebook",
+    { id: "nb-brainstorm", section: "Notebook", label: "Start brainstorm", icon: null, shortcutKey: "shortcutNbBrainstorm", ctx: "notebook",
       action: (s) => s.emit("notebook-toggle-brainstorm") },
-    { id: "nb-minimap-show", label: "Show minimap", icon: null, shortcutKey: null, ctx: "notebook",
+    { id: "nb-minimap-show", section: "Notebook", label: "Show minimap", icon: null, shortcutKey: null, ctx: "notebook",
       hiddenIf: (s) => !!s.settings?.minimapVisible,
       action: (s) => s.toggleMinimap() },
-    { id: "nb-minimap-hide", label: "Hide minimap", icon: null, shortcutKey: null, ctx: "notebook",
+    { id: "nb-minimap-hide", section: "Notebook", label: "Hide minimap", icon: null, shortcutKey: null, ctx: "notebook",
       hiddenIf: (s) => !s.settings?.minimapVisible,
       action: (s) => s.toggleMinimap() },
-    { id: "recent-files-show", label: "Show Recent Files", icon: null, shortcutKey: null, ctx: "shared",
+    { id: "recent-files-show", section: "View", label: "Show Recent Files", icon: null, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !!s.settings?.showRecentFiles,
       action: (s) => s.updateSettings({ showRecentFiles: true }) },
-    { id: "recent-files-hide", label: "Hide Recent Files", icon: null, shortcutKey: null, ctx: "shared",
+    { id: "recent-files-hide", section: "View", label: "Hide Recent Files", icon: null, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.settings?.showRecentFiles,
       action: (s) => s.updateSettings({ showRecentFiles: false }) },
-    { id: "project-headings-show", label: "Show Project Headings", icon: null, shortcutKey: null, ctx: "shared",
+    { id: "project-headings-show", section: "View", label: "Show Project Headings", icon: null, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !!s.settings?.showProjectHeadings,
       action: (s) => s.updateSettings({ showProjectHeadings: true }) },
-    { id: "project-headings-hide", label: "Hide Project Headings", icon: null, shortcutKey: null, ctx: "shared",
+    { id: "project-headings-hide", section: "View", label: "Hide Project Headings", icon: null, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.settings?.showProjectHeadings,
       action: (s) => s.updateSettings({ showProjectHeadings: false }) },
     ...buildDeskCommands({ state, icons, typeIcons, desktop, ipad, enterDeskPicker, currentFileTreeNodeId }),

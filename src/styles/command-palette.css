@@ -53,6 +53,29 @@
   will-change: scroll-position;
 }
 
+/* Section header — a quiet label over each run of related commands
+   (Recent, Panes, Styles, Desks, …). Purely a divider: it is never a
+   row the arrow keys can land on, so it carries no hover or active
+   state and no pointer cursor. The first one sits flush with the top
+   of the list rather than carrying the separating rule it would
+   otherwise draw against the search field. */
+.cmd-palette-section {
+  padding: 10px 18px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg);
+  opacity: 0.38;
+  user-select: none;
+  pointer-events: none;
+}
+
+.cmd-palette-section:not(:first-child) {
+  margin-top: 4px;
+  border-top: 1px solid var(--panel-border);
+}
+
 .cmd-palette-item {
   display: flex;
   align-items: center;

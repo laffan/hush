@@ -12,6 +12,7 @@ import {
 import { createPane } from "./pane/pane-manager.js";
 import { icons, buildCommands } from "./command-palette-commands.js";
 import { buildActiveModeTurnoffs } from "./command-palette-turnoffs.js";
+import { groupBySection, buildRecentCommands, recordRecentCommand } from "./command-palette-sections.js";
 import { getActiveModeContext } from "./state/mode-context.js";
 
 let overlay = null;
@@ -19,6 +20,9 @@ let activeIndex = 0;
 let filteredCommands = [];
 let allCommands = [];
 let keyboardNav = false;
+// Ids of the commands this palette was built from — the gate on what may
+// enter the Recent list, so a picker row (a filename, a desk) can't.
+let recentEligibleIds = new Set();
 // When the palette opens over an active notebook text editor, we suspend
 // that editor's commit-on-blur so navigating to a command doesn't
 // quietly commit the text shape. The handle is restored in close().
@@ -133,7 +137,11 @@ export function toggleCommandPalette(state) {
 function open(state) {
   const baseCommands = buildCommands(state);
   const turnoffs = buildActiveModeTurnoffs(state);
-  allCommands = [...turnoffs, ...baseCommands];
+  const sectioned = [...turnoffs, ...baseCommands];
+  recentEligibleIds = new Set(sectioned.map((c) => c.id).filter(Boolean));
+  // Recent rows are copies of the live commands, so an entry that no
+  // longer applies here simply doesn't resolve (see the sections module).
+  allCommands = [...buildRecentCommands(state, sectioned), ...sectioned];
   filteredCommands = [...allCommands];
   activeIndex = 0;
   keyboardNav = false;
@@ -178,12 +186,20 @@ function open(state) {
   // Matches the visible label plus an optional `keywords` string — the
   // hidden half of a command's name. A command that got renamed keeps
   // its old wording searchable there, so muscle memory still lands.
-  const matches = (c, q) =>
-    c.label.toLowerCase().includes(q) || (c.keywords || "").toLowerCase().includes(q);
+  //
+  // Every whitespace-separated term has to appear somewhere in that
+  // haystack, in any order: nobody recalls a command's exact word order,
+  // and "desk make" failing to find "Make Desk Internal" reads as the
+  // command being gone. A term still matches as a plain substring, so
+  // typing the label straight through works exactly as it did.
+  const matches = (c, terms) => {
+    const hay = `${c.label} ${c.keywords || ""}`.toLowerCase();
+    return terms.every((t) => hay.includes(t));
+  };
 
   input.addEventListener("input", () => {
-    const q = input.value.trim().toLowerCase();
-    filteredCommands = !q ? [...allCommands] : allCommands.filter(c => matches(c, q));
+    const terms = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    filteredCommands = !terms.length ? [...allCommands] : allCommands.filter(c => matches(c, terms));
     activeIndex = 0;
     renderList(list, state);
   });
@@ -210,6 +226,7 @@ function open(state) {
 
   function runCommand(cmd) {
     if (!cmd) return;
+    recordRecentCommand(state, cmd.id, recentEligibleIds);
     if (cmd.keepOpen) {
       cmd.action(state, paletteHandle);
       return;
@@ -261,7 +278,15 @@ function open(state) {
 
 function renderList(listEl, state) {
   listEl.innerHTML = "";
-  filteredCommands.forEach((cmd, i) => {
+  // Group for display, then adopt the grouped order as the real one:
+  // arrow keys and Enter index into `filteredCommands`, so the array and
+  // the rows on screen have to agree. Grouping is idempotent, so the
+  // re-render after every keystroke reshuffles nothing.
+  const groups = groupBySection(filteredCommands);
+  filteredCommands = groups.flatMap((g) => g.items);
+  const rowEls = [];
+
+  const buildRow = (cmd, i) => {
     const row = document.createElement("div");
     row.className = "cmd-palette-item" + (i === activeIndex ? " active" : "");
     const iconEl = document.createElement("span");
@@ -308,13 +333,36 @@ function renderList(listEl, state) {
       if (e.pointerType && e.pointerType !== "mouse") return;
       if (keyboardNav) return;
       if (activeIndex === i) return;
-      const prev = listEl.children[activeIndex];
+      const prev = rowEls[activeIndex];
       if (prev) prev.classList.remove("active");
       activeIndex = i;
       row.classList.add("active");
     });
-    listEl.appendChild(row);
-  });
-  const activeEl = listEl.querySelector(".cmd-palette-item.active");
-  if (activeEl) activeEl.scrollIntoView({ block: "nearest" });
+    return row;
+  };
+
+  let index = 0;
+  for (const group of groups) {
+    if (group.section) {
+      const header = document.createElement("div");
+      header.className = "cmd-palette-section";
+      header.textContent = group.section;
+      listEl.appendChild(header);
+    }
+    for (const cmd of group.items) {
+      const row = buildRow(cmd, index);
+      rowEls[index] = row;
+      listEl.appendChild(row);
+      index += 1;
+    }
+  }
+
+  const activeEl = rowEls[activeIndex];
+  if (activeEl) {
+    // A row at the head of a section has to bring its header along, or
+    // arrowing up into a group scrolls the label out of view.
+    const prev = activeEl.previousElementSibling;
+    const target = prev?.classList.contains("cmd-palette-section") ? prev : activeEl;
+    target.scrollIntoView({ block: "nearest" });
+  }
 }
