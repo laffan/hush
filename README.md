@@ -111,7 +111,9 @@ npm run ios:init
 npm run build:ios
 ```
 
-The iOS deployment floor lives in one place — `bundle.iOS.minimumSystemVersion` in `src-tauri/tauri.conf.json` (currently 15.5, which is what ML Kit needs). Tauri maps it to `IPHONEOS_DEPLOYMENT_TARGET` when it generates the Xcode project, and `ios:init` holds the Podfile to the same number. **`src-tauri/gen/apple` is generated and gitignored, so changing the floor means re-running `npm run ios:init`** — `build:ios` alone won't regenerate it.
+The iOS deployment floor lives in one place — `bundle.iOS.minimumSystemVersion` in `src-tauri/tauri.conf.json` (currently 15.5, which is what ML Kit needs). Tauri maps it to `IPHONEOS_DEPLOYMENT_TARGET` when it generates the Xcode project, `ios:init` holds the Podfile to the same number, and the Xcode build phase passes it on to the Swift packages. **`src-tauri/gen/apple` is generated and gitignored, so changing the floor means re-running `npm run ios:init`** — `build:ios` alone won't regenerate it.
+
+Xcode 27 also needs **swift-rs ≥ 1.0.8** (pinned in `src-tauri/Cargo.lock`). The three custom plugins' Swift packages are compiled by swift-rs, which up to 1.0.7 forced the iOS SDK on with `-Xswiftc -sdk`; Xcode 27's SwiftPM appends the host `-sdk`/`-target` *after* those, so the package built against the macOS sysroot with an iOS target and the whole thing collapsed on `UIKit`, `OpenGLES/EAGL.h` and `CoreServices/CSIdentityBase.h`. 1.0.8 passes `--triple` instead. Nothing in this repo can work around it — don't downgrade that lock entry.
 
 ## Data
 
