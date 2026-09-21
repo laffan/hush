@@ -128,6 +128,11 @@ pub struct AppSettings {
     pub outline_panel_width: u32,
     #[serde(default = "default_comments_panel_width")]
     pub comments_panel_width: u32,
+    // Height of a pinned outline's docked panel, in px. `None` sizes it
+    // to its contents (capped by CSS); a drag on its top edge pins a
+    // number here.
+    #[serde(default)]
+    pub outline_pinned_height: Option<u32>,
     // Sidebar session state — which panel was open ("files" / "styles"
     // / "versions") and whether it was pinned when the app last quit.
     // Per-window in the JS sense, but the Tauri side stores them
@@ -629,6 +634,7 @@ impl Default for AppSettings {
             sidebar_panel_width: default_sidebar_panel_width(),
             outline_panel_width: default_outline_panel_width(),
             comments_panel_width: default_comments_panel_width(),
+            outline_pinned_height: None,
             sidebar_open_panel: None,
             sidebar_pinned: false,
             shortcut_open_editor: default_shortcut_open(),

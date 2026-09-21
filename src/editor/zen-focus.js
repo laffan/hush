@@ -19,6 +19,8 @@
 import { EditorView } from "@codemirror/view";
 import { EditorState, EditorSelection } from "@codemirror/state";
 import { createBaseExtensions } from "./base-extensions.js";
+import { propertiesEdit } from "./plugins/properties.js";
+import { outlineZenSurface } from "./plugins/outline-view.js";
 import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createProjectViewField, createSeparatorFilter } from "./plugins/project-view.js";
 import { applyBlockCursor } from "./block-cursor.js";
@@ -130,7 +132,17 @@ function readSeed(source) {
 /** Push the Zen editor's final content + selection back to the source.
  *  For CM sources we dispatch a single replacement transaction so undo
  *  history stays sensible; for the textarea we set value, selection,
- *  and fire `input` so text-editor.ts's state-update path runs. */
+ *  and fire `input` so text-editor.ts's state-update path runs.
+ *
+ *  **The write-back has to say it owns the frontmatter.** The properties
+ *  plugin guards the block at the head of the document against stray
+ *  edits, and a `[0, length]` replacement is the stray edit it is
+ *  shaped to catch: CodeMirror clips the change against the protected
+ *  range, the deletion outside it survives, and the insertion — anchored
+ *  inside it — is dropped. The document comes back as its frontmatter
+ *  and nothing else. Zen holds the whole buffer, block included, so it
+ *  carries the annotation the properties UI uses for its own writes
+ *  rather than being filtered as if it were a keystroke at position 0. */
 function writeBack(source, content, anchor, head) {
   if (source.kind === "main" || source.kind === "stack") {
     const v = source.view;
@@ -140,6 +152,7 @@ function writeBack(source, content, anchor, head) {
     v.dispatch({
       changes: { from: 0, to: len, insert: content },
       selection: { anchor: a, head: h },
+      annotations: propertiesEdit.of(true),
     });
     centerCursor(v, h);
     v.focus();
@@ -153,6 +166,7 @@ function writeBack(source, content, anchor, head) {
     v.dispatch({
       changes: { from: 0, to: len, insert: content },
       selection: { anchor: a, head: h },
+      annotations: propertiesEdit.of(true),
     });
     centerCursor(v, h);
     v.focus();
@@ -324,6 +338,11 @@ export function enterZenFocus(state) {
       // delete or duplicate one inside Zen.
       createProjectViewField(state),
       createSeparatorFilter(state),
+      // Outlines fold away for the duration: a checklist is not prose,
+      // and Zen is one line at a time. A pinned one comes back as the
+      // single current item the outline plugin docks to the top of the
+      // window; an unpinned one is simply not here.
+      outlineZenSurface.of(true),
       recentre,
     ],
   });

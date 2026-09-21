@@ -33,8 +33,13 @@ import {
 import { programmaticChange } from "../base-extensions.js";
 import { buildPropertiesDOM } from "./properties-widget.js";
 
-/** Marks a dispatch that came from the properties UI itself — exempt
- *  from the frontmatter edit protection below. */
+/** Marks a dispatch that **owns** the frontmatter block, and is
+ *  therefore exempt from the edit protection below: the properties UI's
+ *  own writes, the outline's footer toggles, and Zen Focus's write-back,
+ *  which replaces the whole buffer with a copy that already carries the
+ *  block. Without it that write-back is clipped against the protected
+ *  range and the document comes back as its frontmatter and nothing
+ *  else. Anything a user could type is not this. */
 export const propertiesEdit = Annotation.define();
 
 /** Forces the decoration field to recompute (visibility toggled). */

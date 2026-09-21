@@ -56,6 +56,7 @@ export function createDefaultSettings() {
     // inboard edge (see ui/side-panel-resizer.js).
     outlinePanelWidth: 200,
     commentsPanelWidth: 240,
+    outlinePinnedHeight: null,
     notebookShelfWidth: 280,
     notebookProofRailWidth: 92,
     // Page rail on a proofread notebook — the live minimap down the

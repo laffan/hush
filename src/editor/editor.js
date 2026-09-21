@@ -337,7 +337,7 @@ export function createEditor(container, state) {
       encouragePlugin,
       createPropertiesPlugin(state),
       // Also in createBaseExtensions — see the note there.
-      createOutlinePlugin(),
+      createOutlinePlugin(state),
       projectViewField,
       separatorFilter,
       keymap.of([...defaultKeymap, ...historyKeymap]),

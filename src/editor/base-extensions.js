@@ -255,7 +255,7 @@ export function createBaseExtensions(state, onChange, opts) {
     // frontmatter says `outline: true` has to read as an outline
     // wherever it is open, or the pane beside the editor shows a
     // different document than the editor does.
-    createOutlinePlugin(),
+    createOutlinePlugin(state),
     createTableRendererPlugin(),
     createImageDecoratorPlugin(state, getImageContext),
     // Outranks the rich-HTML paste handler explicitly rather than by

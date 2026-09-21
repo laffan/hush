@@ -28,7 +28,7 @@
  */
 
 import { Decoration, EditorView, ViewPlugin, WidgetType, keymap } from "@codemirror/view";
-import { Prec, RangeSet, StateField } from "@codemirror/state";
+import { Facet, Prec, RangeSet, StateField } from "@codemirror/state";
 import { firstOpenIndex, parseOutlineLine, toggleChecklistLine } from "../../outline/outline-model.ts";
 import {
   HIDE_DONE_KEY, PIN_KEY, outlineFlagsOf, frontmatterPatchChanges,
@@ -130,32 +130,29 @@ class OutlineFooterWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
-/** What a pinned outline leaves behind in the text: a pill saying where
- *  it went, and a way back. Without it the block would simply be missing
- *  from the document with nothing to explain the gap. */
-class OutlinePinnedPillWidget extends WidgetType {
-  constructor(sig, count) { super(); this.sig = sig; this.count = count; }
-
-  eq(other) { return other.sig === this.sig; }
-
-  toDOM(view) {
-    const pill = document.createElement("span");
-    pill.className = "cm-outline-pill";
-    pill.textContent = `Outline pinned · ${this.count} item${this.count === 1 ? "" : "s"}`;
-    pill.title = "Unpin outline";
-    pill.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      patchFlags(view, { [PIN_KEY]: null });
-    });
-    return pill;
-  }
-
-  ignoreEvent() { return true; }
-}
-
 /** The bullet before a checkbox, painted at zero opacity. */
 const dashDeco = Decoration.mark({ class: "cm-outline-dash" });
+
+/** Collapse `[from, to]` and the line break that would otherwise be left
+ *  where it was — the newline in front of it, or the one behind it when
+ *  the span starts the document. Returns null when there is nothing to
+ *  take (a one-line document). */
+function collapseSpan(doc, from, to) {
+  if (from > 0) return { from: from - 1, to };
+  if (doc.lines > 1) return { from, to: Math.min(doc.length, to + 1) };
+  return null;
+}
+
+/**
+ * Set on the Zen Focus overlay's editor (zen-focus.js adds it to that
+ * one surface's extension list). Zen is one line at a time: a checklist
+ * is not prose, so its outlines fold away entirely for the duration —
+ * a pinned one reappears as the single row the panel plugin docks to
+ * the top of the window, and an unpinned one simply isn't there.
+ */
+export const outlineZenSurface = Facet.define({
+  combine: (values) => values.some(Boolean),
+});
 
 /** Does any cursor or selection range touch this span? */
 function selectionTouches(edState, from, to) {
@@ -177,18 +174,24 @@ function buildOutlineState(edState) {
   const blocks = scanBlocks(doc);
   if (!blocks.length) return { ...empty, hideDone: flags.hideDone, pin: flags.pin };
 
+  const zen = edState.facet(outlineZenSurface);
   const ranges = [];
   const atomics = [];
   blocks.forEach((block, bi) => {
     const pinned = flags.pin === bi + 1;
     const sig = blockSignature(block, flags, pinned);
 
-    if (pinned) {
-      const from = block.items[0].from;
-      const to = block.items[block.items.length - 1].to;
-      const deco = Decoration.replace({ widget: new OutlinePinnedPillWidget(sig, block.items.length) });
-      ranges.push(deco.range(from, to));
-      atomics.push(deco.range(from, to));
+    // A pinned outline is drawn by the panel, and in Zen every outline
+    // stands down. Either way the block leaves the text entirely: there
+    // is nothing useful to leave in its place, and the way back is the
+    // panel's own unpin.
+    if (pinned || zen) {
+      const span = collapseSpan(doc, block.items[0].from, block.items[block.items.length - 1].to);
+      if (span) {
+        const deco = Decoration.replace({});
+        ranges.push(deco.range(span.from, span.to));
+        atomics.push(deco.range(span.from, span.to));
+      }
       return;
     }
 
@@ -197,15 +200,11 @@ function buildOutlineState(edState) {
     block.items.forEach((item, i) => {
       const hide = flags.hideDone && item.checked && !selectionTouches(edState, item.from, item.to);
       if (hide) {
-        // Swallow the newline in front of the line so nothing is left
-        // where it was; the first line of the document has none, so it
-        // takes the one behind it instead.
-        const from = item.from > 0 ? item.from - 1 : item.from;
-        const to = item.from > 0 ? item.to : Math.min(doc.length, item.to + 1);
-        if (to > from) {
+        const span = collapseSpan(doc, item.from, item.to);
+        if (span) {
           const deco = Decoration.replace({});
-          ranges.push(deco.range(from, to));
-          atomics.push(deco.range(from, to));
+          ranges.push(deco.range(span.from, span.to));
+          atomics.push(deco.range(span.from, span.to));
         }
         return;
       }
@@ -245,25 +244,27 @@ function buildOutlineState(edState) {
   };
 }
 
-/**
- * One field for every doc surface. Module-level rather than built per
- * editor so the panel below can read it, and so the two extension lists
- * that both include this bundle hand CodeMirror the same extension
- * value — which is what lets it dedupe them instead of running the scan
- * twice on the surface that gets both.
- */
-const outlineField = StateField.define({
-  create: buildOutlineState,
-  update(value, tr) {
-    // A cursor move only matters while completed items are hidden: that
-    // is the one decoration whose shape depends on where the selection
-    // sits. Everywhere else, re-scanning the document on every arrow key
-    // would be work for an identical answer.
-    if (tr.docChanged || (tr.selection && value.hideDone)) return buildOutlineState(tr.state);
-    return value;
-  },
-  provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
-});
+/** Shortest a dragged panel may be: its grip, one row, and its footer. */
+const MIN_PIN_HEIGHT = 84;
+
+/** Built per editor, so the panel and the keymap beside it can close
+ *  over this surface's own field. No surface gets both extension lists
+ *  (`editor.js` assembles its own; everything else comes from
+ *  `createBaseExtensions`), so there is nothing to share. */
+function makeOutlineField() {
+  return StateField.define({
+    create: buildOutlineState,
+    update(value, tr) {
+      // A cursor move only matters while completed items are hidden:
+      // that is the one decoration whose shape depends on where the
+      // selection sits. Everywhere else, re-scanning the document on
+      // every arrow key would be work for an identical answer.
+      if (tr.docChanged || (tr.selection && value.hideDone)) return buildOutlineState(tr.state);
+      return value;
+    },
+    provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
+  });
+}
 
 /**
  * The docked panel for a pinned outline. Lives on the editor element
@@ -276,7 +277,8 @@ const outlineField = StateField.define({
  * editor would be painted out. There the outline shows as one row at the
  * top of the window instead — see `buildOutlineZenStrip`.
  */
-const pinnedPanel = ViewPlugin.fromClass(
+function makePinnedPanel(field, appState) {
+  return ViewPlugin.fromClass(
   class {
     constructor(view) {
       this.view = view;
@@ -301,6 +303,81 @@ const pinnedPanel = ViewPlugin.fromClass(
       this.sig = "";
     }
 
+    /** The height the user dragged the panel to, or null for "as tall
+     *  as its contents". Per device, like every other panel size in the
+     *  app — it describes this screen, not the document. */
+    storedHeight() {
+      const n = Number(appState?.settings?.outlinePinnedHeight);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    }
+
+    applyStoredHeight() {
+      if (!this.el || this.zen) return;
+      const h = this.storedHeight();
+      this.el.style.height = h ? `${h}px` : "";
+      // The CSS cap is what keeps an *unsized* panel from swallowing the
+      // frame. Once the user has said how tall they want it, that answer
+      // wins — the drag clamps against the frame itself, which is the
+      // bound that actually matters.
+      this.el.style.maxHeight = h ? "none" : "";
+    }
+
+    /** Drag the panel's top edge to set how much of the frame it takes.
+     *  The grip is a child of the panel rather than a free-floating
+     *  strip: the panel tracks the text column, and a strip positioned
+     *  independently would have to be kept in step with it on every
+     *  sidebar toggle. */
+    buildGrip() {
+      const grip = document.createElement("div");
+      grip.className = "outline-pin-grip";
+      grip.setAttribute("role", "separator");
+      grip.setAttribute("aria-orientation", "horizontal");
+      grip.addEventListener("mousedown", (e) => e.stopPropagation());
+      grip.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const startY = e.clientY;
+        const startH = this.el.getBoundingClientRect().height;
+        const hostH = this.view.dom.getBoundingClientRect().height;
+        grip.classList.add("dragging");
+        // Same reason as above: while the user is sizing it by hand the
+        // proportional cap has nothing to say.
+        this.el.style.maxHeight = "none";
+        try { grip.setPointerCapture(e.pointerId); } catch (_) { /* no capture */ }
+
+        let pending = false;
+        let latestY = startY;
+        let applied = startH;
+        const flush = () => {
+          pending = false;
+          // Dragging up (a negative delta) makes it taller. Never past
+          // the frame that holds it, and never so short that the footer
+          // is all that survives.
+          const max = Math.max(MIN_PIN_HEIGHT, hostH - 48);
+          applied = Math.max(MIN_PIN_HEIGHT, Math.min(max, startH - (latestY - startY)));
+          this.el.style.height = `${Math.round(applied)}px`;
+        };
+        const onMove = (me) => {
+          latestY = me.clientY;
+          if (pending) return;
+          pending = true;
+          requestAnimationFrame(flush);
+        };
+        const onUp = () => {
+          grip.classList.remove("dragging");
+          grip.removeEventListener("pointermove", onMove);
+          grip.removeEventListener("pointerup", onUp);
+          grip.removeEventListener("pointercancel", onUp);
+          appState?.updateSettings?.({ outlinePinnedHeight: Math.round(applied) });
+        };
+        grip.addEventListener("pointermove", onMove);
+        grip.addEventListener("pointerup", onUp);
+        grip.addEventListener("pointercancel", onUp);
+      });
+      return grip;
+    }
+
     /** Align the panel with the editor's text column. Read through
      *  `requestMeasure` — a `getComputedStyle` inside `update` is a
      *  layout read in the middle of CodeMirror's own update cycle. */
@@ -320,7 +397,7 @@ const pinnedPanel = ViewPlugin.fromClass(
     }
 
     render() {
-      const value = this.view.state.field(outlineField, false);
+      const value = this.view.state.field(field, false);
       const block = value ? value.pinnedBlock : null;
       if (!block) { this.destroy(); return; }
       const flags = { hideDone: value.hideDone, pin: value.pin };
@@ -354,7 +431,8 @@ const pinnedPanel = ViewPlugin.fromClass(
         this.view.dom.appendChild(this.el);
         this.syncColumn();
       }
-      this.el.replaceChildren();
+      this.applyStoredHeight();
+      this.el.replaceChildren(this.buildGrip());
       this.el.appendChild(buildOutlineRows(
         block.items, flags.hideDone,
         (item) => toggleAt(this.view, item.line),
@@ -367,7 +445,8 @@ const pinnedPanel = ViewPlugin.fromClass(
       }));
     }
   },
-);
+  );
+}
 
 /**
  * Outline-aware line moving (Alt-Arrow, CodeMirror's `moveLineUp` /
@@ -406,8 +485,8 @@ function selectedItems(edState, blocks) {
   return null;
 }
 
-function moveOutlineUnit(view, dir) {
-  const value = view.state.field(outlineField, false);
+function moveOutlineUnit(view, field, dir) {
+  const value = view.state.field(field, false);
   if (!value || !value.blocks.length) return false;
   const found = selectedItems(view.state, value.blocks);
   if (!found) return false;
@@ -458,10 +537,12 @@ function moveOutlineUnit(view, dir) {
   return true;
 }
 
-const outlineKeymap = Prec.high(keymap.of([
-  { key: "Alt-ArrowUp", run: (view) => moveOutlineUnit(view, -1) },
-  { key: "Alt-ArrowDown", run: (view) => moveOutlineUnit(view, 1) },
-]));
+function makeOutlineKeymap(field) {
+  return Prec.high(keymap.of([
+    { key: "Alt-ArrowUp", run: (view) => moveOutlineUnit(view, field, -1) },
+    { key: "Alt-ArrowDown", run: (view) => moveOutlineUnit(view, field, 1) },
+  ]));
+}
 
 /**
  * The outline extension bundle. Carried by BOTH extension lists (the
@@ -469,12 +550,10 @@ const outlineKeymap = Prec.high(keymap.of([
  * would render the same file as a plain checklist, which reads as the
  * feature being broken rather than absent.
  */
-export function createOutlinePlugin() {
-  return outlineExtension;
+export function createOutlinePlugin(appState) {
+  const field = makeOutlineField();
+  const atomic = EditorView.atomicRanges.of(
+    (view) => view.state.field(field, false)?.atomic || RangeSet.empty,
+  );
+  return [field, atomic, makeOutlineKeymap(field), makePinnedPanel(field, appState)];
 }
-
-const outlineAtomic = EditorView.atomicRanges.of(
-  (view) => view.state.field(outlineField, false)?.atomic || RangeSet.empty,
-);
-
-const outlineExtension = [outlineField, outlineAtomic, outlineKeymap, pinnedPanel];
