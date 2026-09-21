@@ -37,7 +37,7 @@ body.desktop-active #editor-empty-state,
 body.desktop-active #notebook-container,
 body.desktop-active #pdf-container,
 body.desktop-active #stack-container,
-/* The Outline View belongs to the doc that was open. Its panel and the
+/* The Overview belongs to the doc that was open. Its panel and the
    hover-revealed edge trigger both hang off #app (position: fixed,
    z-index above the Desktop), so without this the trigger floats over
    the Desktop after opening a guttered doc and coming back. */

@@ -1,5 +1,5 @@
 /**
- * Outline View line helpers — tokenizing document text into outline
+ * Overview line helpers — tokenizing document text into outline
  * paragraph lines, and rendering those lines with Google-Docs comment
  * runs highlighted. Split out of `overview.js` to keep that file under
  * the line budget.

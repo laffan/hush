@@ -257,7 +257,9 @@ export function createDefaultSettings() {
     // sidebar buttons, pane headers, and notebook toolbar buttons).
     showTooltips: false,
 
-    // Outline View (right sidebar)
+    // Overview — the right-hand heading sidebar. Stored under the
+    // `longview*` names until the rename; Rust carries those as serde
+    // aliases so existing tuning survives (see settings.rs).
     overviewShowParagraphs: true,
     overviewShowNumbers: true,
     overviewShowComments: false,

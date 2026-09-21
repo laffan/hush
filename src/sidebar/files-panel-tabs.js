@@ -3,7 +3,7 @@
  *
  * Documents with `---Tab name---` markers expose each marker as a small
  * synthetic child row underneath their tree node, mirroring how the
- * outline view's tab section reads. Clicking a row opens the parent
+ * Overview's tab section reads. Clicking a row opens the parent
  * doc and scrolls the editor to the marker's source offset.
  *
  * The synthetic rows are *not* persisted — they're injected into the

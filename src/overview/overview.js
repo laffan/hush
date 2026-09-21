@@ -127,15 +127,15 @@ export function createOverview(container, state) {
 
     const content = document.createElement("div");
     content.className = "overview-content";
-    content.style.setProperty("--lv-body-font", s.overviewBodyFontSize + "px");
-    content.style.setProperty("--lv-heading-font", s.overviewHeadingFontSize + "px");
-    content.style.setProperty("--lv-flag-font", s.overviewFlagFontSize + "px");
-    content.style.setProperty("--lv-line-gap", s.overviewLineGap + "px");
-    content.style.setProperty("--lv-position-color", s.overviewCurrentPositionColor);
+    content.style.setProperty("--ov-body-font", s.overviewBodyFontSize + "px");
+    content.style.setProperty("--ov-heading-font", s.overviewHeadingFontSize + "px");
+    content.style.setProperty("--ov-flag-font", s.overviewFlagFontSize + "px");
+    content.style.setProperty("--ov-line-gap", s.overviewLineGap + "px");
+    content.style.setProperty("--ov-position-color", s.overviewCurrentPositionColor);
     // Active theme's heading colour drives the current-paragraph wash.
     const activeTheme = getActiveTheme(state.settings);
     if (activeTheme && activeTheme.headingColor) {
-      content.style.setProperty("--lv-heading-color", activeTheme.headingColor);
+      content.style.setProperty("--ov-heading-color", activeTheme.headingColor);
     }
 
     // Tabs: every marker in the source becomes a foldable container at
@@ -271,11 +271,11 @@ export function createOverview(container, state) {
     const s = getSettings();
     const content = container.querySelector(".overview-content");
     if (!content) return;
-    content.style.setProperty("--lv-body-font", s.overviewBodyFontSize + "px");
-    content.style.setProperty("--lv-heading-font", s.overviewHeadingFontSize + "px");
-    content.style.setProperty("--lv-flag-font", s.overviewFlagFontSize + "px");
-    content.style.setProperty("--lv-line-gap", s.overviewLineGap + "px");
-    content.style.setProperty("--lv-position-color", s.overviewCurrentPositionColor);
+    content.style.setProperty("--ov-body-font", s.overviewBodyFontSize + "px");
+    content.style.setProperty("--ov-heading-font", s.overviewHeadingFontSize + "px");
+    content.style.setProperty("--ov-flag-font", s.overviewFlagFontSize + "px");
+    content.style.setProperty("--ov-line-gap", s.overviewLineGap + "px");
+    content.style.setProperty("--ov-position-color", s.overviewCurrentPositionColor);
   }
 
   function makeToggle(label, value, key) {

@@ -555,7 +555,7 @@ async function init() {
     if (!node?.lockedStyleId) applyDeskGlobalStyle(state);
     const targetDeskId = deskId || state.settings.activeDeskId;
     await (await import("./state/state-desks-ops.js")).openLastFileForDesk(state, targetDeskId);
-    // Desks own the outline toggle state — restore it now that the desk's
+    // Desks own the Overview toggle state — restore it now that the desk's
     // last file is open (so the notebook guard sees the right surface).
     state.emit("desk-overview-restore", targetDeskId);
   });

@@ -267,9 +267,9 @@
   overflow: hidden;
   position: relative;
 }
-/* When the doc outline mounts (absolutely positioned 200 px slot at
+/* When the doc Overview mounts (absolutely positioned 200 px slot at
    the right edge), shrink the content wrapper by the same amount so
-   the outline sits beside the editor rather than over it. */
+   the panel sits beside the editor rather than over it. */
 .stack-column-content:has(.stack-doc-overview) .stack-doc-wrapper {
   width: calc(100% - 200px);
 }
@@ -795,7 +795,7 @@ body.stack-resizing .stack-column,
   opacity: 0.9;
 }
 
-/* --- Stack doc outline (right sidebar within column) --- */
+/* --- Stack doc Overview (right sidebar within column) --- */
 
 .stack-doc-overview {
   position: absolute;

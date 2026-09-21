@@ -1,5 +1,5 @@
 /**
- * Outline View document parser — extracts headings, flags, and callouts from markdown text.
+ * Overview document parser — extracts headings, flags, and callouts from markdown text.
  * Ported from obsidian-long-view/src/utils/documentParser.ts
  */
 import { parseTabMarkerPath, pathToLabel } from "../editor/tabs.js";

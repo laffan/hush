@@ -1,5 +1,5 @@
 /**
- * Tab-section helpers for the Outline View.
+ * Tab-section helpers for the Overview.
  *
  * Every tab marker (top-level or nested) renders as a flat container
  * at the outline root in source order. The header carries a Google
