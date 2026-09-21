@@ -4,9 +4,11 @@
  *
  * A Doc converts the nested list under the cursor: every item that lacks
  * a checkbox gets one, and the document's frontmatter gains
- * `outline: true`. A Notebook converts the selected flowchart: the tree
- * is read out as a nested checklist and becomes a single outline shape
- * where the chart's top-left node was.
+ * `outline: true`. A Notebook converts either of two selections: a
+ * flowchart, whose tree is read out as a nested checklist and becomes a
+ * single outline shape where the chart's root node was; or a text shape
+ * that is a markdown list, which becomes an outline where it stands —
+ * checkboxes added, the shape's `outline` flag set.
  *
  * They produce the same thing — a nested markdown checklist — which is
  * the point: an outline made on either surface opens as an outline on
@@ -86,12 +88,15 @@ export function toggleOutlineMode(state) {
   view.focus();
 }
 
-/** True when the canvas selection takes part in a flowchart. */
+/** True when the canvas selection is something an outline can be made
+ *  of: a flowchart, or a text shape holding a markdown list. */
 export function canConvertNotebookToOutline() {
   const canvas = getCanvasInstance();
   if (!canvas || !canvas.state) return false;
-  try { return canvas.state.outlineConvertNodes().length > 0; }
-  catch { return false; }
+  try {
+    return canvas.state.outlineConvertNodes().length > 0
+      || canvas.state.outlineConvertListShapes().length > 0;
+  } catch { return false; }
 }
 
 export function convertNotebookToOutline() {

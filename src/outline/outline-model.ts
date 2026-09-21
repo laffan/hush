@@ -143,6 +143,29 @@ export function addCheckboxes(lines: string[]): string[] {
 }
 
 /**
+ * True when `text` is a markdown list and nothing else (blank lines at
+ * either end don't count) — a block that can become an outline where it
+ * stands.
+ *
+ * The gate the notebook's "Convert to Outline" uses on a selected text
+ * shape. It has to be this strict there: an outline paints its items and
+ * nothing else, so a shape mixing a paragraph with a list would have the
+ * paragraph vanish off the canvas the moment the flag went on. A run
+ * that is already all checkboxes still passes — it is an outline in
+ * every respect but the flag, which is exactly what the command sets.
+ */
+export function isConvertibleList(text: string): boolean {
+  const lines = (text || "").split("\n");
+  let start = 0;
+  let end = lines.length - 1;
+  while (start <= end && lines[start].trim() === "") start++;
+  while (end >= start && lines[end].trim() === "") end--;
+  if (start > end) return false;
+  for (let i = start; i <= end; i++) if (!isListLine(lines[i])) return false;
+  return true;
+}
+
+/**
  * Take the checkbox off every checklist line in `lines`, leaving the
  * bullet and the text — the exact inverse of `addCheckboxes` for the
  * lines it created. A line that isn't a checklist item is left alone, so

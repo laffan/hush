@@ -35,7 +35,7 @@ import {
 } from "./outline-shape";
 import type { OutlineButtonId, OutlineLayout } from "./outline-shape";
 import { pinnedOutlineOffset } from "./renderer";
-import { outlineFromFlowchart } from "../outline/outline-model";
+import { outlineFromFlowchart, addCheckboxes, isConvertibleList } from "../outline/outline-model";
 import { collectShapesInPolygon, rectPolygon } from "./selection-region";
 import {
   type SplitDragState, type SplitHoverState, type SplitPreviewState, type SplitTapPending,
@@ -3846,6 +3846,50 @@ export class DrawingState extends EventTarget {
     return this.shapes.filter((s) => s.type === "text" && ids.has(s.id)) as TextShape[];
   }
 
+  /** The selected text shapes that are a markdown list and nothing else
+   *  — what "Convert to Outline" turns into outlines where they stand.
+   *  A shape that is already an outline is not a candidate; nor is one
+   *  mixing prose with a list (see `isConvertibleList`). */
+  outlineConvertListShapes(): TextShape[] {
+    return this.shapes.filter(
+      (s) => s.type === "text" && !s.outline && this.selectedIds.has(s.id)
+        && isConvertibleList((s as TextShape).text),
+    ) as TextShape[];
+  }
+
+  /**
+   * The other half of "Convert to Outline": a selected markdown list
+   * becomes an outline in place — a checkbox on every item that lacks
+   * one, and the shape's `outline` flag set. The same two steps the Doc
+   * command performs, producing the same bytes, which is what keeps an
+   * outline the same outline on either surface.
+   */
+  private convertListShapesToOutlines(): boolean {
+    const targets = this.outlineConvertListShapes();
+    if (targets.length === 0) return false;
+    const ids = new Set(targets.map((s) => s.id));
+    this.shapes = this.shapes.map((s) => {
+      if (!ids.has(s.id) || s.type !== "text") return s;
+      return {
+        ...s,
+        text: addCheckboxes(s.text.split("\n")).join("\n"),
+        outline: true,
+        // An outline's `position` is the top-left of its frame, not of
+        // its first glyph, so the border has to be laid *around* the
+        // text rather than pushing it down and right by the padding.
+        position: { x: s.position.x - OUTLINE_PAD, y: s.position.y - OUTLINE_PAD },
+        // A frame is read in, not measured to the words: give it a
+        // readable width rather than whatever the loose list happened to
+        // wrap at.
+        width: Math.max(OUTLINE_DEFAULT_WIDTH, s.width || 0),
+        manualWidth: true,
+      };
+    });
+    this.recordHistory();
+    this.notify("shapes");
+    return true;
+  }
+
   /**
    * Replace the selected flowchart with a single outline shape.
    *
@@ -3858,7 +3902,9 @@ export class DrawingState extends EventTarget {
    */
   convertSelectionToOutline(): boolean {
     const nodes = this.outlineConvertNodes();
-    if (nodes.length === 0) return false;
+    // No chart under the selection — then it is the list case, which
+    // converts each selected list where it stands.
+    if (nodes.length === 0) return this.convertListShapesToOutlines();
     const ids = new Set(nodes.map((s) => s.id));
     const edges = this.flowchart.serialize().filter((e) => ids.has(e.from) && ids.has(e.to));
     const text = outlineFromFlowchart(nodes, edges, undefined, { checkbox: true });
