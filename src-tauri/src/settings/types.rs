@@ -32,11 +32,18 @@ pub struct Style {
     pub block_cursor: Option<bool>,
     #[serde(default)]
     pub block_cursor_color: Option<String>,
-    /// Cursor mode override ("system" | "block" | "underline"). When
-    /// present this wins over `block_cursor`; the boolean is still
-    /// written in lockstep for older clients reading the same JSON.
+    /// Cursor mode override ("system" | "block" | "underline" |
+    /// "thick"). When present this wins over `block_cursor`; the boolean
+    /// is still written in lockstep for older clients reading the same
+    /// JSON.
     #[serde(default)]
     pub cursor_mode: Option<String>,
+    /// Halo behind the caret. Only a custom `cursor_mode` wears one —
+    /// the system caret is the platform's to draw. Its colour is the
+    /// per-appearance `cursorGlow` override in `light_colors` /
+    /// `dark_colors`, falling back to the caret's own.
+    #[serde(default)]
+    pub cursor_glow: Option<bool>,
     #[serde(default)]
     pub suppress_header_size: Option<bool>,
     #[serde(default)]

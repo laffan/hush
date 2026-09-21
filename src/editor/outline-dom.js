@@ -12,12 +12,20 @@
 import { applyTooltip } from "../tooltips.js";
 import { firstOpenIndex, stripInlineMarkdown } from "../outline/outline-model.ts";
 
-/** Hide-completed: a checkbox with a stroke through it. */
+/**
+ * Hide-completed: a box with a stroke through it.
+ *
+ * The box held a tick until the stroke was looked at closely — the
+ * tick's long arm runs up-right at 45 degrees and so does the stroke, so
+ * at the 14px this renders at they landed on each other and the icon
+ * read as a plain ticked box. The tick is gone and the box is smaller,
+ * which leaves the stroke running clear past both corners. The canvas
+ * footer (`drawOutlineIcon`, notebook/renderer.ts) is drawn to match.
+ */
 const ICON_HIDE_DONE =
   '<svg viewBox="0 0 16 16" aria-hidden="true">'
-  + '<rect x="2.5" y="2.5" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/>'
-  + '<path d="M5 8.4 L7.2 10.6 L11 5.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>'
-  + '<path class="outline-icon-slash" d="M3 13 L13 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>'
+  + '<rect x="4" y="4" width="8" height="8" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/>'
+  + '<path class="outline-icon-slash" d="M2.4 13.6 L13.6 2.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>'
   + '</svg>';
 
 /** Pin-to-bottom: an arrow coming down onto a bar. */

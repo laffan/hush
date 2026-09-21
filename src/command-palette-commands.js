@@ -64,7 +64,7 @@ import { currentWordLimit, setWordLimit, wordLimitTargetFileId } from "./editor/
 import {
   canConvertDocToOutline, convertDocToOutline,
   canConvertDocToList, convertDocToList,
-  isOutlineModeOn, toggleOutlineMode,
+  canToggleOutlineMode, isOutlineModeOn, toggleOutlineMode,
   canConvertNotebookToOutline, convertNotebookToOutline,
 } from "./outline/outline-commands.js";
 import { buildDeskCommands } from "./command-palette-desk-commands.js";
@@ -538,26 +538,31 @@ function buildCommands(state) {
     // Turns the list under the caret into an outline: checkboxes on the
     // items that lack them, `outline: true` in the frontmatter. Hidden
     // once every item already has one — there would be nothing to do.
-    { id: "outline-convert-doc", section: "Outline", label: "Convert to Outline", icon: icons.outline, shortcutKey: null, ctx: "doc",
+    //
+    // `shared`, not `doc`: `doc` means "the main editor isn't a
+    // notebook", and an outline can perfectly well be in a doc pane
+    // floating over a canvas. `docView` does the real gating — it
+    // returns null unless some doc surface actually holds the caret.
+    { id: "outline-convert-doc", section: "Outline", label: "Convert to Outline", icon: icons.outline, shortcutKey: null, ctx: "shared",
       keywords: "checklist task list nested outline convert",
       hiddenIf: (s) => !canConvertDocToOutline(s),
       action: (s) => convertDocToOutline(s) },
     // The way back out: take the boxes off the outline under the caret.
     // The frontmatter switch only comes off with the document's last
     // outline — see `convertOutlineToList`.
-    { id: "outline-convert-list", section: "Outline", label: "Convert to List", icon: icons.outline, shortcutKey: null, ctx: "doc",
+    { id: "outline-convert-list", section: "Outline", label: "Convert to List", icon: icons.outline, shortcutKey: null, ctx: "shared",
       keywords: "checklist bullet plain unconvert outline list",
       hiddenIf: (s) => !canConvertDocToList(s),
       action: (s) => convertDocToList(s) },
     // The document-wide switch on its own, for a doc whose checklists are
     // already written: `outline: true` in the frontmatter and nothing else.
-    { id: "outline-mode-on", section: "Outline", label: "Outline mode", icon: icons.outline, shortcutKey: null, ctx: "doc",
+    { id: "outline-mode-on", section: "Outline", label: "Outline mode", icon: icons.outline, shortcutKey: null, ctx: "shared",
       keywords: "frontmatter outline true enable checklist frame",
-      hiddenIf: (s) => isOutlineModeOn(s),
+      hiddenIf: (s) => !canToggleOutlineMode(s) || isOutlineModeOn(s),
       action: (s) => toggleOutlineMode(s) },
-    { id: "outline-mode-off", section: "Outline", label: "Turn off Outline mode", icon: icons.outline, shortcutKey: null, ctx: "doc",
+    { id: "outline-mode-off", section: "Outline", label: "Turn off Outline mode", icon: icons.outline, shortcutKey: null, ctx: "shared",
       keywords: "frontmatter outline false disable checklist frame",
-      hiddenIf: (s) => !isOutlineModeOn(s),
+      hiddenIf: (s) => !canToggleOutlineMode(s) || !isOutlineModeOn(s),
       action: (s) => toggleOutlineMode(s) },
     { id: "proofread", section: "Writing", label: "Proofread mode", icon: icons.proofread, shortcutKey: null, ctx: "doc",
       action: (s) => s.toggleProofread() },
@@ -650,7 +655,7 @@ function buildCommands(state) {
     // becomes one outline shape holding the tree as a nested checklist.
     { id: "outline-convert-nb", section: "Outline", label: "Convert to Outline", icon: icons.outline, shortcutKey: null, ctx: "notebook",
       keywords: "flowchart checklist task nested outline convert",
-      hiddenIf: () => !canConvertNotebookToOutline(),
+      hiddenIf: (s) => !canConvertNotebookToOutline(s),
       action: () => convertNotebookToOutline() },
     { id: "nb-shelf", section: "Notebook", label: "Open shelf", icon: null, shortcutKey: null, ctx: "notebook",
       action: (s) => s.emit("notebook-toggle-shelf") },

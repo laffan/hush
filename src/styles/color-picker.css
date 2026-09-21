@@ -6,14 +6,26 @@
  * wrapper below just takes the pointer away from it.
  */
 
+/* The well carries a checkerboard so a translucent colour reads as
+   translucent. The native input can only paint `#rrggbb` — it has no
+   alpha channel to show — so the opacity is applied to the input itself
+   and the checkerboard beneath it does the rest. */
 .hush-color-well {
   position: relative;
   display: inline-flex;
   line-height: 0;
+  border-radius: 4px;
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, rgba(0, 0, 0, 0.22) 25%, transparent 25%, transparent 75%, rgba(0, 0, 0, 0.22) 75%),
+    linear-gradient(45deg, rgba(0, 0, 0, 0.22) 25%, transparent 25%, transparent 75%, rgba(0, 0, 0, 0.22) 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
 }
 
 .hush-color-well input[type="color"] {
   pointer-events: none;
+  opacity: var(--well-alpha, 1);
 }
 
 .hush-color-well-hit {
@@ -58,7 +70,48 @@
   );
 }
 
+/* Opacity — the hue slider's twin, directly beneath it. The track is a
+   checkerboard so "transparent" reads as transparent rather than as
+   whatever happens to be behind the popup; the ramp over it runs from
+   the picked colour at zero to the same colour at full, and JS repaints
+   it as the colour changes. */
+.hush-colorpick-alpha {
+  position: relative;
+  height: 14px;
+  margin-bottom: 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  overflow: hidden;
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, rgba(0, 0, 0, 0.22) 25%, transparent 25%, transparent 75%, rgba(0, 0, 0, 0.22) 75%),
+    linear-gradient(45deg, rgba(0, 0, 0, 0.22) 25%, transparent 25%, transparent 75%, rgba(0, 0, 0, 0.22) 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
+}
+
+.hush-colorpick-alpha-ramp {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.hush-colorpick-alpha-thumb {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 20px;
+  margin-left: -7px;
+  transform: translateY(-50%);
+  border: 2px solid #fff;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
 .hush-colorpick-hue:focus-visible,
+.hush-colorpick-alpha:focus-visible,
 .hush-colorpick-field:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 2px;
@@ -104,12 +157,26 @@
   margin-top: 10px;
 }
 
+/* The footer swatch shows the colour *with* its opacity, so it needs the
+   same checkerboard under it as the opacity track — the colour JS sets
+   paints over this as the background-image layer above it. */
+/* The footer swatch shows the colour *with* its opacity. The colour is a
+   gradient layer over the checkerboard rather than a `background-color`
+   under it — background images paint above the colour, so a translucent
+   colour set that way would end up behind the squares. */
 .hush-colorpick-swatch {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
   border: 1px solid rgba(128, 128, 128, 0.4);
   border-radius: 4px;
+  background-color: #fff;
+  background-image:
+    linear-gradient(var(--swatch-color, transparent), var(--swatch-color, transparent)),
+    linear-gradient(45deg, rgba(0, 0, 0, 0.22) 25%, transparent 25%, transparent 75%, rgba(0, 0, 0, 0.22) 75%),
+    linear-gradient(45deg, rgba(0, 0, 0, 0.22) 25%, transparent 25%, transparent 75%, rgba(0, 0, 0, 0.22) 75%);
+  background-size: auto, 8px 8px, 8px 8px;
+  background-position: 0 0, 0 0, 4px 4px;
 }
 
 .hush-colorpick-hex {

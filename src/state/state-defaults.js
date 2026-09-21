@@ -33,6 +33,9 @@ export function createDefaultSettings() {
     // the legacy `blockCursor` boolean when null so existing installs
     // keep their setting.
     cursorMode: null,
+    // Halo behind a custom caret (Default style). Its colour is the
+    // `cursorGlow` key in defaultLight/DarkColors, or the caret's own.
+    cursorGlow: false,
     // Active-line indicator for the Default style. Per-style overrides
     // live on `Style.lineIndicator`. One of "none", "left-arrow",
     // "double-arrow", "left-border", "border", "highlight". The

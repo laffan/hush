@@ -850,14 +850,17 @@ function drawOutlineIcon(
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   if (btn.id === "hideDone") {
-    // A ticked box — struck through while the completed items are still
-    // showing, because the stroke is what the press is about to do.
-    ctx.strokeRect(ix + 2, iy + 2, s - 4, s - 4);
-    ctx.beginPath();
-    ctx.moveTo(ix + 4.4, iy + s * 0.53);
-    ctx.lineTo(ix + s * 0.45, iy + s * 0.68);
-    ctx.lineTo(ix + s - 4.2, iy + s * 0.34);
-    ctx.stroke();
+    // A box struck through, while the completed items are still showing
+    // — the stroke is what the press is about to do.
+    //
+    // The box carried a tick until the stroke was looked at closely: the
+    // tick's long arm runs up-right at 45 degrees and so does the
+    // stroke, so at 14px they landed on each other and the icon read as
+    // a plain ticked box. The tick is gone and the box is smaller, which
+    // leaves the stroke running clear past both corners. The Doc's
+    // `ICON_HIDE_DONE` (editor/outline-dom.js) is drawn to match.
+    const inset = s * 0.25;
+    ctx.strokeRect(ix + inset, iy + inset, s - inset * 2, s - inset * 2);
     if (!btn.active) {
       ctx.beginPath();
       ctx.moveTo(ix + 1.5, iy + s - 1.5);
@@ -924,7 +927,11 @@ export function drawOutlineShape(
 
   for (const row of L.rows) {
     const rowY = y + row.y;
-    const boxY = rowY + (L.fontSize - L.boxSize) / 2;
+    // The row box carries leading above and below its words; everything
+    // that has to line up with the words starts at `textTop`, not at the
+    // top of the box.
+    const textY = rowY + row.textTop;
+    const boxY = textY + (L.fontSize - L.boxSize) / 2;
     // A completed item is lighter, and everything in its row goes with
     // it — the box, the tick and the strike as much as the words.
     const rowAlpha = row.checked ? 0.45 : 1;
@@ -933,10 +940,12 @@ export function drawOutlineShape(
 
     ctx.save();
     ctx.strokeStyle = fg;
-    ctx.lineWidth = 1.3;
-    ctx.globalAlpha = rowAlpha * 0.65;
-    // Round, matching the Doc — a checklist you are working through
-    // reads as a set of states to fill in, not as form fields.
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = rowAlpha * 0.3;
+    // Round and light, matching the Doc (styles/outline.css) — a
+    // checklist you are working through reads as a set of states to fill
+    // in, not as form fields, and a column of rings down the side of a
+    // framed outline is texture rather than a row of controls.
     const r = L.boxSize / 2;
     ctx.beginPath();
     ctx.arc(x + row.boxX + r, boxY + r, r, 0, Math.PI * 2);
@@ -958,7 +967,7 @@ export function drawOutlineShape(
       ctx,
       {
         id: shape.id, type: "text", color: row.next ? "heading" : shape.color,
-        position: { x: x + row.textX, y: rowY },
+        position: { x: x + row.textX, y: textY },
         text: row.text, fontSize: L.fontSize, width: row.textWidth,
         fontFamily: OUTLINE_FONT_FAMILY, bold: row.next,
       } as TextShape,
@@ -971,7 +980,7 @@ export function drawOutlineShape(
       ctx.lineWidth = 1;
       ctx.beginPath();
       for (const seg of row.lines) {
-        const sy = Math.round(rowY + seg.y + L.fontSize * 0.55) + 0.5;
+        const sy = Math.round(textY + seg.y + L.fontSize * 0.55) + 0.5;
         ctx.moveTo(x + row.textX, sy);
         ctx.lineTo(x + row.textX + seg.width, sy);
       }

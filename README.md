@@ -6,7 +6,7 @@ Under the minimal surface is a full writing system: a Markdown editor, canvas-ba
 
 ## Writing
 
-**The editor** is Markdown with inline rendering — headings, bold/italic, links, tables, images, footnotes, callouts, YAML properties, and `[[wikilinks]]` between notes. Sixteen color themes across light, dark, and sepia, and **Styles** that bundle theme + font + colors into presets you can switch, share, and import as JSON. Every colour in the style editor opens an in-app picker — a rainbow hue slider over a saturation/brightness field — so the live preview stays visible while you tune.
+**The editor** is Markdown with inline rendering — headings, bold/italic, links, tables, images, footnotes, callouts, YAML properties, and `[[wikilinks]]` between notes. Sixteen color themes across light, dark, and sepia, and **Styles** that bundle theme + font + colors into presets you can switch, share, and import as JSON. Every colour in the style editor opens an in-app picker — a rainbow hue slider, an opacity slider and a saturation/brightness field — so the live preview stays visible while you tune. A style's **Cursor** can be the system caret, a block, an underline or a 3px line, and a custom caret can carry a **glow** in a colour of its own.
 
 A style also carries two stacks of layers, both built the same way — add, reorder by dragging, hide, delete:
 

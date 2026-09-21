@@ -367,6 +367,10 @@ pub struct AppSettings {
     #[serde(default)] pub block_cursor: bool,
     #[serde(default)] pub block_cursor_color: Option<String>,
     #[serde(default)] pub cursor_mode: Option<String>,
+    // Halo behind the caret (Default style). Only a custom `cursor_mode`
+    // wears one; its colour is the `cursorGlow` key in
+    // `default_light_colors` / `default_dark_colors`.
+    #[serde(default)] pub cursor_glow: bool,
 
     // Default style's active-line indicator. Per-style overrides live
     // on `Style.line_indicator`. The indicator colour rides per
@@ -767,6 +771,7 @@ impl Default for AppSettings {
             block_cursor: false,
             block_cursor_color: None,
             cursor_mode: None,
+            cursor_glow: false,
             line_indicator: None,
             ratchet_encourage_typing: false,
             persisted_panes: Vec::new(),

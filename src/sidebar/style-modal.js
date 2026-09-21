@@ -20,6 +20,7 @@ import { renderStyleExtras, bindStyleExtras, endBackgroundPreview } from "./styl
 import { applyActiveStyle } from "../style-application.js";
 import { bindCustomDropdown } from "./custom-dropdown.js";
 import { installColorPickers } from "../ui/color-picker.js";
+import { renderColorRows, bindColorRows } from "./style-modal-colors.js";
 import {
   PREVIEW_MD,
   fontFallback,
@@ -40,17 +41,6 @@ const systemFonts = [
   "Helvetica Neue", "Lucida Grande", "Menlo", "Monaco", "Optima",
   "Palatino", "SF Mono", "SF Pro", "Times New Roman", "Verdana",
 ];
-// The line-indicator colour is a per-appearance override like these,
-// but it lives beside the Line Indicator dropdown in Editing (behind
-// its "Custom color" checkbox) rather than in this list — an indicator
-// set to "none" has no colour to pick, and both appearances are
-// editable there at once.
-const colorKeys = [
-  { key: "bg", label: "Background" }, { key: "fg", label: "Text" },
-  { key: "header", label: "Header" }, { key: "links", label: "Links" },
-  { key: "cursor", label: "Cursor" }, { key: "selection", label: "Selection" },
-];
-
 /** Build a Style-shaped draft from global AppSettings — used when editing the Default style. */
 function buildDefaultDraftFromSettings(state) {
   const s = state.settings;
@@ -70,6 +60,7 @@ function buildDefaultDraftFromSettings(state) {
     headerScale: s.headerScale != null ? s.headerScale : 1.0,
     blockCursor: !!s.blockCursor,
     cursorMode: s.cursorMode || (s.blockCursor ? "block" : "system"),
+    cursorGlow: !!s.cursorGlow,
     lineIndicator: s.lineIndicator || "none",
     // Default style's post + background layers ride top-level
     // AppSettings fields so they persist alongside the other
@@ -186,6 +177,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         headerScale: draft.headerScale != null ? draft.headerScale : 1.0,
         blockCursor: !!draft.blockCursor,
         cursorMode: draft.cursorMode || (draft.blockCursor ? "block" : "system"),
+        cursorGlow: !!draft.cursorGlow,
         lineIndicator: draft.lineIndicator || "none",
         shaderLayer: draft.shaderLayer || null,
         postLayers: draft.postLayers || null,
@@ -232,6 +224,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         headerScale: state.settings.headerScale,
         blockCursor: state.settings.blockCursor,
         cursorMode: state.settings.cursorMode,
+        cursorGlow: state.settings.cursorGlow,
         lineIndicator: state.settings.lineIndicator || "none",
         shaderLayer: state.settings.shaderLayer || null,
         postLayers: state.settings.postLayers || null,
@@ -358,6 +351,13 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
                   </select>
                 </div>
               </div>
+              ${resolveCursorMode(draft, state.settings) === "system" ? "" : `
+              <div class="style-editor-row">
+                <label>Cursor glow</label>
+                <div class="style-select-group">
+                  <input type="checkbox" id="style-cursor-glow"${draft.cursorGlow ? " checked" : ""} />
+                </div>
+              </div>`}
               <div class="style-editor-row">
                 <label>Line Indicator</label>
                 <div class="style-select-group">
@@ -420,18 +420,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
                   </div>
                 </div>
               </div>
-              ${colorKeys.map(ck => {
-                const overrideVal = activeColors[ck.key];
-                const themeId = colorTab === 'light' ? ltId : dtId;
-                const val = overrideVal || themeColorFor(ck.key, themeId, colorTab);
-                return `<div class="style-editor-color-row">
-                  <label>${ck.label}</label>
-                  <div class="style-color-group">
-                    <input type="color" data-color-key="${ck.key}" value="${val}" />
-                    ${overrideVal ? `<button class="style-reset-color" data-color-key="${ck.key}" title="Reset">&times;</button>` : ''}
-                  </div>
-                </div>`;
-              }).join("")}
+              ${renderColorRows(draft, activeColors, colorTab, colorTab === 'light' ? ltId : dtId)}
             </div>
 
             ${renderPostSection(draft)}
@@ -603,7 +592,22 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
       // Keep `blockCursor` in lockstep for backwards-compat with
       // existing consumers (settings serializer, exported styles, sync).
       draft.blockCursor = mode === "block";
-      updatePreview();
+      // The system caret wears no glow, and the switch for it goes with
+      // the mode — leaving the flag set would hide a state the user can
+      // no longer see or reach.
+      if (mode === "system") draft.cursorGlow = false;
+      // Re-render: the glow switch and its colour row come and go with
+      // the mode.
+      render();
+      scheduleSave();
+    });
+
+    const glowEl = backdrop.querySelector("#style-cursor-glow");
+    if (glowEl) glowEl.addEventListener("change", () => {
+      draft.cursorGlow = !!glowEl.checked;
+      // Re-render rather than patch: the switch adds (or removes) the
+      // Cursor Glow row in Colors, which only `render` can do.
+      render();
       scheduleSave();
     });
 
@@ -647,24 +651,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
       });
     });
 
-    backdrop.querySelectorAll(".style-editor-color-row input[type='color']").forEach(input => {
-      input.addEventListener("input", () => {
-        const key = input.dataset.colorKey;
-        const target = colorTab === "light" ? draft.lightColors : draft.darkColors;
-        target[key] = input.value;
-        updatePreview();
-        scheduleSave();
-      });
-    });
-    backdrop.querySelectorAll(".style-reset-color").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const key = btn.dataset.colorKey;
-        const target = colorTab === "light" ? draft.lightColors : draft.darkColors;
-        delete target[key];
-        render();
-        scheduleSave();
-      });
-    });
+    bindColorRows(backdrop, { draft, colorTab, updatePreview, scheduleSave, render });
   }
 
   render();

@@ -13,6 +13,15 @@ function resolveCursorMode(settings, style) {
   return settings.blockCursor ? "block" : "system";
 }
 
+/** Whether the caret wears its glow. Only a custom cursor can: the
+ *  system caret is the platform's to draw, and a halo on it reads as a
+ *  rendering fault rather than a choice. */
+function resolveCursorGlow(settings, style, mode) {
+  if (mode === "system") return false;
+  if (style && style.cursorGlow != null) return !!style.cursorGlow;
+  return !!settings.cursorGlow;
+}
+
 /** Resolve everything a surface needs to paint the cursor: the mode, the
  *  cursor colour, and the line-indicator colour.
  *
@@ -32,6 +41,7 @@ export function resolveCursorPaint(settings) {
   let style = null;
   let cursorOverride = null;
   let lineIndicatorOverride = null;
+  let glowOverride = null;
   if (settings.activeStyleId && settings.styles) {
     style = settings.styles.find(s => s.id === settings.activeStyleId) || null;
     if (style) {
@@ -39,6 +49,7 @@ export function resolveCursorPaint(settings) {
       const overrides = colors || style.colorOverrides || {};
       cursorOverride = overrides.cursor || null;
       lineIndicatorOverride = overrides.lineIndicator || null;
+      glowOverride = overrides.cursorGlow || null;
     }
   } else {
     let appearance = settings.appearance || "dark";
@@ -50,13 +61,19 @@ export function resolveCursorPaint(settings) {
       : (settings.defaultLightColors || {});
     cursorOverride = def.cursor || null;
     lineIndicatorOverride = def.lineIndicator || null;
+    glowOverride = def.cursorGlow || null;
   }
   const theme = getActiveTheme(settings);
   const fallbackCursor = (theme && theme.headingColor) || null;
+  const mode = resolveCursorMode(settings, style);
   return {
-    mode: resolveCursorMode(settings, style),
+    mode,
     cursorColor: cursorOverride || fallbackCursor,
     lineIndicatorColor: lineIndicatorOverride || cursorOverride || fallbackCursor,
+    glow: resolveCursorGlow(settings, style, mode),
+    // No glow colour of its own means the caret's — a halo in a
+    // different colour is a choice, not a default.
+    glowColor: glowOverride || null,
   };
 }
 
@@ -71,8 +88,11 @@ export function paintCursorMode(el, paint) {
   el.classList.toggle("block-cursor", paint.mode === "block");
   el.classList.toggle("underline-cursor", paint.mode === "underline");
   el.classList.toggle("thick-cursor", paint.mode === "thick");
+  el.classList.toggle("cursor-glow", !!paint.glow);
   if (paint.cursorColor) el.style.setProperty("--block-cursor-color", paint.cursorColor);
   else el.style.removeProperty("--block-cursor-color");
+  if (paint.glowColor) el.style.setProperty("--cursor-glow-color", paint.glowColor);
+  else el.style.removeProperty("--cursor-glow-color");
   if (paint.lineIndicatorColor) el.style.setProperty("--line-indicator-color", paint.lineIndicatorColor);
   else el.style.removeProperty("--line-indicator-color");
 }

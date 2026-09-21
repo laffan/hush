@@ -62,6 +62,9 @@ export function themeColorFor(key, themeId, colorTab) {
     case "fg": return fg;
     case "header": return theme?.headingColor || fg;
     case "cursor": return fg;
+    // The glow's default is the caret's own colour, so its swatch opens
+    // on the same value rather than on something the user never chose.
+    case "cursorGlow": return fg;
     case "lineIndicator": return fg;
     case "selection": return colorTab === "light" ? "#c8c8c8" : "#3a3a3a";
     default: return fg;
@@ -172,7 +175,13 @@ export function updatePreview(state, backdrop, draft, colorTab, previewState) {
   if (cursorEl) {
     const themeObj = getThemeById(themeId);
     const accent = colors.cursor || (themeObj && themeObj.headingColor) || cursor;
-    applyPreviewCursorMode(cursorEl, cursorMode, accent, cursor);
+    // The glow rides the same two rules the editor uses (styles/editor.css)
+    // — the preview caret is a plain span, so it gets them as inline
+    // shadows rather than through the `.cursor-glow` class.
+    const glow = cursorMode !== "system" && !!draft.cursorGlow
+      ? (colors.cursorGlow || accent)
+      : null;
+    applyPreviewCursorMode(cursorEl, cursorMode, accent, cursor, glow);
   }
 
   const selEl = pane.querySelector(".preview-selected");

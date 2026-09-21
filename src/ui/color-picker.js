@@ -1,6 +1,6 @@
 /**
- * Custom colour picker popup — a rainbow hue slider over a
- * saturation (x) / brightness (y) gradient field.
+ * Custom colour picker popup — a rainbow hue slider and an opacity
+ * slider over a saturation (x) / brightness (y) gradient field.
  *
  * Used by the Style Editor in place of the platform colour panel. The
  * native panel is a full-screen system sheet on iPadOS: it covers the
@@ -25,37 +25,88 @@
  * black and white have no hue or saturation to read back, so a round
  * trip through the hex would collapse the pointer's position the moment
  * a drag touched an edge of the field.
+ *
+ * ## Opacity
+ *
+ * `input[type="color"]` has nowhere to put an alpha channel — its value
+ * is `#rrggbb` and the browser normalises anything else away. So opacity
+ * rides *beside* the value, on `input.dataset.alpha` ("0"–"1"), written
+ * in the same coalesced flush as the hex and followed by the same
+ * `input` / `change` events. A consumer folds the two into one CSS
+ * colour with `joinAlphaColor`, and unfolds a stored one with
+ * `splitAlphaColor`.
+ *
+ * **The slider is opt-in**, and the presence of `data-alpha` on the
+ * input is the opt: an input that doesn't carry it gets no opacity
+ * track. Half the colour wells in the style editor sit beside an opacity
+ * control of their own (a layer's, a gradient node's), and a second
+ * slider that silently didn't apply would be worse than no slider at
+ * all. Opting one in is one attribute.
  */
 
 // ── colour maths ──────────────────────────────────────────────────────────
 
-/** "#rgb" / "#rrggbb" / "rgb(...)" → `{ r, g, b }` (0-255), or null. */
+/** "#rgb" / "#rgba" / "#rrggbb" / "#rrggbbaa" / "rgb(a)(...)" →
+ *  `{ r, g, b, a }` (channels 0-255, `a` 0-1), or null. `a` is 1 for any
+ *  notation that doesn't carry one. */
 export function parseColor(str) {
   if (typeof str !== "string") return null;
   const s = str.trim();
   const hex = s.startsWith("#") ? s.slice(1) : s;
-  if (/^[0-9a-f]{3}$/i.test(hex)) {
+  const dup = (c) => parseInt(c + c, 16);
+  if (/^[0-9a-f]{3,4}$/i.test(hex)) {
     return {
-      r: parseInt(hex[0] + hex[0], 16),
-      g: parseInt(hex[1] + hex[1], 16),
-      b: parseInt(hex[2] + hex[2], 16),
+      r: dup(hex[0]), g: dup(hex[1]), b: dup(hex[2]),
+      a: hex.length === 4 ? dup(hex[3]) / 255 : 1,
     };
   }
-  if (/^[0-9a-f]{6}$/i.test(hex)) {
+  if (/^[0-9a-f]{6}$/i.test(hex) || /^[0-9a-f]{8}$/i.test(hex)) {
     return {
       r: parseInt(hex.slice(0, 2), 16),
       g: parseInt(hex.slice(2, 4), 16),
       b: parseInt(hex.slice(4, 6), 16),
+      a: hex.length === 8 ? parseInt(hex.slice(6, 8), 16) / 255 : 1,
     };
   }
   const m = s.match(/^rgba?\(([^)]+)\)$/i);
   if (m) {
-    const parts = m[1].split(",").map(p => parseFloat(p));
+    const parts = m[1].split(/[,\s/]+/).filter(Boolean).map(p => parseFloat(p));
     if (parts.length >= 3 && parts.slice(0, 3).every(n => Number.isFinite(n))) {
-      return { r: clamp(parts[0], 0, 255), g: clamp(parts[1], 0, 255), b: clamp(parts[2], 0, 255) };
+      return {
+        r: clamp(parts[0], 0, 255), g: clamp(parts[1], 0, 255), b: clamp(parts[2], 0, 255),
+        a: Number.isFinite(parts[3]) ? clamp(parts[3], 0, 1) : 1,
+      };
     }
   }
   return null;
+}
+
+/** Alpha as the two hex digits `#rrggbbaa` wants. */
+function alphaHex(a) {
+  return Math.round(clamp(a, 0, 1) * 255).toString(16).padStart(2, "0");
+}
+
+/**
+ * Split a stored colour into the parts an `input[type="color"]` and its
+ * `dataset.alpha` hold. Anything unparseable comes back as opaque black,
+ * which is what the input would have shown anyway.
+ */
+export function splitAlphaColor(value) {
+  const rgb = parseColor(value);
+  if (!rgb) return { hex: "#000000", alpha: 1 };
+  return { hex: toHex(rgb.r, rgb.g, rgb.b), alpha: rgb.a };
+}
+
+/**
+ * Fold a swatch's value and its opacity back into one CSS colour.
+ * Full opacity stays `#rrggbb` — an `ff` on the end of every colour a
+ * user never made translucent is noise in the stored style, and in the
+ * hex field they read it back from.
+ */
+export function joinAlphaColor(hex, alpha) {
+  const a = alpha == null || alpha === "" ? 1 : clamp(parseFloat(alpha), 0, 1);
+  if (!Number.isFinite(a) || a >= 1) return hex;
+  return `${hex}${alphaHex(a)}`;
 }
 
 function clamp(n, lo, hi) { return n < lo ? lo : n > hi ? hi : n; }
@@ -113,8 +164,14 @@ let openPicker = null; // { el, close } — one at a time, app-wide
 export function openColorPicker(input, anchorEl) {
   closeColorPicker();
 
-  const rgb = parseColor(input.value) || { r: 128, g: 128, b: 128 };
+  const rgb = parseColor(input.value) || { r: 128, g: 128, b: 128, a: 1 };
   const hsv = rgbToHsv(rgb);
+  // Opacity rides beside the value rather than in it — see the module
+  // header. No `data-alpha` at all means nobody has opted in, and a
+  // colour nobody has made translucent is opaque.
+  const allowAlpha = input.dataset.alpha != null;
+  const startAlpha = parseFloat(input.dataset.alpha);
+  let alpha = Number.isFinite(startAlpha) ? clamp(startAlpha, 0, 1) : 1;
 
   const el = document.createElement("div");
   el.className = "hush-colorpick";
@@ -125,6 +182,11 @@ export function openColorPicker(input, anchorEl) {
          aria-label="Hue" aria-valuemin="0" aria-valuemax="360">
       <div class="hush-colorpick-hue-thumb"></div>
     </div>
+    <div class="hush-colorpick-alpha" tabindex="0" role="slider"
+         aria-label="Opacity" aria-valuemin="0" aria-valuemax="100">
+      <div class="hush-colorpick-alpha-ramp"></div>
+      <div class="hush-colorpick-alpha-thumb"></div>
+    </div>
     <div class="hush-colorpick-field" tabindex="0" role="application"
          aria-label="Saturation and brightness">
       <div class="hush-colorpick-field-thumb"></div>
@@ -132,12 +194,16 @@ export function openColorPicker(input, anchorEl) {
     <div class="hush-colorpick-foot">
       <span class="hush-colorpick-swatch"></span>
       <input class="hush-colorpick-hex" type="text" spellcheck="false"
-             autocomplete="off" aria-label="Hex colour" maxlength="7" />
+             autocomplete="off" aria-label="Hex colour" maxlength="9" />
     </div>`;
   document.body.appendChild(el);
 
   const hueBar = el.querySelector(".hush-colorpick-hue");
   const hueThumb = el.querySelector(".hush-colorpick-hue-thumb");
+  const alphaBar = el.querySelector(".hush-colorpick-alpha");
+  const alphaRamp = el.querySelector(".hush-colorpick-alpha-ramp");
+  const alphaThumb = el.querySelector(".hush-colorpick-alpha-thumb");
+  if (!allowAlpha) alphaBar.remove();
   const field = el.querySelector(".hush-colorpick-field");
   const fieldThumb = el.querySelector(".hush-colorpick-field-thumb");
   const swatch = el.querySelector(".hush-colorpick-swatch");
@@ -159,8 +225,18 @@ export function openColorPicker(input, anchorEl) {
     fieldThumb.style.left = `${hsv.s * 100}%`;
     fieldThumb.style.top = `${(1 - hsv.v) * 100}%`;
     fieldThumb.style.background = hex;
-    swatch.style.background = hex;
-    if (document.activeElement !== hexInput) hexInput.value = hex;
+    // The opacity ramp runs from transparent to the colour currently
+    // picked, over the checkerboard the track carries — so the slider
+    // shows this colour fading rather than a generic grey wedge.
+    if (allowAlpha) {
+      alphaRamp.style.background = `linear-gradient(to right, ${hex}00, ${hex})`;
+      alphaThumb.style.left = `${alpha * 100}%`;
+      alphaThumb.style.background = joinAlphaColor(hex, alpha);
+      alphaBar.setAttribute("aria-valuenow", String(Math.round(alpha * 100)));
+    }
+    const shown = allowAlpha ? joinAlphaColor(hex, alpha) : hex;
+    swatch.style.setProperty("--swatch-color", shown);
+    if (document.activeElement !== hexInput) hexInput.value = shown;
   }
 
   function flush() {
@@ -168,8 +244,13 @@ export function openColorPicker(input, anchorEl) {
     const wasFinal = pendingFinal;
     pendingFinal = false;
     const hex = hsvToHex(hsv);
-    const changed = input.value.toLowerCase() !== hex;
+    const nextAlpha = String(alpha);
+    const changed = input.value.toLowerCase() !== hex
+      || (allowAlpha && input.dataset.alpha !== nextAlpha);
     input.value = hex;
+    // Written before the event, so a listener reading both sees one
+    // colour rather than the new hex at the old opacity.
+    if (allowAlpha) input.dataset.alpha = nextAlpha;
     if (changed) input.dispatchEvent(new Event("input", { bubbles: true }));
     if (wasFinal) input.dispatchEvent(new Event("change", { bubbles: true }));
   }
@@ -215,6 +296,11 @@ export function openColorPicker(input, anchorEl) {
     hsv.s = clamp((e.clientX - rect.left) / rect.width, 0, 1);
     hsv.v = 1 - clamp((e.clientY - rect.top) / rect.height, 0, 1);
   });
+  if (allowAlpha) {
+    draggable(alphaBar, (e, rect) => {
+      alpha = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+    });
+  }
 
   // Arrow keys nudge whichever surface has focus — 1 unit, 10 with shift.
   hueBar.addEventListener("keydown", (e) => {
@@ -222,6 +308,15 @@ export function openColorPicker(input, anchorEl) {
     if (!step) return;
     e.preventDefault();
     hsv.h = ((hsv.h + step) % 360 + 360) % 360;
+    paint();
+    push(true);
+  });
+  if (allowAlpha) alphaBar.addEventListener("keydown", (e) => {
+    const step = (e.shiftKey ? 0.1 : 0.01)
+      * (e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0);
+    if (!step) return;
+    e.preventDefault();
+    alpha = clamp(alpha + step, 0, 1);
     paint();
     push(true);
   });
@@ -244,6 +339,9 @@ export function openColorPicker(input, anchorEl) {
     const parsed = parseColor(hexInput.value);
     if (!parsed) { paint(); return; }
     Object.assign(hsv, rgbToHsv(parsed));
+    // A typed `#rrggbbaa` sets the slider too; a typed `#rrggbb` reads
+    // as "fully opaque", which is what it means everywhere else.
+    if (allowAlpha) alpha = parsed.a;
     paint();
     push(true);
   };
@@ -354,6 +452,16 @@ function enhance(input) {
   well.className = "hush-color-well";
   input.parentNode.insertBefore(well, input);
   well.appendChild(input);
+  // The native input paints the swatch but has no alpha channel to paint
+  // *with*, so the well fades it over its own checkerboard instead. Kept
+  // in step on every write, ours or a caller's.
+  const syncWellAlpha = () => {
+    const a = parseFloat(input.dataset.alpha);
+    well.style.setProperty("--well-alpha", String(Number.isFinite(a) ? clamp(a, 0, 1) : 1));
+  };
+  syncWellAlpha();
+  input.addEventListener("input", syncWellAlpha);
+  input.addEventListener("change", syncWellAlpha);
   const hit = document.createElement("span");
   hit.className = "hush-color-well-hit";
   hit.setAttribute("role", "button");

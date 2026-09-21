@@ -27,6 +27,20 @@ import type { OutlineItem } from "../outline/outline-model";
 
 /** How much smaller than the shape's own size an outline sets. */
 export const OUTLINE_FONT_DROP = 2;
+/**
+ * The line height an outline row sits on, as a multiple of its font
+ * size — the same number `--outline-line-height` gives the Doc, less the
+ * 2px the Doc adds on top of it (see styles/outline.css). The two
+ * surfaces are one outline seen twice, and a row that reads tighter on a
+ * canvas than in a document is the seam showing.
+ *
+ * The canvas lays text out on `LINE_HEIGHT_RATIO`, so the difference is
+ * added as **leading**: half above each row's text and half below, which
+ * is what a CSS line-height does. Keeping it as one subtraction means
+ * moving either end can't leave the two drifting apart again.
+ */
+export const OUTLINE_LINE_HEIGHT = 1.6;
+const ROW_LEAD_RATIO = Math.max(0, OUTLINE_LINE_HEIGHT - LINE_HEIGHT_RATIO);
 /** Inner padding between the border and the items. */
 export const OUTLINE_PAD = 10;
 export const OUTLINE_RADIUS = 6;
@@ -55,6 +69,10 @@ export interface OutlineRow {
   /** Row box, relative to `shape.position`. */
   y: number;
   height: number;
+  /** Where the item's text starts inside the row — half the row's
+   *  leading. Everything that lines up with the words (the checkbox, the
+   *  strike) is placed from here, not from `y`. */
+  textTop: number;
   boxX: number;
   textX: number;
   textWidth: number;
@@ -139,6 +157,7 @@ export function outlineLayout(shape: TextShape): OutlineLayout {
   const baseDepth = items.reduce((m, it) => Math.min(m, it.depth), Infinity);
   const rows: OutlineRow[] = [];
 
+  const rowLead = fontSize * ROW_LEAD_RATIO;
   let y = OUTLINE_PAD;
   items.forEach((item, i) => {
     if (hideDone && item.checked) return;
@@ -162,10 +181,10 @@ export function outlineLayout(shape: TextShape): OutlineLayout {
       });
       height += lineH;
     }
-    const rowH = Math.max(height, fontSize * LINE_HEIGHT_RATIO);
+    const rowH = Math.max(height, fontSize * LINE_HEIGHT_RATIO) + rowLead;
     rows.push({
       line: item.line, depth: item.depth, checked: item.checked, text: item.text,
-      next: i === nextIdx, y, height: rowH,
+      next: i === nextIdx, y, height: rowH, textTop: rowLead / 2,
       boxX, textX, textWidth, lines,
     });
     y += rowH;

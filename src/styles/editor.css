@@ -252,6 +252,33 @@ body.file-in-trash #notebook-container .notes-canvas + * {
   border-bottom: none;
   background: transparent;
   opacity: 1;
+  /* Overhang the line box by 2px at each end. CodeMirror writes the
+     caret's `top` and `height` inline from the measured line, so the
+     extra has to come from padding — which a content box adds to that
+     height — pulled back up by the same amount, so the caret grows
+     evenly instead of hanging below the text. `box-sizing` is stated
+     rather than inherited: base.css sets `border-box` on everything,
+     and under that the padding would eat the height instead of adding
+     to it and the caret would come out shorter. */
+  box-sizing: content-box;
+  padding-block: 2px;
+  margin-top: -2px;
+}
+
+/* Cursor glow — an optional halo behind a non-system caret, in its own
+   colour (`Cursor Glow` in the style's Colors) or in the caret's when
+   that is unset. Two shadows rather than one: a tight bright core so the
+   caret still reads as a hard edge, and a wide soft bloom that carries
+   the colour. `drop-shadow` was tried first and is wrong here — the
+   caret is an empty element drawn as a border, so a filter on it blurs
+   nothing and paints nothing. */
+.cursor-mode-surface.cursor-glow .cm-cursor,
+#editor-container.cursor-glow .cm-cursor,
+.zen-focus-overlay.cursor-glow .cm-cursor,
+.selection-focus-overlay.cursor-glow .cm-cursor {
+  box-shadow:
+    0 0 3px var(--cursor-glow-color, var(--block-cursor-color, var(--cursor))),
+    0 0 10px var(--cursor-glow-color, var(--block-cursor-color, var(--cursor)));
 }
 
 

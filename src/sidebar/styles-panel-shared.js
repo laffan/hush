@@ -39,13 +39,18 @@ export function renderCursorOptions(active) {
  *  editor's `.block-cursor` / `.underline-cursor` / `.thick-cursor` CSS —
  *  the underline variant draws as a border-bottom on a full-height
  *  inline-block so the strip sits below the descenders instead of
- *  overlapping them, and the thick variant is the plain caret at 3px. */
-export function applyPreviewCursorMode(el, mode, accent, cursor) {
-  Object.assign(el.style, { borderLeft: "", borderBottom: "", background: "", opacity: "", width: "", height: "", verticalAlign: "" });
+ *  overlapping them, and the thick variant is the plain caret at 3px.
+ *  `glow` (a colour, or null) paints the optional halo. */
+export function applyPreviewCursorMode(el, mode, accent, cursor, glow) {
+  Object.assign(el.style, { borderLeft: "", borderBottom: "", background: "", opacity: "", width: "", height: "", verticalAlign: "", boxShadow: "" });
   if (mode === "block") Object.assign(el.style, { background: accent, opacity: "0.85", width: "0.6em" });
   else if (mode === "underline") Object.assign(el.style, { borderBottom: `3px solid ${accent}`, background: "transparent", opacity: "0.7", width: "0.6em" });
   else if (mode === "thick") Object.assign(el.style, { borderLeft: `3px solid ${accent}`, width: "0" });
   else Object.assign(el.style, { borderLeft: `2px solid ${cursor}`, width: "0" });
+  // Same two shadows as `.cursor-glow` in styles/editor.css: a tight
+  // bright core so the caret keeps its hard edge, and a wide soft bloom
+  // that carries the colour.
+  if (glow) el.style.boxShadow = `0 0 3px ${glow}, 0 0 10px ${glow}`;
 }
 
 /**

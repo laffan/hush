@@ -12,12 +12,28 @@
  * element. It rides the line's own box, which is why the hang-indent
  * `heading-indent.js` writes as inline `padding-left` can't fight it. */
 
+/* The line height both outline surfaces sit on. The canvas keeps the
+   same number in `OUTLINE_LINE_HEIGHT` (outline-shape.ts) and adds the
+   difference from its own text rhythm as leading, so an outline reads
+   the same on either surface — which is the whole premise of the
+   feature, and was visibly not true while the canvas ran 1.3 against
+   this sheet's 1.45.
+
+   The Doc runs a touch looser than the canvas on purpose: a document is
+   read in long passages and an outline inside one is a held breath,
+   where a canvas outline is a card among other cards. `--outline-doc-lead`
+   is that difference, roughly 2px at the default type size. */
+:root {
+  --outline-line-height: 1.6;
+  --outline-doc-lead: 0.15;
+}
+
 .cm-outline-line {
   font-family: var(--ui-font-family);
   /* "A few pixels smaller than normal text", expressed against the
      style's own size so it tracks a reader who scales the document. */
   font-size: calc(var(--font-size) - 2px);
-  line-height: 1.45;
+  line-height: calc(var(--outline-line-height) + var(--outline-doc-lead));
   border-left: 1px solid var(--outline-border);
   border-right: 1px solid var(--outline-border);
   background: var(--outline-bg);
@@ -54,10 +70,18 @@
 
 /* Round boxes, in an outline only: a checklist you are working through
    reads as a set of states to fill in rather than as form fields, and
-   the square box stays where a task list is just a task list. */
+   the square box stays where a task list is just a task list.
+
+   The ring is lighter than a task list's too. A square box on a loose
+   line is a control; a column of circles down the side of a framed
+   outline is a texture, and at the weight the task list uses that
+   column reads louder than the words it belongs to. The canvas ring
+   (renderer.ts) is drawn to match. */
 .cm-outline-line .cm-task-checkbox,
 .outline-row-box {
   border-radius: 50%;
+  border-width: 1px;
+  border-color: color-mix(in srgb, var(--style-fg, var(--fg)) 30%, transparent);
 }
 
 /* The tick inside a circle needs a touch more inset than inside a
@@ -218,7 +242,7 @@
   padding: 2px 10px;
   font-family: var(--ui-font-family);
   font-size: calc(var(--font-size) - 2px);
-  line-height: 1.45;
+  line-height: calc(var(--outline-line-height) + var(--outline-doc-lead));
   color: var(--style-fg, var(--fg));
 }
 
