@@ -1,19 +1,24 @@
 /**
- * Outline View — right sidebar for document navigation.
+ * Overview — the right-hand sidebar for document navigation.
+ *
+ * Named "outline view" until Outlines (the nested-checklist blocks in
+ * `src/outline/`) shipped and the two became impossible to talk about
+ * apart. Same panel, same settings — `overview*` keys carry their old
+ * `longview*` spellings as serde aliases so nobody's tuning resets.
  * Ported from obsidian-long-view for Hush.
  *
- * Renders an outline with headings, condensed text, flags, and callout tinting.
+ * Renders an overview with headings, condensed text, flags, and callout tinting.
  * Clicking headings/flags navigates the editor. The current heading is highlighted.
  */
 import {
   parseDocument,
   computeHeadingCalloutStacks,
   getFirstWords,
-} from "./longview-parser.js";
-import { tokenizeLinesWithOffsets, renderLineWithCommentHighlights } from "./longview-lines.js";
+} from "./overview-parser.js";
+import { tokenizeLinesWithOffsets, renderLineWithCommentHighlights } from "./overview-lines.js";
 import { CALLOUT_COLORS, getCalloutColor } from "../editor/plugins/callouts.js";
 import { getActiveTheme } from "../themes/index.js";
-import { buildTabContainers } from "./longview-tabs.js";
+import { buildTabContainers } from "./overview-tabs.js";
 import { EditorView } from "@codemirror/view";
 
 /** Default flag colors */
@@ -25,27 +30,27 @@ const DEFAULT_FLAG_COLORS = {
   RESEARCH: "#66aaff",
 };
 
-/** Default Outline View settings */
-export const LONGVIEW_DEFAULTS = {
-  longviewShowParagraphs: true,
-  longviewShowNumbers: true,
-  longviewShowComments: false,
-  longviewShowFlags: true,
-  longviewShowFlagTypes: false,
-  longviewWrapFlagText: true,
-  longviewBodyFontSize: 3,
-  longviewHeadingFontSize: 12,
-  longviewFlagFontSize: 12,
-  longviewLineGap: 2,
-  longviewCurrentPositionColor: "#ff0000",
+/** Default Overview settings */
+export const OVERVIEW_DEFAULTS = {
+  overviewShowParagraphs: true,
+  overviewShowNumbers: true,
+  overviewShowComments: false,
+  overviewShowFlags: true,
+  overviewShowFlagTypes: false,
+  overviewWrapFlagText: true,
+  overviewBodyFontSize: 3,
+  overviewHeadingFontSize: 12,
+  overviewFlagFontSize: 12,
+  overviewLineGap: 2,
+  overviewCurrentPositionColor: "#ff0000",
 };
 
 /**
- * Create and manage the LongView panel inside the right panel overlay.
+ * Create and manage the Overview panel inside the right panel overlay.
  * @param {HTMLElement} container - The #right-panel-overlay element
  * @param {object} state - AppState instance
  */
-export function createLongView(container, state) {
+export function createOverview(container, state) {
   let headingEntries = []; // { offset, element }
   let paragraphEntries = []; // { offset, element }
   let activeHeadingEl = null;
@@ -54,7 +59,7 @@ export function createLongView(container, state) {
   let selectionHandler = null;
 
   function getSettings() {
-    return { ...LONGVIEW_DEFAULTS, ...state.settings };
+    return { ...OVERVIEW_DEFAULTS, ...state.settings };
   }
 
   function render() {
@@ -62,14 +67,14 @@ export function createLongView(container, state) {
     container.innerHTML = "";
 
     const wrapper = document.createElement("div");
-    wrapper.className = "longview-container";
+    wrapper.className = "overview-container";
 
     // Options toggle button (collapsible)
     const optionsToggle = document.createElement("button");
-    optionsToggle.className = "longview-options-toggle";
+    optionsToggle.className = "overview-options-toggle";
     optionsToggle.textContent = "Options ▾";
     optionsToggle.addEventListener("click", () => {
-      const panel = wrapper.querySelector(".longview-options-panel");
+      const panel = wrapper.querySelector(".overview-options-panel");
       const isOpen = !panel.classList.contains("collapsed");
       panel.classList.toggle("collapsed", isOpen);
       optionsToggle.textContent = isOpen ? "Options ▸" : "Options ▾";
@@ -78,33 +83,33 @@ export function createLongView(container, state) {
     wrapper.appendChild(optionsToggle);
 
     const optionsPanel = document.createElement("div");
-    optionsPanel.className = "longview-options-panel collapsed";
+    optionsPanel.className = "overview-options-panel collapsed";
     // Prevent interactions inside options from closing the panel
     optionsPanel.addEventListener("mousedown", (e) => e.stopPropagation());
 
     // Toggle buttons grid (squared off) — the "buttons" section
     const filters = document.createElement("div");
-    filters.className = "longview-filters longview-options-group";
-    filters.appendChild(makeToggle("Text", s.longviewShowParagraphs, "longviewShowParagraphs"));
-    filters.appendChild(makeToggle("Numbers", s.longviewShowNumbers, "longviewShowNumbers"));
-    filters.appendChild(makeToggle("Comments", s.longviewShowComments, "longviewShowComments"));
-    filters.appendChild(makeToggle("Flags", s.longviewShowFlags, "longviewShowFlags"));
+    filters.className = "overview-filters overview-options-group";
+    filters.appendChild(makeToggle("Text", s.overviewShowParagraphs, "overviewShowParagraphs"));
+    filters.appendChild(makeToggle("Numbers", s.overviewShowNumbers, "overviewShowNumbers"));
+    filters.appendChild(makeToggle("Comments", s.overviewShowComments, "overviewShowComments"));
+    filters.appendChild(makeToggle("Flags", s.overviewShowFlags, "overviewShowFlags"));
     optionsPanel.appendChild(filters);
 
     // Checkbox area — flag type label + wrap toggle
     const checkboxes = document.createElement("div");
-    checkboxes.className = "longview-options-group";
-    checkboxes.appendChild(makeCheckboxRow("Show flag type labels", s.longviewShowFlagTypes, "longviewShowFlagTypes"));
-    checkboxes.appendChild(makeCheckboxRow("Wrap flag text", s.longviewWrapFlagText, "longviewWrapFlagText"));
+    checkboxes.className = "overview-options-group";
+    checkboxes.appendChild(makeCheckboxRow("Show flag type labels", s.overviewShowFlagTypes, "overviewShowFlagTypes"));
+    checkboxes.appendChild(makeCheckboxRow("Wrap flag text", s.overviewWrapFlagText, "overviewWrapFlagText"));
     optionsPanel.appendChild(checkboxes);
 
     // Slider area — sizes + gap
     const sliders = document.createElement("div");
-    sliders.className = "longview-options-group";
-    sliders.appendChild(makeSliderRow("Paragraph size", s.longviewBodyFontSize, 1, 12, 0.5, "longviewBodyFontSize", "px"));
-    sliders.appendChild(makeSliderRow("Heading size", s.longviewHeadingFontSize, 8, 20, 1, "longviewHeadingFontSize", "px"));
-    sliders.appendChild(makeSliderRow("Flag size", s.longviewFlagFontSize, 8, 18, 1, "longviewFlagFontSize", "px"));
-    sliders.appendChild(makeSliderRow("Line gap", s.longviewLineGap, 0, 8, 0.5, "longviewLineGap", "px"));
+    sliders.className = "overview-options-group";
+    sliders.appendChild(makeSliderRow("Paragraph size", s.overviewBodyFontSize, 1, 12, 0.5, "overviewBodyFontSize", "px"));
+    sliders.appendChild(makeSliderRow("Heading size", s.overviewHeadingFontSize, 8, 20, 1, "overviewHeadingFontSize", "px"));
+    sliders.appendChild(makeSliderRow("Flag size", s.overviewFlagFontSize, 8, 18, 1, "overviewFlagFontSize", "px"));
+    sliders.appendChild(makeSliderRow("Line gap", s.overviewLineGap, 0, 8, 0.5, "overviewLineGap", "px"));
     optionsPanel.appendChild(sliders);
     wrapper.appendChild(optionsPanel);
 
@@ -117,16 +122,16 @@ export function createLongView(container, state) {
   function buildContent(s) {
     const text = state.editor ? state.editor.getContent() : "";
     const { headings, flags, tabs } = parseDocument(text);
-    const sectionColors = { ...CALLOUT_COLORS, ...(s.flagColors || {}), ...(s.longviewSectionColors || {}) };
+    const sectionColors = { ...CALLOUT_COLORS, ...(s.flagColors || {}), ...(s.overviewSectionColors || {}) };
     const calloutStacks = computeHeadingCalloutStacks(headings, sectionColors);
 
     const content = document.createElement("div");
-    content.className = "longview-content";
-    content.style.setProperty("--lv-body-font", s.longviewBodyFontSize + "px");
-    content.style.setProperty("--lv-heading-font", s.longviewHeadingFontSize + "px");
-    content.style.setProperty("--lv-flag-font", s.longviewFlagFontSize + "px");
-    content.style.setProperty("--lv-line-gap", s.longviewLineGap + "px");
-    content.style.setProperty("--lv-position-color", s.longviewCurrentPositionColor);
+    content.className = "overview-content";
+    content.style.setProperty("--lv-body-font", s.overviewBodyFontSize + "px");
+    content.style.setProperty("--lv-heading-font", s.overviewHeadingFontSize + "px");
+    content.style.setProperty("--lv-flag-font", s.overviewFlagFontSize + "px");
+    content.style.setProperty("--lv-line-gap", s.overviewLineGap + "px");
+    content.style.setProperty("--lv-position-color", s.overviewCurrentPositionColor);
     // Active theme's heading colour drives the current-paragraph wash.
     const activeTheme = getActiveTheme(state.settings);
     if (activeTheme && activeTheme.headingColor) {
@@ -174,9 +179,9 @@ export function createLongView(container, state) {
         activeCalloutStack = result.stack;
         currentLevel = h.level;
         flowEl = createSectionStructure(result.container, currentLevel);
-        const numbering = s.longviewShowNumbers ? computeNumbering(headings, h) : "";
+        const numbering = s.overviewShowNumbers ? computeNumbering(headings, h) : "";
         const headingEl = document.createElement("div");
-        headingEl.className = "longview-heading";
+        headingEl.className = "overview-heading";
         headingEl.dataset.offset = String(h.startOffset);
         headingEl.dataset.level = String(h.level);
         headingEl.textContent = numbering ? `${numbering} ${h.text}` : h.text;
@@ -188,11 +193,11 @@ export function createLongView(container, state) {
         headingEntries.push({ offset: h.startOffset, element: headingEl });
         if (h.callout) {
           const calloutTitle = document.createElement("div");
-          calloutTitle.className = "longview-callout-title";
-          const showType = s.longviewShowFlagTypes && h.callout.type !== "SUMMARY";
+          calloutTitle.className = "overview-callout-title";
+          const showType = s.overviewShowFlagTypes && h.callout.type !== "SUMMARY";
           if (showType) {
             const typeSpan = document.createElement("span");
-            typeSpan.className = "longview-flag-type";
+            typeSpan.className = "overview-flag-type";
             typeSpan.textContent = h.callout.type;
             calloutTitle.appendChild(typeSpan);
             if (h.callout.title) calloutTitle.appendChild(document.createTextNode(" — " + h.callout.title));
@@ -202,7 +207,7 @@ export function createLongView(container, state) {
           if (calloutTitle.textContent) flowEl.appendChild(calloutTitle);
         }
       } else if (frag.type === "text") {
-        if (s.longviewShowParagraphs) {
+        if (s.overviewShowParagraphs) {
           for (const entry of tokenizeLinesWithOffsets(frag.text, frag.startOffset || 0)) {
             // Each paragraph routes by its own offset — a text fragment
             // between a heading and a flag can straddle a tab marker,
@@ -222,7 +227,7 @@ export function createLongView(container, state) {
               flowEl = createSectionStructure(result.container, currentLevel);
             }
             const p = document.createElement("p");
-            p.className = "longview-line";
+            p.className = "overview-line";
             p.dataset.offset = String(entry.offset);
             renderLineWithCommentHighlights(p, entry.line);
             // Click navigates the editor to this paragraph; mirrors the
@@ -237,8 +242,8 @@ export function createLongView(container, state) {
           }
         }
       } else if (frag.type === "flag") {
-        if (!s.longviewShowFlags) continue;
-        if (!s.longviewShowComments && frag.flag.type === "COMMENT") continue;
+        if (!s.overviewShowFlags) continue;
+        if (!s.overviewShowComments && frag.flag.type === "COMMENT") continue;
         if (!flowEl) {
           const result = updateCalloutWrappers(currentContainer, openCalloutWrappers, activeCalloutStack, activeCalloutStack, sectionColors);
           openCalloutWrappers = result.wrappers;
@@ -252,9 +257,9 @@ export function createLongView(container, state) {
 
   /** Re-render only the content area (preserves options panel state) */
   function renderContent() {
-    const wrapper = container.querySelector(".longview-container");
+    const wrapper = container.querySelector(".overview-container");
     if (!wrapper) return render();
-    const oldContent = wrapper.querySelector(".longview-content");
+    const oldContent = wrapper.querySelector(".overview-content");
     const newContent = buildContent(getSettings());
     if (oldContent) wrapper.replaceChild(newContent, oldContent);
     else wrapper.appendChild(newContent);
@@ -264,18 +269,18 @@ export function createLongView(container, state) {
   /** Apply CSS variable changes live without rebuilding DOM */
   function applyLiveStyles() {
     const s = getSettings();
-    const content = container.querySelector(".longview-content");
+    const content = container.querySelector(".overview-content");
     if (!content) return;
-    content.style.setProperty("--lv-body-font", s.longviewBodyFontSize + "px");
-    content.style.setProperty("--lv-heading-font", s.longviewHeadingFontSize + "px");
-    content.style.setProperty("--lv-flag-font", s.longviewFlagFontSize + "px");
-    content.style.setProperty("--lv-line-gap", s.longviewLineGap + "px");
-    content.style.setProperty("--lv-position-color", s.longviewCurrentPositionColor);
+    content.style.setProperty("--lv-body-font", s.overviewBodyFontSize + "px");
+    content.style.setProperty("--lv-heading-font", s.overviewHeadingFontSize + "px");
+    content.style.setProperty("--lv-flag-font", s.overviewFlagFontSize + "px");
+    content.style.setProperty("--lv-line-gap", s.overviewLineGap + "px");
+    content.style.setProperty("--lv-position-color", s.overviewCurrentPositionColor);
   }
 
   function makeToggle(label, value, key) {
     const btn = document.createElement("button");
-    btn.className = "longview-filter-btn" + (value ? " active" : "");
+    btn.className = "overview-filter-btn" + (value ? " active" : "");
     btn.textContent = label;
     btn.addEventListener("click", () => {
       state.settings[key] = !state.settings[key];
@@ -288,7 +293,7 @@ export function createLongView(container, state) {
 
   function makeCheckboxRow(label, value, key) {
     const row = document.createElement("div");
-    row.className = "longview-option-row";
+    row.className = "overview-option-row";
     const lbl = document.createElement("label");
     lbl.textContent = label;
     const cb = document.createElement("input");
@@ -306,13 +311,13 @@ export function createLongView(container, state) {
 
   function makeSliderRow(label, value, min, max, step, key, unit) {
     const row = document.createElement("div");
-    row.className = "longview-option-row longview-option-stacked";
+    row.className = "overview-option-row overview-option-stacked";
     const top = document.createElement("div");
-    top.className = "longview-option-row-top";
+    top.className = "overview-option-row-top";
     const lbl = document.createElement("label");
     lbl.textContent = label;
     const val = document.createElement("span");
-    val.className = "longview-option-value";
+    val.className = "overview-option-value";
     val.textContent = value + unit;
     top.appendChild(lbl);
     top.appendChild(val);
@@ -382,10 +387,10 @@ export function createLongView(container, state) {
     highlightParagraphForOffset(offset);
     // Prefer scrolling the paragraph into view when paragraphs are
     // rendered; otherwise fall back to the heading. Both branches share
-    // the same scroll container (.longview-content) which scrolls
+    // the same scroll container (.overview-content) which scrolls
     // independently of the rest of the panel chrome.
     const target = activeParagraphEl || activeHeadingEl;
-    if (target) scrollIntoLongView(target);
+    if (target) scrollIntoOverview(target);
   }
 
   function highlightHeadingForOffset(offset) {
@@ -438,10 +443,10 @@ export function createLongView(container, state) {
 
   /** Scroll the outline's content area so `el` sits roughly mid-viewport.
    *  Plain scrollIntoView would also nudge the *page* (the panel sits in
-   *  a parent that scrolls) — instead we scroll just the longview-content
+   *  a parent that scrolls) — instead we scroll just the overview-content
    *  container, which keeps the options panel pinned at the top. */
-  function scrollIntoLongView(el) {
-    const scroller = container.querySelector(".longview-content");
+  function scrollIntoOverview(el) {
+    const scroller = container.querySelector(".overview-content");
     if (!scroller || !scroller.contains(el)) return;
     const elRect = el.getBoundingClientRect();
     const sRect = scroller.getBoundingClientRect();
@@ -538,12 +543,12 @@ function createSectionStructure(container, level) {
   let el = container;
   for (let l = 2; l <= level; l++) {
     const hierarchy = document.createElement("div");
-    hierarchy.className = "longview-hierarchy-level";
+    hierarchy.className = "overview-hierarchy-level";
     el.appendChild(hierarchy);
     el = hierarchy;
   }
   const body = document.createElement("div");
-  body.className = "longview-section-body";
+  body.className = "overview-section-body";
   el.appendChild(body);
   return body;
 }
@@ -563,7 +568,7 @@ function updateCalloutWrappers(contentEl, wrappers, activeStack, newStack, secti
   for (let i = commonLen; i < filteredStack.length; i++) {
     const callout = filteredStack[i];
     const wrapper = document.createElement("div");
-    wrapper.className = "longview-callout-bg";
+    wrapper.className = "overview-callout-bg";
     const color = sectionColors[callout.type] || "#086ddd";
     const rgb = hexToRgb(color);
     wrapper.style.backgroundColor = `rgba(${rgb.r},${rgb.g},${rgb.b},0.15)`;
@@ -577,8 +582,8 @@ function updateCalloutWrappers(contentEl, wrappers, activeStack, newStack, secti
 
 function createFlagElement(flag, settings, state) {
   const el = document.createElement("div");
-  el.className = "longview-flag";
-  if (settings.longviewWrapFlagText) el.classList.add("wrap-flag-text");
+  el.className = "overview-flag";
+  if (settings.overviewWrapFlagText) el.classList.add("wrap-flag-text");
 
   // Apply color from settings (flagColors map) or fall back to defaults
   const flagColors = settings.flagColors || {};
@@ -599,16 +604,16 @@ function createFlagElement(flag, settings, state) {
     ? (baseMessage || "Missing")
     : (baseMessage ? getFirstWords(baseMessage, 10) : flag.type);
 
-  if (settings.longviewShowFlagTypes && flag.type !== "COMMENT") {
+  if (settings.overviewShowFlagTypes && flag.type !== "COMMENT") {
     const typeSpan = document.createElement("span");
-    typeSpan.className = "longview-flag-type";
+    typeSpan.className = "overview-flag-type";
     typeSpan.textContent = flag.type;
     el.appendChild(typeSpan);
     el.appendChild(document.createTextNode(": "));
   }
 
   const msgSpan = document.createElement("span");
-  msgSpan.className = "longview-flag-message";
+  msgSpan.className = "overview-flag-message";
   if (isMissing) msgSpan.style.color = color;
   msgSpan.textContent = messageText;
   el.appendChild(msgSpan);

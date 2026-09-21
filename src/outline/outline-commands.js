@@ -1,5 +1,6 @@
 /**
- * "Convert to Outline" — the two halves of one command.
+ * The outline commands the palette runs: "Convert to Outline" (both
+ * halves), its inverse "Convert to List", and the "Outline mode" switch.
  *
  * A Doc converts the nested list under the cursor: every item that lacks
  * a checkbox gets one, and the document's frontmatter gains
@@ -11,13 +12,21 @@
  * the point: an outline made on either surface opens as an outline on
  * the other, with no conversion in between.
  *
+ * "Convert to List" is the Doc half only. A notebook outline shape is a
+ * shape, not a run of lines: unfolding one back into a flowchart is a
+ * different operation from stripping checkboxes, and the canvas owns it.
+ *
  * Lives outside `command-palette-commands.js` so that file stays clear
  * of the 700-line cap; the palette entries are two lines each.
  */
 
 import { getActiveModeContext } from "../state/mode-context.js";
 import { getCanvasInstance } from "../notebook/notebook-bridge.js";
-import { convertListToOutline, listBlockForSelection } from "../editor/outline-frontmatter.js";
+import {
+  convertListToOutline, listBlockForSelection,
+  convertOutlineToList, outlineBlockForSelection,
+  toggleOutlineMode as patchOutlineMode, outlineFlagsOf,
+} from "../editor/outline-frontmatter.js";
 
 /** The doc surface a doc-side command should act on: the focused pane or
  *  stack column when one owns the active mode context, else the main
@@ -40,6 +49,40 @@ export function convertDocToOutline(state) {
   const view = docView(state);
   if (!view) return;
   convertListToOutline(view);
+  view.focus();
+}
+
+/** True when the caret sits in a run of checklist lines — an outline to
+ *  take the boxes off. */
+export function canConvertDocToList(state) {
+  const view = docView(state);
+  if (!view) return false;
+  try { return !!outlineBlockForSelection(view.state); }
+  catch { return false; }
+}
+
+export function convertDocToList(state) {
+  const view = docView(state);
+  if (!view) return;
+  convertOutlineToList(view);
+  view.focus();
+}
+
+/** Whether the open document carries `outline: true`. Drives which half
+ *  of the Outline mode pair the palette shows. */
+export function isOutlineModeOn(state) {
+  const view = docView(state);
+  if (!view) return false;
+  try { return outlineFlagsOf(view.state).on; }
+  catch { return false; }
+}
+
+/** Flip the document's outline switch. Docs only — a notebook shape
+ *  carries its own `outline` flag and has no frontmatter to write to. */
+export function toggleOutlineMode(state) {
+  const view = docView(state);
+  if (!view) return;
+  patchOutlineMode(view);
   view.focus();
 }
 

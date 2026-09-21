@@ -32,7 +32,7 @@ export async function setupModeSwitching(state) {
     if (mode) {
       appEl.classList.add(mode); document.body.classList.add(mode);
       modeContainers[mode]?.classList.remove("hidden");
-      state.emit("hide-outline");
+      state.emit("hide-overview");
     }
   }
   const showEditor = () => activateMode(null);

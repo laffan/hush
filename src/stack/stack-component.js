@@ -216,7 +216,7 @@ export class StackComponent {
       let total = 0;
       for (const p of content.children) {
         const cl = p.className || "";
-        if (cl.includes("notebook-shelf") || cl.includes("pdf-annotation-shelf") || cl.includes("longview")) {
+        if (cl.includes("notebook-shelf") || cl.includes("pdf-annotation-shelf") || cl.includes("overview")) {
           if (p.offsetWidth > 0) total += p.offsetWidth;
         }
       }

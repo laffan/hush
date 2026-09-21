@@ -1,5 +1,5 @@
 /**
- * Lightweight heading outline for doc columns inside a stack.
+ * Lightweight heading Overview for doc columns inside a stack.
  * Mirrors the notebook shelf / PDF annotation shelf pattern —
  * a right-side panel within the column content area, toggled
  * via Cmd+Shift+\.
@@ -8,15 +8,15 @@ import { EditorView } from "@codemirror/view";
 
 const HEADING_RE = /^(#{1,6})\s+(.+)$/;
 
-function createStackDocOutline(contentEl, editorView) {
+function createStackDocOverview(contentEl, editorView) {
   const panel = document.createElement("div");
-  panel.className = "stack-doc-outline longview";
+  panel.className = "stack-doc-overview overview";
 
   const header = document.createElement("div");
-  header.className = "stack-doc-outline-header";
-  header.textContent = "Outline";
+  header.className = "stack-doc-overview-header";
+  header.textContent = "Overview";
   const closeBtn = document.createElement("button");
-  closeBtn.className = "stack-doc-outline-close";
+  closeBtn.className = "stack-doc-overview-close";
   closeBtn.textContent = "×";
   closeBtn.addEventListener("click", () => {
     if (panel._cleanup) panel._cleanup();
@@ -26,14 +26,14 @@ function createStackDocOutline(contentEl, editorView) {
   panel.appendChild(header);
 
   const list = document.createElement("div");
-  list.className = "stack-doc-outline-list";
+  list.className = "stack-doc-overview-list";
   panel.appendChild(list);
 
   let lastSig = null;
   function render() {
     if (!editorView?.state) return;
     const doc = editorView.state.doc;
-    // Collect headings first and fingerprint them. The outline polls every
+    // Collect headings first and fingerprint them. The Overview polls every
     // 3 s; in the common case nothing changed, so skip the DOM teardown +
     // rebuild (and the per-row listener re-attach) unless the heading set
     // actually moved.
@@ -51,7 +51,7 @@ function createStackDocOutline(contentEl, editorView) {
     list.innerHTML = "";
     for (const h of headings) {
       const row = document.createElement("div");
-      row.className = "stack-doc-outline-row";
+      row.className = "stack-doc-overview-row";
       row.style.paddingLeft = (8 + (h.level - 1) * 14) + "px";
       row.textContent = h.text;
       const offset = h.offset;
@@ -67,7 +67,7 @@ function createStackDocOutline(contentEl, editorView) {
     }
     if (list.children.length === 0) {
       const empty = document.createElement("div");
-      empty.className = "stack-doc-outline-empty";
+      empty.className = "stack-doc-overview-empty";
       empty.textContent = "No headings";
       list.appendChild(empty);
     }
@@ -81,12 +81,12 @@ function createStackDocOutline(contentEl, editorView) {
   return panel;
 }
 
-export function toggleStackDocOutline(contentEl, editorView) {
-  const existing = contentEl.querySelector(".stack-doc-outline");
+export function toggleStackDocOverview(contentEl, editorView) {
+  const existing = contentEl.querySelector(".stack-doc-overview");
   if (existing) {
     if (existing._cleanup) existing._cleanup();
     existing.remove();
   } else {
-    createStackDocOutline(contentEl, editorView);
+    createStackDocOverview(contentEl, editorView);
   }
 }

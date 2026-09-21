@@ -31,8 +31,8 @@ Hush is a [Tauri v2](https://v2.tauri.app/) app (macOS + iOS/iPadOS) with a vani
 | `themes/` | 16 editor themes, one file each (`_create-theme.js` wraps `EditorView.theme` + `HighlightStyle`) |
 | `post-layers/` | Optional per-style post-processing stack over the whole window (dynamically imported only when a style enables one) |
 | `background-layers/` | Composite per-style background stack (image / gradient / WebGL layers + caret effects), lazily imported like `shader-layer/` |
-| `longview/` | Outline view (the right-hand heading panel — not the outline *blocks* below) |
-| `outline/` | Outlines: the shared markdown model both surfaces parse, and the two halves of "Convert to Outline" |
+| `overview/` | The Overview (the right-hand heading panel). Called "outline view" until Outlines shipped and the two names stopped being tellable apart; its settings keys carry the old `longview*` / `outlinePanelWidth` spellings as serde aliases |
+| `outline/` | Outlines (the nested-checklist blocks): the shared markdown model both surfaces parse, and the palette commands — "Convert to Outline" on both surfaces, "Convert to List", the `outline: true` switch |
 | `styles/` | Per-module CSS, imported via `styles/main.css` |
 | `recognition/` | On-device handwriting recognition entry points (outside `notebook/` so Docs can adopt it) |
 

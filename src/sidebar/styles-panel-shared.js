@@ -19,7 +19,12 @@ export function escHtml(str) {
 /** Cursor mode constants + resolver shared by the editor modal and the
  *  preview pane. New `cursorMode` field wins; otherwise translate the
  *  legacy `blockCursor` boolean. */
-export const CURSOR_MODES = ["system", "block", "underline"];
+export const CURSOR_MODES = ["system", "block", "underline", "thick"];
+/** Option labels — the raw values are terse enough to be cryptic in a
+ *  dropdown ("Thick" alone says nothing about what it is thick). */
+const CURSOR_MODE_LABELS = {
+  system: "System", block: "Block", underline: "Underline", thick: "Thick line",
+};
 export function resolveCursorMode(draft, settings) {
   if (draft && draft.cursorMode) return draft.cursorMode;
   if (draft && draft.blockCursor === true) return "block";
@@ -28,16 +33,18 @@ export function resolveCursorMode(draft, settings) {
   return settings && settings.blockCursor ? "block" : "system";
 }
 export function renderCursorOptions(active) {
-  return CURSOR_MODES.map(v => `<option value="${v}"${active === v ? ' selected' : ''}>${v[0].toUpperCase() + v.slice(1)}</option>`).join("");
+  return CURSOR_MODES.map(v => `<option value="${v}"${active === v ? ' selected' : ''}>${CURSOR_MODE_LABELS[v] || v}</option>`).join("");
 }
 /** Apply a cursor mode to the preview pane caret element. Mirrors the
- *  editor's `.block-cursor` / `.underline-cursor` CSS — the underline
- *  variant draws as a border-bottom on a full-height inline-block so
- *  the strip sits below the descenders instead of overlapping them. */
+ *  editor's `.block-cursor` / `.underline-cursor` / `.thick-cursor` CSS —
+ *  the underline variant draws as a border-bottom on a full-height
+ *  inline-block so the strip sits below the descenders instead of
+ *  overlapping them, and the thick variant is the plain caret at 3px. */
 export function applyPreviewCursorMode(el, mode, accent, cursor) {
   Object.assign(el.style, { borderLeft: "", borderBottom: "", background: "", opacity: "", width: "", height: "", verticalAlign: "" });
   if (mode === "block") Object.assign(el.style, { background: accent, opacity: "0.85", width: "0.6em" });
   else if (mode === "underline") Object.assign(el.style, { borderBottom: `3px solid ${accent}`, background: "transparent", opacity: "0.7", width: "0.6em" });
+  else if (mode === "thick") Object.assign(el.style, { borderLeft: `3px solid ${accent}`, width: "0" });
   else Object.assign(el.style, { borderLeft: `2px solid ${cursor}`, width: "0" });
 }
 

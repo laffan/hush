@@ -176,7 +176,7 @@ async function renderDocThumb(state, entry, themeCtx) {
   // opened doc to that offset).
   let outline = null;
   if (entry.outline) {
-    const { parseHeadings } = await import("../longview/longview-parser.js");
+    const { parseHeadings } = await import("../overview/overview-parser.js");
     outline = layoutDocOutline(parseHeadings(content), scale, 0);
   }
 

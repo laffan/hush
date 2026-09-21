@@ -63,6 +63,8 @@ import { insertDate, insertDateTime } from "./editor/insert-date.js";
 import { currentWordLimit, setWordLimit, wordLimitTargetFileId } from "./editor/word-limit-store.js";
 import {
   canConvertDocToOutline, convertDocToOutline,
+  canConvertDocToList, convertDocToList,
+  isOutlineModeOn, toggleOutlineMode,
   canConvertNotebookToOutline, convertNotebookToOutline,
 } from "./outline/outline-commands.js";
 import { buildDeskCommands } from "./command-palette-desk-commands.js";
@@ -150,6 +152,12 @@ const icons = {
   sticky: `<svg viewBox="0 0 24 24"><path d="M4 4 h16 v10 l-6 6 H4 z"/><path d="M20 14 h-6 v6"/></svg>`,
   // Calendar grid — Insert Date / Date-Time.
   calendar: `<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg>`,
+  // Outline — a framed checklist, which is exactly what an outline is:
+  // a nested checklist with a border round it.
+  outline: `<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M6.5 9 L8 10.4 L10.5 7.6"/><line x1="12.5" y1="9" x2="18" y2="9"/><path d="M6.5 15.4 L8 16.8 L10.5 14"/><line x1="12.5" y1="15.4" x2="18" y2="15.4"/></svg>`,
+  // Overview — a page with the right-hand bar split off it, carrying the
+  // short rules that stand for the heading list.
+  overview: `<svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2"/><line x1="14.5" y1="4" x2="14.5" y2="20"/><line x1="16.8" y1="8.5" x2="19.5" y2="8.5"/><line x1="16.8" y1="12" x2="19.5" y2="12"/><line x1="16.8" y1="15.5" x2="18.4" y2="15.5"/></svg>`,
   // Proofread notebook — the notebook dot-grid with its middle row of
   // dots replaced by a solid rule, matching the file tree's glyph for
   // the same thing.
@@ -520,16 +528,37 @@ function buildCommands(state) {
       keywords: "word count cap remove reset",
       hiddenIf: (s) => !currentWordLimit(s),
       action: (s) => { void setWordLimit(s, wordLimitTargetFileId(s), null); } },
-    { id: "outline", section: "View", label: "Outline view", icon: null, shortcutKey: "shortcutToggleOutline", ctx: "doc",
-      keywords: "headings navigation panel longview",
-      action: (s) => s.emit("toggle-outline-panel") },
+    // The right-hand heading panel. Called "Outline view" until Outlines
+    // (the nested-checklist blocks) shipped and the two names became
+    // impossible to keep apart; the old wording stays in `keywords` so
+    // muscle memory still lands it.
+    { id: "overview", section: "View", label: "Overview", icon: icons.overview, shortcutKey: "shortcutToggleOverview", ctx: "doc",
+      keywords: "outline view headings navigation right sidebar panel",
+      action: (s) => s.emit("toggle-overview-panel") },
     // Turns the list under the caret into an outline: checkboxes on the
     // items that lack them, `outline: true` in the frontmatter. Hidden
     // once every item already has one — there would be nothing to do.
-    { id: "outline-convert-doc", section: "Outline", label: "Convert to Outline", icon: null, shortcutKey: null, ctx: "doc",
+    { id: "outline-convert-doc", section: "Outline", label: "Convert to Outline", icon: icons.outline, shortcutKey: null, ctx: "doc",
       keywords: "checklist task list nested outline convert",
       hiddenIf: (s) => !canConvertDocToOutline(s),
       action: (s) => convertDocToOutline(s) },
+    // The way back out: take the boxes off the outline under the caret.
+    // The frontmatter switch only comes off with the document's last
+    // outline — see `convertOutlineToList`.
+    { id: "outline-convert-list", section: "Outline", label: "Convert to List", icon: icons.outline, shortcutKey: null, ctx: "doc",
+      keywords: "checklist bullet plain unconvert outline list",
+      hiddenIf: (s) => !canConvertDocToList(s),
+      action: (s) => convertDocToList(s) },
+    // The document-wide switch on its own, for a doc whose checklists are
+    // already written: `outline: true` in the frontmatter and nothing else.
+    { id: "outline-mode-on", section: "Outline", label: "Outline mode", icon: icons.outline, shortcutKey: null, ctx: "doc",
+      keywords: "frontmatter outline true enable checklist frame",
+      hiddenIf: (s) => isOutlineModeOn(s),
+      action: (s) => toggleOutlineMode(s) },
+    { id: "outline-mode-off", section: "Outline", label: "Turn off Outline mode", icon: icons.outline, shortcutKey: null, ctx: "doc",
+      keywords: "frontmatter outline false disable checklist frame",
+      hiddenIf: (s) => !isOutlineModeOn(s),
+      action: (s) => toggleOutlineMode(s) },
     { id: "proofread", section: "Writing", label: "Proofread mode", icon: icons.proofread, shortcutKey: null, ctx: "doc",
       action: (s) => s.toggleProofread() },
     // Not `ctx: "doc"`: spellcheck rides the shared extension set, so a
@@ -619,7 +648,7 @@ function buildCommands(state) {
     // === NOTEBOOK ONLY ===
     // The notebook half of the same command: the selected flowchart
     // becomes one outline shape holding the tree as a nested checklist.
-    { id: "outline-convert-nb", section: "Outline", label: "Convert to Outline", icon: null, shortcutKey: null, ctx: "notebook",
+    { id: "outline-convert-nb", section: "Outline", label: "Convert to Outline", icon: icons.outline, shortcutKey: null, ctx: "notebook",
       keywords: "flowchart checklist task nested outline convert",
       hiddenIf: () => !canConvertNotebookToOutline(),
       action: () => convertNotebookToOutline() },

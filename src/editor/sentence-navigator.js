@@ -10,7 +10,7 @@ import { EditorSelection } from "@codemirror/state";
 import { moveWordsForward, moveWordsBack } from "./word-shift.js";
 import {
   getLine, posToOffset, offsetToPos, selBounds,
-  findSentenceStart, findSentenceEnd, dispatch,
+  findSentenceStart, findSentenceEnd, sentenceEndingAt, dispatch,
 } from "./sentence-core.js";
 
 // ===== Exported CM6 commands =====
@@ -49,6 +49,18 @@ export function selectSentence(view) {
   const content = getLine(doc, pos.line);
   if (content.trim().length === 0) {
     dispatch(view, { line: pos.line, ch: 0 }, { line: pos.line + 1, ch: 0 });
+    return true;
+  }
+  // A caret parked on a finished sentence's tail means *that* sentence.
+  // Forward-scanning alone got this wrong at both ends of a paragraph: a
+  // caret after the final period with a trailing space behind it found no
+  // terminator ahead and selected nothing at all, and one sitting
+  // immediately after a mid-line period ran on and took the sentence
+  // after it as well. See `sentenceEndingAt` for what does and doesn't
+  // count as a tail.
+  const tail = sentenceEndingAt(doc, pos);
+  if (tail) {
+    dispatch(view, tail.start, tail.end);
     return true;
   }
   let sp = pos;

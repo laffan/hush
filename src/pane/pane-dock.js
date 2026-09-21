@@ -315,9 +315,9 @@ function getEditorChromeRightWidth() {
     if (isOpen && shelf.__getShelfWidth) inset = Math.max(inset, shelf.__getShelfWidth());
     else inset = Math.max(inset, shelf.getBoundingClientRect().width);
   }
-  const longview = document.getElementById("right-panel-overlay");
-  if (longview && !longview.classList.contains("hidden")) {
-    inset = Math.max(inset, longview.getBoundingClientRect().width);
+  const overview = document.getElementById("right-panel-overlay");
+  if (overview && !overview.classList.contains("hidden")) {
+    inset = Math.max(inset, overview.getBoundingClientRect().width);
   }
   const pdfShelf = document.querySelector(".pdf-annot-shelf.open");
   if (pdfShelf) inset = Math.max(inset, pdfShelf.getBoundingClientRect().width);

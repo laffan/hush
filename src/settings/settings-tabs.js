@@ -9,7 +9,7 @@
  *   - settings-tabs-debug.js       (Build Info / Desk Storage / Activity Log)
  */
 import { DEFAULT_STOPWORDS } from "../editor/plugins/dry-highlight.js";
-import { renderFlagsTab } from "../longview/longview-settings.js";
+import { renderFlagsTab } from "../overview/overview-settings.js";
 
 // ===== Shared helpers (also used by sibling tab files) =====
 export function escHtml(str) {

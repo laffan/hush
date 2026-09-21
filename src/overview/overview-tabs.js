@@ -35,16 +35,16 @@ export function buildTabContainers(content, tabs, onJumpTo) {
   const tabBodies = [];
   for (const t of sorted) {
     const wrapper = document.createElement("div");
-    wrapper.className = "longview-tab";
+    wrapper.className = "overview-tab";
     const header = document.createElement("div");
-    header.className = "longview-tab-header";
+    header.className = "overview-tab-header";
     header.dataset.offset = String(t.startOffset);
     const icon = document.createElement("span");
-    icon.className = "longview-tab-icon";
+    icon.className = "overview-tab-icon";
     icon.innerHTML = GOOGLE_DOCS_ICON_SVG;
     header.appendChild(icon);
     const label = document.createElement("span");
-    label.className = "longview-tab-label";
+    label.className = "overview-tab-label";
     label.textContent = t.label || t.title || "";
     header.appendChild(label);
     header.addEventListener("click", (e) => {
@@ -53,7 +53,7 @@ export function buildTabContainers(content, tabs, onJumpTo) {
     });
     wrapper.appendChild(header);
     const body = document.createElement("div");
-    body.className = "longview-tab-body";
+    body.className = "overview-tab-body";
     wrapper.appendChild(body);
     content.appendChild(wrapper);
     tabBodies.push({ tab: t, body });

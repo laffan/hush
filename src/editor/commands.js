@@ -176,7 +176,7 @@ export function buildEditorCommands() {
     shortcutOpenFullscreen: (state) => { state.toggleFullscreen(); return true; },
     shortcutTogglePrivate: (state) => { state.togglePrivate(); return true; },
     shortcutToggleSidebar: (state) => { state.emit("toggle-left-panel"); return true; },
-    shortcutToggleOutline: (state) => { state.emit("toggle-outline-panel"); return true; },
+    shortcutToggleOverview: (state) => { state.emit("toggle-overview-panel"); return true; },
     shortcutTypewriter: (state) => toggleModeOnContext(state, "typewriterMode"),
     shortcutToggleDry: (state) => toggleModeOnContext(state, "dryMode"),
     shortcutToggleFocus: (state, view) => {

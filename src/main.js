@@ -152,7 +152,7 @@ async function init() {
     }
   });
 
-  state.on("toggle-outline-panel", async () => {
+  state.on("toggle-overview-panel", async () => {
     // Desktop takeover: the shortcut targets the Desktop canvas's shape
     // shelf, not whatever hidden surface sits underneath.
     if (document.body.classList.contains("desktop-active")) {
@@ -169,7 +169,7 @@ async function init() {
         else if (a.fileType === "pdf" && ld?.pdfViewer?.toggleShelf) ld.pdfViewer.toggleShelf();
         else if ((a.fileType === "document" || a.fileType === "project") && ld?.editor?.view) {
           const col = document.querySelector(`.stack-column[data-item-id="${a.id}"] .stack-column-content`);
-          if (col) { const { toggleStackDocOutline } = await import("./stack/stack-doc-outline.js"); toggleStackDocOutline(col, ld.editor.view); }
+          if (col) { const { toggleStackDocOverview } = await import("./stack/stack-doc-overview.js"); toggleStackDocOverview(col, ld.editor.view); }
         }
       });
       return;
@@ -179,8 +179,8 @@ async function init() {
     // In a doc / project that has a gutter, the shelf shortcut targets the
     // GUTTER's shape shelf — the gutter is the notebook surface the user
     // annotates with, so that's the intended target regardless of which pane
-    // currently holds focus. The doc / project outline stays reachable via its
-    // edge trigger and the "Outline view" command.
+    // currently holds focus. The doc / project Overview stays reachable via its
+    // edge trigger and the "Overview" command.
     {
       const { panes } = await import("./pane/pane-state.js");
       const ctx = state.currentProjectId ? "pj:" + state.currentProjectId
@@ -199,8 +199,8 @@ async function init() {
     }
     const rp = document.getElementById("right-panel-overlay");
     if (!rp) return;
-    if (rp.classList.contains("hidden")) state.emit("show-outline");
-    else state.emit("hide-outline");
+    if (rp.classList.contains("hidden")) state.emit("show-overview");
+    else state.emit("hide-overview");
   });
 
   // Initial focus
@@ -557,7 +557,7 @@ async function init() {
     await (await import("./state/state-desks-ops.js")).openLastFileForDesk(state, targetDeskId);
     // Desks own the outline toggle state — restore it now that the desk's
     // last file is open (so the notebook guard sees the right surface).
-    state.emit("desk-outline-restore", targetDeskId);
+    state.emit("desk-overview-restore", targetDeskId);
   });
 
   // Style changes (from sidebar or settings)

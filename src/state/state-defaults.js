@@ -54,7 +54,7 @@ export function createDefaultSettings() {
     sidebarPanelWidth: 300,
     // The document's right-hand bars, both drag-resizable from their
     // inboard edge (see ui/side-panel-resizer.js).
-    outlinePanelWidth: 200,
+    overviewPanelWidth: 200,
     commentsPanelWidth: 240,
     outlinePinnedHeight: null,
     notebookShelfWidth: 280,
@@ -149,7 +149,7 @@ export function createDefaultSettings() {
     shortcutOpenFullscreen: "CmdOrCtrl+Alt+F",
     shortcutTogglePrivate: "CmdOrCtrl+Shift+P",
     shortcutToggleSidebar: "CmdOrCtrl+\\",
-    shortcutToggleOutline: "CmdOrCtrl+Shift+\\",
+    shortcutToggleOverview: "CmdOrCtrl+Shift+\\",
     shortcutTypewriter: "Mod+Shift+T",
     // The four create shortcuts pair strict modifiers: Cmd makes Docs,
     // Ctrl makes Notebooks; Shift turns either into an "as pane" create.
@@ -258,17 +258,17 @@ export function createDefaultSettings() {
     showTooltips: false,
 
     // Outline View (right sidebar)
-    longviewShowParagraphs: true,
-    longviewShowNumbers: true,
-    longviewShowComments: false,
-    longviewShowFlags: true,
-    longviewShowFlagTypes: false,
-    longviewWrapFlagText: true,
-    longviewBodyFontSize: 3,
-    longviewHeadingFontSize: 12,
-    longviewFlagFontSize: 12,
-    longviewLineGap: 2,
-    longviewCurrentPositionColor: "#ff0000",
+    overviewShowParagraphs: true,
+    overviewShowNumbers: true,
+    overviewShowComments: false,
+    overviewShowFlags: true,
+    overviewShowFlagTypes: false,
+    overviewWrapFlagText: true,
+    overviewBodyFontSize: 3,
+    overviewHeadingFontSize: 12,
+    overviewFlagFontSize: 12,
+    overviewLineGap: 2,
+    overviewCurrentPositionColor: "#ff0000",
 
     // Flags (custom flag types and colors)
     flagColors: {

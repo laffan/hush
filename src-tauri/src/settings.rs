@@ -122,10 +122,11 @@ pub struct AppSettings {
     pub zen_column_width: Option<u32>,
     #[serde(default = "default_sidebar_panel_width")]
     pub sidebar_panel_width: u32,
-    // The document's right-hand bars — the outline and the Google-Docs
+    // The document's right-hand bars — the Overview and the Google-Docs
     // comments list — each drag-resizable from its inboard edge.
-    #[serde(default = "default_outline_panel_width")]
-    pub outline_panel_width: u32,
+    #[serde(default = "default_overview_panel_width")]
+    #[serde(alias = "outlinePanelWidth")]
+    pub overview_panel_width: u32,
     #[serde(default = "default_comments_panel_width")]
     pub comments_panel_width: u32,
     // Height of a pinned outline's docked panel, in px. `None` sizes it
@@ -148,7 +149,7 @@ pub struct AppSettings {
     #[serde(default = "default_shortcut_fullscreen")] pub shortcut_open_fullscreen: String,
     #[serde(default = "default_shortcut_private")] pub shortcut_toggle_private: String,
     #[serde(default = "default_shortcut_toggle_sidebar")] pub shortcut_toggle_sidebar: String,
-    #[serde(default = "default_shortcut_toggle_outline")] pub shortcut_toggle_outline: String,
+    #[serde(default = "default_shortcut_toggle_overview")] #[serde(alias = "shortcutToggleOutline")] pub shortcut_toggle_overview: String,
     #[serde(default = "default_shortcut_typewriter")] pub shortcut_typewriter: String,
     #[serde(default = "default_shortcut_new_file")] pub shortcut_new_file: String,
     #[serde(default = "default_shortcut_new_file_pane")] pub shortcut_new_file_pane: String,
@@ -295,29 +296,43 @@ pub struct AppSettings {
     #[serde(default)]
     pub background_layers_enabled: Option<bool>,
 
-    // Outline View (right sidebar)
+    // Overview — the right-hand heading sidebar. Stored as `longview*`
+    // until the panel was renamed (it read as "outline view", which
+    // Outlines, the nested-checklist blocks, made ambiguous); the old
+    // keys ride along as serde aliases so nobody's tuning resets.
     #[serde(default = "default_true")]
-    pub longview_show_paragraphs: bool,
+    #[serde(alias = "longviewShowParagraphs")]
+    pub overview_show_paragraphs: bool,
     #[serde(default = "default_true")]
-    pub longview_show_numbers: bool,
+    #[serde(alias = "longviewShowNumbers")]
+    pub overview_show_numbers: bool,
     #[serde(default)]
-    pub longview_show_comments: bool,
+    #[serde(alias = "longviewShowComments")]
+    pub overview_show_comments: bool,
     #[serde(default = "default_true")]
-    pub longview_show_flags: bool,
+    #[serde(alias = "longviewShowFlags")]
+    pub overview_show_flags: bool,
     #[serde(default)]
-    pub longview_show_flag_types: bool,
+    #[serde(alias = "longviewShowFlagTypes")]
+    pub overview_show_flag_types: bool,
     #[serde(default = "default_true")]
-    pub longview_wrap_flag_text: bool,
-    #[serde(default = "default_longview_body_font_size")]
-    pub longview_body_font_size: f64,
-    #[serde(default = "default_longview_heading_font_size")]
-    pub longview_heading_font_size: u32,
-    #[serde(default = "default_longview_flag_font_size")]
-    pub longview_flag_font_size: u32,
-    #[serde(default = "default_longview_line_gap")]
-    pub longview_line_gap: f64,
-    #[serde(default = "default_longview_current_position_color")]
-    pub longview_current_position_color: String,
+    #[serde(alias = "longviewWrapFlagText")]
+    pub overview_wrap_flag_text: bool,
+    #[serde(default = "default_overview_body_font_size")]
+    #[serde(alias = "longviewBodyFontSize")]
+    pub overview_body_font_size: f64,
+    #[serde(default = "default_overview_heading_font_size")]
+    #[serde(alias = "longviewHeadingFontSize")]
+    pub overview_heading_font_size: u32,
+    #[serde(default = "default_overview_flag_font_size")]
+    #[serde(alias = "longviewFlagFontSize")]
+    pub overview_flag_font_size: u32,
+    #[serde(default = "default_overview_line_gap")]
+    #[serde(alias = "longviewLineGap")]
+    pub overview_line_gap: f64,
+    #[serde(default = "default_overview_current_position_color")]
+    #[serde(alias = "longviewCurrentPositionColor")]
+    pub overview_current_position_color: String,
 
     // Flags (custom flag types and colors)
     #[serde(default = "default_flag_colors")]
@@ -636,7 +651,7 @@ impl Default for AppSettings {
             column_width: default_column_width(),
             zen_column_width: None,
             sidebar_panel_width: default_sidebar_panel_width(),
-            outline_panel_width: default_outline_panel_width(),
+            overview_panel_width: default_overview_panel_width(),
             comments_panel_width: default_comments_panel_width(),
             outline_pinned_height: None,
             sidebar_open_panel: None,
@@ -645,7 +660,7 @@ impl Default for AppSettings {
             shortcut_open_fullscreen: default_shortcut_fullscreen(),
             shortcut_toggle_private: default_shortcut_private(),
             shortcut_toggle_sidebar: default_shortcut_toggle_sidebar(),
-            shortcut_toggle_outline: default_shortcut_toggle_outline(),
+            shortcut_toggle_overview: default_shortcut_toggle_overview(),
             shortcut_typewriter: default_shortcut_typewriter(),
             shortcut_new_file: default_shortcut_new_file(),
             shortcut_new_file_pane: default_shortcut_new_file_pane(),
@@ -706,17 +721,17 @@ impl Default for AppSettings {
             post_processing_enabled: None,
             background_layers: None,
             background_layers_enabled: None,
-            longview_show_paragraphs: true,
-            longview_show_numbers: true,
-            longview_show_comments: false,
-            longview_show_flags: true,
-            longview_show_flag_types: false,
-            longview_wrap_flag_text: true,
-            longview_body_font_size: default_longview_body_font_size(),
-            longview_heading_font_size: default_longview_heading_font_size(),
-            longview_flag_font_size: default_longview_flag_font_size(),
-            longview_line_gap: default_longview_line_gap(),
-            longview_current_position_color: default_longview_current_position_color(),
+            overview_show_paragraphs: true,
+            overview_show_numbers: true,
+            overview_show_comments: false,
+            overview_show_flags: true,
+            overview_show_flag_types: false,
+            overview_wrap_flag_text: true,
+            overview_body_font_size: default_overview_body_font_size(),
+            overview_heading_font_size: default_overview_heading_font_size(),
+            overview_flag_font_size: default_overview_flag_font_size(),
+            overview_line_gap: default_overview_line_gap(),
+            overview_current_position_color: default_overview_current_position_color(),
             flag_colors: default_flag_colors(),
             custom_flags: default_custom_flags(),
             zotero_api_key: None,

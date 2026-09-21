@@ -25,7 +25,7 @@
  * asked (`readDocContent` reads `""` for them, which yields no markers).
  * See README-TECHNICAL, "Startup".
  */
-import { parseTabSections } from "../longview/longview-parser.js";
+import { parseTabSections } from "../overview/overview-parser.js";
 import { EditorView } from "@codemirror/view";
 import { GOOGLE_DOCS_ICON_SVG } from "../google-docs/icon.js";
 

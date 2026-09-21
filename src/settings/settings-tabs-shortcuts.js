@@ -17,7 +17,7 @@ export const shortcutCategories = [
       { key: "shortcutOpenFullscreen", label: "Open fullscreen" },
       { key: "shortcutTogglePrivate", label: "Toggle private mode" },
       { key: "shortcutToggleSidebar", label: "Toggle sidebar" },
-      { key: "shortcutToggleOutline", label: "Toggle right sidebar (outline / shelf)" },
+      { key: "shortcutToggleOverview", label: "Toggle right sidebar (overview / shelf)" },
       { key: "shortcutTypewriter", label: "Toggle typewriter mode" },
       { key: "shortcutToggleDry", label: "Toggle D.R.Y. highlighting" },
       { key: "shortcutToggleFocus", label: "Toggle focus mode" },
@@ -99,7 +99,7 @@ export const shortcutDefs = shortcutCategories.flatMap(cat => cat.shortcuts);
 
 // --- Filetype grouping (shared with the Show Shortcuts modal) ---
 // General-category keys that are really pane / panel toggles.
-export const PANE_SHORTCUT_KEYS = ["shortcutToggleSidebar", "shortcutToggleOutline"];
+export const PANE_SHORTCUT_KEYS = ["shortcutToggleSidebar", "shortcutToggleOverview"];
 // General-category keys that are doc-surface "modes" — filetype-specific
 // to documents rather than truly app-wide.
 export const DOC_MODE_SHORTCUT_KEYS = [

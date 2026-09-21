@@ -238,6 +238,22 @@ body.file-in-trash #notebook-container .notes-canvas + * {
   width: 0.6em !important;
 }
 
+/* Thick-line cursor mode — the ordinary vertical caret at 3px instead of
+   the default 2. Fixed pixels on purpose: this is a heavier caret, not a
+   caret scaled to the type, so it reads the same weight in Zen's larger
+   font as it does in a pane. It also takes the style's cursor colour
+   override, which the plain caret above does not — `--block-cursor-color`
+   is the resolved override for every non-system mode. */
+#editor-container.thick-cursor .cm-cursor,
+.zen-focus-overlay.thick-cursor .cm-cursor,
+.selection-focus-overlay.thick-cursor .cm-cursor,
+.cursor-mode-surface.thick-cursor .cm-cursor {
+  border-left: 3px solid var(--block-cursor-color, var(--cursor));
+  border-bottom: none;
+  background: transparent;
+  opacity: 1;
+}
+
 
 
 /* ===== Line Indicator (per-style "highlight current line" affordance) =====

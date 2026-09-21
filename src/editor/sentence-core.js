@@ -70,6 +70,40 @@ export function findSentenceEnd(doc, pos) {
   return { line, ch: content.length };
 }
 
+/**
+ * The sentence that *ends* at or just before `pos`, as `{ start, end }`,
+ * or null when the caret isn't parked on a finished sentence's tail.
+ *
+ * Two shapes count, and only two:
+ *
+ * - hard against the terminator — `…beta.|` — the sentence the user has
+ *   this moment finished typing;
+ * - past it with nothing but whitespace left on the line — `…space. |` —
+ *   the end of a paragraph, including the two trailing spaces markdown
+ *   reads as a hard break.
+ *
+ * A caret sitting at the first word of the *next* sentence — `…beta. |Gamma`
+ * — is neither: it means that sentence, and falls through to the ordinary
+ * current-sentence path.
+ */
+export function sentenceEndingAt(doc, pos) {
+  const content = getLine(doc, pos.line);
+  let ch = Math.min(pos.ch, content.length);
+  const rest = content.substring(ch);
+  // Only whitespace left on the line? Then the terminator is behind that
+  // whitespace, and the sentence ends where the whitespace starts.
+  if (/^\s*$/.test(rest)) {
+    while (ch > 0 && /\s/.test(content.charAt(ch - 1))) ch--;
+  }
+  let probe = ch;
+  while (probe > 0 && /["')\]}*_`]/.test(content.charAt(probe - 1))) probe--;
+  if (probe === 0 || !/[.!?]/.test(content.charAt(probe - 1))) return null;
+  return {
+    start: findSentenceStart(doc, { line: pos.line, ch: probe - 1 }),
+    end: { line: pos.line, ch },
+  };
+}
+
 // ===== Selection dispatch =====
 
 export function dispatch(view, fromPos, toPos) {

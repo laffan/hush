@@ -1,10 +1,10 @@
 /**
  * Outline View line helpers — tokenizing document text into outline
  * paragraph lines, and rendering those lines with Google-Docs comment
- * runs highlighted. Split out of `longview.js` to keep that file under
+ * runs highlighted. Split out of `overview.js` to keep that file under
  * the line budget.
  */
-import { sanitizeLine } from "./longview-parser.js";
+import { sanitizeLine } from "./overview-parser.js";
 import { parseTabMarkerLine } from "../editor/tabs.js";
 
 /**
@@ -44,7 +44,7 @@ export function renderLineWithCommentHighlights(p, line) {
   for (const s of segments) {
     if (s.hi) {
       const span = document.createElement("span");
-      span.className = "longview-comment-highlight";
+      span.className = "overview-comment-highlight";
       span.textContent = s.text;
       p.appendChild(span);
     } else {

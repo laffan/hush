@@ -1,9 +1,9 @@
 /**
  * Comments panel — a list of the document's imported Google-Docs comments,
- * pinned to the left edge of the outline (`#right-panel-overlay`).
+ * pinned to the left edge of the Overview (`#right-panel-overlay`).
  *
- * It mirrors the outline's visibility (shows on `show-outline`, hides on
- * `hide-outline`) and rides the same dock-offset CSS vars, so the two bars
+ * It mirrors the Overview's visibility (shows on `show-overview`, hides on
+ * `hide-overview`) and rides the same dock-offset CSS vars, so the two bars
  * move together; its list scrolls independently. Clicking an item scrolls
  * the editor to that comment's anchor.
  *
@@ -158,16 +158,16 @@ export function setupCommentsPanel(state) {
     }
   }
 
-  function outlineVisible() {
+  function overviewVisible() {
     const rp = document.getElementById("right-panel-overlay");
     return !!rp && !rp.classList.contains("hidden");
   }
 
-  // Show only when the outline is open AND there's something to list. A
+  // Show only when the Overview is open AND there's something to list. A
   // visibility change relayouts the editor column so the panel pushes
   // content in (inset) rather than overlaying it.
-  function sync(showWithOutline) {
-    const shouldShow = !state.currentNotebookFileId && (showWithOutline ?? outlineVisible());
+  function sync(showWithOverview) {
+    const shouldShow = !state.currentNotebookFileId && (showWithOverview ?? overviewVisible());
     const items = shouldShow ? collectComments() : [];
     const willShow = items.length > 0;
     if (willShow) render(items);
@@ -176,8 +176,8 @@ export function setupCommentsPanel(state) {
     if (wasHidden === willShow) state.runtime?.columnResizeHandler?.();
   }
 
-  state.on("show-outline", () => sync(true));
-  state.on("hide-outline", () => sync(false));
+  state.on("show-overview", () => sync(true));
+  state.on("hide-overview", () => sync(false));
   state.on("file-opened", () => { selectedId = null; sync(); });
 
   state.on("doc-content-changed", () => {

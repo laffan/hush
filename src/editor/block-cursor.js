@@ -1,7 +1,7 @@
 import { getActiveTheme } from "../themes/index.js";
 import { resolveStyleForAppearance } from "../sidebar/styles-panel.js";
 
-/** Resolve the cursor mode (system / block / underline). New `cursorMode`
+/** Resolve the cursor mode (system / block / underline / thick). New `cursorMode`
  *  field wins; fall back to the legacy `blockCursor` boolean. Style
  *  override beats global setting. */
 function resolveCursorMode(settings, style) {
@@ -70,6 +70,7 @@ export function paintCursorMode(el, paint) {
   el.classList.add("cursor-mode-surface");
   el.classList.toggle("block-cursor", paint.mode === "block");
   el.classList.toggle("underline-cursor", paint.mode === "underline");
+  el.classList.toggle("thick-cursor", paint.mode === "thick");
   if (paint.cursorColor) el.style.setProperty("--block-cursor-color", paint.cursorColor);
   else el.style.removeProperty("--block-cursor-color");
   if (paint.lineIndicatorColor) el.style.setProperty("--line-indicator-color", paint.lineIndicatorColor);

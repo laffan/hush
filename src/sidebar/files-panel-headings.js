@@ -16,7 +16,7 @@
  * just before SortableList builds the DOM, stripped before any tree
  * write, and opted out of every drag-and-drop path.
  */
-import { parseHeadings, sanitizeLine } from "../longview/longview-parser.js";
+import { parseHeadings, sanitizeLine } from "../overview/overview-parser.js";
 import { readDocContent, openDocAtTab } from "./files-panel-tabs.js";
 
 /** True for the synthetic rows this module injects. */

@@ -144,7 +144,7 @@ html.ios .side-panel-resize {
 }
 
 /* ===== Outline View Container ===== */
-.longview-container {
+.overview-container {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -152,11 +152,11 @@ html.ios .side-panel-resize {
 }
 
 /* Top "Options ▾" button now sits flush at the top of the panel —
-   the old .longview-header / .longview-refresh-btn block is gone
+   the old .overview-header / .overview-refresh-btn block is gone
    since the outline auto-refreshes on every doc edit. */
 
 /* ===== Toggle Filters (grid inside options) ===== */
-.longview-filters {
+.overview-filters {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 3px;
@@ -164,15 +164,15 @@ html.ios .side-panel-resize {
 
 /* Visual grouping inside the options panel — one of these wraps the
    filter buttons, one wraps the checkboxes, one wraps the sliders.
-   The 10 px gap between groups is owned by `.longview-options-panel`
+   The 10 px gap between groups is owned by `.overview-options-panel`
    below. */
-.longview-options-group {
+.overview-options-group {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.longview-filter-btn {
+.overview-filter-btn {
   background: none;
   border: 1px solid var(--panel-border);
   color: var(--sidebar-fg);
@@ -184,18 +184,18 @@ html.ios .side-panel-resize {
   font-family: system-ui, sans-serif;
   text-align: center;
 }
-.longview-filter-btn:hover {
+.overview-filter-btn:hover {
   color: var(--fg);
   border-color: var(--fg);
 }
-.longview-filter-btn.active {
+.overview-filter-btn.active {
   color: var(--fg);
   border-color: var(--fg);
   background: rgba(128, 128, 128, 0.15);
 }
 
 /* ===== Inline Options Panel ===== */
-.longview-options-toggle {
+.overview-options-toggle {
   background: none;
   border: none;
   color: var(--sidebar-fg);
@@ -208,13 +208,13 @@ html.ios .side-panel-resize {
   text-align: left;
   width: 100%;
 }
-.longview-options-toggle:hover { opacity: 0.8; }
-.longview-options-toggle.is-open {
+.overview-options-toggle:hover { opacity: 0.8; }
+.overview-options-toggle.is-open {
   opacity: 1;
   text-decoration: underline;
 }
 
-.longview-options-panel {
+.overview-options-panel {
   padding: 12px 12px 16px;
   display: flex;
   flex-direction: column;
@@ -224,11 +224,11 @@ html.ios .side-panel-resize {
   border-bottom: 1px solid var(--panel-border);
   margin-bottom: 4px;
 }
-.longview-options-panel.collapsed {
+.overview-options-panel.collapsed {
   display: none;
 }
 
-.longview-option-row {
+.overview-option-row {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -236,17 +236,17 @@ html.ios .side-panel-resize {
   color: var(--sidebar-fg);
   font-family: system-ui, sans-serif;
 }
-.longview-option-row label {
+.overview-option-row label {
   flex: 1;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.longview-option-row input[type="checkbox"] {
+.overview-option-row input[type="checkbox"] {
   flex-shrink: 0;
 }
-.longview-option-row input[type="color"] {
+.overview-option-row input[type="color"] {
   width: 24px;
   height: 20px;
   padding: 0;
@@ -257,23 +257,23 @@ html.ios .side-panel-resize {
 }
 
 /* Stacked layout: label+value on top, slider full-width below */
-.longview-option-stacked {
+.overview-option-stacked {
   flex-direction: column;
   align-items: stretch;
   gap: 2px;
 }
-.longview-option-row-top {
+.overview-option-row-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
-.longview-option-value {
+.overview-option-value {
   font-size: 11px;
   opacity: 0.6;
 }
 
 /* Custom slider: 3px track line */
-.longview-option-row input[type="range"] {
+.overview-option-row input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
@@ -285,7 +285,7 @@ html.ios .side-panel-resize {
   outline: none;
   cursor: pointer;
 }
-.longview-option-row input[type="range"]::-webkit-slider-thumb {
+.overview-option-row input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 10px;
@@ -294,7 +294,7 @@ html.ios .side-panel-resize {
   background: var(--fg);
   cursor: pointer;
 }
-.longview-option-row input[type="range"]::-moz-range-thumb {
+.overview-option-row input[type="range"]::-moz-range-thumb {
   width: 10px;
   height: 10px;
   border-radius: 50%;
@@ -302,7 +302,7 @@ html.ios .side-panel-resize {
   border: none;
   cursor: pointer;
 }
-.longview-option-row input[type="range"]:active {
+.overview-option-row input[type="range"]:active {
   opacity: 1;
 }
 
@@ -310,16 +310,16 @@ html.ios .side-panel-resize {
    Outline uses the app's UI font (matching the files sidebar / command
    palette) rather than the active style's editor font, so it reads as
    navigation chrome rather than as a second editor surface. */
-.longview-content,
-.longview-content .longview-heading,
-.longview-content .longview-line,
-.longview-content .longview-flag,
-.longview-content .longview-callout-title,
-.longview-content .longview-tab-header,
-.longview-content .longview-tab-label {
+.overview-content,
+.overview-content .overview-heading,
+.overview-content .overview-line,
+.overview-content .overview-flag,
+.overview-content .overview-callout-title,
+.overview-content .overview-tab-header,
+.overview-content .overview-tab-label {
   font-family: var(--ui-font-family);
 }
-.longview-content {
+.overview-content {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
@@ -333,12 +333,12 @@ html.ios .side-panel-resize {
 }
 
 /* Hierarchy indentation */
-.longview-hierarchy-level {
+.overview-hierarchy-level {
   border-left: 2px solid rgba(128, 128, 128, 0.2);
   padding-left: 8px;
 }
 
-.longview-section-body {
+.overview-section-body {
   display: flex;
   flex-direction: column;
   gap: var(--lv-line-gap, 2px);
@@ -346,7 +346,7 @@ html.ios .side-panel-resize {
 }
 
 /* Headings */
-.longview-heading {
+.overview-heading {
   display: block;
   font-size: var(--lv-heading-font, 12px);
   color: var(--fg);
@@ -361,18 +361,18 @@ html.ios .side-panel-resize {
   padding-top: calc(var(--lv-line-gap, 2px) / 2);
   padding-bottom: calc(var(--lv-line-gap, 2px) / 2);
 }
-.longview-heading:hover {
+.overview-heading:hover {
   color: var(--lv-position-color, #ff0000);
 }
-.longview-heading[data-level="1"] {
+.overview-heading[data-level="1"] {
   text-decoration: underline;
 }
-.longview-heading.is-active {
+.overview-heading.is-active {
   font-weight: 700;
 }
 
 /* Active section border highlight — dark high-contrast border */
-.longview-hierarchy-level:has(.longview-heading.is-active) {
+.overview-hierarchy-level:has(.overview-heading.is-active) {
   border-left-color: var(--fg, #e0e0e0);
 }
 
@@ -382,7 +382,7 @@ html.ios .side-panel-resize {
    was itself a fixed 200px, and dead space the moment the panel became
    drag-resizable: widening it bought nothing but margin. Body content
    still reads as distinct from headings on size and colour. */
-.longview-line {
+.overview-line {
   color: var(--sidebar-fg);
   font-size: var(--lv-body-font, 3px);
   line-height: 1.25;
@@ -396,28 +396,28 @@ html.ios .side-panel-resize {
 
 /* Imported Google-Docs comment ranges — the same amber wash the editor
    uses, so commented text is spottable from the outline. */
-.longview-comment-highlight {
+.overview-comment-highlight {
   background: rgba(184, 134, 11, 0.25);
   border-radius: 1px;
 }
 
 /* Paragraph currently nearest the editor cursor — picked up by the
-   selectionchange/scroll handlers in longview.js. Low-opacity wash of
+   selectionchange/scroll handlers in overview.js. Low-opacity wash of
    the heading colour with no border, so it reads as a subtle accent
    rather than a competing block. */
-.longview-line.is-current-paragraph {
+.overview-line.is-current-paragraph {
   background: color-mix(in srgb, var(--lv-heading-color, var(--lv-position-color, currentColor)) 14%, transparent);
   color: var(--fg);
 }
 
 /* Callout backgrounds */
-.longview-callout-bg {
+.overview-callout-bg {
   border-radius: 2px;
   padding: 2px 4px;
   margin: 0;
 }
 
-.longview-callout-title {
+.overview-callout-title {
   display: block;
   font-size: var(--lv-flag-font, 12px);
   color: var(--sidebar-fg);
@@ -429,7 +429,7 @@ html.ios .side-panel-resize {
 }
 
 /* ===== Flags ===== */
-.longview-flag {
+.overview-flag {
   display: flex;
   gap: 4px;
   align-items: center;
@@ -441,27 +441,27 @@ html.ios .side-panel-resize {
   transition: opacity 0.15s ease;
   font-size: var(--lv-flag-font, 12px);
 }
-.longview-flag:hover {
+.overview-flag:hover {
   opacity: 0.8;
 }
-.longview-flag.wrap-flag-text {
+.overview-flag.wrap-flag-text {
   max-width: 100%;
   display: inline-block;
 }
-.longview-flag.wrap-flag-text .longview-flag-type,
-.longview-flag.wrap-flag-text .longview-flag-message {
+.overview-flag.wrap-flag-text .overview-flag-type,
+.overview-flag.wrap-flag-text .overview-flag-message {
   white-space: normal;
   word-wrap: break-word;
 }
 
-.longview-flag-type {
+.overview-flag-type {
   font-size: var(--lv-flag-font, 12px);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
 
-.longview-flag-message {
+.overview-flag-message {
   font-size: var(--lv-flag-font, 12px);
   color: inherit;
   white-space: nowrap;
@@ -477,7 +477,7 @@ html.ios .side-panel-resize {
  * Docs glyph + the full path label (`Parent / Child`) over a dashed
  * top rule that separates each tab from what came before. No fold
  * chrome, no pill, no indent — the hierarchy lives in the label. */
-.longview-tab {
+.overview-tab {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -485,8 +485,8 @@ html.ios .side-panel-resize {
   padding-top: 8px;
   border-top: 1px dashed color-mix(in srgb, var(--fg) 30%, transparent);
 }
-.longview-tab + .longview-tab { margin-top: 8px; }
-.longview-tab-header {
+.overview-tab + .overview-tab { margin-top: 8px; }
+.overview-tab-header {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -499,21 +499,21 @@ html.ios .side-panel-resize {
   border: none;
   border-radius: 0;
 }
-.longview-tab-header:hover {
+.overview-tab-header:hover {
   color: var(--lv-position-color, var(--fg));
 }
-.longview-tab-icon {
+.overview-tab-icon {
   display: inline-flex;
   align-items: center;
   flex: none;
   color: color-mix(in srgb, var(--fg) 65%, transparent);
 }
-.longview-tab-icon svg { display: block; }
-.longview-tab-label {
+.overview-tab-icon svg { display: block; }
+.overview-tab-label {
   white-space: normal;
   word-break: break-word;
 }
-.longview-tab-body {
+.overview-tab-body {
   display: flex;
   flex-direction: column;
   gap: 4px;

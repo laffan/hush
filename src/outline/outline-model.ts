@@ -142,6 +142,20 @@ export function addCheckboxes(lines: string[]): string[] {
   });
 }
 
+/**
+ * Take the checkbox off every checklist line in `lines`, leaving the
+ * bullet and the text — the exact inverse of `addCheckboxes` for the
+ * lines it created. A line that isn't a checklist item is left alone, so
+ * running this over a mixed run only touches the boxes.
+ */
+export function removeCheckboxes(lines: string[]): string[] {
+  return lines.map((line) => {
+    const m = CHECK_RE.exec(line);
+    if (!m) return line;
+    return `${m[1]}${m[2]} ${m[4]}`;
+  });
+}
+
 /** The shape of a flowchart node this module needs — id, text, position. */
 export interface FlowNodeLike {
   id: string;

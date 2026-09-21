@@ -5,7 +5,7 @@
  * Flags, Privacy, Sync, Zotero, Debug
  */
 import { DEFAULT_STOPWORDS } from "../editor/plugins/dry-highlight.js";
-import { bindFlagsTab } from "../longview/longview-settings.js";
+import { bindFlagsTab } from "../overview/overview-settings.js";
 import { testZoteroConnection, downloadZoteroReferences, clearCache as clearZoteroCache } from "../zotero.js";
 import {
   isIOSSettings,
@@ -105,7 +105,7 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.dryRange) settings.dryRange = "paragraph";
   if (!settings.dryStopwords || settings.dryStopwords.length === 0) settings.dryStopwords = [...DEFAULT_STOPWORDS];
   if (!settings.shortcutToggleSidebar) settings.shortcutToggleSidebar = "CmdOrCtrl+\\";
-  if (!settings.shortcutToggleOutline) settings.shortcutToggleOutline = "CmdOrCtrl+Shift+\\";
+  if (!settings.shortcutToggleOverview) settings.shortcutToggleOverview = "CmdOrCtrl+Shift+\\";
   if (!settings.shortcutTypewriter) settings.shortcutTypewriter = "Mod+T";
   if (!settings.shortcutNewFile) settings.shortcutNewFile = "Cmd+N";
   if (!settings.shortcutNewFilePane) settings.shortcutNewFilePane = "Cmd+Shift+N";

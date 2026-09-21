@@ -7,9 +7,9 @@
  * canvas panning) which own touches that begin in the body.
  *
  *   • Swipe left → right  : open the files sidebar (left panel).
- *   • Swipe right → left  : open the outline sidebar or shelf — the
- *                           `toggle-outline-panel` handler in main.js
- *                           already routes to the doc outline, notebook
+ *   • Swipe right → left  : open the Overview sidebar or shelf — the
+ *                           `toggle-overview-panel` handler in main.js
+ *                           already routes to the doc Overview, notebook
  *                           shelf, PDF annotation shelf, or stack sidebar
  *                           depending on the active file type.
  *
@@ -81,11 +81,11 @@ function openLeftPanel(state) {
 
 function openRightPanel(state) {
   // If the files panel is open, a right→left swipe reads as "put it away"
-  // first; otherwise reveal the outline / shelf for the active surface.
+  // first; otherwise reveal the Overview / shelf for the active surface.
   const po = document.getElementById("panel-overlay");
   if (po && !po.classList.contains("hidden")) {
     state.emit("hide-panel");
     return;
   }
-  state.emit("toggle-outline-panel");
+  state.emit("toggle-overview-panel");
 }

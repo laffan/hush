@@ -21,7 +21,9 @@
 
 import { findFrontmatterRange, FRONTMATTER_SCAN_LIMIT } from "./frontmatter.js";
 import { propertiesEdit } from "./plugins/properties.js";
-import { addCheckboxes, isListLine, isPlainListLine } from "../outline/outline-model.ts";
+import {
+  addCheckboxes, removeCheckboxes, isListLine, isPlainListLine, parseOutlineLine,
+} from "../outline/outline-model.ts";
 
 /** Keys this module owns. */
 export const OUTLINE_KEY = "outline";
@@ -207,4 +209,85 @@ export function convertListToOutline(view) {
   changes.sort((a, b) => a.from - b.from);
   view.dispatch({ changes, annotations: propertiesEdit.of(true) });
   return true;
+}
+
+/**
+ * The outline block a "Convert to List" would act on: the run of
+ * checklist lines the selection touches. Returns `{ fromLine, toLine }`
+ * (1-based CodeMirror line numbers) or null.
+ *
+ * The mirror of `listBlockForSelection`, and deliberately not its
+ * opposite in gating: a run of checkboxes is a target whether or not the
+ * document's outline switch happens to be on, because taking the boxes
+ * off is what the command says it does either way.
+ */
+export function outlineBlockForSelection(edState) {
+  const doc = edState.doc;
+  const sel = edState.selection.main;
+  const startLine = doc.lineAt(sel.from).number;
+  const endLine = doc.lineAt(sel.to).number;
+
+  let anchor = 0;
+  for (let n = startLine; n <= endLine; n++) {
+    if (parseOutlineLine(doc.line(n).text)) { anchor = n; break; }
+  }
+  if (!anchor) return null;
+
+  let fromLine = anchor;
+  while (fromLine > 1 && parseOutlineLine(doc.line(fromLine - 1).text)) fromLine--;
+  let toLine = anchor;
+  while (toLine < doc.lines && parseOutlineLine(doc.line(toLine + 1).text)) toLine++;
+  return { fromLine, toLine };
+}
+
+/**
+ * "Convert to List" for a Doc — the inverse of `convertListToOutline`:
+ * take the checkboxes off the outline under the caret, leaving a plain
+ * bulleted list.
+ *
+ * The frontmatter switch only comes off when this was the *last*
+ * checklist in the document. `outline: true` is a document-wide switch,
+ * so clearing it while another outline is still in the file would turn
+ * that one into a bare checklist the user never touched — and the two
+ * footer toggles, which ride the same block, go with it.
+ */
+export function convertOutlineToList(view) {
+  const block = outlineBlockForSelection(view.state);
+  if (!block) return false;
+  const doc = view.state.doc;
+  const lines = [];
+  for (let n = block.fromLine; n <= block.toLine; n++) lines.push(doc.line(n).text);
+  const rewritten = removeCheckboxes(lines);
+
+  let lastOne = true;
+  for (let n = 1; n <= doc.lines && lastOne; n++) {
+    if (n >= block.fromLine && n <= block.toLine) continue;
+    if (parseOutlineLine(doc.line(n).text)) lastOne = false;
+  }
+
+  const changes = lastOne
+    ? frontmatterPatchChanges(view.state, {
+      [OUTLINE_KEY]: null, [HIDE_DONE_KEY]: null, [PIN_KEY]: null,
+    })
+    : [];
+  const from = doc.line(block.fromLine).from;
+  const to = doc.line(block.toLine).to;
+  changes.push({ from, to, insert: rewritten.join("\n") });
+  changes.sort((a, b) => a.from - b.from);
+  view.dispatch({ changes, annotations: propertiesEdit.of(true) });
+  return true;
+}
+
+/**
+ * Flip the document's `outline: true` switch — the whole of "Outline
+ * mode". Turning it off takes the two footer toggles with it: they are
+ * an outline's own state, and leaving them behind in a document with no
+ * outlines would mean a stale pin index applying to whatever checklist
+ * the switch was next turned on over.
+ */
+export function toggleOutlineMode(view) {
+  const on = readOutlineFlags(docHead(view.state.doc)).on;
+  return patchOutlineFrontmatter(view, on
+    ? { [OUTLINE_KEY]: null, [HIDE_DONE_KEY]: null, [PIN_KEY]: null }
+    : { [OUTLINE_KEY]: "true" });
 }

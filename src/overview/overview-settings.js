@@ -1,6 +1,6 @@
 /**
  * Flags settings tab — manages flag types, colors, and custom flags.
- * Replaces the former LongView settings tab in the settings window.
+ * Replaces the former Overview settings tab in the settings window.
  */
 
 /** Fixed flag types that cannot be removed (only color can be changed) */
