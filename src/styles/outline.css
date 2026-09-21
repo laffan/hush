@@ -52,6 +52,19 @@
    fading instead, which the border (drawn from its own token) ignores. */
 .cm-outline-done {
   color: color-mix(in srgb, var(--style-fg, var(--fg)) 45%, transparent);
+}
+
+/* The strike belongs to the words, not the line. A `text-decoration` on
+   the line is drawn across every atomic inline in it — that is what the
+   spec asks for and what every engine does — so it ran through the
+   checkbox and back over the hidden bullet before reaching a word, and
+   no `text-decoration: none` on a child can call it off. The plugin
+   marks the item's own span instead (`itemTextSpan`), trimmed at both
+   ends so the rule doesn't overhang the last word either. The pinned
+   panel and the Zen strip already struck only `.outline-row-text`, and
+   the canvas already drew the rule text-width; this is the one surface
+   that didn't. */
+.cm-outline-done-text {
   text-decoration: line-through;
   text-decoration-thickness: 1px;
 }

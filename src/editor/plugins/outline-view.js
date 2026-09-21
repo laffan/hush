@@ -133,6 +133,31 @@ class OutlineFooterWidget extends WidgetType {
 /** The bullet before a checkbox, painted at zero opacity. */
 const dashDeco = Decoration.mark({ class: "cm-outline-dash" });
 
+/** The strike over a completed item. A mark over the item's words only,
+ *  never the line: a `text-decoration` on the line is drawn across every
+ *  atomic inline in it (the spec says so, and every engine obliges), so
+ *  the rule ran through the checkbox and back over the hidden bullet
+ *  before it ever reached a word. */
+const doneTextDeco = Decoration.mark({ class: "cm-outline-done-text" });
+
+/**
+ * The span of an item's own words — its line, less the `- [x] ` prefix
+ * and any whitespace at either end.
+ *
+ * `item.text` is the tail the checklist pattern captured, so its length
+ * measures back from the end of the line; trimming both ends keeps the
+ * strike off a trailing space, which is exactly the overhang past the
+ * last word that reads as "the line is struck through" rather than "the
+ * words are". Returns null for an item with nothing in it.
+ */
+function itemTextSpan(item) {
+  const lead = item.text.length - item.text.trimStart().length;
+  const trail = item.text.length - item.text.trimEnd().length;
+  const from = item.to - item.text.length + lead;
+  const to = item.to - trail;
+  return to > from ? { from, to } : null;
+}
+
 /** Collapse `[from, to]` and the line break that would otherwise be left
  *  where it was — the newline in front of it, or the one behind it when
  *  the span starts the document. Returns null when there is nothing to
@@ -220,6 +245,10 @@ function buildOutlineState(edState) {
       // width alone too, so the hang-indent measured from the source
       // prefix still lines the wrap up under the text.
       ranges.push(dashDeco.range(item.markFrom, item.markTo));
+      if (item.checked) {
+        const span = itemTextSpan(item);
+        if (span) ranges.push(doneTextDeco.range(span.from, span.to));
+      }
     });
 
     ranges.push(Decoration.widget({
