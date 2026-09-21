@@ -27,14 +27,14 @@
  * parking inside text nothing is drawing.
  */
 
-import { Decoration, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
-import { RangeSet, StateField } from "@codemirror/state";
+import { Decoration, EditorView, ViewPlugin, WidgetType, keymap } from "@codemirror/view";
+import { Prec, RangeSet, StateField } from "@codemirror/state";
 import { firstOpenIndex, parseOutlineLine, toggleChecklistLine } from "../../outline/outline-model.ts";
 import {
   HIDE_DONE_KEY, PIN_KEY, outlineFlagsOf, frontmatterPatchChanges,
 } from "../outline-frontmatter.js";
 import { propertiesEdit } from "./properties.js";
-import { buildOutlineFooter, buildOutlineRows } from "../outline-dom.js";
+import { buildOutlineFooter, buildOutlineRows, buildOutlineZenStrip } from "../outline-dom.js";
 
 /**
  * Every outline block in the document, as runs of consecutive checklist
@@ -55,6 +55,12 @@ function scanBlocks(doc) {
     if (item) {
       item.from = pos;
       item.to = pos + text.length;
+      // The bullet itself, for the decoration that fades it out. The
+      // first non-space character of a checklist line is always the
+      // marker (`CHECK_RE` requires it), so no second parse is needed.
+      const indent = text.length - text.trimStart().length;
+      item.markFrom = pos + indent;
+      item.markTo = item.markFrom + 1;
       if (cur) { cur.items.push(item); cur.toLine = n; }
       else cur = { fromLine: n, toLine: n, items: [item] };
     } else if (cur) { blocks.push(cur); cur = null; }
@@ -113,8 +119,6 @@ class OutlineFooterWidget extends WidgetType {
     const host = document.createElement("div");
     host.className = "cm-outline-footer-host" + (this.capped ? " cm-outline-footer-capped" : "");
     host.appendChild(buildOutlineFooter({
-      done: this.items.filter((i) => i.checked).length,
-      total: this.items.length,
       hideDone: this.flags.hideDone,
       pinned: false,
       onToggleHideDone: () => patchFlags(view, { [HIDE_DONE_KEY]: this.flags.hideDone ? null : "true" }),
@@ -150,6 +154,9 @@ class OutlinePinnedPillWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
+/** The bullet before a checkbox, painted at zero opacity. */
+const dashDeco = Decoration.mark({ class: "cm-outline-dash" });
+
 /** Does any cursor or selection range touch this span? */
 function selectionTouches(edState, from, to) {
   for (const r of edState.selection.ranges) {
@@ -164,7 +171,7 @@ function selectionTouches(edState, from, to) {
  *  caret skip lines that are perfectly visible. */
 function buildOutlineState(edState) {
   const flags = outlineFlagsOf(edState);
-  const empty = { deco: Decoration.none, atomic: RangeSet.empty, hideDone: false, pin: 0, pinnedBlock: null };
+  const empty = { deco: Decoration.none, atomic: RangeSet.empty, hideDone: false, pin: 0, pinnedBlock: null, blocks: [] };
   if (!flags.on) return empty;
   const doc = edState.doc;
   const blocks = scanBlocks(doc);
@@ -207,6 +214,13 @@ function buildOutlineState(edState) {
       if (item.checked) cls += " cm-outline-done";
       if (i === nextIdx) cls += " cm-outline-next";
       ranges.push(Decoration.line({ class: cls }).range(item.from));
+      // Fade the bullet out rather than replacing it: the checkbox is
+      // already the marker, but the `-` is real characters the caret
+      // still walks through, and collapsing them away would put the
+      // cursor somewhere nothing is drawn. Zero opacity leaves the
+      // width alone too, so the hang-indent measured from the source
+      // prefix still lines the wrap up under the text.
+      ranges.push(dashDeco.range(item.markFrom, item.markTo));
     });
 
     ranges.push(Decoration.widget({
@@ -225,6 +239,9 @@ function buildOutlineState(edState) {
     // block it draws — the field already walked every line to decide
     // what to collapse.
     pinnedBlock: flags.pin > 0 ? blocks[flags.pin - 1] || null : null,
+    // Kept for the Alt-arrow move below, which has to know where an
+    // item's children end before it can take them with it.
+    blocks,
   };
 }
 
@@ -253,6 +270,11 @@ const outlineField = StateField.define({
  * itself — not in `#editor-container` — so a floating pane, a stack
  * column and the main editor each pin to their own frame rather than
  * one of them pinning to the window on everyone's behalf.
+ *
+ * Zen Focus is the exception: its overlay paints gradient curtains over
+ * its own top and bottom thirds, so a panel docked to the bottom of the
+ * editor would be painted out. There the outline shows as one row at the
+ * top of the window instead — see `buildOutlineZenStrip`.
  */
 const pinnedPanel = ViewPlugin.fromClass(
   class {
@@ -260,11 +282,17 @@ const pinnedPanel = ViewPlugin.fromClass(
       this.view = view;
       this.el = null;
       this.sig = "";
+      this.zen = false;
       this.render();
     }
 
     update(update) {
       if (update.docChanged || update.selectionSet) this.render();
+      // The text column is padding on the scroller, and the sidebar,
+      // the right-hand bars and a docked pane all move it. Re-read it
+      // whenever the geometry moves so the panel stays under the column
+      // rather than under the middle of the window.
+      if (update.geometryChanged) this.syncColumn();
     }
 
     destroy() {
@@ -273,20 +301,58 @@ const pinnedPanel = ViewPlugin.fromClass(
       this.sig = "";
     }
 
+    /** Align the panel with the editor's text column. Read through
+     *  `requestMeasure` — a `getComputedStyle` inside `update` is a
+     *  layout read in the middle of CodeMirror's own update cycle. */
+    syncColumn() {
+      if (!this.el || this.zen) return;
+      this.view.requestMeasure({
+        read: (v) => {
+          const cs = getComputedStyle(v.scrollDOM);
+          return { left: cs.paddingLeft, right: cs.paddingRight };
+        },
+        write: (m) => {
+          if (!this.el) return;
+          this.el.style.setProperty("--outline-col-left", m.left);
+          this.el.style.setProperty("--outline-col-right", m.right);
+        },
+      });
+    }
+
     render() {
       const value = this.view.state.field(outlineField, false);
       const block = value ? value.pinnedBlock : null;
       if (!block) { this.destroy(); return; }
       const flags = { hideDone: value.hideDone, pin: value.pin };
+      const overlay = this.view.dom.closest(".zen-focus-overlay");
 
-      const sig = blockSignature(block, flags, true);
+      const sig = `${overlay ? "z" : "p"}|` + blockSignature(block, flags, true);
       if (this.el && sig === this.sig) return;
+      const wasZen = this.zen;
       this.sig = sig;
+      this.zen = !!overlay;
+
+      // A surface can't switch between the two forms in place — they
+      // hang off different elements — so a changed form starts over.
+      if (this.el && wasZen !== this.zen) { this.el.remove(); this.el = null; }
+
+      if (this.zen) {
+        const strip = buildOutlineZenStrip(block.items, (item) => toggleAt(this.view, item.line));
+        if (!strip) { this.destroy(); return; }
+        if (!this.el) {
+          this.el = document.createElement("div");
+          overlay.appendChild(this.el);
+        }
+        this.el.className = "outline-zen-host";
+        this.el.replaceChildren(strip);
+        return;
+      }
 
       if (!this.el) {
         this.el = document.createElement("div");
         this.el.className = "outline-pinned-panel";
         this.view.dom.appendChild(this.el);
+        this.syncColumn();
       }
       this.el.replaceChildren();
       this.el.appendChild(buildOutlineRows(
@@ -294,8 +360,6 @@ const pinnedPanel = ViewPlugin.fromClass(
         (item) => toggleAt(this.view, item.line),
       ));
       this.el.appendChild(buildOutlineFooter({
-        done: block.items.filter((i) => i.checked).length,
-        total: block.items.length,
         hideDone: flags.hideDone,
         pinned: true,
         onToggleHideDone: () => patchFlags(this.view, { [HIDE_DONE_KEY]: flags.hideDone ? null : "true" }),
@@ -304,6 +368,100 @@ const pinnedPanel = ViewPlugin.fromClass(
     }
   },
 );
+
+/**
+ * Outline-aware line moving (Alt-Arrow, CodeMirror's `moveLineUp` /
+ * `moveLineDown`).
+ *
+ * The default commands move one raw line, which on an outline tears a
+ * parent away from the items nested under it. Inside an outline an item
+ * moves **among its siblings and takes its children with it**, and it
+ * never leaves its parent: there is no sibling above the first child or
+ * below the last, so the key does nothing there rather than flattening
+ * the tree to make room. Outside an outline nothing is claimed and the
+ * default runs.
+ */
+
+/** Last item index of the unit rooted at `i` — the item plus every
+ *  following item indented deeper than it. */
+function unitEnd(items, i) {
+  let end = i;
+  while (end + 1 < items.length && items[end + 1].depth > items[i].depth) end += 1;
+  return end;
+}
+
+/** The block the whole selection sits in, plus the item indices its
+ *  ends land on. Null when the selection isn't inside one outline. */
+function selectedItems(edState, blocks) {
+  const sel = edState.selection.main;
+  const fromLine = edState.doc.lineAt(sel.from).number;
+  const toLine = edState.doc.lineAt(sel.to).number;
+  for (const block of blocks) {
+    if (block.fromLine > fromLine || block.toLine < toLine) continue;
+    const a = block.items.findIndex((it) => it.line === fromLine);
+    const b = block.items.findIndex((it) => it.line === toLine);
+    if (a < 0 || b < 0) return null;
+    return { items: block.items, a, b };
+  }
+  return null;
+}
+
+function moveOutlineUnit(view, dir) {
+  const value = view.state.field(outlineField, false);
+  if (!value || !value.blocks.length) return false;
+  const found = selectedItems(view.state, value.blocks);
+  if (!found) return false;
+  const { items, a, b } = found;
+
+  // Whole units only: a selection that stops halfway through a subtree
+  // still moves the subtree.
+  const start = a;
+  const end = unitEnd(items, Math.max(unitEnd(items, a), b));
+  const level = items[start].depth;
+
+  let tStart;
+  let tEnd;
+  if (dir > 0) {
+    const next = end + 1;
+    // Past the last sibling, or past the end of the parent's children.
+    if (next >= items.length || items[next].depth !== level) return true;
+    tStart = next;
+    tEnd = unitEnd(items, next);
+  } else {
+    let p = start - 1;
+    while (p >= 0 && items[p].depth > level) p -= 1;
+    if (p < 0 || items[p].depth !== level) return true;
+    tStart = p;
+    tEnd = start - 1;
+  }
+
+  const doc = view.state.doc;
+  const movedFrom = doc.line(items[start].line).from;
+  const movedTo = doc.line(items[end].line).to;
+  const targetFrom = doc.line(items[tStart].line).from;
+  const targetTo = doc.line(items[tEnd].line).to;
+  const moved = doc.sliceString(movedFrom, movedTo);
+  const target = doc.sliceString(targetFrom, targetTo);
+
+  const sel = view.state.selection.main;
+  const from = dir > 0 ? movedFrom : targetFrom;
+  const to = dir > 0 ? targetTo : movedTo;
+  const insert = dir > 0 ? `${target}\n${moved}` : `${moved}\n${target}`;
+  const delta = dir > 0 ? target.length + 1 : -(target.length + 1);
+
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: { anchor: sel.anchor + delta, head: sel.head + delta },
+    scrollIntoView: true,
+    userEvent: "move.outline",
+  });
+  return true;
+}
+
+const outlineKeymap = Prec.high(keymap.of([
+  { key: "Alt-ArrowUp", run: (view) => moveOutlineUnit(view, -1) },
+  { key: "Alt-ArrowDown", run: (view) => moveOutlineUnit(view, 1) },
+]));
 
 /**
  * The outline extension bundle. Carried by BOTH extension lists (the
@@ -319,4 +477,4 @@ const outlineAtomic = EditorView.atomicRanges.of(
   (view) => view.state.field(outlineField, false)?.atomic || RangeSet.empty,
 );
 
-const outlineExtension = [outlineField, outlineAtomic, pinnedPanel];
+const outlineExtension = [outlineField, outlineAtomic, outlineKeymap, pinnedPanel];

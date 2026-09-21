@@ -53,11 +53,12 @@ function makeToggle(icon, label, active, onClick) {
 }
 
 /**
- * The footer strip: a count on the left, the two toggles on the right.
+ * The footer strip: nothing but the two toggles, right-aligned. It
+ * deliberately carries no tally — an outline already says how much is
+ * left by how much of it isn't struck through, and a second reading of
+ * the same fact is noise on a surface this small.
  *
  * @param {object} o
- * @param {number} o.done      completed item count
- * @param {number} o.total     item count
  * @param {boolean} o.hideDone
  * @param {boolean} o.pinned
  * @param {() => void} o.onToggleHideDone
@@ -66,11 +67,6 @@ function makeToggle(icon, label, active, onClick) {
 export function buildOutlineFooter(o) {
   const footer = document.createElement("div");
   footer.className = "outline-footer";
-
-  const count = document.createElement("span");
-  count.className = "outline-footer-count";
-  count.textContent = o.total ? `${o.done}/${o.total}` : "";
-  footer.appendChild(count);
 
   const spacer = document.createElement("span");
   spacer.className = "outline-footer-spacer";
@@ -136,4 +132,49 @@ export function buildOutlineRows(items, hideDone, onToggle) {
     list.appendChild(row);
   });
   return list;
+}
+
+/**
+ * The one row Zen Focus shows: the current item, pinned to the top of
+ * the window.
+ *
+ * Zen's bottom third is a gradient curtain painted over everything in
+ * the overlay, so the pinned panel's usual home is exactly where it
+ * cannot be read — and a whole outline would be clutter in a mode whose
+ * point is one line at a time. What survives the trip is the one thing
+ * that still matters while writing: what you are meant to be doing.
+ * Returns null when nothing is left to do.
+ *
+ * @param {import("../outline/outline-model.ts").OutlineItem[]} items
+ * @param {(item) => void} onToggle
+ */
+export function buildOutlineZenStrip(items, onToggle) {
+  const idx = firstOpenIndex(items);
+  if (idx < 0) return null;
+  const item = items[idx];
+
+  const strip = document.createElement("div");
+  strip.className = "outline-zen-strip";
+
+  const row = document.createElement("div");
+  row.className = "outline-row outline-row-next";
+
+  const box = document.createElement("span");
+  box.className = "cm-task-checkbox outline-row-box";
+  box.setAttribute("role", "checkbox");
+  box.setAttribute("aria-checked", "false");
+  box.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onToggle(item);
+  });
+  row.appendChild(box);
+
+  const label = document.createElement("span");
+  label.className = "outline-row-text";
+  label.textContent = stripInlineMarkdown(item.text);
+  row.appendChild(label);
+
+  strip.appendChild(row);
+  return strip;
 }

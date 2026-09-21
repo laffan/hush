@@ -30,16 +30,44 @@
   padding-top: 6px;
 }
 
+/* A finished item fades its own text, never the box it sits in: the
+   border is one frame shared by every line, so an `opacity` on the line
+   would take a slice of the outline's outline with it. Colour does the
+   fading instead, which the border (drawn from its own token) ignores. */
 .cm-outline-done {
+  color: color-mix(in srgb, var(--style-fg, var(--fg)) 45%, transparent);
   text-decoration: line-through;
   text-decoration-thickness: 1px;
-  opacity: 0.45;
 }
+
+.cm-outline-done .cm-task-checkbox { opacity: 0.45; }
+
+/* The bullet before a checkbox. Left in the text — the caret still walks
+   through it — but never painted: the checkbox is the marker. */
+.cm-outline-dash { opacity: 0; }
 
 /* The one thing still to do, in the style's own header colour. */
 .cm-outline-next {
   color: var(--heading-color, var(--style-fg, var(--fg)));
   font-weight: 650;
+}
+
+/* Round boxes, in an outline only: a checklist you are working through
+   reads as a set of states to fill in rather than as form fields, and
+   the square box stays where a task list is just a task list. */
+.cm-outline-line .cm-task-checkbox,
+.outline-row-box {
+  border-radius: 50%;
+}
+
+/* The tick inside a circle needs a touch more inset than inside a
+   square, or its long arm runs into the curve. */
+.cm-outline-line .cm-task-checkbox.checked::after,
+.outline-row-box.checked::after {
+  left: 0.26em;
+  top: 0.08em;
+  width: 0.24em;
+  height: 0.42em;
 }
 
 /* === Footer ============================================================ */
@@ -68,11 +96,6 @@
   font-size: 11px;
   color: color-mix(in srgb, var(--style-fg, var(--fg)) 55%, transparent);
   user-select: none;
-}
-
-.outline-footer-count {
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
 }
 
 .outline-footer-spacer { flex: 1 1 auto; }
@@ -128,16 +151,29 @@
 .cm-outline-pill:hover { color: var(--heading-color, var(--style-fg, var(--fg))); }
 
 /* Docked to the editor element, not the window: a floating pane and a
-   stack column each pin to their own frame. */
+   stack column each pin to their own frame.
+
+   Horizontal placement tracks the **text column**, not the frame. The
+   column is padding on the scroller, and the sidebar, the right-hand
+   bars and a docked pane all move it — centring on the frame instead
+   would slide the panel out from under the words it belongs to the
+   moment any of them opened. `--outline-col-*` is written by the plugin
+   from the scroller's own computed padding.
+
+   `--outline-pin-inset` keeps the panel off its host's edges. A pane's
+   resize handles reach 8 px into its content and its corner handles 12,
+   so a panel flush to the bottom of a pane is a panel sitting on top of
+   the grips the user resizes it by. The main editor has no such
+   handles, so it overrides the inset back to zero below. */
 .outline-pinned-panel {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  --outline-pin-inset: 10px;
+  left: calc(var(--outline-pin-inset) + var(--outline-col-left, 0px));
+  right: calc(var(--outline-pin-inset) + var(--outline-col-right, 0px));
+  bottom: var(--outline-pin-inset);
   z-index: 6;
   box-sizing: border-box;
-  width: min(100%, var(--column-width));
-  margin: 0 auto;
+  border-radius: 8px;
   max-height: 45%;
   /* A column so the rows take the scrolling and the footer stays put:
      the toggles are the way back out of a long pinned outline, and a
@@ -145,12 +181,18 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--outline-border);
-  border-bottom: none;
-  border-top-left-radius: 8px;
-  border-top-right-radius: 8px;
   background: var(--panel-bg, var(--bg));
   backdrop-filter: blur(6px);
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.12);
+}
+
+/* The main editor's frame has no resize grips to keep clear of, so the
+   panel sits flush against the bottom of the window and drops the edge
+   it no longer has to draw. */
+#editor-container .outline-pinned-panel {
+  --outline-pin-inset: 0px;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
 }
 
 .outline-pinned-panel .outline-footer { flex: none; padding: 2px 8px 6px; }
@@ -189,6 +231,38 @@
   color: var(--heading-color, var(--style-fg, var(--fg)));
   font-weight: 650;
 }
+
+/* === Zen Focus ========================================================= */
+
+/* Zen paints a gradient curtain over its own top and bottom thirds, so
+   the strip sits above it (the curtains are z-index 2 inside the
+   overlay) and pins to the top of the window rather than to the editor
+   box inside it. */
+.outline-zen-host {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  padding: 18px 4vw 0;
+  pointer-events: none;
+}
+
+.outline-zen-strip {
+  pointer-events: auto;
+  max-width: min(100%, var(--column-width, 800px));
+  padding: 6px 14px;
+  border: 1px solid var(--outline-border);
+  border-radius: 999px;
+  background: var(--outline-bg);
+  font-family: var(--ui-font-family);
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.outline-zen-strip .outline-row { padding-left: 0; }
 
 /* The frame the panel pins to. CodeMirror already positions `.cm-editor`
    relatively; stated here so the panel can never end up measured against

@@ -5,7 +5,7 @@ import { canvasToScreen, computePocketLayout, getShapeBounds, POCKET_ZONE_WIDTH,
 import type { PocketEntry } from "./utils";
 import { parseText } from "./markdown";
 import {
-  OUTLINE_FONT_FAMILY, OUTLINE_FOOTER_H, OUTLINE_ICON, OUTLINE_PAD, OUTLINE_RADIUS,
+  OUTLINE_FONT_FAMILY, OUTLINE_ICON, OUTLINE_PAD, OUTLINE_RADIUS,
   outlineLayout, outlinePinnedOrigin,
 } from "./outline-shape";
 import type { OutlineButton, OutlineLayout } from "./outline-shape";
@@ -935,13 +935,20 @@ export function drawOutlineShape(
     ctx.strokeStyle = fg;
     ctx.lineWidth = 1.3;
     ctx.globalAlpha = rowAlpha * 0.65;
-    ctx.strokeRect(x + row.boxX, boxY, L.boxSize, L.boxSize);
+    // Round, matching the Doc — a checklist you are working through
+    // reads as a set of states to fill in, not as form fields.
+    const r = L.boxSize / 2;
+    ctx.beginPath();
+    ctx.arc(x + row.boxX + r, boxY + r, r, 0, Math.PI * 2);
+    ctx.stroke();
     if (row.checked) {
       ctx.globalAlpha = rowAlpha;
       ctx.beginPath();
-      ctx.moveTo(x + row.boxX + L.boxSize * 0.22, boxY + L.boxSize * 0.55);
-      ctx.lineTo(x + row.boxX + L.boxSize * 0.42, boxY + L.boxSize * 0.78);
-      ctx.lineTo(x + row.boxX + L.boxSize * 0.82, boxY + L.boxSize * 0.25);
+      // Pulled in from the square tick's proportions so its long arm
+      // clears the curve.
+      ctx.moveTo(x + row.boxX + L.boxSize * 0.28, boxY + L.boxSize * 0.52);
+      ctx.lineTo(x + row.boxX + L.boxSize * 0.44, boxY + L.boxSize * 0.72);
+      ctx.lineTo(x + row.boxX + L.boxSize * 0.74, boxY + L.boxSize * 0.30);
       ctx.lineWidth = 1.8;
       ctx.stroke();
     }
@@ -974,7 +981,9 @@ export function drawOutlineShape(
     ctx.restore();
   }
 
-  // Footer: a hairline, the tally, and the two toggles.
+  // Footer: a hairline and the two toggles. No tally — an outline
+  // already says how much is left by how much of it isn't struck
+  // through, and a second reading of the same fact is noise here.
   const fy = y + L.footerY;
   ctx.save();
   ctx.strokeStyle = outlineTint(fg, 0.14);
@@ -983,16 +992,6 @@ export function drawOutlineShape(
   ctx.moveTo(x + OUTLINE_PAD * 0.5, Math.round(fy) + 0.5);
   ctx.lineTo(x + L.width - OUTLINE_PAD * 0.5, Math.round(fy) + 0.5);
   ctx.stroke();
-
-  if (!omitGlyphs) {
-    const labelSize = Math.max(8, L.fontSize - 2);
-    ctx.font = `${labelSize}px ${OUTLINE_FONT_FAMILY}`;
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = outlineTint(fg, 0.55);
-    const tally = L.total ? `${L.doneCount}/${L.total}` : "";
-    const hidden = L.hiddenCount ? `  ·  ${L.hiddenCount} hidden` : "";
-    ctx.fillText(tally + hidden, x + OUTLINE_PAD, fy + OUTLINE_FOOTER_H / 2);
-  }
 
   for (const btn of L.buttons) {
     const bx = x + btn.x;

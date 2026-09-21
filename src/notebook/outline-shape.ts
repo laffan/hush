@@ -79,10 +79,6 @@ export interface OutlineLayout {
   height: number;
   footerY: number;
   rows: OutlineRow[];
-  total: number;
-  doneCount: number;
-  /** Items the "hide completed" toggle is currently keeping out of view. */
-  hiddenCount: number;
   buttons: OutlineButton[];
 }
 
@@ -144,11 +140,8 @@ export function outlineLayout(shape: TextShape): OutlineLayout {
   const rows: OutlineRow[] = [];
 
   let y = OUTLINE_PAD;
-  let doneCount = 0;
-  let hiddenCount = 0;
   items.forEach((item, i) => {
-    if (item.checked) doneCount += 1;
-    if (hideDone && item.checked) { hiddenCount += 1; return; }
+    if (hideDone && item.checked) return;
     const depth = Math.max(0, item.depth - (isFinite(baseDepth) ? baseDepth : 0));
     const boxX = OUTLINE_PAD + depth * OUTLINE_INDENT;
     const textX = boxX + boxSize + boxGap;
@@ -191,10 +184,7 @@ export function outlineLayout(shape: TextShape): OutlineLayout {
     { id: "pin", x: width - OUTLINE_PAD - btnW, y: btnY, w: btnW, h: OUTLINE_ICON + 6, active: !!shape.outlinePin },
   ];
 
-  return {
-    fontSize, boxSize, width, height, footerY, rows,
-    total: items.length, doneCount, hiddenCount, buttons,
-  };
+  return { fontSize, boxSize, width, height, footerY, rows, buttons };
 }
 
 /** The outline's bounding box in world (or, for a pinned outline, frame)

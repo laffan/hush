@@ -224,7 +224,7 @@ An outline is a `TextShape` carrying `outline: true`, whose `text` is a nested m
 
 `outline-shape.ts` owns the geometry — every coordinate relative to `shape.position`, which for an outline is the top-left of the **frame** rather than of the first glyph (hence the pad offset when the inline editor opens on one). It measures each item's wrapped lines so the renderer can strike a completed item across all of them, and publishes the footer's two button boxes and each row's checkbox zone for the hit test. Rendering delegates each item's text back to `drawTextShape` with a throwaway shape: the outline owns the box, the checkbox glyph, the strike, the heading colour on the next item and the footer, and nothing else — re-implementing the text half is how an outline would start rendering markdown differently from the shape beside it.
 
-Two flags ride the shape. `outlineHideDone` folds completed items away (they stay in the text; the footer tally still counts them, and says how many are hidden). `outlinePin` moves it out of world space entirely — see the screen-space note in README-TECHNICAL: it is drawn after the camera transform is restored, so it holds its size and its corner while the canvas moves under it, and every world-space pick has to exclude it.
+Two flags ride the shape. `outlineHideDone` folds completed items away — they stay in the text, this only stops drawing them. `outlinePin` moves it out of world space entirely — see the screen-space note in README-TECHNICAL: it is drawn after the camera transform is restored, so it holds its size and its corner while the canvas moves under it, and every world-space pick has to exclude it.
 
 ### Dragging a selection
 
