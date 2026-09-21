@@ -29,6 +29,13 @@ import {
   applyResize, applyCropResize, openLinkRun,
 } from "./state-helpers";
 import { computePocketLayout, POCKET_ZONE_WIDTH } from "./utils";
+import {
+  OUTLINE_DEFAULT_WIDTH, OUTLINE_PAD,
+  hitTestOutlineButton, hitTestOutlineCheckbox, outlineLayout,
+} from "./outline-shape";
+import type { OutlineButtonId, OutlineLayout } from "./outline-shape";
+import { pinnedOutlineOffset } from "./renderer";
+import { outlineFromFlowchart } from "../outline/outline-model";
 import { collectShapesInPolygon, rectPolygon } from "./selection-region";
 import {
   type SplitDragState, type SplitHoverState, type SplitPreviewState, type SplitTapPending,
@@ -36,6 +43,17 @@ import {
 } from "./state-splits";
 // PERF-HUD (temporary): tracer singleton — see perf-hud.ts.
 import { perf } from "./perf-hud";
+
+/**
+ * A pinned outline is drawn against the frame, not the canvas, so its
+ * stored world position says nothing about where it is on screen. Every
+ * world-space pick has to leave it out or a click on empty canvas would
+ * select an outline the user can see nowhere near it; the press it does
+ * own is routed in screen space by `_handleOutlineChrome`.
+ */
+function isPinnedOutline(s: Shape): boolean {
+  return s.type === "text" && !!s.outline && !!s.outlinePin;
+}
 
 export interface EditingText {
   shapeId: string | null;
@@ -768,13 +786,17 @@ export class DrawingState extends EventTarget {
     return inert ? inert.has(shape.layerId) : this._isLayerInert(shape.layerId);
   }
 
-  /** `this.shapes` minus anything on a hidden or locked layer. Returns
-   *  the live array untouched in the common case (no locked or hidden
-   *  layers) so the hot hit-test paths don't allocate. */
+  /** `this.shapes` minus anything on a hidden or locked layer, and minus
+   *  any pinned outline (whose world position isn't where it is drawn).
+   *  Returns the live array untouched in the common case so the hot
+   *  hit-test paths don't allocate. */
   _interactableShapes(): Shape[] {
     const inert = this._inertLayerIds();
-    if (!inert.size) return this.shapes;
-    return this.shapes.filter((s) => !this._isShapeInert(s, inert));
+    // `some` rather than a filter for the fast path: this runs on every
+    // pointer move, and the common canvas has neither a locked layer nor
+    // a pinned outline, so it should not allocate a copy to say so.
+    if (!inert.size && !this.shapes.some(isPinnedOutline)) return this.shapes;
+    return this.shapes.filter((s) => !this._isShapeInert(s, inert) && !isPinnedOutline(s));
   }
 
   // === Splits / Grabs ===
@@ -1211,7 +1233,14 @@ export class DrawingState extends EventTarget {
   startEditingExistingText(shape: TextShape): boolean {
     if (this._isShapeInert(shape)) return false;
     this.editingText = {
-      shapeId: shape.id, position: shape.position,
+      shapeId: shape.id,
+      // An outline's `position` is the top-left of its frame, not of its
+      // first glyph, so the inline editor opens inset by the same
+      // padding the frame draws with — otherwise the text jumps up and
+      // left the moment editing starts.
+      position: shape.outline
+        ? { x: shape.position.x + OUTLINE_PAD, y: shape.position.y + OUTLINE_PAD }
+        : shape.position,
       text: shape.text, fontSize: shape.fontSize, color: shape.color,
       fontFamily: shape.fontFamily, bold: shape.bold,
       // Widen to at least the configured max for comfortable editing,
@@ -1474,6 +1503,13 @@ export class DrawingState extends EventTarget {
       return; // commit ends the interaction; next click starts fresh
     }
 
+    // An outline's frame is its own UI: a press on a checkbox or on one
+    // of the two footer toggles has to be consumed here, ahead of edge
+    // affordances, splits, selection and the text tool, or the press
+    // would also start a drag or open an editor over the thing it just
+    // toggled. Panning still wins — that is how a canvas is navigated.
+    if (!this.isPanning && this._handleOutlineChrome(screenPt, canvasPt, e)) return;
+
     // Hit-test the per-edge midpoint affordance (the small touch dot, or
     // the revealed X when an edge is already hovered). 12 px screen
     // radius / current zoom matches the on-screen targets the renderer
@@ -1597,7 +1633,8 @@ export class DrawingState extends EventTarget {
       const inert = this._inertLayerIds();
       const hitShape = findShapeAtPoint(
         canvasPt,
-        this.shapes.filter((s) => !pocketedIds.has(s.id) && !this._isShapeInert(s, inert)),
+        this.shapes.filter((s) =>
+          !pocketedIds.has(s.id) && !this._isShapeInert(s, inert) && !isPinnedOutline(s)),
         this.fontFamily,
       );
 
@@ -2440,7 +2477,7 @@ export class DrawingState extends EventTarget {
    *
    *  Hit rules and group promotion live in selection-region.ts. */
   selectShapesInRegion(poly: Point[], opts?: { additive?: boolean }): number {
-    const hits = collectShapesInPolygon(this.shapes, poly, {
+    const hits = collectShapesInPolygon(this.shapes.filter((s) => !isPinnedOutline(s)), poly, {
       fontFamily: this.fontFamily,
       inertLayerIds: this._inertLayerIds(),
     });
@@ -3680,6 +3717,191 @@ export class DrawingState extends EventTarget {
     this.shapes = [...this.shapes, { id: generateId(), type: "text", position, text, fontSize: opts?.fontSize ?? this.fontSize, color: "#000000", width: this.maxTextWidth, layerId: this.activeLayerId, createdAt: Date.now() } as TextShape];
     this.recordHistory();
     this.notify("shapes");
+  }
+
+  // === Outlines ===
+  // An outline is a text shape holding a nested markdown checklist (see
+  // outline-shape.ts). Its frame carries two toggles and a checkbox per
+  // item, so it is the one text shape that owns presses inside its own
+  // bounds; everything below is what those presses do.
+
+  /** Resolve the outline under a press, in whichever space it lives:
+   *  world for an ordinary outline, the frame's own pixels for a pinned
+   *  one. Returns the point in the outline's local coordinates. */
+  private _outlineUnderPoint(screenPt: Point, canvasPt: Point):
+    { shape: TextShape; layout: OutlineLayout; local: Point } | null {
+    const canvas = this.canvasEl;
+    if (!canvas) return null;
+    // Every press on every canvas comes through here; a canvas with no
+    // outline on it shouldn't pay for a pocket layout to find that out.
+    if (!this.shapes.some((s) => s.type === "text" && s.outline)) return null;
+    const inert = this._inertLayerIds();
+    const { pocketedIds } = computePocketLayout(this.shapes, canvas.clientWidth, this.fontFamily, this.pocketRightInset);
+    for (let i = this.shapes.length - 1; i >= 0; i--) {
+      const shape = this.shapes[i];
+      if (shape.type !== "text" || !shape.outline) continue;
+      if (pocketedIds.has(shape.id) || this._isShapeInert(shape, inert)) continue;
+      let layout: OutlineLayout;
+      let local: Point;
+      if (shape.outlinePin) {
+        // Mapped back through exactly the offset the paint used, so the
+        // hit zone can't drift from the drawn panel.
+        const off = pinnedOutlineOffset(shape, canvas.clientWidth, canvas.clientHeight, {
+          left: this.leftInset, right: this.pocketRightInset,
+        });
+        layout = off.layout;
+        local = { x: screenPt.x - shape.position.x - off.dx, y: screenPt.y - shape.position.y - off.dy };
+      } else {
+        layout = outlineLayout(shape);
+        local = { x: canvasPt.x - shape.position.x, y: canvasPt.y - shape.position.y };
+      }
+      if (local.x < 0 || local.y < 0 || local.x > layout.width || local.y > layout.height) continue;
+      return { shape, layout, local };
+    }
+    return null;
+  }
+
+  /** Handle a press on an outline's own chrome. Returns true when the
+   *  press was consumed. */
+  private _handleOutlineChrome(screenPt: Point, canvasPt: Point, e: PointerEvent): boolean {
+    // Modified presses are the canvas's: shift extends a selection, and
+    // ⌘ is the drag-to-a-doc gesture.
+    if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return false;
+    const hit = this._outlineUnderPoint(screenPt, canvasPt);
+    if (!hit) return false;
+    const button = hitTestOutlineButton(hit.local, hit.layout);
+    if (button) { this.toggleOutlineOption(hit.shape.id, button); return true; }
+    const line = hitTestOutlineCheckbox(hit.local, hit.layout);
+    if (line != null) { this.toggleOutlineItem(hit.shape.id, line); return true; }
+    // A pinned outline is a panel over the canvas. A press that lands on
+    // it but misses its controls still belongs to it, or the drag would
+    // marquee-select the canvas behind the panel.
+    return !!hit.shape.outlinePin;
+  }
+
+  /** Flip one of an outline's footer toggles. One undo entry per press. */
+  toggleOutlineOption(shapeId: string, option: OutlineButtonId) {
+    const key = option === "hideDone" ? "outlineHideDone" : "outlinePin";
+    let found = false;
+    this.shapes = this.shapes.map((s) => {
+      if (s.id !== shapeId || s.type !== "text") return s;
+      found = true;
+      const next: TextShape = { ...s };
+      if (next[key]) {
+        // Unpinning puts the outline down where it was being drawn, not
+        // back at the world position it held before it was pinned: the
+        // canvas has almost certainly moved since, and a shape that
+        // reappears somewhere off screen reads as one that vanished.
+        if (key === "outlinePin") {
+          const world = this._pinnedOutlineWorldPosition(next);
+          if (world) next.position = world;
+        }
+        delete next[key];
+      } else next[key] = true;
+      return next;
+    });
+    if (!found) return;
+    this.recordHistory();
+    this.notify("shapes");
+  }
+
+  /** Where a pinned outline's frame currently sits in world coordinates,
+   *  or null when there is no canvas to measure against. */
+  private _pinnedOutlineWorldPosition(shape: TextShape): Point | null {
+    const canvas = this.canvasEl;
+    if (!canvas || !canvas.clientWidth) return null;
+    const { dx, dy } = pinnedOutlineOffset(shape, canvas.clientWidth, canvas.clientHeight, {
+      left: this.leftInset, right: this.pocketRightInset,
+    });
+    return screenToCanvas({ x: shape.position.x + dx, y: shape.position.y + dy }, this.camera);
+  }
+
+  /** Check or uncheck one item, addressed by its line in the shape's text. */
+  toggleOutlineItem(shapeId: string, lineIndex: number) {
+    const shape = this.shapes.find((s) => s.id === shapeId);
+    if (!shape || shape.type !== "text") return;
+    const nextText = toggleTaskLine(shape.text, lineIndex);
+    if (nextText == null) return;
+    this.shapes = this.shapes.map((s) =>
+      s.id === shapeId && s.type === "text" ? { ...s, text: nextText } : s,
+    );
+    this.recordHistory();
+    this.notify("shapes");
+  }
+
+  /** The text shapes a "Convert to Outline" would fold up: everything
+   *  selected that takes part in the flowchart, plus every descendant of
+   *  it. Empty when the selection touches no chart. */
+  outlineConvertNodes(): TextShape[] {
+    const flow = this.flowchart;
+    const selected = this.shapes.filter(
+      (s) => s.type === "text" && this.selectedIds.has(s.id),
+    ) as TextShape[];
+    const touchesFlow = selected.some(
+      (s) => flow.childrenOf(s.id).length > 0 || flow.parentOf(s.id) != null,
+    );
+    if (!touchesFlow) return [];
+    const ids = new Set(selected.map((s) => s.id));
+    for (const s of selected) for (const d of flow.descendantsOf(s.id)) ids.add(d);
+    return this.shapes.filter((s) => s.type === "text" && ids.has(s.id)) as TextShape[];
+  }
+
+  /**
+   * Replace the selected flowchart with a single outline shape.
+   *
+   * A flowchart and an outline are the same tree written two ways, so
+   * the conversion is the tree read out as a nested checklist — the
+   * chart's own geometry supplies the sibling order. The nodes and the
+   * edges between them go; anything the chart connected to outside the
+   * converted set keeps its own edges, which `removeNode` drops only for
+   * the nodes actually leaving.
+   */
+  convertSelectionToOutline(): boolean {
+    const nodes = this.outlineConvertNodes();
+    if (nodes.length === 0) return false;
+    const ids = new Set(nodes.map((s) => s.id));
+    const edges = this.flowchart.serialize().filter((e) => ids.has(e.from) && ids.has(e.to));
+    const text = outlineFromFlowchart(nodes, edges, undefined, { checkbox: true });
+    if (!text) return false;
+
+    // The outline lands where the chart's ROOT was — the node the first
+    // line of the checklist came from — so it appears in the space the
+    // chart just vacated, reading from the same corner. Anchoring on the
+    // topmost node instead would drop it on a grandchild: a tidy chart
+    // grows rightward, and its deepest branch is often its highest.
+    const inSet = new Set(nodes.map((n) => n.id));
+    const roots = nodes.filter((n) => {
+      const p = this.flowchart.parentOf(n.id);
+      return !p || !inSet.has(p);
+    });
+    const anchor = (roots.length ? roots : nodes).reduce((a, b) =>
+      (b.position.y < a.position.y || (b.position.y === a.position.y && b.position.x < a.position.x)) ? b : a);
+    // Keep a drag-area parent only when the whole chart shared one —
+    // otherwise the outline would join a box that held part of it.
+    const parentId = nodes.every((n) => n.parentId === anchor.parentId) ? anchor.parentId : undefined;
+
+    const outline: TextShape = {
+      id: generateId(),
+      type: "text",
+      position: { ...anchor.position },
+      text,
+      fontSize: anchor.fontSize,
+      color: anchor.color,
+      width: Math.max(OUTLINE_DEFAULT_WIDTH, this.maxTextWidth),
+      manualWidth: true,
+      outline: true,
+      layerId: anchor.layerId || this.activeLayerId,
+      createdAt: Date.now(),
+      ...(parentId ? { parentId } : {}),
+    };
+
+    this.shapes = [...this.shapes.filter((s) => !ids.has(s.id)), outline];
+    for (const id of ids) this.flowchart.removeNode(id);
+    this.selectedIds = new Set([outline.id]);
+    this.recordHistory();
+    this.notify("shapes");
+    this.notify("selectedIds");
+    return true;
   }
 
   /** Pan so `shapeId` is centered in the visible viewport.

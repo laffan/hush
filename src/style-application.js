@@ -8,6 +8,7 @@ import { applyAppearance } from "./settings/settings-ui.js";
 import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 import { resolveBackgroundLayersList, resolvePostLayersList } from "./sidebar/styles-panel-shared.js";
 import { themeBackgrounds, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
+import { resolveHeadingColor } from "./editor/markdown-highlight.js";
 
 // Tracks whether the post-layers module has ever been loaded this
 // session. We only `import()` it when a style with at least one enabled
@@ -88,6 +89,18 @@ export function applyDeskGlobalStyle(state) {
   if (state.settings.activeStyleId === next) return;
   state.updateSettings({ activeStyleId: next });
   state.emit("style-changed");
+}
+
+/** Publish the resolved heading colour as `--heading-color` so chrome
+ *  that has to match a heading — an outline's next item, for one — reads
+ *  the same value the editor's syntax highlighting paints with, instead
+ *  of resolving the style→theme chain a second time. Written on every
+ *  apply, cleared when the chain yields nothing so a consumer's own
+ *  fallback takes over rather than inheriting the last style's colour. */
+function applyHeadingColorVar(state, style) {
+  const color = resolveHeadingColor(state, style || null);
+  if (color) document.documentElement.style.setProperty("--heading-color", color);
+  else document.documentElement.style.removeProperty("--heading-color");
 }
 
 export function applyActiveStyle(state) {
@@ -191,6 +204,7 @@ export function applyActiveStyle(state) {
       appearance,
       defaultBackdrop,
     );
+    applyHeadingColorVar(state, null);
     // Emit last so theme-changed listeners (CodeMirror reconfigure,
     // notebook sync) read fully-written CSS vars.
     state.emit("theme-changed");
@@ -303,6 +317,7 @@ export function applyActiveStyle(state) {
   // fallback painted the sidebar with the outgoing style's background
   // for a beat on every style switch.
   updatePrivateBoxColor(state);
+  applyHeadingColorVar(state, style);
   // Emit last so theme-changed listeners (CodeMirror reconfigure,
   // notebook sync) read fully-written CSS vars.
   state.emit("theme-changed");

@@ -4,6 +4,11 @@ import type { CanvasTheme } from "./themes";
 import { canvasToScreen, computePocketLayout, getShapeBounds, POCKET_ZONE_WIDTH, POCKET_TRAY_WIDTH } from "./utils";
 import type { PocketEntry } from "./utils";
 import { parseText } from "./markdown";
+import {
+  OUTLINE_FONT_FAMILY, OUTLINE_FOOTER_H, OUTLINE_ICON, OUTLINE_PAD, OUTLINE_RADIUS,
+  outlineLayout, outlinePinnedOrigin,
+} from "./outline-shape";
+import type { OutlineButton, OutlineLayout } from "./outline-shape";
 import { drawSelectionHighlight, drawGroupHighlight, drawSelectionBox, drawCropOverlay, drawEdgeDeleteButton, drawEdgeDeleteDot, drawReorderPreview, drawShadowHeaders } from "./renderer-selection";
 import { drawBackground, drawBackgroundImage } from "./renderer-background";
 import type { BackgroundImageConfig } from "./renderer-background";
@@ -268,7 +273,11 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       if (shape.id === editingShapeId) return;
       if (pocketedIds.has(shape.id)) return;
       if (shape.type === "draw") return; // drawing layer owns strokes
-      if (shape.type === "text") drawTextShape(ctx, shape, theme, state.fontFamily, false, state.flagColors);
+      // A pinned outline is chrome bolted to the frame, not content on
+      // the canvas — it is drawn at 1:1 in the screen-space pass below.
+      if (shape.type === "text" && shape.outline && shape.outlinePin) return;
+      if (shape.type === "text" && shape.outline) drawOutlineShape(ctx, shape, theme, false, state.flagColors);
+      else if (shape.type === "text") drawTextShape(ctx, shape, theme, state.fontFamily, false, state.flagColors);
       // Every file thumbnail casts the same subtle drop shadow, so a
       // Desktop reads as cards laid on a surface (stacked piles get it
       // for free — each member is a thumbnail).
@@ -395,6 +404,10 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     for (const shape of shapes) {
       if (!selectedIds.has(shape.id) || pocketedIds.has(shape.id)) continue;
       if (shape.type === "draw") continue; // handled above (group or loose-stroke bbox)
+      // Same reason the paint pass skips it: its world bounds aren't
+      // where it is on screen, so a highlight drawn there would ring
+      // empty canvas.
+      if (shape.type === "text" && shape.outline && shape.outlinePin) continue;
       if (shape.id === state.croppingImageId && shape.type === "image") {
         drawCropOverlay(ctx, shape, camera.zoom);
       } else {
@@ -465,6 +478,17 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     drawPocketEntries(ctx, pocketLayout.entries, selectedIds, theme, state.fontFamily, imageCache, state.drawingLayer, state.flagColors);
   }
 
+  // Pinned outlines. Drawn last of the content passes and in screen
+  // space, so an outline pinned to the bottom of the frame holds its
+  // place — and its size — through every pan and zoom underneath it.
+  // The same origin feeds `DrawingState`'s screen-space hit test, so
+  // what the user presses is what they see.
+  for (const shape of shapes) {
+    if (shape.type !== "text" || !shape.outline || !shape.outlinePin) continue;
+    if (pocketedIds.has(shape.id) || shape.id === editingShapeId) continue;
+    drawPinnedOutline(ctx, shape, theme, w, h, state);
+  }
+
   // Split / grab chrome sits above every shape and every selection
   // highlight: a cut line the content can hide is a cut line the user
   // will drag by accident.
@@ -473,9 +497,40 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   if (selectionBox) drawSelectionBox(ctx, selectionBox, camera);
 }
 
+/** Where a pinned outline lands in this frame, and how far that is from
+ *  where its shape sits in the world. Exported so the hit test can map a
+ *  screen point back through exactly the same offset the paint used. */
+export function pinnedOutlineOffset(
+  shape: TextShape, canvasW: number, canvasH: number,
+  insets: { left?: number; right?: number; bottom?: number } = {},
+): { dx: number; dy: number; layout: OutlineLayout } {
+  const layout = outlineLayout(shape);
+  const origin = outlinePinnedOrigin(layout, canvasW, canvasH, insets);
+  return { dx: origin.x - shape.position.x, dy: origin.y - shape.position.y, layout };
+}
+
+function drawPinnedOutline(
+  ctx: CanvasRenderingContext2D, shape: TextShape, theme: CanvasTheme,
+  canvasW: number, canvasH: number, state: RenderState,
+) {
+  const { dx, dy, layout } = pinnedOutlineOffset(shape, canvasW, canvasH, {
+    left: state.leftInset, right: state.pocketRightInset,
+  });
+  ctx.save();
+  // A soft lift so the panel reads as sitting over the canvas rather
+  // than being part of it.
+  ctx.shadowColor = "rgba(0,0,0,0.18)";
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 2;
+  ctx.translate(dx, dy);
+  drawOutlineShape(ctx, shape, theme, false, state.flagColors, layout);
+  ctx.restore();
+}
+
 // Reorder-preview ghost — paints a clone via main-pass draw fns; strokes fall back to a polyline.
 function drawGhostShape(ctx: CanvasRenderingContext2D, s: Shape, state: RenderState, theme: CanvasTheme): void {
-  if (s.type === "text") drawTextShape(ctx, s, theme, state.fontFamily, false, state.flagColors);
+  if (s.type === "text" && s.outline) drawOutlineShape(ctx, s, theme, false, state.flagColors);
+  else if (s.type === "text") drawTextShape(ctx, s, theme, state.fontFamily, false, state.flagColors);
   else if (s.type === "image") drawImageShape(ctx, s, state.imageCache, false, theme);
   else if (s.type === "drag-area") drawDragArea(ctx, s);
   else if (s.type === "draw") drawStroke(ctx, s.points, s.color || theme.foreground, 3);
@@ -766,6 +821,195 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
 
     y += lineH;
   }
+  ctx.restore();
+}
+
+/** A theme colour at a given alpha. Local rather than `hexToRgba`,
+ *  whose miss case falls back to the highlight yellow — right for a
+ *  highlight, wrong for a border. */
+function outlineTint(hex: string, alpha: number): string {
+  const h = hex.startsWith("#") ? hex.slice(1) : hex;
+  if (h.length !== 6) return hex;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/** The two footer glyphs, drawn rather than imported: the canvas has no
+ *  DOM to hang an `<svg>` on, and both are a handful of strokes. */
+function drawOutlineIcon(
+  ctx: CanvasRenderingContext2D, btn: OutlineButton, x: number, y: number, color: string,
+) {
+  const s = OUTLINE_ICON;
+  const ix = x + (btn.w - s) / 2;
+  const iy = y + (btn.h - s) / 2;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.3;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  if (btn.id === "hideDone") {
+    // A ticked box — struck through while the completed items are still
+    // showing, because the stroke is what the press is about to do.
+    ctx.strokeRect(ix + 2, iy + 2, s - 4, s - 4);
+    ctx.beginPath();
+    ctx.moveTo(ix + 4.4, iy + s * 0.53);
+    ctx.lineTo(ix + s * 0.45, iy + s * 0.68);
+    ctx.lineTo(ix + s - 4.2, iy + s * 0.34);
+    ctx.stroke();
+    if (!btn.active) {
+      ctx.beginPath();
+      ctx.moveTo(ix + 1.5, iy + s - 1.5);
+      ctx.lineTo(ix + s - 1.5, iy + 1.5);
+      ctx.stroke();
+    }
+  } else {
+    // An arrow coming down onto a bar.
+    ctx.beginPath();
+    ctx.moveTo(ix + s / 2, iy + 1.5);
+    ctx.lineTo(ix + s / 2, iy + s * 0.6);
+    ctx.moveTo(ix + s * 0.28, iy + s * 0.42);
+    ctx.lineTo(ix + s / 2, iy + s * 0.63);
+    ctx.lineTo(ix + s * 0.72, iy + s * 0.42);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.lineWidth = 1.6;
+    ctx.moveTo(ix + 2, iy + s - 2);
+    ctx.lineTo(ix + s - 2, iy + s - 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
+ * Paint an outline: the frame, one row per visible item, and the footer.
+ *
+ * Each item's own text goes back through `drawTextShape` with a
+ * throwaway shape, so inline markdown, links, wikilinks, highlights and
+ * wrapping behave exactly as they do anywhere else on the canvas — an
+ * outline is text with a frame round it, and re-implementing the text
+ * half here is how the two would start to differ. What this function
+ * adds is only what the frame owns: the box, the checkbox glyph, the
+ * strike over a completed item, the heading colour on the next one, and
+ * the footer.
+ */
+export function drawOutlineShape(
+  ctx: CanvasRenderingContext2D,
+  shape: TextShape,
+  theme: CanvasTheme,
+  omitGlyphs = false,
+  flagColors?: Record<string, string>,
+  layout?: OutlineLayout,
+) {
+  const L = layout || outlineLayout(shape);
+  const x = shape.position.x;
+  const y = shape.position.y;
+  const isAuto = shape.color === "#000000" || shape.color === "auto";
+  const fg = isAuto ? theme.foreground : resolveThemeColor(shape.color, theme);
+
+  ctx.save();
+  // The frame. Subtle by design: it is there to say "this is one thing",
+  // not to compete with the canvas.
+  ctx.beginPath();
+  roundRect(ctx, x, y, L.width, L.height, OUTLINE_RADIUS);
+  // Near-opaque: the outline is a panel laid on the canvas, and a grid
+  // (or a page) reading through it makes it look like a selection wash
+  // rather than an object.
+  ctx.fillStyle = outlineTint(theme.background, 0.92);
+  ctx.fill();
+  ctx.strokeStyle = outlineTint(fg, 0.2);
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  for (const row of L.rows) {
+    const rowY = y + row.y;
+    const boxY = rowY + (L.fontSize - L.boxSize) / 2;
+    // A completed item is lighter, and everything in its row goes with
+    // it — the box, the tick and the strike as much as the words.
+    const rowAlpha = row.checked ? 0.45 : 1;
+    ctx.save();
+    ctx.globalAlpha = rowAlpha;
+
+    ctx.save();
+    ctx.strokeStyle = fg;
+    ctx.lineWidth = 1.3;
+    ctx.globalAlpha = rowAlpha * 0.65;
+    ctx.strokeRect(x + row.boxX, boxY, L.boxSize, L.boxSize);
+    if (row.checked) {
+      ctx.globalAlpha = rowAlpha;
+      ctx.beginPath();
+      ctx.moveTo(x + row.boxX + L.boxSize * 0.22, boxY + L.boxSize * 0.55);
+      ctx.lineTo(x + row.boxX + L.boxSize * 0.42, boxY + L.boxSize * 0.78);
+      ctx.lineTo(x + row.boxX + L.boxSize * 0.82, boxY + L.boxSize * 0.25);
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    drawTextShape(
+      ctx,
+      {
+        id: shape.id, type: "text", color: row.next ? "heading" : shape.color,
+        position: { x: x + row.textX, y: rowY },
+        text: row.text, fontSize: L.fontSize, width: row.textWidth,
+        fontFamily: OUTLINE_FONT_FAMILY, bold: row.next,
+      } as TextShape,
+      theme, OUTLINE_FONT_FAMILY, omitGlyphs, flagColors,
+    );
+
+    if (row.checked && !omitGlyphs) {
+      ctx.save();
+      ctx.strokeStyle = fg;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (const seg of row.lines) {
+        const sy = Math.round(rowY + seg.y + L.fontSize * 0.55) + 0.5;
+        ctx.moveTo(x + row.textX, sy);
+        ctx.lineTo(x + row.textX + seg.width, sy);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // Footer: a hairline, the tally, and the two toggles.
+  const fy = y + L.footerY;
+  ctx.save();
+  ctx.strokeStyle = outlineTint(fg, 0.14);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x + OUTLINE_PAD * 0.5, Math.round(fy) + 0.5);
+  ctx.lineTo(x + L.width - OUTLINE_PAD * 0.5, Math.round(fy) + 0.5);
+  ctx.stroke();
+
+  if (!omitGlyphs) {
+    const labelSize = Math.max(8, L.fontSize - 2);
+    ctx.font = `${labelSize}px ${OUTLINE_FONT_FAMILY}`;
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = outlineTint(fg, 0.55);
+    const tally = L.total ? `${L.doneCount}/${L.total}` : "";
+    const hidden = L.hiddenCount ? `  ·  ${L.hiddenCount} hidden` : "";
+    ctx.fillText(tally + hidden, x + OUTLINE_PAD, fy + OUTLINE_FOOTER_H / 2);
+  }
+
+  for (const btn of L.buttons) {
+    const bx = x + btn.x;
+    const by = y + btn.y;
+    if (btn.active) {
+      ctx.save();
+      ctx.fillStyle = outlineTint(theme.headingColor, 0.16);
+      ctx.beginPath();
+      roundRect(ctx, bx, by, btn.w, btn.h, 4);
+      ctx.fill();
+      ctx.restore();
+    }
+    if (!omitGlyphs) {
+      drawOutlineIcon(ctx, btn, bx, by, btn.active ? theme.headingColor : outlineTint(fg, 0.55));
+    }
+  }
+  ctx.restore();
   ctx.restore();
 }
 
@@ -1108,7 +1352,8 @@ function drawPocketEntries(
     }
     for (const shape of entry.shapes) {
       if (shape.type === "drag-area") continue;
-      if (shape.type === "text") drawTextShape(ctx, shape, theme, fontFamily, false, flagColors);
+      if (shape.type === "text" && shape.outline) drawOutlineShape(ctx, shape, theme, false, flagColors);
+      else if (shape.type === "text") drawTextShape(ctx, shape, theme, fontFamily, false, flagColors);
       else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, false);
       // DrawShapes are handled in one pass below — we blit the whole
       // group's world bbox from the done canvas at once instead of

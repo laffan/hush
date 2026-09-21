@@ -15,6 +15,7 @@ import { createWikilinkPlugin } from "./plugins/wikilink-decorator.js";
 import { createCitationPlugin } from "./plugins/citation-decorator.js";
 import { createTabMarkerPlugin } from "./plugins/tab-marker.js";
 import { createCheckboxListPlugin } from "./plugins/checkbox-list.js";
+import { createOutlinePlugin } from "./plugins/outline-view.js";
 import { createImageDecoratorPlugin } from "./plugins/image-decorator.js";
 import { createStickyHeadersPlugin } from "./plugins/sticky-headers.js";
 import { buildCodeMirrorKeymap, parseShortcut, isPhysicalKey, modifiersMatch, PUNCTUATION_KEYS } from "../shortcuts.js";
@@ -250,6 +251,11 @@ export function createBaseExtensions(state, onChange, opts) {
     createCitationPlugin(state),
     createTabMarkerPlugin(),
     createCheckboxListPlugin(),
+    // Outlines ride the shared list AND editor.js's own: a doc whose
+    // frontmatter says `outline: true` has to read as an outline
+    // wherever it is open, or the pane beside the editor shows a
+    // different document than the editor does.
+    createOutlinePlugin(),
     createTableRendererPlugin(),
     createImageDecoratorPlugin(state, getImageContext),
     // Outranks the rich-HTML paste handler explicitly rather than by

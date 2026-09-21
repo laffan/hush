@@ -10,6 +10,7 @@
 import { HighlightStyle } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { commentTag, commentMarkTag, highlightTag, highlightMarkTag } from "./markdown-extensions.js";
+import { getActiveTheme } from "../themes/index.js";
 
 // Resolve the header color override for the active style (or the Default
 // style — its colors live on `defaultLightColors`/`defaultDarkColors`),
@@ -25,6 +26,18 @@ export function resolveHeaderColorOverride(state, activeStyle) {
   }
   const defaults = mode === "dark" ? state.settings.defaultDarkColors : state.settings.defaultLightColors;
   return defaults?.header || undefined;
+}
+
+/**
+ * The heading colour a surface should actually paint: the style's
+ * override if it has one, else the resolved theme's own. The `||` pair
+ * was hand-written at half a dozen call sites; anything new that needs
+ * the colour — the `--heading-color` custom property the outline's
+ * "next item" reads, for one — takes it from here so a future change to
+ * the fallback reaches every one of them.
+ */
+export function resolveHeadingColor(state, activeStyle) {
+  return resolveHeaderColorOverride(state, activeStyle) || getActiveTheme(state.settings)?.headingColor || null;
 }
 
 // Build the markdown highlight style, optionally normalizing heading sizes/colors.

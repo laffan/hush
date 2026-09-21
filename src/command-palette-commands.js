@@ -3,7 +3,8 @@
  * command-palette.js so that file stays under the 700-line cap.
  *
  * Exports the `icons` object (shared with pickers / helpers), the
- * main `buildCommands(state)` factory, and `buildActiveModeTurnoffs`.
+ * main `buildCommands(state)` factory. The "Turn off <mode>" entries
+ * live in `command-palette-turnoffs.js`.
  */
 import { openFindReplace, openQuickFindBar } from "./editor/find-replace.js";
 import { openSettingsWindow } from "./settings/settings-ui.js";
@@ -60,6 +61,10 @@ import {
 } from "./editor/folding.js";
 import { insertDate, insertDateTime } from "./editor/insert-date.js";
 import { currentWordLimit, setWordLimit, wordLimitTargetFileId } from "./editor/word-limit-store.js";
+import {
+  canConvertDocToOutline, convertDocToOutline,
+  canConvertNotebookToOutline, convertNotebookToOutline,
+} from "./outline/outline-commands.js";
 import { buildDeskCommands } from "./command-palette-desk-commands.js";
 import { buildGoogleCommands } from "./command-palette-google-commands.js";
 
@@ -515,7 +520,15 @@ function buildCommands(state) {
       hiddenIf: (s) => !currentWordLimit(s),
       action: (s) => { void setWordLimit(s, wordLimitTargetFileId(s), null); } },
     { id: "outline", label: "Outline view", icon: null, shortcutKey: "shortcutToggleOutline", ctx: "doc",
+      keywords: "headings navigation panel longview",
       action: (s) => s.emit("toggle-outline-panel") },
+    // Turns the list under the caret into an outline: checkboxes on the
+    // items that lack them, `outline: true` in the frontmatter. Hidden
+    // once every item already has one — there would be nothing to do.
+    { id: "outline-convert-doc", label: "Convert to Outline", icon: null, shortcutKey: null, ctx: "doc",
+      keywords: "checklist task list nested outline convert",
+      hiddenIf: (s) => !canConvertDocToOutline(s),
+      action: (s) => convertDocToOutline(s) },
     { id: "proofread", label: "Proofread mode", icon: icons.proofread, shortcutKey: null, ctx: "doc",
       action: (s) => s.toggleProofread() },
     // Not `ctx: "doc"`: spellcheck rides the shared extension set, so a
@@ -603,6 +616,12 @@ function buildCommands(state) {
       hiddenIf: (s) => s.stackScrollDirection !== "vertical",
       action: async (s) => { const { getStackInstance } = await import("./stack/stack-bridge.js"); const inst = getStackInstance(); if (inst) inst.setScrollDirection("horizontal"); } },
     // === NOTEBOOK ONLY ===
+    // The notebook half of the same command: the selected flowchart
+    // becomes one outline shape holding the tree as a nested checklist.
+    { id: "outline-convert-nb", label: "Convert to Outline", icon: null, shortcutKey: null, ctx: "notebook",
+      keywords: "flowchart checklist task nested outline convert",
+      hiddenIf: () => !canConvertNotebookToOutline(),
+      action: () => convertNotebookToOutline() },
     { id: "nb-shelf", label: "Open shelf", icon: null, shortcutKey: null, ctx: "notebook",
       action: (s) => s.emit("notebook-toggle-shelf") },
     { id: "nb-brainstorm", label: "Start brainstorm", icon: null, shortcutKey: "shortcutNbBrainstorm", ctx: "notebook",
@@ -642,43 +661,4 @@ function buildCommands(state) {
   });
 }
 
-function buildActiveModeTurnoffs(state) {
-  // Zen Focus is the only mode whose turn-off entry shows up in
-  // notebook context too (you can be Zen-focusing a text shape).
-  if (state.zenFocus) {
-    const zen = [{
-      id: "turnoff-zenFocus", label: "Turn off Zen Focus", icon: icons.focus,
-      shortcutKey: "shortcutZenFocus", action: (s) => s.toggleZenFocus(),
-    }];
-    if (state.currentNotebookFileId) return [...zen, ...notebookModeTurnoffs(state)];
-    // In doc mode, prepend Zen alongside the doc-only turn-offs below.
-    return [...zen, ...docModeTurnoffs(state)];
-  }
-  if (state.currentNotebookFileId) return notebookModeTurnoffs(state);
-  return docModeTurnoffs(state);
-}
-
-/** The turn-offs that still apply with a notebook as the main surface.
- *  Spellcheck is the only one: it reaches a focused doc pane over the
- *  canvas, so a user who turned it on there needs a way back off. */
-function notebookModeTurnoffs(state) {
-  if (!state.spellcheckMode || !hasActiveDocSurface(state)) return [];
-  return docModeTurnoffs(state).filter((m) => m.id === "turnoff-spellcheckMode");
-}
-
-function docModeTurnoffs(state) {
-  const modes = [
-    { flag: "ratchetMode", label: "Turn off Ratchet mode", icon: icons.ratchet, action: (s) => s.stopRatchet() },
-    { flag: "privateMode", label: "Turn off Private mode", icon: icons.private, shortcutKey: "shortcutTogglePrivate", action: (s) => s.togglePrivate() },
-    { flag: "typewriterMode", label: "Turn off Typewriter mode", icon: icons.typewriter, shortcutKey: "shortcutTypewriter", action: (s) => s.toggleTypewriter() },
-    { flag: "dryMode", label: "Turn off Show repeats", icon: icons.dry, shortcutKey: "shortcutToggleDry", action: (s) => s.toggleDry() },
-    { flag: "focusMode", label: "Turn off Focus mode", icon: icons.focus, shortcutKey: "shortcutToggleFocus", action: (s) => s.toggleFocus() },
-    { flag: "proofreadMode", label: "Turn off Proofread mode", icon: icons.proofread, action: (s) => s.toggleProofread() },
-    { flag: "spellcheckMode", label: "Turn off Spellcheck", icon: icons.proofread, action: (s) => s.toggleSpellcheck() },
-  ];
-  return modes
-    .filter(m => state[m.flag])
-    .map(m => ({ id: `turnoff-${m.flag}`, label: m.label, icon: m.icon, shortcutKey: m.shortcutKey || null, action: m.action }));
-}
-
-export { icons, buildCommands, buildActiveModeTurnoffs };
+export { icons, buildCommands };

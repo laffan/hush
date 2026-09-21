@@ -22,6 +22,11 @@
      --font-family so the active style's editor font doesn't bleed into
      navigation chrome. */
   --ui-font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Outlines (nested checklists given a frame). Derived from the text
+     colour so one pair of tokens tracks every theme and style — the
+     border is meant to be felt rather than read, hence the low alpha. */
+  --outline-border: color-mix(in srgb, var(--style-fg, var(--fg)) 18%, transparent);
+  --outline-bg: color-mix(in srgb, var(--style-fg, var(--fg)) 3%, transparent);
   --font-size: 16px;
   --line-height: 1.5;
   --padding: 50px;

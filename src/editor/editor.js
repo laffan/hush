@@ -18,6 +18,7 @@ import { createCitationPlugin } from "./plugins/citation-decorator.js";
 import { createInlinePanePlugin, openInlinePaneForWikilink } from "../pane/pane-inline.js";
 import { createTabMarkerPlugin } from "./plugins/tab-marker.js";
 import { createCheckboxListPlugin } from "./plugins/checkbox-list.js";
+import { createOutlinePlugin } from "./plugins/outline-view.js";
 import { createTableRendererPlugin } from "./plugins/table-renderer.js";
 import { createImageDecoratorPlugin } from "./plugins/image-decorator.js";
 import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke, getEncourageDecorations } from "./plugins/encourage-typing.js";
@@ -335,6 +336,8 @@ export function createEditor(container, state) {
       spellcheckClickHandler,
       encouragePlugin,
       createPropertiesPlugin(state),
+      // Also in createBaseExtensions — see the note there.
+      createOutlinePlugin(),
       projectViewField,
       separatorFilter,
       keymap.of([...defaultKeymap, ...historyKeymap]),

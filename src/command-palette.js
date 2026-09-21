@@ -10,7 +10,8 @@ import {
   paneAnchorClickPoint, enterFilePicker, enterDeskPicker,
 } from "./command-palette-pickers.js";
 import { createPane } from "./pane/pane-manager.js";
-import { icons, buildCommands, buildActiveModeTurnoffs } from "./command-palette-commands.js";
+import { icons, buildCommands } from "./command-palette-commands.js";
+import { buildActiveModeTurnoffs } from "./command-palette-turnoffs.js";
 import { getActiveModeContext } from "./state/mode-context.js";
 
 let overlay = null;

@@ -1,0 +1,196 @@
+/* Outlines — a nested markdown checklist given a frame of its own.
+ *
+ * Two surfaces share this sheet: the in-flow outline inside a document
+ * (real CodeMirror lines, decorated by plugins/outline-view.js) and the
+ * panel a pinned outline docks to the bottom of the editor frame. They
+ * look the same on purpose — pinning moves an outline, it doesn't turn
+ * it into a different object.
+ *
+ * The border is drawn as a `border-left` / `border-right` on each line
+ * plus a `border-top` on the first and a `border-bottom` on the footer,
+ * so one box surrounds a run of lines CSS has no way to wrap in a single
+ * element. It rides the line's own box, which is why the hang-indent
+ * `heading-indent.js` writes as inline `padding-left` can't fight it. */
+
+.cm-outline-line {
+  font-family: var(--ui-font-family);
+  /* "A few pixels smaller than normal text", expressed against the
+     style's own size so it tracks a reader who scales the document. */
+  font-size: calc(var(--font-size) - 2px);
+  line-height: 1.45;
+  border-left: 1px solid var(--outline-border);
+  border-right: 1px solid var(--outline-border);
+  background: var(--outline-bg);
+}
+
+.cm-outline-line.cm-outline-top {
+  border-top: 1px solid var(--outline-border);
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  padding-top: 6px;
+}
+
+.cm-outline-done {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  opacity: 0.45;
+}
+
+/* The one thing still to do, in the style's own header colour. */
+.cm-outline-next {
+  color: var(--heading-color, var(--style-fg, var(--fg)));
+  font-weight: 650;
+}
+
+/* === Footer ============================================================ */
+
+.cm-outline-footer-host {
+  border-left: 1px solid var(--outline-border);
+  border-right: 1px solid var(--outline-border);
+  border-bottom: 1px solid var(--outline-border);
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+  background: var(--outline-bg);
+}
+
+.cm-outline-footer-capped {
+  border-top: 1px solid var(--outline-border);
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+}
+
+.outline-footer {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px 4px;
+  font-family: var(--ui-font-family);
+  font-size: 11px;
+  color: color-mix(in srgb, var(--style-fg, var(--fg)) 55%, transparent);
+  user-select: none;
+}
+
+.outline-footer-count {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.outline-footer-spacer { flex: 1 1 auto; }
+
+.outline-footer-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.outline-footer-btn svg { width: 14px; height: 14px; display: block; }
+
+.outline-footer-btn:hover { opacity: 0.9; }
+
+.outline-footer-btn.active {
+  opacity: 1;
+  color: var(--heading-color, var(--style-fg, var(--fg)));
+  background: color-mix(in srgb, var(--heading-color, var(--fg)) 14%, transparent);
+}
+
+/* The slash only belongs on the icon while completed items are showing:
+   pressing the button hides them, and the struck-through box is the
+   promise of what the press will do. Once they are hidden the button is
+   "show completed", so the box stands plain. */
+.outline-footer-btn.active .outline-icon-slash { display: none; }
+
+/* === Pinned ============================================================ */
+
+/* What is left in the text where a pinned outline used to sit. */
+.cm-outline-pill {
+  display: inline-block;
+  font-family: var(--ui-font-family);
+  font-size: calc(var(--font-size) - 4px);
+  line-height: 1.6;
+  padding: 0 8px;
+  border: 1px solid var(--outline-border);
+  border-radius: 999px;
+  background: var(--outline-bg);
+  color: color-mix(in srgb, var(--style-fg, var(--fg)) 55%, transparent);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cm-outline-pill:hover { color: var(--heading-color, var(--style-fg, var(--fg))); }
+
+/* Docked to the editor element, not the window: a floating pane and a
+   stack column each pin to their own frame. */
+.outline-pinned-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  box-sizing: border-box;
+  width: min(100%, var(--column-width));
+  margin: 0 auto;
+  max-height: 45%;
+  /* A column so the rows take the scrolling and the footer stays put:
+     the toggles are the way back out of a long pinned outline, and a
+     footer that scrolls away with the items is no way out at all. */
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--outline-border);
+  border-bottom: none;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  background: var(--panel-bg, var(--bg));
+  backdrop-filter: blur(6px);
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.12);
+}
+
+.outline-pinned-panel .outline-footer { flex: none; padding: 2px 8px 6px; }
+
+.outline-pinned-panel .outline-rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.outline-rows {
+  padding: 8px 10px 2px;
+  font-family: var(--ui-font-family);
+  font-size: calc(var(--font-size) - 2px);
+  line-height: 1.45;
+  color: var(--style-fg, var(--fg));
+}
+
+.outline-row {
+  display: flex;
+  align-items: baseline;
+  padding-left: calc(var(--outline-depth, 0) * 18px);
+}
+
+.outline-row-box { align-self: center; }
+
+.outline-row-text { min-width: 0; overflow-wrap: anywhere; }
+
+.outline-row-done .outline-row-text {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  opacity: 0.45;
+}
+
+.outline-row-next .outline-row-text {
+  color: var(--heading-color, var(--style-fg, var(--fg)));
+  font-weight: 650;
+}
+
+/* The frame the panel pins to. CodeMirror already positions `.cm-editor`
+   relatively; stated here so the panel can never end up measured against
+   the page because a future base theme dropped it. */
+.cm-editor { position: relative; }

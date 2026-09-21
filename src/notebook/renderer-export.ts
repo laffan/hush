@@ -2,7 +2,7 @@ import type { Camera, Shape, Layer } from "./types";
 import type { CanvasTheme } from "./themes";
 import type { FlowchartLayer } from "./flowchart";
 import { drawBackground } from "./renderer-background";
-import { drawDragArea, drawTextShape, drawImageShape } from "./renderer";
+import { drawDragArea, drawTextShape, drawImageShape, drawOutlineShape } from "./renderer";
 
 /** Paint shapes + (optional) background into an arbitrary ctx at an
  *  arbitrary camera. Skips every piece of editor chrome — selection
@@ -88,7 +88,11 @@ export function renderForExport(
     for (const shape of layerShapes) {
       if (shape.type === "drag-area") continue;
       if (shape.type === "draw") continue;
-      if (shape.type === "text") drawTextShape(ctx, shape, theme, fontFamily, omitTextGlyphs, flagColors);
+      // An outline exports as the framed block it is on the canvas. A
+      // pinned one exports in its world position: an export has no frame
+      // to pin to, and the alternative is leaving it out of the picture.
+      if (shape.type === "text" && shape.outline) drawOutlineShape(ctx, shape, theme, omitTextGlyphs, flagColors);
+      else if (shape.type === "text") drawTextShape(ctx, shape, theme, fontFamily, omitTextGlyphs, flagColors);
       else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, false, theme);
     }
   }

@@ -27,6 +27,7 @@ src/notebook/
   undo-manager.ts         Snapshot undo/redo (100 entries, structural sharing)
   utils.ts                Geometry, hit testing, text measurement, alignment, grid layout
   flowchart.ts (+ flowchart-geometry.ts)  Portable flowchart layer (ported from Steiner)
+  outline-shape.ts        Outline text shapes: layout, footer / checkbox hit zones, pinned origin
   notebook-content.ts     Persistence envelope encode/decode
   selection-raster.ts     Rasterize / Recognize-handwriting pipeline
   emoji-sticker.ts        Emoji-only text shapes → image stickers
@@ -216,6 +217,14 @@ The raster is also clamped to what a browser canvas can actually paint (`fitRast
 A portable layer (`flowchart.ts`) that knows nothing about Hush shape types — `DrawingState` configures it with `getBounds` / `isFlowable` callbacks (only `TextShape`s are flowable; `getBounds` is `unionGroupBounds` so arrows anchor to a whole group's edge, not one stray member). Connect by drag-onto (child), ⌘-drop (merge text into target), or from the inline editor (⌘→ child, ⌘↓ sibling; ⌘← parent, ⌘↑ MRU). Edges sharing a box side fan apart (`edgeOffsets`, scaled by `arrowWidth`); each edge carries a midpoint delete dot; drags pull transitive descendants; `tidy()` re-lays out a subtree. Edges serialize into the envelope; Desktops reuse the layer with authoring disabled and derived, locked edges (see `desktop/` + README-TECHNICAL).
 
 **A locked or hidden layer is out of the chart's reach.** `isFlowable` folds in `_isLayerInert`, which takes inert shapes out of `findDropTarget` and `tryConnect` at the source — the drop handler's own target scan and the hover probe that outlines a prospective parent filter the same way, so no drop lands an arrow on locked material and nothing is outlined that the release would refuse. The three paths that *move* a node's descendants — the live drag, the snap replay after a connect, and `tidy()` — drop inert shapes from the set they translate: an edge can predate the lock, and the lock means the shape doesn't move, whether it's pushed directly or pulled through the chart. Its own descendants still follow, since the lock is on the shape rather than on the subtree under it. Authoring in the other direction is closed too: ⌘↓ resolves a sibling's parent from the edge list, so `startEditingFlowchartChild` refuses a locked parent rather than minting an edge onto it.
+
+### Outlines
+
+An outline is a `TextShape` carrying `outline: true`, whose `text` is a nested markdown checklist — the same bytes a Doc holds, so the two surfaces share one format rather than translating between two (`src/outline/outline-model.ts` is the parser both read; see README-TECHNICAL). "Convert to Outline" is the flowchart read out as that checklist: `DrawingState.convertSelectionToOutline` expands the selection to every descendant, renders the tree with the chart's own geometry supplying sibling order, and swaps the nodes and the edges *between them* for one shape at the root's position. Edges to nodes outside the converted set survive, because only the nodes that actually leave are passed to `removeNode`.
+
+`outline-shape.ts` owns the geometry — every coordinate relative to `shape.position`, which for an outline is the top-left of the **frame** rather than of the first glyph (hence the pad offset when the inline editor opens on one). It measures each item's wrapped lines so the renderer can strike a completed item across all of them, and publishes the footer's two button boxes and each row's checkbox zone for the hit test. Rendering delegates each item's text back to `drawTextShape` with a throwaway shape: the outline owns the box, the checkbox glyph, the strike, the heading colour on the next item and the footer, and nothing else — re-implementing the text half is how an outline would start rendering markdown differently from the shape beside it.
+
+Two flags ride the shape. `outlineHideDone` folds completed items away (they stay in the text; the footer tally still counts them, and says how many are hidden). `outlinePin` moves it out of world space entirely — see the screen-space note in README-TECHNICAL: it is drawn after the camera transform is restored, so it holds its size and its corner while the canvas moves under it, and every world-space pick has to exclude it.
 
 ### Dragging a selection
 

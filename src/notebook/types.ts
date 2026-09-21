@@ -152,6 +152,26 @@ export interface TextShape extends ShapeBase {
    *  mark against the page rather than as more of the document. */
   fontFamily?: string;
   bold?: boolean;
+  /** Marks this text shape as an **outline**: its `text` is a nested
+   *  markdown checklist and it renders as a bordered, UI-font block with
+   *  completed items struck through, the first unfinished one in the
+   *  theme's heading colour, and a footer carrying the two toggles below.
+   *
+   *  A flag rather than a member of the `Shape` union on purpose: an
+   *  outline is text, and every path that already handles a text shape —
+   *  bounds, hit-testing, grouping, layers, the pocket, the shelf, the
+   *  clipboard, both codecs, the drag to a Doc — keeps working unchanged.
+   *  The same markdown is what a Doc holds, which is what makes the two
+   *  surfaces the same outline rather than two representations of one.
+   *  Geometry lives in `outline-shape.ts`. */
+  outline?: boolean;
+  /** Outline only: completed items are folded away. The items stay in
+   *  the text — this hides them, it does not remove them. */
+  outlineHideDone?: boolean;
+  /** Outline only: drawn at the bottom of the canvas frame at 1:1
+   *  instead of in world space, so it holds its place while the canvas
+   *  pans and zooms under it. */
+  outlinePin?: boolean;
   /** Marks this text shape as a persisted gutter header label. Renders
    *  with the faded shadow-header style + horizontal rule above, is
    *  immune to selection / drag / edit, and gets its y position synced
