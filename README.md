@@ -111,6 +111,8 @@ npm run ios:init
 npm run build:ios
 ```
 
+The iOS deployment floor lives in one place — `bundle.iOS.minimumSystemVersion` in `src-tauri/tauri.conf.json` (currently 15.5, which is what ML Kit needs). Tauri maps it to `IPHONEOS_DEPLOYMENT_TARGET` when it generates the Xcode project, and `ios:init` holds the Podfile to the same number. **`src-tauri/gen/apple` is generated and gitignored, so changing the floor means re-running `npm run ios:init`** — `build:ios` alone won't regenerate it.
+
 ## Data
 
 Files and settings are stored in:

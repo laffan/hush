@@ -48,6 +48,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "iOS": {
+      "minimumSystemVersion": "15.5"
+    },
     "macOS": {
       "frameworks": []
     }

@@ -25,11 +25,35 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const POD_LINE = "pod 'GoogleMLKit/DigitalInkRecognition'";
-const MIN_IOS = 15.5; // ML Kit's minimum deployment target
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const appleDir = resolve(root, "src-tauri/gen/apple");
 const podfilePath = resolve(appleDir, "Podfile");
+
+/**
+ * The iOS floor, read from `bundle.iOS.minimumSystemVersion` — the one
+ * place it is written. Tauri maps that key to IPHONEOS_DEPLOYMENT_TARGET
+ * in the generated Xcode project; the Podfile and the plugins'
+ * Package.swift files are held to the same number so the three can't
+ * drift. They did drift once: the Podfile was raised to 15.5 for ML Kit
+ * while the Xcode project kept Tauri's default of 14.0, which nothing
+ * noticed until the iOS 27 SDK refused any target below 15.0.
+ */
+function readMinIos() {
+  const conf = JSON.parse(readFileSync(resolve(root, "src-tauri/tauri.conf.json"), "utf8"));
+  const v = conf?.bundle?.iOS?.minimumSystemVersion;
+  if (!v) {
+    console.error(
+      "src-tauri/tauri.conf.json has no bundle.iOS.minimumSystemVersion.\n" +
+      "Tauri then defaults it to 14.0, which the iOS 15+ SDKs reject outright.",
+    );
+    process.exit(1);
+  }
+  return v;
+}
+
+const MIN_IOS_STR = readMinIos();
+const MIN_IOS = parseFloat(MIN_IOS_STR);
 
 if (!existsSync(appleDir)) {
   console.error("src-tauri/gen/apple doesn't exist — run `npm run ios:init` first.");
@@ -163,11 +187,11 @@ podfile = podfile.replace(/^ {2}# hush-mlkit:[^]*?^ {2}end\n+/m, "");
   console.log("Adding post_install patch (Rust staticlib search path + ML Kit force_load).");
 }
 
-// 4. ML Kit needs iOS >= 15.5; raise the platform line if lower.
+// 4. Hold the Podfile to the app's own floor.
 podfile = podfile.replace(/^([ \t]*platform :ios, ['"])([\d.]+)(['"])/m, (line, pre, ver, post) => {
   if (parseFloat(ver) >= MIN_IOS) return line;
-  console.log(`Raising Podfile iOS platform ${ver} -> ${MIN_IOS} (ML Kit minimum).`);
-  return `${pre}${MIN_IOS}${post}`;
+  console.log(`Raising Podfile iOS platform ${ver} -> ${MIN_IOS_STR} (bundle.iOS.minimumSystemVersion).`);
+  return `${pre}${MIN_IOS_STR}${post}`;
 });
 
 if (podfile !== original) {
@@ -175,6 +199,33 @@ if (podfile !== original) {
   console.log("Updated " + podfilePath);
 } else {
   console.log("Podfile already in shape.");
+}
+
+// 5. Belt and braces on the Xcode project itself. `minimumSystemVersion`
+//    is what *should* put the floor in IPHONEOS_DEPLOYMENT_TARGET, but a
+//    project generated before the key was set — or by a CLI that ignores
+//    it — carries Tauri's stock 14.0, and the failure surfaces much later
+//    as an xcodebuild error with no hint about where the number came from.
+//    Check what actually landed, repair it, and say so.
+const pbxproj = resolve(appleDir, "hush.xcodeproj/project.pbxproj");
+if (existsSync(pbxproj)) {
+  const before = readFileSync(pbxproj, "utf8");
+  let raised = 0;
+  const after = before.replace(
+    /(IPHONEOS_DEPLOYMENT_TARGET = )([\d.]+)(;)/g,
+    (line, pre, ver, post) => {
+      if (parseFloat(ver) >= MIN_IOS) return line;
+      raised += 1;
+      return `${pre}${MIN_IOS_STR}${post}`;
+    },
+  );
+  if (raised > 0) {
+    writeFileSync(pbxproj, after);
+    console.log(
+      `Raised IPHONEOS_DEPLOYMENT_TARGET to ${MIN_IOS_STR} in ${raised} build ` +
+      "configuration(s) — the generated project was below the configured floor.",
+    );
+  }
 }
 
 try {
