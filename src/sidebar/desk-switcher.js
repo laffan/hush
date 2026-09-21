@@ -14,6 +14,7 @@
  */
 
 import { escHtml, DRAG_HANDLE_SVG, deskRatchetGlyph } from "./files-panel-shared.js";
+import { isDesktopTauri } from "../command-palette-helpers.js";
 
 let _state = null;
 let _container = null;
@@ -167,11 +168,14 @@ function deskRowHtml(d, activeId, canArchive, isLocal = false) {
   const localGlyph = isLocal
     ? `<svg viewBox="0 0 16 16" class="desk-switcher-local-glyph" data-tooltip="Local desk"><rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>`
     : "";
-  // A local desk is named by its folder, so there's nothing to rename
-  // here — the pencil is dropped rather than shown disabled.
-  const pencilBtn = isLocal
+  // A local desk is named by its folder, so renaming one renames the
+  // folder too — which is something iOS won't let Hush do from in here
+  // (it grants a scope for the folder, not for its parent). The pencil
+  // is dropped there rather than shown about to fail; Move Local Folder
+  // is the way to put the desk somewhere with the right name.
+  const pencilBtn = (isLocal && !isDesktopTauri())
     ? ""
-    : `<button class="desk-switcher-action" type="button" data-action="rename" data-tooltip="Rename">${PENCIL}</button>`;
+    : `<button class="desk-switcher-action" type="button" data-action="rename" data-tooltip="${isLocal ? "Rename (renames the folder too)" : "Rename"}">${PENCIL}</button>`;
   const archiveBtn = canArchive
     ? `<button class="desk-switcher-action" type="button" data-action="archive" data-tooltip="Archive">${ARCHIVE_BOX}</button>`
     : "";
@@ -310,7 +314,14 @@ function beginInlineRename(deskId) {
     committing = true;
     const next = input.value.trim();
     if (save && next && next !== current) {
-      try { await _state.renameDesk(deskId, next); } catch (e) { console.warn("rename desk failed:", e); }
+      // A local desk's rename goes out to the filesystem, so it can
+      // fail in ways the user has to hear about (a name already taken,
+      // a folder the provider hasn't delivered) — not just a console line.
+      try { await _state.renameDesk(deskId, next); }
+      catch (e) {
+        console.warn("rename desk failed:", e);
+        window.alert(String(e?.message || e));
+      }
     }
     // The desks-changed listener re-renders the header; reopen the
     // popover after a save so the user sees the result.

@@ -233,7 +233,7 @@ export function showChoiceModal({ title, message = "", options = [], onPick, onC
  *  the input value (never empty — the confirm button stays disabled
  *  while the field is blank). Submits on Enter, cancels on Escape or
  *  backdrop click. */
-export function showPromptModal({ title, label = "", placeholder = "", initialValue = "", confirmLabel = "Create", onConfirm, onCancel }) {
+export function showPromptModal({ title, label = "", note = "", placeholder = "", initialValue = "", confirmLabel = "Create", onConfirm, onCancel }) {
   document.querySelectorAll(".tree-delete-modal-backdrop").forEach((el) => el.remove());
   const backdrop = document.createElement("div");
   backdrop.className = "tree-delete-modal-backdrop";
@@ -241,6 +241,7 @@ export function showPromptModal({ title, label = "", placeholder = "", initialVa
   modal.className = "tree-delete-modal";
   modal.innerHTML = `
     <div class="tree-delete-modal-title">${escHtml(title)}</div>
+    ${note ? `<div class="tree-delete-modal-message">${escHtml(note)}</div>` : ""}
     ${label ? `<label class="tree-prompt-modal-label" for="tree-prompt-modal-input">${escHtml(label)}</label>` : ""}
     <input id="tree-prompt-modal-input" class="tree-prompt-modal-input" type="text" autocomplete="off" spellcheck="false" />
     <div class="tree-delete-modal-btns">

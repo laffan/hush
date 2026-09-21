@@ -19,15 +19,16 @@ export function handleDeskAction(action, deskId, state) {
   if (action === "set-active-desk") { state.setActiveDesk(deskId); return; }
   const desk = (state.settings.desks || []).find(d => d.id === deskId);
   if (action === "rename-desk") {
-    // Local desks are named by their folder; the menu drops this entry
-    // for them, so reaching here at all means the roots map moved under
-    // us — say so rather than throwing into the void.
-    if (state.deskRoots?.[deskId]) {
-      window.alert("This desk lives in a folder on disk and takes that folder's name. Rename the folder instead.");
-      return;
-    }
+    // A local desk IS its folder, so this renames the folder too —
+    // `state.renameDesk` routes there and reads the name back off what
+    // landed on disk. Say so in the prompt: it is the user's own folder,
+    // and a rename they didn't expect is not a small surprise.
+    const isLocal = !!state.deskRoots?.[deskId];
     showPromptModal({
-      title: "Rename desk", label: "Name", initialValue: desk?.name || "",
+      title: isLocal ? "Rename desk and its folder" : "Rename desk",
+      label: "Name",
+      note: isLocal ? "This desk lives in a folder on disk; the folder is renamed to match." : undefined,
+      initialValue: desk?.name || "",
       confirmLabel: "Rename",
       onConfirm: async (name) => {
         try { await state.renameDesk(deskId, name); }
@@ -75,7 +76,13 @@ export function handleRename(nodeId, triggerEl, state, refreshAfter) {
     if (rowEl) rowEl.classList.remove("renaming");
     const newName = input.value.trim();
     if (newName && newName !== currentName) {
-      state.renameTreeNode(nodeId, newName).then(() => refreshAfter());
+      // A desk row's rename can reach the filesystem (a local desk is
+      // named by its folder, so renaming it renames the folder) and can
+      // therefore fail in ways the user has to hear about — a name
+      // already taken, a folder the provider hasn't delivered.
+      state.renameTreeNode(nodeId, newName)
+        .catch((e) => { window.alert(String(e?.message || e)); })
+        .then(() => refreshAfter());
     } else {
       nameEl.textContent = currentName;
     }

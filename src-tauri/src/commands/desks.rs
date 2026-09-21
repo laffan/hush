@@ -84,6 +84,96 @@ pub fn desk_make_internal(state: State<AppState>, desk_id: String) -> Result<Str
         .map_err(|e| e.to_string())
 }
 
+/// Rename a local desk's folder in place — same parent, new name —
+/// and repoint the root at it. Returns the new path.
+///
+/// Desktop only, and the frontend gates it there: renaming a folder
+/// writes to its parent directory, which iOS's security-scoped access
+/// to the folder itself doesn't grant. `desk_move_local_root` is the
+/// answer on that platform, since the picker hands back a scope for the
+/// folder it returns.
+#[tauri::command]
+pub fn desk_rename_local_root(
+    app: AppHandle,
+    state: State<AppState>,
+    desk_id: String,
+    new_name: String,
+) -> Result<String, String> {
+    // The watcher is keyed by desk id but armed on a path; drop it for
+    // the duration so no event arrives naming a folder that is halfway
+    // to being somewhere else.
+    state.desk_watch_manager.unwatch(&desk_id);
+    let result = store()
+        .rename_desk_root(&desk_id, &new_name)
+        .map_err(|e| e.to_string());
+    rearm_after_relocate(&app, &state, &desk_id);
+    match &result {
+        Ok(path) => crate::activity_log::note(
+            "desks",
+            "info",
+            format!("Renamed local desk folder for {}: {}", desk_id, path.display()),
+        ),
+        Err(e) => crate::activity_log::note(
+            "desks",
+            "error",
+            format!("Renaming the local desk folder for {} failed: {}", desk_id, e),
+        ),
+    }
+    result.map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Move a local desk's folder contents to `target_path` and repoint the
+/// root. Returns the new path. Nothing is reported as done until every
+/// file in the source has a counterpart at the destination — see
+/// `desk_relocate`.
+#[tauri::command]
+pub fn desk_move_local_root(
+    app: AppHandle,
+    state: State<AppState>,
+    desk_id: String,
+    target_path: String,
+    bookmark: Option<String>,
+) -> Result<String, String> {
+    state.desk_watch_manager.unwatch(&desk_id);
+    let result = store()
+        .move_desk_root(&desk_id, Path::new(&target_path), bookmark)
+        .map_err(|e| e.to_string());
+    rearm_after_relocate(&app, &state, &desk_id);
+    match &result {
+        Ok(path) => crate::activity_log::note(
+            "desks",
+            "info",
+            format!("Moved local desk {} to {}", desk_id, path.display()),
+        ),
+        Err(e) => crate::activity_log::note(
+            "desks",
+            "error",
+            format!("Moving local desk {} failed: {}", desk_id, e),
+        ),
+    }
+    result.map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Re-arm one desk's watcher on whatever path its root now names —
+/// after a relocation that succeeded *or* one that rolled back, since
+/// either way the folder is somewhere and has to stay watched. A
+/// bookmarked (iOS) root never gets one.
+fn rearm_after_relocate(app: &AppHandle, state: &State<AppState>, desk_id: &str) {
+    let entries = crate::desk_roots::load_entries(&crate::get_data_dir().join("desks"));
+    let Some(entry) = entries.get(desk_id) else { return };
+    if entry.bookmark().is_some() {
+        return;
+    }
+    if let Err(e) = state.desk_watch_manager.watch_path(
+        app.clone(),
+        desk_id,
+        Path::new(entry.path()),
+        "desk-changed",
+    ) {
+        eprintln!("desk watcher failed for {}: {}", desk_id, e);
+    }
+}
+
 /// Open a folder as a desk and start watching it. A folder that is
 /// already a desk is adopted, id and all (the handoff case: another
 /// install, or the same folder seen from a second device through a sync

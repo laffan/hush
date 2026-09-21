@@ -209,21 +209,29 @@ export async function createDesk(state, name = "Untitled desk") {
 }
 
 /** Rename a desk. **Local desks take their name from their folder**, so
- *  user-driven renames are refused for them — the folder on disk is the
- *  source of truth and Hush never renames a directory the user owns.
- *  The local-desk plumbing itself (make-local / adopt) passes
- *  `{ force: true }` to write the folder's name in. */
+ *  renaming one renames the folder and reads the name back off what
+ *  landed on disk (`sync/desk-relocate.js`) rather than writing a name
+ *  the folder would then contradict. That round trip is what makes a
+ *  local desk renameable at all: before it, the only way out of a typo
+ *  in the folder name was to delete the desk, fix the folder by hand and
+ *  adopt it again.
+ *
+ *  The local-desk plumbing itself (make-local / adopt / relocate) passes
+ *  `{ force: true }` to write the folder's name straight in — it already
+ *  knows what the folder is called, and re-entering the rename from
+ *  there would be a loop. */
 export async function renameDesk(state, deskId, newName, { force = false } = {}) {
   const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
   if (!desk) return;
-  if (!force && state.deskRoots?.[deskId]) {
-    throw Object.assign(
-      new Error("A local desk takes its name from its folder — rename the folder instead."),
-      { code: "desk-rename-local" },
-    );
-  }
   const oldName = desk.name;
+  // Nothing to do — checked before the local branch, so a no-op rename
+  // never reaches the filesystem.
   if (!newName || newName === oldName) return;
+  if (!force && state.deskRoots?.[deskId]) {
+    const { renameLocalDeskFolder } = await import("../sync/desk-relocate.js");
+    await renameLocalDeskFolder(state, deskId, newName);
+    return;
+  }
   desk.name = newName;
   const desks = (state.settings.desks || []).map((d) => d.id === deskId ? { ...d, name: newName } : d);
   await state.updateSettings({ desks });

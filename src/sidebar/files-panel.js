@@ -456,6 +456,8 @@ function dispatchRowAction(action, nodeId, opts) {
     import("../sync/desk-roots.js").then((m) => m.makeDeskInternal(storedState, nodeId).then(refresh));
   } else if (action === "reveal-desk-folder") {
     import("../sync/desk-roots.js").then((m) => m.revealDeskRoot(storedState, nodeId));
+  } else if (action === "move-desk-folder") {
+    import("../sync/desk-relocate.js").then((m) => m.moveLocalDeskFolder(storedState, nodeId).then(refresh));
   }
 }
 

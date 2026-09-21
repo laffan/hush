@@ -274,16 +274,20 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
     // join here rather than in the static entry builder.
     if (node.type === "desk" && typeof window !== "undefined" && window.__TAURI_INTERNALS__) {
       const isLocal = !!state.deskRoots?.[nodeId];
-      // A local desk takes its name from its folder — rename the folder,
-      // not the desk. Drop the entry rather than letting it fail.
-      if (isLocal) entries = entries.filter((e) => e.action !== "rename-desk");
-      // No Finder to reveal into on iOS.
-      const canReveal = !/iPad|iPhone|iPod/.test(navigator.userAgent || "")
+      // Desktop-only actions: there is no Finder to reveal into on iOS,
+      // and renaming a local desk renames its folder — which writes to
+      // that folder's *parent*, outside the security scope iOS grants.
+      const isDesktop = !/iPad|iPhone|iPod/.test(navigator.userAgent || "")
         && !(/Mac/i.test(navigator.platform || "") && (navigator.maxTouchPoints || 0) > 0);
+      // Renaming a local desk means renaming its folder; on iPad, where
+      // that can't be done from in here, Move Local Folder is the way to
+      // put the desk somewhere with the right name.
+      if (isLocal && !isDesktop) entries = entries.filter((e) => e.action !== "rename-desk");
       const insertAt = entries.findIndex((e) => e.action === "archive-desk");
       const extra = isLocal
         ? [
-            ...(canReveal ? [{ action: "reveal-desk-folder", label: "Reveal Folder" }] : []),
+            ...(isDesktop ? [{ action: "reveal-desk-folder", label: "Reveal Folder" }] : []),
+            { action: "move-desk-folder", label: "Move Local Folder…" },
             { action: "make-desk-internal", label: "Make Internal" },
           ]
         : [{ action: "make-desk-local", label: "Make Local…" }];

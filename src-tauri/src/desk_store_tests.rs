@@ -430,3 +430,7 @@ mod identity_tests;
 #[path = "desk_index_tests.rs"]
 mod index_tests;
 
+// Renaming and moving a local desk's folder. Same child-module pattern.
+#[path = "desk_relocate_tests.rs"]
+mod relocate_tests;
+

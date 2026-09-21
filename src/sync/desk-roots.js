@@ -31,7 +31,7 @@ async function plugin(cmd, args) {
 
 /** Present the platform folder picker. Returns
  *  `{ path, bookmark|null }` or null when cancelled. */
-async function pickFolder(title) {
+export async function pickFolder(title) {
   if (isIOSTauri()) {
     try {
       const picked = await plugin("pick_folder");
@@ -72,6 +72,17 @@ export async function materialiseDeskSidecars(root) {
     try { await plugin("read_file", { path: `${base}/${rel}` }); }
     catch (_) { /* absent, offline, or genuinely not a desk — the caller decides */ }
   }
+}
+
+/** Arm or drop the iOS NSMetadataQuery watch on a folder. A no-op off
+ *  iOS (desktop roots are watched by Rust's `notify` watcher instead),
+ *  and best-effort either way — a watch that won't arm costs a refresh,
+ *  never data. Exported for `desk-relocate.js`, which has to hand the
+ *  watch from one folder to another. */
+export async function setIosFolderWatch(path, on) {
+  if (!isIOSTauri() || !path) return;
+  try { await plugin(on ? "start_watch" : "stop_watch", { path }); }
+  catch (_) { /* best effort */ }
 }
 
 /** Same folder? Darwin exposes one place as both `/private/var/…` and

@@ -44,7 +44,7 @@ Hush is a [Tauri v2](https://v2.tauri.app/) app (macOS + iOS/iPadOS) with a vani
 | `wire.rs` | The types the frontend sees: `TreeNode`, `FileEntry`, `FileSummary`. Re-exported from `lib.rs`, so `crate::TreeNode` still resolves |
 | `atomic.rs` | `write_atomic` / `write_atomic_str` — tmp + fsync + rename. **Every long-lived JSON/binary store writes through this**; worst case on crash is always "the previous version" |
 | `commands/` | Tauri command surface, grouped by domain (files, images, settings, snapshots, desks, local_sync, zotero, window, backup, grammar, spellcheck, pdf_export, multi_window, google_docs, diagnostics, handwriting) |
-| `desk_*.rs` | The desk-folder store — see README-SYNC.md |
+| `desk_*.rs` | The desk-folder store (including `desk_relocate.rs`, which renames and moves a local desk's folder) — see README-SYNC.md |
 | `settings.rs` + `settings/defaults.rs` | `AppSettings` (camelCase serde) + default-value fns |
 | `files.rs`, `images.rs`, `snapshots.rs` | fileId-keyed file CRUD, image storage, version snapshots |
 | `zotero.rs`, `hushnote.rs`, `multi_window.rs`, `activity_log.rs`, `startup_trace.rs`, `wikilinks.rs`, `backup` | As named |

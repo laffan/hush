@@ -24,6 +24,7 @@ mod desk_migrate;
 mod desk_paths;
 mod desk_place;
 mod desk_recovery;
+mod desk_relocate;
 mod desk_rescue;
 mod desk_roots;
 mod desk_scan;
@@ -483,6 +484,8 @@ pub fn run() {
             commands::desks::desk_meta_set,
             commands::desks::desk_make_local,
             commands::desks::desk_make_internal,
+            commands::desks::desk_rename_local_root,
+            commands::desks::desk_move_local_root,
             commands::desks::desk_open_folder_as_desk,
             commands::desks::desk_unregister_root,
             commands::desks::desk_rearm_watchers,

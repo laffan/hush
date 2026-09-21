@@ -74,6 +74,39 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
         const desk = s.getActiveDesk();
         if (desk) await (await import("./sync/desk-roots.js")).makeDeskInternal(s, desk.id);
       } },
+    // A local desk is named by its folder, so renaming one renames the
+    // folder. Desktop only: renaming a folder writes to its parent
+    // directory, which iOS's security scope over the folder itself does
+    // not cover — Move Local Folder is the iPad's answer.
+    { id: "desk-rename-local", section: "Desks", label: "Rename Desk and Folder…", icon: icons.desk, shortcutKey: null, ctx: "shared",
+      keywords: "rename local desk folder typo name",
+      hiddenIf: (s) => !desktop || !s.deskRoots?.[s.getActiveDesk?.()?.id],
+      action: async (s) => {
+        const desk = s.getActiveDesk?.();
+        if (!desk) return;
+        const { showPromptModal } = await import("./sidebar/files-panel-shared.js");
+        showPromptModal({
+          title: "Rename desk and its folder",
+          note: "This desk lives in a folder on disk; the folder is renamed to match.",
+          label: "Name",
+          initialValue: desk.name || "",
+          confirmLabel: "Rename",
+          onConfirm: async (name) => {
+            try { await s.renameDesk(desk.id, name); }
+            catch (e) { window.alert(String(e?.message || e)); }
+          },
+        });
+      } },
+    // Saving the folder in the wrong place used to be unfixable from
+    // inside Hush; this is the way out. The files are censused before
+    // and after, and a move that loses one is rolled back.
+    { id: "desk-move-folder", section: "Desks", label: "Move Local Folder…", icon: icons.desk, shortcutKey: null, ctx: "shared",
+      keywords: "move local desk folder relocate elsewhere location",
+      hiddenIf: (s) => (!desktop && !ipad) || !s.deskRoots?.[s.getActiveDesk?.()?.id],
+      action: async (s) => {
+        const desk = s.getActiveDesk?.();
+        if (desk) await (await import("./sync/desk-relocate.js")).moveLocalDeskFolder(s, desk.id);
+      } },
     { id: "desk-reveal-folder", section: "Desks", label: "Reveal Desk Folder", icon: icons.desk, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !desktop || !s.deskRoots?.[s.getActiveDesk?.()?.id],
       action: async (s) => {

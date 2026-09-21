@@ -13,6 +13,9 @@
 //! - **Make Desk Internal** moves the contents back under
 //!   `{data_dir}/desks/<id>/` and unregisters; the emptied external
 //!   folder is removed only when nothing (beyond `.DS_Store`) remains.
+//! - **Rename / Move** (`desk_relocate.rs`) change where a local desk's
+//!   folder is without going through Internal and back — a local desk is
+//!   named by its folder, so a rename is the only way to rename one.
 //! - **Adopt** registers an existing desk folder (it must carry
 //!   `.hushdesk` + `.hush/tree.json`) — the handoff seam: any Hush
 //!   install can open a desk another install produced.
@@ -487,7 +490,7 @@ fn dir_is_effectively_empty(dir: &Path) -> Result<bool, BoxError> {
 /// Move every entry of `src` into `dst` (which exists and is empty).
 /// Per-entry `fs::rename` with a recursive copy+delete fallback so
 /// cross-volume targets work.
-fn move_dir_contents(src: &Path, dst: &Path) -> Result<(), BoxError> {
+pub(crate) fn move_dir_contents(src: &Path, dst: &Path) -> Result<(), BoxError> {
     for entry in fs::read_dir(src)?.flatten() {
         let from = entry.path();
         let to = dst.join(entry.file_name());
