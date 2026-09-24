@@ -138,12 +138,12 @@ body.typing-fade .tree-create-btns {
 
 /* Over a Doc the border stays out of the way until the pointer comes
    within 50 px of it (or into the panel) — sidebar.js toggles
-   `.border-near`. Touch-only devices have no pointer to approach with,
-   so the rule is limited to hover-capable input. */
-@media (hover: hover) {
-  body:not(.notebook-mode):not(.pdf-mode):not(.stack-mode):not(.empty-mode):not(.desktop-active) #panel-overlay:not(.border-near) {
-    border-right-color: transparent;
-  }
+   `.border-near`. Deliberately not behind `@media (hover: hover)`: an
+   iPad reports its primary input as touch even with a trackpad
+   attached, so that query never matched there and the border stayed
+   on. A finger counts as a pointer too — see sidebar.js. */
+body:not(.notebook-mode):not(.pdf-mode):not(.stack-mode):not(.empty-mode):not(.desktop-active) #panel-overlay:not(.border-near) {
+  border-right-color: transparent;
 }
 
 /* Suppress the width transition while the user is actively dragging the

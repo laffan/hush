@@ -186,17 +186,24 @@ export function createSidebar(state) {
   // while the pointer is inside the panel or within BORDER_NEAR_PX of
   // its edge (styles/sidebar.css keys off `.border-near`). Measured
   // against the panel's live rect so the resize drag and the collapsed
-  // grip both line up without tracking width separately.
+  // grip both line up without tracking width separately. Every pointer
+  // type counts: an iPad trackpad arrives as "mouse", and a finger has
+  // no hover, so a touch is read where it lands (pointerdown) — tap the
+  // sidebar and the border shows, tap the page and it goes.
   const BORDER_NEAR_PX = 50;
   function syncBorderProximity(e) {
-    if (e.pointerType === "touch") return;
     const near = e.clientX <= panelOverlay.getBoundingClientRect().right + BORDER_NEAR_PX;
     if (near !== panelOverlay.classList.contains("border-near")) {
       panelOverlay.classList.toggle("border-near", near);
     }
   }
   document.addEventListener("pointermove", syncBorderProximity, { passive: true });
-  document.documentElement.addEventListener("pointerleave", () => {
+  document.addEventListener("pointerdown", syncBorderProximity, { capture: true, passive: true });
+  // A mouse / trackpad leaving the window takes the border with it. A
+  // finger "leaves" every time it lifts, so that would undo each tap —
+  // a touch holds its answer until the next one.
+  document.documentElement.addEventListener("pointerleave", (e) => {
+    if (e.pointerType === "touch") return;
     panelOverlay.classList.remove("border-near");
   });
   new MutationObserver(() => {

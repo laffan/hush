@@ -45,6 +45,13 @@
   transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 
+/* On a dark page the shadow has nothing to fall on, so the edge has to
+   come from the hairline itself — a little stronger, still quiet.
+   Keyed off the appearance the same way the sticky palette is. */
+html[data-theme="dark"] .courier-sheet {
+  border-color: color-mix(in srgb, var(--fg) 18%, transparent);
+}
+
 .courier-root.open .courier-backdrop { opacity: 1; }
 .courier-root.open .courier-sheet { transform: translate(-50%, 0); }
 
