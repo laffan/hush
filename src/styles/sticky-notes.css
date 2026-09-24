@@ -17,8 +17,7 @@
  * from Styles: a sticky never picks up a style's colours. */
 
 .sticky-note,
-.sticky-context-menu,
-.courier-sticky-preview {
+.sticky-context-menu {
   --sticky-ink: #1a1a1a;
   --sticky-ink-dim: rgba(0, 0, 0, 0.5);
   --sticky-ink-faint: rgba(0, 0, 0, 0.35);
@@ -35,8 +34,7 @@
 }
 
 html[data-theme="dark"] .sticky-note,
-html[data-theme="dark"] .sticky-context-menu,
-html[data-theme="dark"] .courier-sticky-preview {
+html[data-theme="dark"] .sticky-context-menu {
   --sticky-ink: #efe9e4;
   --sticky-ink-dim: rgba(255, 255, 255, 0.45);
   --sticky-ink-faint: rgba(255, 255, 255, 0.32);

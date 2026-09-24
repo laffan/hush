@@ -987,6 +987,14 @@
   gap: 6px;
   cursor: pointer;
 }
+/* Same 16px box as `.style-checkbox-group` — the unstyled default is
+   smaller and read as a different control beside the others. */
+.style-glow-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+}
 .style-glow-option span {
   font-size: 11px;
   opacity: 0.55;

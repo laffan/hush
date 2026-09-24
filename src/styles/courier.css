@@ -3,7 +3,8 @@
    no chrome beyond a hairline and a soft lift off the page. The
    controls read as text. Two columns: choices on the left (Sticky /
    Append, a sticky's scope, the search and its list), and on the right
-   the message above a live preview of what Send will make. Sits at
+   the thing itself, written in place — a sticky, or the end of a
+   document with the new text after it. Sits at
    --z-courier, above the whole modal band, so it opens over every
    surface, Zen included. */
 
@@ -28,14 +29,15 @@
   left: 50%;
   bottom: calc(max(var(--ipad-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)) + 20px);
   width: min(860px, calc(100vw - 32px));
-  height: min(440px, calc(100% - var(--top-chrome-inset, 0px) - 48px));
+  height: min(500px, calc(100% - var(--top-chrome-inset, 0px) - 48px));
   max-height: calc(100% - var(--top-chrome-inset, 0px) - 48px);
   display: grid;
   grid-template-columns: minmax(200px, 34%) 1fr;
   padding: 0;
   background: var(--theme-bg, var(--bg));
   border: 1px solid color-mix(in srgb, var(--fg) 7%, transparent);
-  border-radius: 3px;
+  border-radius: 5px;
+  overflow: hidden;
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.04),
     0 18px 50px rgba(0, 0, 0, 0.12);
@@ -52,7 +54,6 @@
 
 /* ---- Controls drop their boxes: they are words on the page. ---- */
 .courier-filter,
-.courier-message,
 .courier-mode,
 .courier-scope,
 .courier-cancel,
@@ -123,8 +124,7 @@
   border-bottom-color: color-mix(in srgb, var(--fg) 28%, transparent);
 }
 
-.courier-filter::placeholder,
-.courier-message::placeholder {
+.courier-filter::placeholder {
   color: var(--fg);
   opacity: 0.3;
 }
@@ -206,103 +206,88 @@
   padding: 22px 28px 16px;
 }
 
-.courier-message {
-  display: block;
-  width: 100%;
-  flex: 0 0 auto;
-  min-height: 72px;
-  max-height: 30%;
-  padding: 0;
-  resize: none;
-  font-family: var(--font-family);
-  font-size: 16px;
-  line-height: 1.55;
-}
-
-.courier-preview {
+/* The surface the note is written on: a sticky, or a document's end. */
+.courier-canvas {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
-  scrollbar-width: thin;
+  display: flex;
+  flex-direction: column;
 }
 
-.courier-preview-empty {
+.courier-canvas-hint {
+  margin: auto;
   font-size: 12px;
   opacity: 0.35;
 }
 
-/* Sticky preview — a small note in its scope's paper colour
-   (palette from sticky-notes.css, which scopes its variables onto this
-   class too). */
-.courier-sticky-preview {
-  width: min(240px, 100%);
-  min-height: 150px;
-  display: flex;
-  flex-direction: column;
-  color: var(--sticky-ink);
-  border: 1px solid var(--sticky-edge);
-  border-radius: 3px;
-  box-shadow: 0 4px 14px var(--sticky-shadow);
-  transform: rotate(-0.6deg);
+/* Sticky — the real sticky markup and palette (sticky-notes.css), at
+   its default size, held still and centred with room all round for its
+   shadow. */
+.courier-sticky-stage {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
 }
 
-.courier-sticky-head {
-  padding: 7px 12px 5px;
-  font-size: 11px;
-  color: var(--sticky-ink-dim);
-  border-bottom: 1px solid var(--sticky-edge);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.courier-sticky-stage .courier-sticky {
+  position: relative;
+  flex: 0 0 auto;
+  width: min(300px, 100%);
+  height: min(300px, 100%);
 }
 
-.courier-sticky-body {
-  padding: 10px 12px 14px;
-  font-size: 15px;
-  line-height: 1.4;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+.courier-sticky-stage .sticky-note-titlebar { cursor: default; }
+
+.courier-sticky-stage .courier-sticky-where {
+  visibility: visible;
+  padding-left: 4px;
 }
 
-.courier-sticky-body.empty { color: var(--sticky-ink-faint); }
-
-/* Append preview — the end of the document in its prose font, faded,
-   with the new paragraph in full ink beneath it. */
-.courier-doc-preview {
-  font-family: var(--font-family);
-  font-size: 14px;
-  line-height: 1.55;
-}
-
+/* Append — the document's last lines, faded and fixed, then the new
+   text in a live editor built like every other document surface. */
 .courier-doc-name {
-  font-family: var(--ui-font-family);
+  flex: 0 0 auto;
   font-size: 11px;
   letter-spacing: 0.04em;
   opacity: 0.4;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+  /* Line up with the text: CodeMirror pads each line 6px on the left. */
+  padding-left: 6px;
 }
 
-.courier-doc-tail { opacity: 0.38; }
+.courier-doc-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
 
-.courier-doc-tail.clipped {
+.courier-doc-editor .cm-editor,
+.courier-doc-editor .cm-editor.cm-focused {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  outline: none;
+  border: none;
+}
+
+.courier-doc-editor .cm-scroller {
+  font-size: 16px;
+  line-height: 1.55;
+  padding: 0;
+  scrollbar-width: thin;
+}
+
+.courier-doc-editor .cm-content { padding: 0 0 24px; }
+
+.courier-doc-editor .courier-tail-line { opacity: 0.38; }
+
+/* A clipped tail fades in from the top rather than starting mid-thought
+   at full weight. */
+.courier-doc-editor .courier-tail-clipped .cm-scroller {
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 2.5em);
   mask-image: linear-gradient(to bottom, transparent, #000 2.5em);
 }
-
-.courier-doc-new {
-  padding-left: 10px;
-  border-left: 1px solid color-mix(in srgb, var(--fg) 30%, transparent);
-}
-
-.courier-doc-new.empty { opacity: 0.3; }
-
-.courier-doc-preview :is(p, h1, h2, h3, h4, h5, h6, pre, ul, ol) {
-  margin: 0 0 0.6em !important;
-}
-
-.courier-doc-preview :is(h1, h2, h3, h4, h5, h6) { font-size: 1.1em; }
-.courier-doc-preview a { color: inherit; pointer-events: none; }
-.courier-doc-preview mark { background: color-mix(in srgb, #fff475 60%, transparent) !important; color: inherit; }
 
 .courier-actions {
   display: flex;

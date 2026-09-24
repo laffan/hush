@@ -27,7 +27,7 @@ function checkboxRow(id, label, checked) {
   return `
               <div class="style-editor-row">
                 <label for="${id}">${label}</label>
-                <div class="style-select-group">
+                <div class="style-checkbox-group">
                   <input type="checkbox" id="${id}"${checked ? " checked" : ""} />
                 </div>
               </div>`;

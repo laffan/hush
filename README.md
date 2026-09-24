@@ -48,7 +48,7 @@ Notebooks export as `.hushnote` (lossless), PNG, JPG, or PDF.
 
 Tap **Shift three times** — either Shift key, quickly, with nothing else pressed in between — and a sheet slides up from the bottom of the window, wherever you are: a document, a notebook, a PDF, Zen Focus. It leaves a quick note somewhere else without leaving what you're doing.
 
-The left side chooses what to make. **Sticky** adds a second row — **Document**, **Desk** or **Global** — and a search over your documents or desks, on any desk; **Append** searches documents and adds the note as a new paragraph at the end of the one you pick. The right side is where you write, above a live preview of exactly what Send will make: the sticky in its paper colour, or the end of the document with your paragraph rendered beneath it.
+The left side chooses what to make. **Sticky** adds a second row — **Document**, **Desk** or **Global** — and a search over your documents or desks, on any desk; **Append** searches documents and adds the note as a new paragraph at the end of the one you pick. The right side is the thing itself, written in place: a sticky, in its paper colour, that you type straight into — or the last lines of the document, with the cursor waiting after them, where the note is written with the same markdown as anywhere else in the document. Switch between the two and what you've typed comes with you.
 
 Courier reopens where your last note went, so a second one to the same place is three taps, a sentence and ⌘↩. Escape or Cancel puts it away with the caret back where it was. It's also in the command palette, for when there's no keyboard.
 

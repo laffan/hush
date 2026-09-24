@@ -7,10 +7,11 @@
  * Two columns. The left chooses: **Sticky** or **Append** across the
  * top; a sticky adds a second row — Document, Desk, Global — and then
  * the search over documents or desks (a global sticky needs none). The
- * right is the message and a live preview of exactly what Send will
- * make: the sticky itself in its scope's paper colour, or the end of the
- * target document with the new paragraph rendered as markdown beneath
- * it. Escape / Cancel dismiss; ⌘↩ / Ctrl↩ sends.
+ * right is the thing itself, written in place: a sticky note (the real
+ * sticky markup and palette) whose text you type straight into, or the
+ * end of the target document with a live editor after it
+ * (courier-append-editor.js). What's typed carries across a switch
+ * between the two. Escape / Cancel dismiss; ⌘↩ / Ctrl↩ sends.
  *
  * The sheet lives in `document.body` at `--z-courier`, above the whole
  * modal band. Its key events stop at the sheet on the way back up, so a
@@ -23,13 +24,11 @@
 import { MODES, STICKY_SCOPES, buildLocations, matchesFilter } from "./courier-destinations.js";
 import { deliver, readDocumentText } from "./courier-send.js";
 import { lastMode, lastScope, lastLocation, rememberSend, slotFor } from "./courier-store.js";
-import { markdownToHtml } from "../editor/google-docs/markdown-to-html.js";
+import { mountAppendEditor, documentTail } from "./courier-append-editor.js";
+import { ctxIconFor, DEFAULT_FONT } from "../sticky/sticky-shared.js";
 
-/** How much of the target document the append preview shows above the
- *  new paragraph — enough to recognise where it lands. */
-const TAIL_CHARS = 480;
-
-const STICKY_PAPER = { document: "sticky-file", desk: "sticky-desk", global: "sticky-global" };
+/** Scope → the sticky kind whose paper and glyph it wears. */
+const STICKY_KIND = { document: "file", desk: "desk", global: "global" };
 
 let open = null; // the live sheet's handle, or null
 
@@ -39,15 +38,6 @@ function esc(s) {
 
 function segButtons(items, cls) {
   return items.map((it) => `<button type="button" class="${cls}" data-id="${it.id}">${esc(it.label)}</button>`).join("");
-}
-
-/** The last stretch of a document, cut at a paragraph break and clear of
- *  its frontmatter. */
-function documentTail(text) {
-  const body = text.replace(/^---\n[\s\S]*?\n---\n?/, "").replace(/\s+$/, "");
-  if (body.length <= TAIL_CHARS) return { tail: body, clipped: false };
-  const cut = body.lastIndexOf("\n\n", body.length - TAIL_CHARS);
-  return { tail: body.slice(cut >= 0 ? cut + 2 : body.length - TAIL_CHARS), clipped: true };
 }
 
 export function toggleCourier(state) {
@@ -71,8 +61,7 @@ export function openCourier(state) {
         <div class="courier-list" role="listbox" aria-label="Destinations"></div>
       </div>
       <div class="courier-right">
-        <textarea class="courier-message" rows="3" placeholder="Write…" aria-label="Message"></textarea>
-        <div class="courier-preview" aria-label="Preview"></div>
+        <div class="courier-canvas"></div>
         <div class="courier-actions">
           <span class="courier-error" role="alert"></span>
           <button type="button" class="courier-cancel">Cancel</button>
@@ -86,8 +75,7 @@ export function openCourier(state) {
   const scopesEl = root.querySelector(".courier-scopes");
   const filterEl = root.querySelector(".courier-filter");
   const listEl = root.querySelector(".courier-list");
-  const messageEl = root.querySelector(".courier-message");
-  const previewEl = root.querySelector(".courier-preview");
+  const canvasEl = root.querySelector(".courier-canvas");
   const sendEl = root.querySelector(".courier-send");
   const errorEl = root.querySelector(".courier-error");
 
@@ -97,31 +85,59 @@ export function openCourier(state) {
   let visible = [];
   let selectedKey = null;
   let sending = false;
-  let previewSeq = 0;
-  const docText = new Map(); // fileId → text, for the append preview
+  let surfaceSeq = 0;
+  let message = "";          // what's been written, carried across rebuilds
+  let stickyText = null;     // the sticky's textarea while it's mounted
+  let appendEditor = null;   // the append editor while it's mounted
+  let surfaceKey = null;     // what the mounted surface was built for
+  const docText = new Map(); // fileId → text, for the append surface
 
   const selected = () => rows.find((r) => r.key === selectedKey) || null;
   const needsLocation = () => !(mode === "sticky" && scope === "global");
 
-  function syncControls() {
-    sendEl.disabled = sending || !messageEl.value.trim() || (needsLocation() && !selected());
+  function currentMessage() {
+    if (stickyText) return stickyText.value;
+    if (appendEditor) return appendEditor.getMessage();
+    return message;
   }
 
-  async function renderPreview() {
-    const seq = ++previewSeq;
-    const text = messageEl.value.replace(/\s+$/, "");
+  function syncControls() {
+    sendEl.disabled = sending || !currentMessage().trim() || (needsLocation() && !selected());
+  }
+
+  function unmountSurface() {
+    message = currentMessage();
+    stickyText = null;
+    if (appendEditor) { appendEditor.destroy(); appendEditor = null; }
+    canvasEl.innerHTML = "";
+    surfaceKey = null;
+  }
+
+  function mountSticky() {
+    const kind = STICKY_KIND[scope];
     const loc = selected();
-    if (mode === "sticky") {
-      const where = scope === "global" ? "Global" : (loc?.label || (scope === "desk" ? "Choose a desk" : "Choose a document"));
-      previewEl.innerHTML = `
-        <div class="courier-sticky-preview ${STICKY_PAPER[scope]}">
-          <div class="courier-sticky-head">${esc(where)}</div>
-          <div class="courier-sticky-body${text ? "" : " empty"}">${esc(text || "Your note")}</div>
-        </div>`;
-      return;
-    }
+    const where = scope === "global" ? "Global" : (loc?.label || "");
+    canvasEl.className = "courier-canvas courier-sticky-stage";
+    canvasEl.innerHTML = `
+      <div class="sticky-note sticky-${kind} active courier-sticky">
+        <div class="sticky-note-titlebar">
+          <span class="sticky-note-btn sticky-note-context" aria-hidden="true">${ctxIconFor(kind)}</span>
+          <span class="sticky-note-excerpt courier-sticky-where">${esc(where)}</span>
+        </div>
+        <textarea class="sticky-note-text" placeholder="Note…" spellcheck="false" aria-label="Sticky note"></textarea>
+      </div>`;
+    stickyText = canvasEl.querySelector(".sticky-note-text");
+    stickyText.style.fontSize = DEFAULT_FONT + "px";
+    stickyText.value = message;
+    stickyText.addEventListener("input", syncControls);
+    stickyText.focus();
+    stickyText.setSelectionRange(message.length, message.length);
+  }
+
+  async function mountAppend(loc, seq) {
+    canvasEl.className = "courier-canvas courier-doc-stage";
     if (!loc) {
-      previewEl.innerHTML = `<div class="courier-preview-empty">Choose a document to append to.</div>`;
+      canvasEl.innerHTML = `<div class="courier-canvas-hint">Choose a document to append to.</div>`;
       return;
     }
     let existing = docText.get(loc.fileId);
@@ -129,17 +145,46 @@ export function openCourier(state) {
       try { existing = await readDocumentText(state, loc.fileId); }
       catch (_) { existing = ""; }
       docText.set(loc.fileId, existing);
-      if (seq !== previewSeq || !open) return;
+      if (seq !== surfaceSeq || !open) return;
     }
     const { tail, clipped } = documentTail(existing);
-    previewEl.innerHTML = `
-      <div class="courier-doc-preview">
-        <div class="courier-doc-name">${esc(loc.label)}</div>
-        <div class="courier-doc-tail${clipped ? " clipped" : ""}">${tail ? markdownToHtml(tail) : ""}</div>
-        <div class="courier-doc-new${text ? "" : " empty"}">${text ? markdownToHtml(text) : "<p>Your paragraph</p>"}</div>
-      </div>`;
-    // Keep the landing point in view: the new paragraph sits at the end.
-    previewEl.scrollTop = previewEl.scrollHeight;
+    canvasEl.innerHTML = `<div class="courier-doc-name">${esc(loc.label)}</div><div class="courier-doc-editor"></div>`;
+    appendEditor = mountAppendEditor(state, canvasEl.querySelector(".courier-doc-editor"), {
+      existing: tail,
+      message,
+      clipped,
+      onInput: syncControls,
+      onSend: () => void send(),
+    });
+    appendEditor.focus();
+    syncControls();
+  }
+
+  /** Hand the caret back to whatever is being written on. The append
+   *  editor mounts after an await and focuses itself when it lands. */
+  function focusSurface() {
+    if (stickyText) stickyText.focus();
+    else appendEditor?.focus();
+  }
+
+  /** Build the right-hand surface for the current mode / scope / pick —
+   *  or, for a sticky whose destination merely changed, just relabel it
+   *  so the caret stays where it is. */
+  function renderSurface() {
+    const loc = selected();
+    const key = mode === "sticky" ? `sticky:${scope}` : `append:${loc?.fileId || ""}`;
+    if (key === surfaceKey) {
+      const where = canvasEl.querySelector(".courier-sticky-where");
+      if (where) where.textContent = scope === "global" ? "Global" : (loc?.label || "");
+      syncControls();
+      return;
+    }
+    const seq = ++surfaceSeq;
+    unmountSurface();
+    surfaceKey = key;
+    if (mode === "sticky") mountSticky();
+    else void mountAppend(loc, seq);
+    syncControls();
   }
 
   function select(key) {
@@ -158,8 +203,7 @@ export function openCourier(state) {
         }
       }
     }
-    syncControls();
-    void renderPreview();
+    renderSurface();
   }
 
   function renderList() {
@@ -207,7 +251,7 @@ export function openCourier(state) {
   }
 
   async function send() {
-    const text = messageEl.value.replace(/\s+$/, "");
+    const text = currentMessage().replace(/\s+$/, "");
     if (sendEl.disabled || !text.trim()) return;
     sending = true;
     errorEl.textContent = "";
@@ -232,6 +276,8 @@ export function openCourier(state) {
     open = null;
     window.removeEventListener("keydown", onWindowKey, true);
     root.classList.remove("open");
+    appendEditor?.destroy();
+    appendEditor = null;
     let done = false;
     const finish = () => { if (!done) { done = true; root.remove(); } };
     sheet.addEventListener("transitionend", finish, { once: true });
@@ -252,6 +298,8 @@ export function openCourier(state) {
 
   sheet.addEventListener("keydown", (e) => {
     e.stopPropagation();
+    // The append editor takes ⌘↩ itself (and cancels it); don't send twice.
+    if (e.defaultPrevented) return;
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       void send();
@@ -260,29 +308,23 @@ export function openCourier(state) {
 
   root.querySelector(".courier-modes").addEventListener("click", (e) => {
     const b = e.target instanceof Element ? e.target.closest(".courier-mode") : null;
-    if (!b || b.dataset.id === mode) return;
-    mode = b.dataset.id;
-    applyChoice();
+    if (b && b.dataset.id !== mode) { mode = b.dataset.id; applyChoice(); }
+    if (b) focusSurface();
   });
   scopesEl.addEventListener("click", (e) => {
     const b = e.target instanceof Element ? e.target.closest(".courier-scope") : null;
-    if (!b || b.dataset.id === scope) return;
-    scope = b.dataset.id;
-    applyChoice();
+    if (b && b.dataset.id !== scope) { scope = b.dataset.id; applyChoice(); }
+    if (b) focusSurface();
   });
 
   filterEl.addEventListener("input", renderList);
   filterEl.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown") { e.preventDefault(); moveSelection(1); }
     else if (e.key === "ArrowUp") { e.preventDefault(); moveSelection(-1); }
-    else if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); messageEl.focus(); }
-  });
-
-  let previewFrame = 0;
-  messageEl.addEventListener("input", () => {
-    syncControls();
-    if (previewFrame) return;
-    previewFrame = requestAnimationFrame(() => { previewFrame = 0; void renderPreview(); });
+    else if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      focusSurface();
+    }
   });
 
   // Commit on pointerdown, the way every menu floating over an editor
@@ -301,5 +343,4 @@ export function openCourier(state) {
   open = { close };
   applyChoice();
   requestAnimationFrame(() => root.classList.add("open"));
-  messageEl.focus();
 }
