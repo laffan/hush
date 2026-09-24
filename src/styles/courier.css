@@ -1,7 +1,10 @@
 /* ===== Courier — triple-Shift quick-send sheet (src/courier/) =====
-   Slides up from the bottom edge over every surface, Zen included, so
-   it sits at --z-courier above the whole modal band. App chrome, so it
-   is set in the UI font rather than the style's prose font. */
+   A sheet of paper that happens to be interactive: no boxes, no fills,
+   no chrome beyond a hairline and a soft lift off the page. The
+   controls read as text — the type is a quiet line at the top, the
+   destinations a list, the message is written in the style's own prose
+   font. Sits at --z-courier, above the whole modal band, so it opens
+   over every surface, Zen included. */
 
 .courier-root {
   position: fixed;
@@ -14,7 +17,7 @@
 .courier-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.18);
+  background: rgba(0, 0, 0, 0.06);
   opacity: 0;
   transition: opacity 0.2s ease;
 }
@@ -22,19 +25,21 @@
 .courier-sheet {
   position: absolute;
   left: 50%;
-  bottom: calc(max(var(--ipad-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)) + 16px);
-  width: min(560px, calc(100vw - 32px));
+  bottom: calc(max(var(--ipad-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)) + 20px);
+  width: min(620px, calc(100vw - 32px));
   max-height: calc(100% - var(--top-chrome-inset, 0px) - 48px);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 14px 12px;
+  gap: 14px;
+  padding: 22px 30px 16px;
   background: var(--theme-bg, var(--bg));
-  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.4));
-  border-radius: 12px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  border: 1px solid color-mix(in srgb, var(--fg) 7%, transparent);
+  border-radius: 3px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 18px 50px rgba(0, 0, 0, 0.12);
   transform: translate(-50%, calc(100% + 40px));
-  transition: transform 0.24s cubic-bezier(0.2, 0.9, 0.3, 1);
+  transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 
 .courier-root.open .courier-backdrop { opacity: 1; }
@@ -46,88 +51,136 @@
 
 .courier-section { min-height: 0; }
 
-.courier-type-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.courier-title {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  opacity: 0.6;
-}
-
+/* Every control drops its box: they are words on the page. */
 .courier-type,
 .courier-filter,
 .courier-other-name,
-.courier-message {
+.courier-message,
+.courier-cancel,
+.courier-send {
   font: inherit;
-  font-size: 13px;
-  color: var(--fg);
-  background: color-mix(in srgb, var(--fg) 5%, transparent);
-  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.4));
-  border-radius: 6px;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-radius: 0;
   outline: none;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
-.courier-type:focus-visible,
-.courier-filter:focus,
-.courier-other-name:focus,
-.courier-message:focus {
-  border-color: color-mix(in srgb, var(--fg) 45%, transparent);
+/* Message type — a quiet line of text with a small chevron. */
+.courier-type-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
 }
 
 .courier-type {
-  flex: 1 1 auto;
-  padding: 5px 8px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  padding: 2px 16px 2px 0;
+  opacity: 0.5;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.courier-type:hover,
+.courier-type:focus-visible { opacity: 0.9; }
+
+.courier-type-wrap::after {
+  content: "";
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: translateY(-70%) rotate(45deg);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.courier-type option {
+  color: var(--fg);
+  background: var(--theme-bg, var(--bg));
 }
 
 .courier-locations {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   flex: 1 1 auto;
 }
 
+/* "To…" — a single ruled line, the only rule on the page. */
 .courier-filter,
 .courier-other-name {
   width: 100%;
-  padding: 6px 8px;
+  font-size: 13px;
+  padding: 4px 0 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 9%, transparent);
+  transition: border-color 0.15s;
+}
+
+.courier-filter:focus,
+.courier-other-name:focus {
+  border-bottom-color: color-mix(in srgb, var(--fg) 28%, transparent);
+}
+
+.courier-filter::placeholder,
+.courier-other-name::placeholder,
+.courier-message::placeholder {
+  color: var(--fg);
+  opacity: 0.3;
 }
 
 .courier-list {
   position: relative;
-  max-height: 220px;
-  min-height: 60px;
+  max-height: 190px;
+  min-height: 48px;
   overflow-y: auto;
-  border-radius: 6px;
   font-size: 13px;
+  scrollbar-width: thin;
 }
 
 .courier-group {
-  padding: 8px 8px 3px;
+  padding: 10px 0 2px;
   font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  opacity: 0.5;
+  opacity: 0.35;
 }
 
+.courier-group:first-child { padding-top: 6px; }
+
+/* Rows are plain lines; the chosen one is simply the one in full ink,
+   marked by a short rule in the margin. */
 .courier-row {
+  position: relative;
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  padding: 5px 8px;
-  border-radius: 5px;
+  gap: 10px;
+  padding: 3px 0 3px 12px;
   cursor: pointer;
   user-select: none;
+  opacity: 0.55;
+  transition: opacity 0.12s;
 }
 
-.courier-row:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); }
-.courier-row.selected { background: color-mix(in srgb, var(--fg) 14%, transparent); }
+.courier-row:hover { opacity: 0.85; }
+.courier-row.selected { opacity: 1; }
+
+.courier-row.selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 6px;
+  height: 1px;
+  background: currentColor;
+}
 
 .courier-row-label {
   white-space: nowrap;
@@ -143,57 +196,62 @@
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 11.5px;
-  opacity: 0.5;
+  opacity: 0.55;
 }
 
 .courier-empty {
-  padding: 14px 8px;
+  padding: 10px 0;
   font-size: 12px;
-  opacity: 0.5;
+  opacity: 0.35;
 }
 
+/* The message is the page: written in the style's prose font. */
 .courier-message {
   display: block;
   width: 100%;
-  min-height: 84px;
-  max-height: 30vh;
-  padding: 8px;
-  resize: vertical;
-  line-height: 1.45;
+  min-height: 96px;
+  max-height: 34vh;
+  padding: 4px 0;
+  resize: none;
+  font-family: var(--font-family);
+  font-size: 17px;
+  line-height: 1.6;
 }
 
 .courier-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 18px;
 }
 
 .courier-error {
   flex: 1 1 auto;
   min-width: 0;
   font-size: 12px;
-  color: #d9534f;
+  color: #c0504d;
 }
 
 .courier-cancel,
 .courier-send {
-  font: inherit;
   font-size: 13px;
-  padding: 5px 14px;
-  border-radius: 6px;
-  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.4));
-  background: transparent;
-  color: var(--fg);
+  padding: 4px 0;
   cursor: pointer;
+  transition: opacity 0.15s;
 }
 
-.courier-send {
-  background: var(--fg);
-  color: var(--theme-bg, var(--bg));
-  border-color: var(--fg);
-}
+.courier-cancel { opacity: 0.4; }
+.courier-cancel:hover { opacity: 0.8; }
+
+.courier-send { font-weight: 600; }
+.courier-send:hover:not(:disabled) { opacity: 0.7; }
 
 .courier-send:disabled {
-  opacity: 0.35;
+  opacity: 0.2;
   cursor: default;
+}
+
+.courier-cancel:focus-visible,
+.courier-send:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }

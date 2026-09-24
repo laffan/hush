@@ -51,18 +51,19 @@ export function openCourier(state) {
     <div class="courier-backdrop"></div>
     <div class="courier-sheet" role="dialog" aria-modal="true" aria-label="Courier">
       <div class="courier-section courier-type-row">
-        <span class="courier-title">Courier</span>
-        <select class="courier-type" aria-label="Message type">
-          ${COURIER_TYPES.map((t) => `<option value="${t.id}">${esc(t.label)}</option>`).join("")}
-        </select>
+        <span class="courier-type-wrap">
+          <select class="courier-type" aria-label="Message type">
+            ${COURIER_TYPES.map((t) => `<option value="${t.id}">${esc(t.label)}</option>`).join("")}
+          </select>
+        </span>
       </div>
       <div class="courier-section courier-locations">
-        <input class="courier-filter" type="text" placeholder="Filter destinations…" aria-label="Filter destinations" autocomplete="off" spellcheck="false" />
+        <input class="courier-filter" type="text" placeholder="To…" aria-label="Filter destinations" autocomplete="off" spellcheck="false" />
         <div class="courier-list" role="listbox" aria-label="Destinations"></div>
         <input class="courier-other-name" type="text" placeholder="Shortcut name" aria-label="Shortcut name" autocomplete="off" spellcheck="false" hidden />
       </div>
       <div class="courier-section courier-message-row">
-        <textarea class="courier-message" rows="4" aria-label="Message"></textarea>
+        <textarea class="courier-message" rows="5" aria-label="Message"></textarea>
       </div>
       <div class="courier-actions">
         <span class="courier-error" role="alert"></span>
