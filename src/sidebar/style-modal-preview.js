@@ -15,6 +15,7 @@ import {
   applyPreviewCursorMode,
 } from "./styles-panel-shared.js";
 import { getThemeById } from "../themes/index.js";
+import { glowForAppearance, glowIntensity } from "../editor/cursor-options.js";
 
 export const PREVIEW_MD = `# The Art of Writing
 
@@ -178,10 +179,10 @@ export function updatePreview(state, backdrop, draft, colorTab, previewState) {
     // The glow rides the same two rules the editor uses (styles/editor.css)
     // — the preview caret is a plain span, so it gets them as inline
     // shadows rather than through the `.cursor-glow` class.
-    const glow = cursorMode !== "system" && !!draft.cursorGlow
+    const glow = cursorMode !== "system" && glowForAppearance(draft, colorTab)
       ? (colors.cursorGlow || accent)
       : null;
-    applyPreviewCursorMode(cursorEl, cursorMode, accent, cursor, glow);
+    applyPreviewCursorMode(cursorEl, cursorMode, accent, cursor, glow, glowIntensity(draft));
   }
 
   const selEl = pane.querySelector(".preview-selected");

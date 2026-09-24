@@ -499,6 +499,7 @@ pub fn run() {
             commands::desks::desk_recovery_list,
             commands::desks::desk_recovery_delete,
             commands::desks::desk_recovery_restore,
+            commands::courier::list_apple_shortcuts,
             commands::diagnostics::activity_log_append,
             commands::diagnostics::activity_log_read,
             commands::diagnostics::activity_log_clear,

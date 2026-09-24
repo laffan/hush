@@ -1,0 +1,199 @@
+/* ===== Courier — triple-Shift quick-send sheet (src/courier/) =====
+   Slides up from the bottom edge over every surface, Zen included, so
+   it sits at --z-courier above the whole modal band. App chrome, so it
+   is set in the UI font rather than the style's prose font. */
+
+.courier-root {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-courier);
+  font-family: var(--ui-font-family);
+  color: var(--fg);
+}
+
+.courier-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.courier-sheet {
+  position: absolute;
+  left: 50%;
+  bottom: calc(max(var(--ipad-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)) + 16px);
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100% - var(--top-chrome-inset, 0px) - 48px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 14px 12px;
+  background: var(--theme-bg, var(--bg));
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.4));
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, calc(100% + 40px));
+  transition: transform 0.24s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.courier-root.open .courier-backdrop { opacity: 1; }
+.courier-root.open .courier-sheet { transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  .courier-sheet, .courier-backdrop { transition-duration: 0.01s; }
+}
+
+.courier-section { min-height: 0; }
+
+.courier-type-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.courier-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.courier-type,
+.courier-filter,
+.courier-other-name,
+.courier-message {
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.4));
+  border-radius: 6px;
+  outline: none;
+}
+
+.courier-type:focus-visible,
+.courier-filter:focus,
+.courier-other-name:focus,
+.courier-message:focus {
+  border-color: color-mix(in srgb, var(--fg) 45%, transparent);
+}
+
+.courier-type {
+  flex: 1 1 auto;
+  padding: 5px 8px;
+}
+
+.courier-locations {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 auto;
+}
+
+.courier-filter,
+.courier-other-name {
+  width: 100%;
+  padding: 6px 8px;
+}
+
+.courier-list {
+  position: relative;
+  max-height: 220px;
+  min-height: 60px;
+  overflow-y: auto;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.courier-group {
+  padding: 8px 8px 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
+
+.courier-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.courier-row:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); }
+.courier-row.selected { background: color-mix(in srgb, var(--fg) 14%, transparent); }
+
+.courier-row-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.courier-row-detail {
+  margin-left: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11.5px;
+  opacity: 0.5;
+}
+
+.courier-empty {
+  padding: 14px 8px;
+  font-size: 12px;
+  opacity: 0.5;
+}
+
+.courier-message {
+  display: block;
+  width: 100%;
+  min-height: 84px;
+  max-height: 30vh;
+  padding: 8px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.courier-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.courier-error {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: #d9534f;
+}
+
+.courier-cancel,
+.courier-send {
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.4));
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.courier-send {
+  background: var(--fg);
+  color: var(--theme-bg, var(--bg));
+  border-color: var(--fg);
+}
+
+.courier-send:disabled {
+  opacity: 0.35;
+  cursor: default;
+}

@@ -263,7 +263,7 @@ body.notebook-proof-rail-resizing * {
    pocket tray or the side shelves. */
 .bookmark-jump-toast {
   position: fixed;
-  top: 24px;
+  top: calc(var(--top-chrome-inset, 0px) + 24px);
   left: 50%;
   transform: translate(-50%, -8px);
   padding: 8px 14px;

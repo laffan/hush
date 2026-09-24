@@ -36,6 +36,12 @@ export function createDefaultSettings() {
     // Halo behind a custom caret (Default style). Its colour is the
     // `cursorGlow` key in defaultLight/DarkColors, or the caret's own.
     cursorGlow: false,
+    // Per-appearance glow switches (null = follow `cursorGlow`), the
+    // glow's size, and a steady caret (see editor/cursor-options.js).
+    cursorGlowLight: null,
+    cursorGlowDark: null,
+    cursorGlowIntensity: null,
+    cursorBlink: null,
     // Active-line indicator for the Default style. Per-style overrides
     // live on `Style.lineIndicator`. One of "none", "left-arrow",
     // "double-arrow", "left-border", "border", "highlight". The
@@ -84,6 +90,9 @@ export function createDefaultSettings() {
     // x, y, width, height, collapsed, fontSize, text, createdAt }.
     // Closing a note deletes it permanently.
     stickyNotes: [],
+    // Courier's per-device memory: `{ type, locations: { [type]: key },
+    // shortcutNames: [] }` (see src/courier/courier-store.js).
+    courier: null,
     // YOU ARE HERE marker registry — one `{ fileId, fileType, shapeId?,
     // offset? }` entry per desk id (see src/you-are-here.js).
     youAreHere: {},

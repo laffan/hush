@@ -1181,7 +1181,8 @@ button.desk-switcher-row.desk-switcher-add {
 .local-sync-root.local-sync-nested {
   margin-left: 8px;
   padding-left: 2px;
-  border-left: 1px solid rgba(128, 128, 128, 0.25);
+  /* Hidden with the tree's guide lines (sortable-list.css). */
+  border-left: 1px solid rgba(128, 128, 128, 0);
   /* No separator from the tree above — these read as part of the desk's
      own child list (continuing the Inbox/Trash connector line). */
   border-top: none;

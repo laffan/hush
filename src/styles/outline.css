@@ -294,7 +294,7 @@
   z-index: 3;
   display: flex;
   justify-content: center;
-  padding: 18px 4vw 0;
+  padding: calc(var(--top-chrome-inset, 0px) + 18px) 4vw 0;
   pointer-events: none;
 }
 

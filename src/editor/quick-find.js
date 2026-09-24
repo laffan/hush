@@ -283,8 +283,8 @@ function position() {
   barEl.style.left = `${Math.max(8, centerX)}px`;
   // Clear `right` in case an old positioning attempt left it set.
   barEl.style.right = "";
-  // Vertical slot mirrors `.gdoc-link-bar`: env(safe-area-inset-top) + 6 px.
-  barEl.style.top = `calc(env(safe-area-inset-top, 0px) + 6px)`;
+  // Vertical slot mirrors `.gdoc-link-bar`: --top-chrome-inset + 6 px.
+  barEl.style.top = `calc(var(--top-chrome-inset, env(safe-area-inset-top, 0px)) + 6px)`;
 }
 
 /** Move the editor cursor to the currently-selected match (already

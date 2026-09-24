@@ -129,11 +129,21 @@ body.typing-fade .tree-create-btns {
   overflow: hidden;
   display: flex;
   flex-direction: row;
-  transition: width 0.2s;
+  transition: width 0.2s, border-right-color 0.2s ease;
   /* Pin the UI font on the sidebar root so descendants using
      `font-family: inherit` (desk switcher header / popover, recent
      files, etc.) don't fall through to body's editor font. */
   font-family: var(--ui-font-family);
+}
+
+/* Over a Doc the border stays out of the way until the pointer comes
+   within 50 px of it (or into the panel) — sidebar.js toggles
+   `.border-near`. Touch-only devices have no pointer to approach with,
+   so the rule is limited to hover-capable input. */
+@media (hover: hover) {
+  body:not(.notebook-mode):not(.pdf-mode):not(.stack-mode):not(.empty-mode):not(.desktop-active) #panel-overlay:not(.border-near) {
+    border-right-color: transparent;
+  }
 }
 
 /* Suppress the width transition while the user is actively dragging the

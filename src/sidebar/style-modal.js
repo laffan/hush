@@ -8,9 +8,8 @@ import {
   escAttr,
   escHtml,
   migrateStyle,
-  resolveCursorMode,
-  renderCursorOptions,
 } from "./styles-panel-shared.js";
+import { renderCursorRows, bindCursorRows } from "./style-modal-cursor.js";
 import { renderPostSection, bindPostSection, endPostPreview } from "./style-modal-post.js";
 import {
   renderLineIndicatorColorRows,
@@ -61,6 +60,10 @@ function buildDefaultDraftFromSettings(state) {
     blockCursor: !!s.blockCursor,
     cursorMode: s.cursorMode || (s.blockCursor ? "block" : "system"),
     cursorGlow: !!s.cursorGlow,
+    cursorGlowLight: s.cursorGlowLight,
+    cursorGlowDark: s.cursorGlowDark,
+    cursorGlowIntensity: s.cursorGlowIntensity,
+    cursorBlink: s.cursorBlink,
     lineIndicator: s.lineIndicator || "none",
     // Default style's post + background layers ride top-level
     // AppSettings fields so they persist alongside the other
@@ -178,6 +181,10 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         blockCursor: !!draft.blockCursor,
         cursorMode: draft.cursorMode || (draft.blockCursor ? "block" : "system"),
         cursorGlow: !!draft.cursorGlow,
+        cursorGlowLight: draft.cursorGlowLight ?? null,
+        cursorGlowDark: draft.cursorGlowDark ?? null,
+        cursorGlowIntensity: draft.cursorGlowIntensity ?? null,
+        cursorBlink: draft.cursorBlink ?? null,
         lineIndicator: draft.lineIndicator || "none",
         shaderLayer: draft.shaderLayer || null,
         postLayers: draft.postLayers || null,
@@ -225,6 +232,10 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         blockCursor: state.settings.blockCursor,
         cursorMode: state.settings.cursorMode,
         cursorGlow: state.settings.cursorGlow,
+        cursorGlowLight: state.settings.cursorGlowLight,
+        cursorGlowDark: state.settings.cursorGlowDark,
+        cursorGlowIntensity: state.settings.cursorGlowIntensity,
+        cursorBlink: state.settings.cursorBlink,
         lineIndicator: state.settings.lineIndicator || "none",
         shaderLayer: state.settings.shaderLayer || null,
         postLayers: state.settings.postLayers || null,
@@ -343,21 +354,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
                   <span class="style-slider-value">${draft.lineHeight || state.settings.lineHeight || 1.6}</span>
                 </div>
               </div>
-              <div class="style-editor-row">
-                <label>Cursor</label>
-                <div class="style-select-group">
-                  <select id="style-cursor-mode" class="style-native-select">
-                    ${renderCursorOptions(resolveCursorMode(draft, state.settings))}
-                  </select>
-                </div>
-              </div>
-              ${resolveCursorMode(draft, state.settings) === "system" ? "" : `
-              <div class="style-editor-row">
-                <label>Cursor glow</label>
-                <div class="style-select-group">
-                  <input type="checkbox" id="style-cursor-glow"${draft.cursorGlow ? " checked" : ""} />
-                </div>
-              </div>`}
+              ${renderCursorRows(draft, state.settings)}
               <div class="style-editor-row">
                 <label>Line Indicator</label>
                 <div class="style-select-group">
@@ -585,30 +582,10 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
       scheduleSave();
     });
 
-    const cursorEl = backdrop.querySelector("#style-cursor-mode");
-    if (cursorEl) cursorEl.addEventListener("change", () => {
-      const mode = cursorEl.value || "system";
-      draft.cursorMode = mode;
-      // Keep `blockCursor` in lockstep for backwards-compat with
-      // existing consumers (settings serializer, exported styles, sync).
-      draft.blockCursor = mode === "block";
-      // The system caret wears no glow, and the switch for it goes with
-      // the mode — leaving the flag set would hide a state the user can
-      // no longer see or reach.
-      if (mode === "system") draft.cursorGlow = false;
-      // Re-render: the glow switch and its colour row come and go with
-      // the mode.
-      render();
-      scheduleSave();
-    });
-
-    const glowEl = backdrop.querySelector("#style-cursor-glow");
-    if (glowEl) glowEl.addEventListener("change", () => {
-      draft.cursorGlow = !!glowEl.checked;
-      // Re-render rather than patch: the switch adds (or removes) the
-      // Cursor Glow row in Colors, which only `render` can do.
-      render();
-      scheduleSave();
+    bindCursorRows(backdrop, draft, {
+      render,
+      scheduleSave,
+      onLive: () => { updatePreview(); scheduleSave(); },
     });
 
     const lineIndEl = backdrop.querySelector("#style-line-indicator");

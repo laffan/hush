@@ -192,7 +192,7 @@
      overlay and leaves a small visual gap so it reads as a deliberate
      pill rather than a header floating in space. Resolves to 6px on
      desktop, which is also where we want it. */
-  top: calc(env(safe-area-inset-top, 0px) + 6px);
+  top: calc(var(--top-chrome-inset, env(safe-area-inset-top, 0px)) + 6px);
   z-index: 90; /* above #drag-region (80), below shelf/sidebar (150/200) */
   /* Pill: outer edges line up with the text column (left/right are set
      by syncLayout), with a rounded, opaque background and interior

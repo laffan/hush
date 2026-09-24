@@ -18,6 +18,7 @@
 
 import { themeColorFor } from "./style-modal-preview.js";
 import { splitAlphaColor, joinAlphaColor } from "../ui/color-picker.js";
+import { hasAnyGlow } from "../editor/cursor-options.js";
 
 // The line-indicator colour is a per-appearance override like these,
 // but it lives beside the Line Indicator dropdown in Editing (behind
@@ -34,7 +35,7 @@ const COLOR_KEYS = [
  *  while the glow is switched on — a colour for something that isn't
  *  drawn is a row that can't be read as anything. */
 export function colorKeysFor(draft) {
-  if (!draft?.cursorGlow) return COLOR_KEYS;
+  if (!hasAnyGlow(draft)) return COLOR_KEYS;
   const i = COLOR_KEYS.findIndex(ck => ck.key === "cursor");
   const glow = { key: "cursorGlow", label: "Cursor Glow" };
   return [...COLOR_KEYS.slice(0, i + 1), glow, ...COLOR_KEYS.slice(i + 1)];

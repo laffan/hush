@@ -1,5 +1,5 @@
 /**
- * Desk-scoped command palette entries — split out of
+ * Desk-scoped (and cross-desk: Courier) command palette entries — split out of
  * `command-palette-commands.js` to keep that file under the 700-line cap.
  *
  * `buildDeskCommands(ctx)` returns the same command descriptors
@@ -132,6 +132,11 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
       action: async (s, p) => (await import("./state/state-desks-ops.js")).enterCollapseDeskPicker(p, s, { fallbackIcon: icons.desk }) },
     // Archiving replaces deleting a desk, so there has to be somewhere to
     // find what was archived — and to build a new desk back out of it.
+    // Courier is normally triple-tapped Shift; the palette entry is the
+    // way in without a hardware keyboard.
+    { id: "courier", section: "Create", label: "Courier — send a quick note", icon: icons.sticky, shortcutKey: null, ctx: "shared",
+      keywords: "send note sticky things shortcut triple shift",
+      action: async (s) => (await import("./courier/courier-sheet.js")).openCourier(s) },
     { id: "desk-archives", section: "Desks", label: "View archived desks", icon: icons.desk, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const m = await import("./sidebar/desk-archive.js");

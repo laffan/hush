@@ -371,6 +371,12 @@ pub struct AppSettings {
     // wears one; its colour is the `cursorGlow` key in
     // `default_light_colors` / `default_dark_colors`.
     #[serde(default)] pub cursor_glow: bool,
+    // Per-appearance glow, its size, and blinking — same shape and
+    // fallbacks as on `Style` (see settings/types.rs).
+    #[serde(default)] pub cursor_glow_light: Option<bool>,
+    #[serde(default)] pub cursor_glow_dark: Option<bool>,
+    #[serde(default)] pub cursor_glow_intensity: Option<f64>,
+    #[serde(default)] pub cursor_blink: Option<bool>,
 
     // Default style's active-line indicator. Per-style overrides live
     // on `Style.line_indicator`. The indicator colour rides per
@@ -563,6 +569,12 @@ pub struct AppSettings {
     // Rust; JS serializes/deserializes the list of note objects.
     #[serde(default)]
     pub sticky_notes: Vec<serde_json::Value>,
+
+    // Courier (triple-Shift quick send) — per-device memory of the last
+    // message type / destination and the Shortcut names typed by hand.
+    // Opaque to Rust; see src/courier/courier-store.js.
+    #[serde(default)]
+    pub courier: serde_json::Value,
 
     // YOU ARE HERE marker registry — `{ deskId: { fileId, fileType,
     // shapeId?, offset? } }`, one marker per desk. Opaque to Rust; JS
@@ -772,10 +784,15 @@ impl Default for AppSettings {
             block_cursor_color: None,
             cursor_mode: None,
             cursor_glow: false,
+            cursor_glow_light: None,
+            cursor_glow_dark: None,
+            cursor_glow_intensity: None,
+            cursor_blink: None,
             line_indicator: None,
             ratchet_encourage_typing: false,
             persisted_panes: Vec::new(),
             sticky_notes: Vec::new(),
+            courier: serde_json::Value::Null,
             you_are_here: serde_json::json!({}),
             panes_hidden_by_context: serde_json::json!({}),
             window_width: None, window_height: None, window_x: None, window_y: None,

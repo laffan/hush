@@ -40,6 +40,14 @@
   --ipad-safe-top: 0px;
   --ipad-safe-bottom: 0px;
 
+  /* iOS 27 blurs the top ~30px of every window, so anything that carries
+     information pinned to the top edge (word count, ratchet timer, the
+     find / Google link bars, toasts) starts below it. `--top-chrome-inset`
+     is the offset to add: the blur band or the notch / status bar inset,
+     whichever is taller. 0 off iOS. */
+  --top-blur-inset: 0px;
+  --top-chrome-inset: max(var(--top-blur-inset), env(safe-area-inset-top, 0px));
+
   /* ===== z-index scale =====
    *
    * Centralised so new modals don't pick a fresh "high enough" number
@@ -60,6 +68,9 @@
    *                      duration grid, sync conflict, zotero search)
    *   --z-modal-topmost  a hair above --z-modal-top for footnote popovers
    *                      that need to clear an open style modal
+   *   --z-courier        the Courier quick-send sheet — reachable from
+   *                      every context, Zen included, so it clears the
+   *                      whole modal band
    *   --z-drag-ghost     drag preview that must escape every stacking
    *                      context (text drag chip from sidebar to editor)
    */
@@ -73,6 +84,7 @@
   --z-modal-content: 510;
   --z-modal-top: 9999;
   --z-modal-topmost: 10001;
+  --z-courier: 10010;
   --z-drag-ghost: 2147483647;
 }
 
@@ -159,6 +171,10 @@ html.ios, html.ios body {
 /* iPadOS 26 system safe zones (see token docs in :root). Scoped away from
    phones, which run iOS and handle the notch/home-indicator through
    env(safe-area-inset-*) rather than iPadOS's menu/grab-handle bands. */
+html.ios {
+  --top-blur-inset: 30px;
+}
+
 html.ios:not(.phone) {
   --ipad-safe-top: 30px;
   --ipad-safe-bottom: 30px;

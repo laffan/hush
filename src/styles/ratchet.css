@@ -66,7 +66,7 @@
 
 .ratchet-timer {
   position: fixed;
-  top: 10px;
+  top: calc(var(--top-chrome-inset, 0px) + 10px);
   left: 50%;
   transform: translateX(-50%);
   font-family: system-ui, sans-serif;
@@ -84,7 +84,7 @@
    below the timer (body.ratchet-active rule below). */
 .word-count-display {
   position: fixed;
-  top: 10px;
+  top: calc(var(--top-chrome-inset, 0px) + 10px);
   left: 50%;
   transform: translateX(-50%);
   font-family: system-ui, sans-serif;
@@ -102,7 +102,7 @@
 /* When ratchet is also visible, push the word count down to sit below
    the timer. The JS toggles `.stacked` based on state.ratchetMode. */
 .word-count-display.stacked {
-  top: 34px;
+  top: calc(var(--top-chrome-inset, 0px) + 34px);
 }
 
 /* Hide word count pill in notebook mode — it's a doc-only feature. */

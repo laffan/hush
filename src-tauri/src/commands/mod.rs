@@ -1,4 +1,5 @@
 pub mod backup;
+pub mod courier;
 pub mod desks;
 pub mod diagnostics;
 pub mod files;

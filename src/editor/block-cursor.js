@@ -1,5 +1,6 @@
 import { getActiveTheme } from "../themes/index.js";
 import { resolveStyleForAppearance } from "../sidebar/styles-panel.js";
+import { glowForAppearance, definesGlow, glowIntensity, cursorBlinks } from "./cursor-options.js";
 
 /** Resolve the cursor mode (system / block / underline / thick). New `cursorMode`
  *  field wins; fall back to the legacy `blockCursor` boolean. Style
@@ -13,13 +14,21 @@ function resolveCursorMode(settings, style) {
   return settings.blockCursor ? "block" : "system";
 }
 
-/** Whether the caret wears its glow. Only a custom cursor can: the
- *  system caret is the platform's to draw, and a halo on it reads as a
- *  rendering fault rather than a choice. */
-function resolveCursorGlow(settings, style, mode) {
+/** Whether the caret wears its glow in this appearance. Only a custom
+ *  cursor can: the system caret is the platform's to draw, and a halo on
+ *  it reads as a rendering fault rather than a choice. A style that says
+ *  nothing about the glow inherits the Default style's switches. */
+function resolveCursorGlow(settings, style, mode, appearance) {
   if (mode === "system") return false;
-  if (style && style.cursorGlow != null) return !!style.cursorGlow;
-  return !!settings.cursorGlow;
+  const owner = definesGlow(style) ? style : settings;
+  return glowForAppearance(owner, appearance);
+}
+
+/** The appearance actually on screen — `auto` resolved against the OS. */
+function effectiveAppearance(settings) {
+  const a = settings.appearance || "dark";
+  if (a !== "auto") return a;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 /** Resolve everything a surface needs to paint the cursor: the mode, the
@@ -52,10 +61,7 @@ export function resolveCursorPaint(settings) {
       glowOverride = overrides.cursorGlow || null;
     }
   } else {
-    let appearance = settings.appearance || "dark";
-    if (appearance === "auto") {
-      appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    }
+    const appearance = effectiveAppearance(settings);
     const def = appearance === "dark"
       ? (settings.defaultDarkColors || {})
       : (settings.defaultLightColors || {});
@@ -66,11 +72,17 @@ export function resolveCursorPaint(settings) {
   const theme = getActiveTheme(settings);
   const fallbackCursor = (theme && theme.headingColor) || null;
   const mode = resolveCursorMode(settings, style);
+  const glowOwner = definesGlow(style) ? style : settings;
+  const blinkOwner = style && style.cursorBlink != null ? style : settings;
   return {
     mode,
     cursorColor: cursorOverride || fallbackCursor,
     lineIndicatorColor: lineIndicatorOverride || cursorOverride || fallbackCursor,
-    glow: resolveCursorGlow(settings, style, mode),
+    glow: resolveCursorGlow(settings, style, mode, effectiveAppearance(settings)),
+    glowScale: glowIntensity(glowOwner),
+    // Blinking is a custom-cursor option too; the system caret keeps
+    // CodeMirror's own rhythm.
+    blink: mode === "system" || cursorBlinks(blinkOwner),
     // No glow colour of its own means the caret's — a halo in a
     // different colour is a choice, not a default.
     glowColor: glowOverride || null,
@@ -89,6 +101,8 @@ export function paintCursorMode(el, paint) {
   el.classList.toggle("underline-cursor", paint.mode === "underline");
   el.classList.toggle("thick-cursor", paint.mode === "thick");
   el.classList.toggle("cursor-glow", !!paint.glow);
+  el.classList.toggle("cursor-no-blink", paint.blink === false);
+  el.style.setProperty("--cursor-glow-scale", String(paint.glowScale ?? 1));
   if (paint.cursorColor) el.style.setProperty("--block-cursor-color", paint.cursorColor);
   else el.style.removeProperty("--block-cursor-color");
   if (paint.glowColor) el.style.setProperty("--cursor-glow-color", paint.glowColor);

@@ -44,6 +44,19 @@ pub struct Style {
     /// `dark_colors`, falling back to the caret's own.
     #[serde(default)]
     pub cursor_glow: Option<bool>,
+    /// Per-appearance glow switches. Either one set wins over
+    /// `cursor_glow` for its appearance; a style saved before the split
+    /// has only `cursor_glow`, which then stands for both.
+    #[serde(default)]
+    pub cursor_glow_light: Option<bool>,
+    #[serde(default)]
+    pub cursor_glow_dark: Option<bool>,
+    /// Scale on the glow's two shadows (1 = 3px core + 10px bloom).
+    #[serde(default)]
+    pub cursor_glow_intensity: Option<f64>,
+    /// `Some(false)` holds a custom caret steady; absent blinks.
+    #[serde(default)]
+    pub cursor_blink: Option<bool>,
     #[serde(default)]
     pub suppress_header_size: Option<bool>,
     #[serde(default)]

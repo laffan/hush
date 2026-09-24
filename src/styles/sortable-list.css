@@ -8,7 +8,9 @@
 .sl-list .sl-list {
   padding-left: 2px;
   margin-left: 8px;
-  border-left: 1px solid rgba(128, 128, 128, 0.25);
+  /* Guide line under an open folder's twirl arrow — hidden for now
+     (alpha 0, was 0.25), kept in place so the indent is unchanged. */
+  border-left: 1px solid rgba(128, 128, 128, 0);
 }
 
 .sl-item {

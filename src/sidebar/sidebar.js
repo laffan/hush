@@ -181,6 +181,24 @@ export function createSidebar(state) {
   });
   document.addEventListener("pointermove", endTypingFade);
   document.addEventListener("pointerdown", endTypingFade);
+
+  // Border proximity — over a Doc the panel's right border only paints
+  // while the pointer is inside the panel or within BORDER_NEAR_PX of
+  // its edge (styles/sidebar.css keys off `.border-near`). Measured
+  // against the panel's live rect so the resize drag and the collapsed
+  // grip both line up without tracking width separately.
+  const BORDER_NEAR_PX = 50;
+  function syncBorderProximity(e) {
+    if (e.pointerType === "touch") return;
+    const near = e.clientX <= panelOverlay.getBoundingClientRect().right + BORDER_NEAR_PX;
+    if (near !== panelOverlay.classList.contains("border-near")) {
+      panelOverlay.classList.toggle("border-near", near);
+    }
+  }
+  document.addEventListener("pointermove", syncBorderProximity, { passive: true });
+  document.documentElement.addEventListener("pointerleave", () => {
+    panelOverlay.classList.remove("border-near");
+  });
   new MutationObserver(() => {
     if (!panelOverlay.classList.contains("hidden")) endTypingFade();
   }).observe(panelOverlay, { attributes: true, attributeFilter: ["class"] });

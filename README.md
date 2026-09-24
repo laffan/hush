@@ -6,7 +6,7 @@ Under the minimal surface is a full writing system: a Markdown editor, canvas-ba
 
 ## Writing
 
-**The editor** is Markdown with inline rendering — headings, bold/italic, links, tables, images, footnotes, callouts, YAML properties, and `[[wikilinks]]` between notes. Sixteen color themes across light, dark, and sepia, and **Styles** that bundle theme + font + colors into presets you can switch, share, and import as JSON. Every colour in the style editor opens an in-app picker — a rainbow hue slider, an opacity slider and a saturation/brightness field — so the live preview stays visible while you tune. A style's **Cursor** can be the system caret, a block, an underline or a 3px line, and a custom caret can carry a **glow** in a colour of its own.
+**The editor** is Markdown with inline rendering — headings, bold/italic, links, tables, images, footnotes, callouts, YAML properties, and `[[wikilinks]]` between notes. Sixteen color themes across light, dark, and sepia, and **Styles** that bundle theme + font + colors into presets you can switch, share, and import as JSON. Every colour in the style editor opens an in-app picker — a rainbow hue slider, an opacity slider and a saturation/brightness field — so the live preview stays visible while you tune. A style's **Cursor** can be the system caret, a block, an underline or a 3px line. A custom caret can hold steady instead of blinking, and can carry a **glow** in a colour of its own — switched on separately for the light and dark appearances, with an intensity slider that sets how far the halo spreads.
 
 A style also carries two stacks of layers, both built the same way — add, reorder by dragging, hide, delete:
 
@@ -43,6 +43,17 @@ The wheel scrolls the canvas the way it scrolls a document, both ways; hold shif
 **Splits** and **Grabs** open the canvas up. A split is a cut all the way across it — click with the Split tool and two dashed orange lines appear where you clicked (hold ⌘ to cut vertically instead). Drag the top line and everything above it moves; drag the bottom line and everything below follows, so you can push a page apart and write in the gap. Splits nest, images they cross are divided into masked halves that look untouched until you pull them apart, and text, strokes, groups and drag boxes are never cut in two — the whole grouping lands on one side. At rest the lines sit back as faint grey rules; hover one and it lights up with a padded band under your cursor, plus three actions — **collapse** (throw away what you wrote in the gap, close it back up, and fuse any image the split had cut back into one), **grab**, and **delete** (drop the lines, leave everything where it is). A **Grab** sweeps out a band, lifts everything inside it, closes the gap behind, and hands you a bar to place the lot somewhere else; ⌘Z after placing puts you back at the placing step.
 
 Notebooks export as `.hushnote` (lossless), PNG, JPG, or PDF.
+
+## Courier
+
+Tap **Shift three times** — either Shift key, quickly, with nothing else pressed in between — and a small sheet slides up from the bottom of the window, wherever you are: a document, a notebook, a PDF, Zen Focus. It sends a quick note somewhere else without leaving what you're doing. Pick what kind of message it is, where it goes, write it, and Send (⌘↩):
+
+- **Send to a document** — appended as a new paragraph to the end of any document on any desk. Documents list by desk, most recently edited first, and the filter narrows them as you type.
+- **Create a new document** — in any desk's Inbox, folder or project; the first line becomes its name.
+- **Create a new sticky** — global, on the file or project you're in, or on any desk.
+- **Run a shortcut** — a new Things to-do (Inbox or Today; the first line is the to-do and the rest its notes), or any Apple Shortcut, which receives the message as its text input. On macOS your Shortcuts are listed; on iPad, type a shortcut's name once and Courier remembers it.
+
+Courier reopens on the type and destination you used last, so a second note to the same place is three taps, a sentence and ⌘↩. Escape or Cancel puts it away with the caret back where it was. It's also in the command palette, for when there's no keyboard.
 
 ## Organizing
 
