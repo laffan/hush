@@ -1,39 +1,53 @@
 /**
  * Courier — the quick-send sheet. Triple-tap Shift (courier-trigger.js)
  * and it slides up from the bottom of the window over whatever is on
- * screen, Zen Focus included; send a note somewhere else in the app or
- * out to the system, and it slides away again with the caret back where
- * it was.
+ * screen, Zen Focus included; send a note and it slides away again with
+ * the caret back where it was.
  *
- * Three sections, top to bottom: the message type, the destinations for
- * that type (courier-destinations.js), and the message itself. Cancel
- * and Send close it; so do Escape and ⌘↩ / Ctrl↩ (which sends).
+ * Two columns. The left chooses: **Sticky** or **Append** across the
+ * top; a sticky adds a second row — Document, Desk, Global — and then
+ * the search over documents or desks (a global sticky needs none). The
+ * right is the message and a live preview of exactly what Send will
+ * make: the sticky itself in its scope's paper colour, or the end of the
+ * target document with the new paragraph rendered as markdown beneath
+ * it. Escape / Cancel dismiss; ⌘↩ / Ctrl↩ sends.
  *
  * The sheet lives in `document.body` at `--z-courier`, above the whole
- * modal band, because it has to be reachable from every context. Its
- * key events stop at the sheet on the way back up, so a keystroke typed
- * into it never reaches the window-level shortcut fallback or the
- * typing-fade listener; Escape is taken at window capture, ahead of
- * Zen's own Escape (document capture), so dismissing the sheet doesn't
- * also leave Zen.
+ * modal band. Its key events stop at the sheet on the way back up, so a
+ * keystroke typed into it never reaches the window-level shortcut
+ * fallback or the typing-fade listener; Escape is taken at window
+ * capture, ahead of Zen's own Escape (document capture), so dismissing
+ * the sheet doesn't also leave Zen.
  */
 
-import { COURIER_TYPES, buildLocations, matchesFilter } from "./courier-destinations.js";
-import { deliver } from "./courier-send.js";
-import { lastType, lastLocation, rememberSend, rememberShortcutName } from "./courier-store.js";
+import { MODES, STICKY_SCOPES, buildLocations, matchesFilter } from "./courier-destinations.js";
+import { deliver, readDocumentText } from "./courier-send.js";
+import { lastMode, lastScope, lastLocation, rememberSend, slotFor } from "./courier-store.js";
+import { markdownToHtml } from "../editor/google-docs/markdown-to-html.js";
 
-const PLACEHOLDERS = {
-  append: "Added to the end of the document…",
-  "new-doc": "The first line becomes its title…",
-  sticky: "Sticky note…",
-  shortcut: "Passed to the shortcut as text…",
-  things: "First line is the to-do, the rest its notes…",
-};
+/** How much of the target document the append preview shows above the
+ *  new paragraph — enough to recognise where it lands. */
+const TAIL_CHARS = 480;
+
+const STICKY_PAPER = { document: "sticky-file", desk: "sticky-desk", global: "sticky-global" };
 
 let open = null; // the live sheet's handle, or null
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+function segButtons(items, cls) {
+  return items.map((it) => `<button type="button" class="${cls}" data-id="${it.id}">${esc(it.label)}</button>`).join("");
+}
+
+/** The last stretch of a document, cut at a paragraph break and clear of
+ *  its frontmatter. */
+function documentTail(text) {
+  const body = text.replace(/^---\n[\s\S]*?\n---\n?/, "").replace(/\s+$/, "");
+  if (body.length <= TAIL_CHARS) return { tail: body, clipped: false };
+  const cut = body.lastIndexOf("\n\n", body.length - TAIL_CHARS);
+  return { tail: body.slice(cut >= 0 ? cut + 2 : body.length - TAIL_CHARS), clipped: true };
 }
 
 export function toggleCourier(state) {
@@ -50,75 +64,82 @@ export function openCourier(state) {
   root.innerHTML = `
     <div class="courier-backdrop"></div>
     <div class="courier-sheet" role="dialog" aria-modal="true" aria-label="Courier">
-      <div class="courier-section courier-type-row">
-        <span class="courier-type-wrap">
-          <select class="courier-type" aria-label="Message type">
-            ${COURIER_TYPES.map((t) => `<option value="${t.id}">${esc(t.label)}</option>`).join("")}
-          </select>
-        </span>
-      </div>
-      <div class="courier-section courier-locations">
-        <input class="courier-filter" type="text" placeholder="To…" aria-label="Filter destinations" autocomplete="off" spellcheck="false" />
+      <div class="courier-left">
+        <div class="courier-seg courier-modes" role="group" aria-label="What to make">${segButtons(MODES, "courier-mode")}</div>
+        <div class="courier-seg courier-scopes" role="group" aria-label="Sticky scope">${segButtons(STICKY_SCOPES, "courier-scope")}</div>
+        <input class="courier-filter" type="text" aria-label="Search" autocomplete="off" spellcheck="false" />
         <div class="courier-list" role="listbox" aria-label="Destinations"></div>
-        <input class="courier-other-name" type="text" placeholder="Shortcut name" aria-label="Shortcut name" autocomplete="off" spellcheck="false" hidden />
       </div>
-      <div class="courier-section courier-message-row">
-        <textarea class="courier-message" rows="5" aria-label="Message"></textarea>
-      </div>
-      <div class="courier-actions">
-        <span class="courier-error" role="alert"></span>
-        <button type="button" class="courier-cancel">Cancel</button>
-        <button type="button" class="courier-send" disabled>Send</button>
+      <div class="courier-right">
+        <textarea class="courier-message" rows="3" placeholder="Write…" aria-label="Message"></textarea>
+        <div class="courier-preview" aria-label="Preview"></div>
+        <div class="courier-actions">
+          <span class="courier-error" role="alert"></span>
+          <button type="button" class="courier-cancel">Cancel</button>
+          <button type="button" class="courier-send" disabled>Send</button>
+        </div>
       </div>
     </div>`;
   document.body.appendChild(root);
 
   const sheet = root.querySelector(".courier-sheet");
-  const typeEl = root.querySelector(".courier-type");
+  const scopesEl = root.querySelector(".courier-scopes");
   const filterEl = root.querySelector(".courier-filter");
   const listEl = root.querySelector(".courier-list");
-  const otherEl = root.querySelector(".courier-other-name");
   const messageEl = root.querySelector(".courier-message");
+  const previewEl = root.querySelector(".courier-preview");
   const sendEl = root.querySelector(".courier-send");
   const errorEl = root.querySelector(".courier-error");
 
+  let mode = MODES.some((m) => m.id === lastMode(state)) ? lastMode(state) : "sticky";
+  let scope = STICKY_SCOPES.some((s) => s.id === lastScope(state)) ? lastScope(state) : "document";
   let rows = [];
   let visible = [];
   let selectedKey = null;
   let sending = false;
-  let buildSeq = 0;
+  let previewSeq = 0;
+  const docText = new Map(); // fileId → text, for the append preview
 
   const selected = () => rows.find((r) => r.key === selectedKey) || null;
+  const needsLocation = () => !(mode === "sticky" && scope === "global");
 
   function syncControls() {
-    const loc = selected();
-    otherEl.hidden = !loc?.other;
-    const needsName = !!loc?.other && !otherEl.value.trim();
-    sendEl.disabled = sending || !loc || !messageEl.value.trim() || needsName;
-    const phKey = loc?.action === "things" ? "things" : typeEl.value;
-    messageEl.placeholder = PLACEHOLDERS[phKey] || "Message…";
+    sendEl.disabled = sending || !messageEl.value.trim() || (needsLocation() && !selected());
   }
 
-  function renderList() {
-    visible = rows.filter((r) => matchesFilter(r, filterEl.value));
-    if (!visible.some((r) => r.key === selectedKey)) selectedKey = visible[0]?.key ?? null;
-    let lastGroup = null;
-    const parts = [];
-    for (const r of visible) {
-      if (r.group !== lastGroup) {
-        parts.push(`<div class="courier-group" role="presentation">${esc(r.group)}</div>`);
-        lastGroup = r.group;
-      }
-      const sel = r.key === selectedKey;
-      parts.push(`<div class="courier-row${sel ? " selected" : ""}" role="option" aria-selected="${sel}" data-key="${esc(r.key)}">
-        <span class="courier-row-label">${esc(r.label)}</span>${r.detail ? `<span class="courier-row-detail">${esc(r.detail)}</span>` : ""}
-      </div>`);
+  async function renderPreview() {
+    const seq = ++previewSeq;
+    const text = messageEl.value.replace(/\s+$/, "");
+    const loc = selected();
+    if (mode === "sticky") {
+      const where = scope === "global" ? "Global" : (loc?.label || (scope === "desk" ? "Choose a desk" : "Choose a document"));
+      previewEl.innerHTML = `
+        <div class="courier-sticky-preview ${STICKY_PAPER[scope]}">
+          <div class="courier-sticky-head">${esc(where)}</div>
+          <div class="courier-sticky-body${text ? "" : " empty"}">${esc(text || "Your note")}</div>
+        </div>`;
+      return;
     }
-    if (!visible.length) {
-      parts.push(`<div class="courier-empty">${rows.length ? "Nothing matches." : "Nowhere to send this yet."}</div>`);
+    if (!loc) {
+      previewEl.innerHTML = `<div class="courier-preview-empty">Choose a document to append to.</div>`;
+      return;
     }
-    listEl.innerHTML = parts.join("");
-    select(selectedKey);
+    let existing = docText.get(loc.fileId);
+    if (existing == null) {
+      try { existing = await readDocumentText(state, loc.fileId); }
+      catch (_) { existing = ""; }
+      docText.set(loc.fileId, existing);
+      if (seq !== previewSeq || !open) return;
+    }
+    const { tail, clipped } = documentTail(existing);
+    previewEl.innerHTML = `
+      <div class="courier-doc-preview">
+        <div class="courier-doc-name">${esc(loc.label)}</div>
+        <div class="courier-doc-tail${clipped ? " clipped" : ""}">${tail ? markdownToHtml(tail) : ""}</div>
+        <div class="courier-doc-new${text ? "" : " empty"}">${text ? markdownToHtml(text) : "<p>Your paragraph</p>"}</div>
+      </div>`;
+    // Keep the landing point in view: the new paragraph sits at the end.
+    previewEl.scrollTop = previewEl.scrollHeight;
   }
 
   function select(key) {
@@ -138,45 +159,63 @@ export function openCourier(state) {
       }
     }
     syncControls();
+    void renderPreview();
   }
 
-  async function loadType(typeId, { focusMessage = false } = {}) {
-    const seq = ++buildSeq;
+  function renderList() {
+    visible = rows.filter((r) => matchesFilter(r, filterEl.value));
+    if (!visible.some((r) => r.key === selectedKey)) selectedKey = visible[0]?.key ?? null;
+    let lastGroup = null;
+    const parts = [];
+    for (const r of visible) {
+      if (r.group !== lastGroup) {
+        parts.push(`<div class="courier-group" role="presentation">${esc(r.group)}</div>`);
+        lastGroup = r.group;
+      }
+      parts.push(`<div class="courier-row" role="option" data-key="${esc(r.key)}">
+        <span class="courier-row-label">${esc(r.label)}</span>${r.detail ? `<span class="courier-row-detail">${esc(r.detail)}</span>` : ""}
+      </div>`);
+    }
+    if (!visible.length && needsLocation()) {
+      parts.push(`<div class="courier-empty">${rows.length ? "Nothing matches." : "Nothing here yet."}</div>`);
+    }
+    listEl.innerHTML = parts.join("");
+    select(selectedKey);
+  }
+
+  /** Re-lay the left column for the current mode / scope. */
+  function applyChoice() {
     errorEl.textContent = "";
-    listEl.innerHTML = `<div class="courier-empty">Loading…</div>`;
-    const built = await buildLocations(state, typeId);
-    if (seq !== buildSeq || !open) return;
-    rows = built;
-    const remembered = lastLocation(state, typeId);
+    for (const b of root.querySelectorAll(".courier-mode")) b.classList.toggle("active", b.dataset.id === mode);
+    for (const b of root.querySelectorAll(".courier-scope")) b.classList.toggle("active", b.dataset.id === scope);
+    scopesEl.hidden = mode !== "sticky";
+    const searchable = needsLocation();
+    filterEl.hidden = !searchable;
+    listEl.hidden = !searchable;
+    filterEl.value = "";
+    filterEl.placeholder = mode === "sticky" && scope === "desk" ? "Search desks…" : "Search documents…";
+    rows = searchable ? buildLocations(state, mode, scope) : [];
+    const remembered = lastLocation(state, slotFor(mode, scope));
     selectedKey = rows.some((r) => r.key === remembered) ? remembered : null;
     renderList();
-    if (focusMessage && selectedKey && !selected()?.other) messageEl.focus();
-    else filterEl.focus();
   }
 
   function moveSelection(delta) {
     if (!visible.length) return;
     const i = visible.findIndex((r) => r.key === selectedKey);
-    const next = visible[Math.max(0, Math.min(visible.length - 1, (i < 0 ? 0 : i + delta)))];
-    select(next.key);
+    select(visible[Math.max(0, Math.min(visible.length - 1, i < 0 ? 0 : i + delta))].key);
   }
 
   async function send() {
-    const loc = selected();
     const text = messageEl.value.replace(/\s+$/, "");
-    if (!loc || !text.trim() || sending) return;
+    if (sendEl.disabled || !text.trim()) return;
     sending = true;
     errorEl.textContent = "";
     syncControls();
+    const location = selected();
     try {
-      const shortcutName = otherEl.value.trim();
-      const label = await deliver(state, loc, text, { shortcutName });
-      if (loc.other) {
-        rememberShortcutName(state, shortcutName);
-        rememberSend(state, typeEl.value, `shortcut:${shortcutName}`);
-      } else {
-        rememberSend(state, typeEl.value, loc.key);
-      }
+      const label = await deliver(state, { mode, scope, location }, text);
+      rememberSend(state, mode, mode === "sticky" ? scope : null, location?.key || null);
       close();
       const { showImportToast } = await import("../editor/import-toast.js");
       showImportToast(label, "info");
@@ -194,11 +233,7 @@ export function openCourier(state) {
     window.removeEventListener("keydown", onWindowKey, true);
     root.classList.remove("open");
     let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      root.remove();
-    };
+    const finish = () => { if (!done) { done = true; root.remove(); } };
     sheet.addEventListener("transitionend", finish, { once: true });
     setTimeout(finish, 320);
     if (returnFocus && returnFocus.isConnected) {
@@ -223,21 +258,32 @@ export function openCourier(state) {
     }
   });
 
+  root.querySelector(".courier-modes").addEventListener("click", (e) => {
+    const b = e.target instanceof Element ? e.target.closest(".courier-mode") : null;
+    if (!b || b.dataset.id === mode) return;
+    mode = b.dataset.id;
+    applyChoice();
+  });
+  scopesEl.addEventListener("click", (e) => {
+    const b = e.target instanceof Element ? e.target.closest(".courier-scope") : null;
+    if (!b || b.dataset.id === scope) return;
+    scope = b.dataset.id;
+    applyChoice();
+  });
+
   filterEl.addEventListener("input", renderList);
   filterEl.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown") { e.preventDefault(); moveSelection(1); }
     else if (e.key === "ArrowUp") { e.preventDefault(); moveSelection(-1); }
-    else if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) {
-      e.preventDefault();
-      if (selected()?.other) otherEl.focus();
-      else if (selectedKey) messageEl.focus();
-    }
+    else if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); messageEl.focus(); }
   });
-  otherEl.addEventListener("input", syncControls);
-  otherEl.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); messageEl.focus(); }
+
+  let previewFrame = 0;
+  messageEl.addEventListener("input", () => {
+    syncControls();
+    if (previewFrame) return;
+    previewFrame = requestAnimationFrame(() => { previewFrame = 0; void renderPreview(); });
   });
-  messageEl.addEventListener("input", syncControls);
 
   // Commit on pointerdown, the way every menu floating over an editor
   // does here (README-TECHNICAL: click is too late on iOS).
@@ -246,18 +292,14 @@ export function openCourier(state) {
     if (!row) return;
     e.preventDefault();
     select(row.dataset.key);
-    if (selected()?.other) otherEl.focus();
   });
 
-  typeEl.addEventListener("change", () => { filterEl.value = ""; void loadType(typeEl.value); });
   root.querySelector(".courier-backdrop").addEventListener("pointerdown", (e) => { e.preventDefault(); close(); });
   root.querySelector(".courier-cancel").addEventListener("click", close);
   sendEl.addEventListener("click", () => void send());
 
   open = { close };
-
-  const initialType = COURIER_TYPES.some((t) => t.id === lastType(state)) ? lastType(state) : COURIER_TYPES[0].id;
-  typeEl.value = initialType;
+  applyChoice();
   requestAnimationFrame(() => root.classList.add("open"));
-  void loadType(initialType, { focusMessage: true });
+  messageEl.focus();
 }

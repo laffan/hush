@@ -1,7 +1,7 @@
 /**
  * Style modal — the cursor rows in Editing: the mode dropdown and, for a
- * custom cursor, Blink, the per-appearance Glow switches, and the glow's
- * intensity.
+ * custom cursor, Blink, one Glow row holding the Light and Dark switches
+ * side by side, and the glow's intensity.
  *
  * Split out of `style-modal.js` for the 700-line cap. The readers the
  * editor paints from live in `editor/cursor-options.js`; this module only
@@ -47,8 +47,13 @@ export function renderCursorRows(draft, settings) {
               </div>
               ${mode === "system" ? "" : `
               ${checkboxRow("style-cursor-blink", "Blink", cursorBlinks(draft))}
-              ${checkboxRow("style-cursor-glow-light", "Glow (Light)", glowForAppearance(draft, "light"))}
-              ${checkboxRow("style-cursor-glow-dark", "Glow (Dark)", glowForAppearance(draft, "dark"))}
+              <div class="style-editor-row">
+                <label>Glow</label>
+                <div class="style-glow-pair">
+                  <label class="style-glow-option"><input type="checkbox" id="style-cursor-glow-light"${glowForAppearance(draft, "light") ? " checked" : ""} /><span>Light</span></label>
+                  <label class="style-glow-option"><input type="checkbox" id="style-cursor-glow-dark"${glowForAppearance(draft, "dark") ? " checked" : ""} /><span>Dark</span></label>
+                </div>
+              </div>
               ${hasAnyGlow(draft) ? `
               <div class="style-editor-row">
                 <label>Glow intensity</label>

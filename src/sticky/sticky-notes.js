@@ -317,9 +317,9 @@ function fileStickiesFor(kind, fileId) {
 }
 
 /** `opts` lets a caller other than the palette place the note: `target`
- *  picks the desk for a desk sticky (Courier sends to any desk, not only
- *  the active one), `text` seeds it, and `focus: false` leaves the caret
- *  where it was. */
+ *  picks the file ("doc:<id>") or desk it attaches to (Courier sends to
+ *  any document or desk, not only the one on screen), `text` seeds it,
+ *  and `focus: false` leaves the caret where it was. */
 export function addSticky(state, kind, opts = {}) {
   appState = appState || state;
   ensureContainer();
@@ -338,7 +338,7 @@ export function addSticky(state, kind, opts = {}) {
       });
     }
   } else if (kind === "file") {
-    target = currentFileContext(state);
+    target = opts.target || currentFileContext(state);
     if (!target) return;
   } else if (kind === "project") {
     target = activeProjectNodeId(state);
@@ -368,7 +368,7 @@ export function addSticky(state, kind, opts = {}) {
   notes.set(note.id, note);
   activateNote(note);
   if (opts.focus !== false) note.textarea.focus();
-  // A note sent to a desk that isn't on screen must start hidden.
+  // A note sent to a file or desk that isn't on screen must start hidden.
   if (opts.target) refreshVisibility();
   if (note.kind === "desktop") repositionDesktopNotes();
   repaintDesktop(); // shows on its thumbnail badge / on any Desktop pane

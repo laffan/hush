@@ -571,8 +571,8 @@ pub struct AppSettings {
     pub sticky_notes: Vec<serde_json::Value>,
 
     // Courier (triple-Shift quick send) — per-device memory of the last
-    // message type / destination and the Shortcut names typed by hand.
-    // Opaque to Rust; see src/courier/courier-store.js.
+    // mode, sticky scope and destination. Opaque to Rust; see
+    // src/courier/courier-store.js.
     #[serde(default)]
     pub courier: serde_json::Value,
 

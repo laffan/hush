@@ -135,7 +135,7 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
     // Courier is normally triple-tapped Shift; the palette entry is the
     // way in without a hardware keyboard.
     { id: "courier", section: "Create", label: "Courier — send a quick note", icon: icons.sticky, shortcutKey: null, ctx: "shared",
-      keywords: "send note sticky things shortcut triple shift",
+      keywords: "send note sticky append triple shift",
       action: async (s) => (await import("./courier/courier-sheet.js")).openCourier(s) },
     { id: "desk-archives", section: "Desks", label: "View archived desks", icon: icons.desk, shortcutKey: null, ctx: "shared",
       action: async (s) => {

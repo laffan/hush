@@ -41,9 +41,7 @@
         { "url": "tel:*" },
         { "url": "zotero://*" },
         { "url": "obsidian://*" },
-        { "url": "hushwriter://*" },
-        { "url": "things:*" },
-        { "url": "shortcuts:*" }
+        { "url": "hushwriter://*" }
       ]
     },
     "opener:allow-reveal-item-in-dir",

@@ -90,8 +90,8 @@ export function createDefaultSettings() {
     // x, y, width, height, collapsed, fontSize, text, createdAt }.
     // Closing a note deletes it permanently.
     stickyNotes: [],
-    // Courier's per-device memory: `{ type, locations: { [type]: key },
-    // shortcutNames: [] }` (see src/courier/courier-store.js).
+    // Courier's per-device memory: `{ mode, scope, locations: { [slot]: key } }`
+    // (see src/courier/courier-store.js).
     courier: null,
     // YOU ARE HERE marker registry — one `{ fileId, fileType, shapeId?,
     // offset? }` entry per desk id (see src/you-are-here.js).

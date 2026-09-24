@@ -973,6 +973,25 @@
 /* Cursor-mode dropdown (system / block / underline) — sized to mirror
    the slider and color groups so the right column stays in a single
    visual track instead of three competing widths. */
+/* Glow — one row, Light and Dark as two columns of switch + faint label. */
+.style-glow-pair {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+}
+.style-editor-row .style-glow-option {
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.style-glow-option span {
+  font-size: 11px;
+  opacity: 0.55;
+}
+
 .style-select-group {
   flex: 1;
   display: flex;

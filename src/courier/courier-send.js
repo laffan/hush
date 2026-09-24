@@ -77,66 +77,47 @@ export async function appendToDocument(state, fileId, text) {
   await appendOnDisk(state, fileId, text);
 }
 
-async function openExternalUrl(url) {
-  if (IS_TAURI) {
-    const { openUrl } = await import("@tauri-apps/plugin-opener");
-    await openUrl(url);
-  } else {
-    window.open(url, "_blank");
+/** The document's current text, from whichever copy is live — the same
+ *  order `appendToDocument` writes in, so the preview shows the text the
+ *  new paragraph will actually land after. */
+export async function readDocumentText(state, fileId) {
+  const mainView = state.editor?.view;
+  if (mainView && state.currentFileId === fileId && !state.currentProjectId
+      && !state.currentNotebookFileId && !state.currentPdfFileId && !state.currentStackFileId) {
+    return mainView.state.doc.toString();
   }
-}
-
-/** Things takes a title and notes, so the message splits at its first
- *  line — the same line a document would take its name from. */
-function thingsUrl(text, when) {
-  const [first, ...rest] = text.split("\n");
-  const params = [`title=${encodeURIComponent(first.trim())}`];
-  const notes = rest.join("\n").trim();
-  if (notes) params.push(`notes=${encodeURIComponent(notes)}`);
-  if (when) params.push(`when=${encodeURIComponent(when)}`);
-  return `things:///add?${params.join("&")}`;
-}
-
-function shortcutUrl(name, text) {
-  return `shortcuts://run-shortcut?name=${encodeURIComponent(name)}&input=text&text=${encodeURIComponent(text)}`;
+  const paneView = await livePaneViewFor(fileId);
+  if (paneView) return paneView.state.doc.toString();
+  if (IS_TAURI) {
+    const file = await tauriInvoke("load_file", { id: fileId });
+    return file?.content || "";
+  }
+  return state.files?.find((f) => f.id === fileId)?.content || "";
 }
 
 /**
- * Deliver `text` to `location` (one of the rows `buildLocations` made).
- * `extra.shortcutName` carries the name typed into the "Other shortcut"
- * row. Returns the label for the confirmation toast.
+ * Deliver `text`. `mode` is "sticky" or "append"; `scope` is the
+ * sticky's document / desk / global; `location` is the chosen row (none
+ * for a global sticky). Returns the label for the confirmation toast.
  */
-export async function deliver(state, location, text, extra = {}) {
-  switch (location.action) {
-    case "append": {
-      await appendToDocument(state, location.fileId, text);
-      const node = findNodeByFileId(state.fileTree, location.fileId);
-      return `Sent to ${node?.name || location.label}`;
-    }
-    case "new-doc": {
-      const created = await state.newFile(location.parentId, {
-        openImmediately: false,
-        initialName: state._deriveName(text),
-        initialContent: text,
-      });
-      if (!created) throw new Error("Could not create the document");
-      return `Created “${created.name}” in ${location.group}`;
-    }
-    case "sticky": {
-      const { addSticky } = await import("../sticky/sticky-notes.js");
-      addSticky(state, location.kind, { target: location.target || null, text, focus: false });
-      return `Sticky added — ${location.label}`;
-    }
-    case "things":
-      await openExternalUrl(thingsUrl(text, location.when));
-      return `Sent to Things`;
-    case "shortcut": {
-      const name = (location.name || extra.shortcutName || "").trim();
-      if (!name) throw new Error("Name the shortcut to run");
-      await openExternalUrl(shortcutUrl(name, text));
-      return `Ran “${name}”`;
-    }
-    default:
-      throw new Error(`Unknown destination: ${location.action}`);
+export async function deliver(state, { mode, scope, location }, text) {
+  if (mode === "append") {
+    if (!location?.fileId) throw new Error("Choose a document");
+    await appendToDocument(state, location.fileId, text);
+    const node = findNodeByFileId(state.fileTree, location.fileId);
+    return `Appended to ${node?.name || location.label}`;
   }
+  const { addSticky } = await import("../sticky/sticky-notes.js");
+  if (scope === "global") {
+    addSticky(state, "global", { text, focus: false });
+    return "Global sticky added";
+  }
+  if (scope === "desk") {
+    if (!location?.deskId) throw new Error("Choose a desk");
+    addSticky(state, "desk", { target: location.deskId, text, focus: false });
+    return `Sticky added to ${location.label}`;
+  }
+  if (!location?.fileId) throw new Error("Choose a document");
+  addSticky(state, "file", { target: `doc:${location.fileId}`, text, focus: false });
+  return `Sticky added to ${location.label}`;
 }

@@ -1,10 +1,11 @@
 /* ===== Courier — triple-Shift quick-send sheet (src/courier/) =====
    A sheet of paper that happens to be interactive: no boxes, no fills,
    no chrome beyond a hairline and a soft lift off the page. The
-   controls read as text — the type is a quiet line at the top, the
-   destinations a list, the message is written in the style's own prose
-   font. Sits at --z-courier, above the whole modal band, so it opens
-   over every surface, Zen included. */
+   controls read as text. Two columns: choices on the left (Sticky /
+   Append, a sticky's scope, the search and its list), and on the right
+   the message above a live preview of what Send will make. Sits at
+   --z-courier, above the whole modal band, so it opens over every
+   surface, Zen included. */
 
 .courier-root {
   position: fixed;
@@ -26,12 +27,12 @@
   position: absolute;
   left: 50%;
   bottom: calc(max(var(--ipad-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)) + 20px);
-  width: min(620px, calc(100vw - 32px));
+  width: min(860px, calc(100vw - 32px));
+  height: min(440px, calc(100% - var(--top-chrome-inset, 0px) - 48px));
   max-height: calc(100% - var(--top-chrome-inset, 0px) - 48px);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 22px 30px 16px;
+  display: grid;
+  grid-template-columns: minmax(200px, 34%) 1fr;
+  padding: 0;
   background: var(--theme-bg, var(--bg));
   border: 1px solid color-mix(in srgb, var(--fg) 7%, transparent);
   border-radius: 3px;
@@ -49,13 +50,11 @@
   .courier-sheet, .courier-backdrop { transition-duration: 0.01s; }
 }
 
-.courier-section { min-height: 0; }
-
-/* Every control drops its box: they are words on the page. */
-.courier-type,
+/* ---- Controls drop their boxes: they are words on the page. ---- */
 .courier-filter,
-.courier-other-name,
 .courier-message,
+.courier-mode,
+.courier-scope,
 .courier-cancel,
 .courier-send {
   font: inherit;
@@ -69,54 +68,50 @@
   appearance: none;
 }
 
-/* Message type — a quiet line of text with a small chevron. */
-.courier-type-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-}
+.courier-root [hidden] { display: none !important; }
 
-.courier-type {
-  font-size: 12px;
-  letter-spacing: 0.02em;
-  padding: 2px 16px 2px 0;
-  opacity: 0.5;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-
-.courier-type:hover,
-.courier-type:focus-visible { opacity: 0.9; }
-
-.courier-type-wrap::after {
-  content: "";
-  position: absolute;
-  right: 2px;
-  top: 50%;
-  width: 5px;
-  height: 5px;
-  border-right: 1px solid currentColor;
-  border-bottom: 1px solid currentColor;
-  transform: translateY(-70%) rotate(45deg);
-  opacity: 0.4;
-  pointer-events: none;
-}
-
-.courier-type option {
-  color: var(--fg);
-  background: var(--theme-bg, var(--bg));
-}
-
-.courier-locations {
+/* ---- Left column ---- */
+.courier-left {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  flex: 1 1 auto;
+  gap: 12px;
+  min-height: 0;
+  padding: 22px 20px 16px 26px;
+  border-right: 1px solid color-mix(in srgb, var(--fg) 7%, transparent);
 }
 
-/* "To…" — a single ruled line, the only rule on the page. */
-.courier-filter,
-.courier-other-name {
+/* Segmented text buttons: the choice in full ink and underlined, the
+   rest faded. */
+.courier-seg {
+  display: flex;
+  gap: 16px;
+}
+
+.courier-mode,
+.courier-scope {
+  padding: 2px 0 3px;
+  cursor: pointer;
+  opacity: 0.4;
+  border-bottom: 1px solid transparent;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+
+.courier-mode { font-size: 14px; }
+.courier-scope { font-size: 12px; }
+
+.courier-mode:hover,
+.courier-scope:hover { opacity: 0.75; }
+
+.courier-mode.active,
+.courier-scope.active {
+  opacity: 1;
+  border-bottom-color: currentColor;
+}
+
+.courier-mode:focus-visible,
+.courier-scope:focus-visible { opacity: 0.85; }
+
+.courier-filter {
   width: 100%;
   font-size: 13px;
   padding: 4px 0 6px;
@@ -124,13 +119,11 @@
   transition: border-color 0.15s;
 }
 
-.courier-filter:focus,
-.courier-other-name:focus {
+.courier-filter:focus {
   border-bottom-color: color-mix(in srgb, var(--fg) 28%, transparent);
 }
 
 .courier-filter::placeholder,
-.courier-other-name::placeholder,
 .courier-message::placeholder {
   color: var(--fg);
   opacity: 0.3;
@@ -138,8 +131,8 @@
 
 .courier-list {
   position: relative;
-  max-height: 190px;
-  min-height: 48px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   font-size: 13px;
   scrollbar-width: thin;
@@ -153,7 +146,7 @@
   opacity: 0.35;
 }
 
-.courier-group:first-child { padding-top: 6px; }
+.courier-group:first-child { padding-top: 2px; }
 
 /* Rows are plain lines; the chosen one is simply the one in full ink,
    marked by a short rule in the margin. */
@@ -161,7 +154,7 @@
   position: relative;
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: 8px;
   padding: 3px 0 3px 12px;
   cursor: pointer;
   user-select: none;
@@ -182,7 +175,8 @@
   background: currentColor;
 }
 
-.courier-row-label {
+.courier-row-label,
+.courier-row-detail {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -192,10 +186,7 @@
   margin-left: auto;
   flex: 0 1 auto;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 11.5px;
+  font-size: 11px;
   opacity: 0.55;
 }
 
@@ -205,18 +196,113 @@
   opacity: 0.35;
 }
 
-/* The message is the page: written in the style's prose font. */
+/* ---- Right column: message, preview, actions ---- */
+.courier-right {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  min-width: 0;
+  padding: 22px 28px 16px;
+}
+
 .courier-message {
   display: block;
   width: 100%;
-  min-height: 96px;
-  max-height: 34vh;
-  padding: 4px 0;
+  flex: 0 0 auto;
+  min-height: 72px;
+  max-height: 30%;
+  padding: 0;
   resize: none;
   font-family: var(--font-family);
-  font-size: 17px;
-  line-height: 1.6;
+  font-size: 16px;
+  line-height: 1.55;
 }
+
+.courier-preview {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.courier-preview-empty {
+  font-size: 12px;
+  opacity: 0.35;
+}
+
+/* Sticky preview — a small note in its scope's paper colour
+   (palette from sticky-notes.css, which scopes its variables onto this
+   class too). */
+.courier-sticky-preview {
+  width: min(240px, 100%);
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  color: var(--sticky-ink);
+  border: 1px solid var(--sticky-edge);
+  border-radius: 3px;
+  box-shadow: 0 4px 14px var(--sticky-shadow);
+  transform: rotate(-0.6deg);
+}
+
+.courier-sticky-head {
+  padding: 7px 12px 5px;
+  font-size: 11px;
+  color: var(--sticky-ink-dim);
+  border-bottom: 1px solid var(--sticky-edge);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.courier-sticky-body {
+  padding: 10px 12px 14px;
+  font-size: 15px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.courier-sticky-body.empty { color: var(--sticky-ink-faint); }
+
+/* Append preview — the end of the document in its prose font, faded,
+   with the new paragraph in full ink beneath it. */
+.courier-doc-preview {
+  font-family: var(--font-family);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.courier-doc-name {
+  font-family: var(--ui-font-family);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  opacity: 0.4;
+  margin-bottom: 8px;
+}
+
+.courier-doc-tail { opacity: 0.38; }
+
+.courier-doc-tail.clipped {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 2.5em);
+  mask-image: linear-gradient(to bottom, transparent, #000 2.5em);
+}
+
+.courier-doc-new {
+  padding-left: 10px;
+  border-left: 1px solid color-mix(in srgb, var(--fg) 30%, transparent);
+}
+
+.courier-doc-new.empty { opacity: 0.3; }
+
+.courier-doc-preview :is(p, h1, h2, h3, h4, h5, h6, pre, ul, ol) {
+  margin: 0 0 0.6em !important;
+}
+
+.courier-doc-preview :is(h1, h2, h3, h4, h5, h6) { font-size: 1.1em; }
+.courier-doc-preview a { color: inherit; pointer-events: none; }
+.courier-doc-preview mark { background: color-mix(in srgb, #fff475 60%, transparent) !important; color: inherit; }
 
 .courier-actions {
   display: flex;
@@ -254,4 +340,18 @@
 .courier-send:focus-visible {
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+/* Narrow windows stack the columns. */
+@media (max-width: 620px) {
+  .courier-sheet {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    height: min(560px, calc(100% - var(--top-chrome-inset, 0px) - 48px));
+  }
+  .courier-left {
+    border-right: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--fg) 7%, transparent);
+    max-height: 45%;
+  }
 }

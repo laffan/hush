@@ -46,14 +46,11 @@ Notebooks export as `.hushnote` (lossless), PNG, JPG, or PDF.
 
 ## Courier
 
-Tap **Shift three times** — either Shift key, quickly, with nothing else pressed in between — and a small sheet slides up from the bottom of the window, wherever you are: a document, a notebook, a PDF, Zen Focus. It sends a quick note somewhere else without leaving what you're doing. Pick what kind of message it is, where it goes, write it, and Send (⌘↩):
+Tap **Shift three times** — either Shift key, quickly, with nothing else pressed in between — and a sheet slides up from the bottom of the window, wherever you are: a document, a notebook, a PDF, Zen Focus. It leaves a quick note somewhere else without leaving what you're doing.
 
-- **Send to a document** — appended as a new paragraph to the end of any document on any desk. Documents list by desk, most recently edited first, and the filter narrows them as you type.
-- **Create a new document** — in any desk's Inbox, folder or project; the first line becomes its name.
-- **Create a new sticky** — global, on the file or project you're in, or on any desk.
-- **Run a shortcut** — a new Things to-do (Inbox or Today; the first line is the to-do and the rest its notes), or any Apple Shortcut, which receives the message as its text input. On macOS your Shortcuts are listed; on iPad, type a shortcut's name once and Courier remembers it.
+The left side chooses what to make. **Sticky** adds a second row — **Document**, **Desk** or **Global** — and a search over your documents or desks, on any desk; **Append** searches documents and adds the note as a new paragraph at the end of the one you pick. The right side is where you write, above a live preview of exactly what Send will make: the sticky in its paper colour, or the end of the document with your paragraph rendered beneath it.
 
-Courier reopens on the type and destination you used last, so a second note to the same place is three taps, a sentence and ⌘↩. Escape or Cancel puts it away with the caret back where it was. It's also in the command palette, for when there's no keyboard.
+Courier reopens where your last note went, so a second one to the same place is three taps, a sentence and ⌘↩. Escape or Cancel puts it away with the caret back where it was. It's also in the command palette, for when there's no keyboard.
 
 ## Organizing
 
