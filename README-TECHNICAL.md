@@ -92,6 +92,8 @@ Hush is a [Tauri v2](https://v2.tauri.app/) app (macOS + iOS/iPadOS) with a vani
 
 **Multi-select.** `state.selectedDocIds` is an ordered list, and its order is the batch's: `multi-select-view.js` renders its rows in it and every batch action (Create Stack / Project, Combine, Copy to Clipboard) takes them in it. The row handles (`multi-select-reorder.js`) reorder by rewriting the selection through `setSelectedDocs` — the tree is never touched.
 
+**Reveal on open.** `sidebar/files-panel-reveal.js` expands every ancestor row of whatever the main surface opens. It listens to `file-opened` / `notebook-open` / `pdf-open` / `stack-open` rather than to the entry points, so any new way of opening a file gets the rule for free, and it is installed from `createSidebar` at boot — not from the files panel, which only mounts when the panel is shown. It therefore writes both halves of the collapse state: the mounted list's live `collapsedIds` when there is one, and the persisted `collapsedFolderIds` that a later mount starts from. Only ancestors unfold; the opened row keeps its own state.
+
 ## Editor
 
 `editor/editor.js` builds the main CodeMirror instance; **`createBaseExtensions(state, onChange, opts)`** builds the shared extension set (theme, markdown + custom inline parsers for `%%comments%%` / `==highlights==` / GFM tables / strikethrough, shortcuts, and nearly every plugin) used identically by floating panes, stack columns, and the Zen/Selection-Focus overlays — a feature added only to `editor.js`'s own list (e.g. proofread, spellcheck) is deliberately main-editor-only. Compartments expose theme / highlight / shortcut / editable reconfiguration.

@@ -4,13 +4,12 @@
  */
 
 import { SortableList } from "./sortable-list/sortable-list.js";
-import { AppState } from "../state/state.js";
 import { findNode, findNodeByFileId, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode, reapplyGutterMarkers } from "../state/tree-helpers.js";
 import { createPane } from "../pane/pane-manager.js";
 import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
 import { escHtml, showPromptModal, googleLinkBadgeHtml, computeNumberLabels, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
 import {
-  isInboxId, isImagesId, isPdfsId, isTrashId, isAnySpecialId, allSpecialIds,
+  isInboxId, isImagesId, isPdfsId, isTrashId, isAnySpecialId,
   isInboxItem, inboxNameHtml,
   visibleTopLevel, renderedDeskIdFor, commitRenderedChildren, isAllDesksMode, numberSkip, hasPairedGutter, getIcon,
   actionButtons, getPdfSync, buildPdfRowHtml,
@@ -31,6 +30,7 @@ import { isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree, renderTa
 import { isHeadingItem, augmentTreeWithHeadings, stripHeadingsFromTree, renderHeadingRow, openDocAtHeading } from "./files-panel-headings.js";
 import { renderFlaggedSection } from "./files-panel-flagged.js";
 import { renderDeskYouAreHere } from "./files-panel-you-are-here.js";
+import { installRevealOnOpen, defaultCollapsedIds } from "./files-panel-reveal.js";
 
 let sortableInstance = null;
 let flaggedContainerEl = null;
@@ -343,12 +343,8 @@ export function createFilesPanel(container, state, hidePanel) {
   // set) apply the defaults: Inbox open, Trash / Images / PDFs / Archive
   // collapsed (existing installs collapse Archive once, see state-desks).
   const persistedCollapsed = state.settings?.collapsedFolderIds;
-  if (Array.isArray(persistedCollapsed)) {
-    for (const id of persistedCollapsed) sortableInstance.state.collapsedIds.add(id);
-  } else {
-    for (const k of [AppState.TRASH_ID, AppState.IMAGES_ID, AppState.PDFS_ID, AppState.ARCHIVE_ID])
-      for (const id of allSpecialIds(state, k)) sortableInstance.state.collapsedIds.add(id);
-  }
+  const initialCollapsed = Array.isArray(persistedCollapsed) ? persistedCollapsed : defaultCollapsedIds(state);
+  for (const id of initialCollapsed) sortableInstance.state.collapsedIds.add(id);
   sortableInstance.render();
   positionNestedSections(state);
 
@@ -541,6 +537,13 @@ export function refreshFilesPanel(state) {
   if (root && storedState && storedHidePanel) {
     renderLocalSyncSection(root, storedState, storedHidePanel, refreshFilesPanel);
   }
+}
+
+/** Expand an opened file's ancestors in the tree, however it was opened
+ *  (files-panel-reveal.js). Called once from the sidebar at boot, so it
+ *  holds before this panel is ever mounted. */
+export function initFilesPanelReveal(state) {
+  installRevealOnOpen(state, () => sortableInstance, () => positionNestedSections(state));
 }
 
 /** Wire one-shot state listeners that keep the synthetic tab-marker

@@ -170,9 +170,10 @@ export function getIcon(item) {
   if (item.type === "image") return "";
   // A project's own PDFs folder reads as a PDF container.
   if (item.type === "folder" && item.pdfFolder) return typeIcons.pdf;
-  // Plain folders read fine without a leading glyph — the disclosure
-  // arrow alone signals containerhood.
-  if (item.type === "folder") return "";
+  // Plain folders carry the folder outline like every other row type
+  // carries its glyph — with the disclosure arrow alone, a collapsed
+  // folder read as just another name.
+  if (item.type === "folder") return item.flagged ? typeIcons.folderFlagged : typeIcons.folder;
   // Everything else is a file leaf, and its glyph is shared with the
   // command palette's pickers so the two can't drift.
   return leafIcon(item);

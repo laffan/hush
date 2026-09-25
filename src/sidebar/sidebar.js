@@ -8,7 +8,7 @@
  * full-height grip on the right edge toggles the panel open/closed.
  */
 import { openSettingsWindow } from "../settings/settings-ui.js";
-import { createFilesPanel, refreshFilesPanel } from "./files-panel.js";
+import { createFilesPanel, refreshFilesPanel, initFilesPanelReveal } from "./files-panel.js";
 import { createFindPanel, closeFindPanel } from "./find-panel.js";
 import { cleanupVersionsPanel } from "./versions-panel.js";
 import { showRatchetDropdownCentered } from "./ratchet-dropdown.js";
@@ -24,6 +24,8 @@ function svgInner(raw) {
 }
 
 export function createSidebar(state) {
+  // An opened file's folders unfold whether or not the panel is up.
+  initFilesPanelReveal(state);
   const panelOverlay = document.getElementById("panel-overlay");
   let panelOpen = false;
   let panelPinned = false;
