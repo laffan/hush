@@ -203,6 +203,8 @@ pub struct AppSettings {
     pub shortcut_select_previous: String,
     #[serde(default = "default_shortcut_delete_to_sentence_end")]
     pub shortcut_delete_to_sentence_end: String,
+    #[serde(default = "default_shortcut_delete_sentence")]
+    pub shortcut_delete_sentence: String,
 
     // Shortcuts — Formatting
     #[serde(default = "default_shortcut_bold")]
@@ -712,6 +714,7 @@ impl Default for AppSettings {
             shortcut_move_sentence_back: default_shortcut_move_sentence_back(),
             shortcut_select_previous: default_shortcut_select_previous(),
             shortcut_delete_to_sentence_end: default_shortcut_delete_to_sentence_end(),
+            shortcut_delete_sentence: default_shortcut_delete_sentence(),
             shortcut_bold: default_shortcut_bold(),
             shortcut_italic: default_shortcut_italic(),
             shortcut_highlight: default_shortcut_highlight(),

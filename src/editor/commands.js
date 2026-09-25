@@ -28,6 +28,7 @@ import {
   jumpToPrevParagraph, jumpToNextParagraph, joinLines, joinLinesUp, selectParagraph,
   selectToParagraphAbove, selectToParagraphBelow, insertBreakAfter, insertBreakBefore,
 } from "./sentence-navigator.js";
+import { deleteSentence } from "./sentence-delete.js";
 import {
   toggleBold, toggleItalic, toggleHighlight, toggleComment, toggleStrikethrough,
 } from "./formatting.js";
@@ -301,6 +302,7 @@ export function buildEditorCommands() {
     shortcutMoveSentenceForward: (_state, view) => (view ? moveSentenceForward(view) : false),
     shortcutMoveSentenceBack: (_state, view) => (view ? moveSentenceBack(view) : false),
     shortcutDeleteToSentenceEnd: (_state, view) => (view ? deleteToSentenceEnd(view) : false),
+    shortcutDeleteSentence: (_state, view) => (view ? deleteSentence(view) : false),
     shortcutJoinLines: (_state, view) => (view ? joinLines(view) : false),
     shortcutJoinLinesUp: (_state, view) => (view ? joinLinesUp(view) : false),
     // ⌘↩ / ⌘⇧↩. The "after" half was CodeMirror's own `insertBlankLine`

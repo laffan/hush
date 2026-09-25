@@ -57,6 +57,7 @@ const NAVIGATION_KEYS = [
 const EDITING_KEYS = [
   "shortcutMoveSentenceForward",
   "shortcutMoveSentenceBack",
+  "shortcutDeleteSentence",
   "shortcutDeleteToSentenceEnd",
   "shortcutJoinLines",
   "shortcutJoinLinesUp",

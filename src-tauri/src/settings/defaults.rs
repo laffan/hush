@@ -229,6 +229,9 @@ pub fn default_shortcut_select_previous() -> String {
 pub fn default_shortcut_delete_to_sentence_end() -> String {
     "Alt+Shift+Backspace".to_string()
 }
+pub fn default_shortcut_delete_sentence() -> String {
+    "Mod+Backspace".to_string()
+}
 pub fn default_shortcut_bold() -> String {
     "Mod+B".to_string()
 }

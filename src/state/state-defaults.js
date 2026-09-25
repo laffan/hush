@@ -206,6 +206,9 @@ export function createDefaultSettings() {
     shortcutMoveSentenceBack: "Alt+Mod+ArrowLeft",
     shortcutSelectPrevious: "Mod+Shift+D",
     shortcutDeleteToSentenceEnd: "Alt+Shift+Backspace",
+    // ⌘⌫ deletes the sentence the caret is in — the delete half of ⌘L.
+    // It takes the keystroke over from CodeMirror's delete-to-line-start.
+    shortcutDeleteSentence: "Mod+Backspace",
 
     // Shortcuts — Formatting
     shortcutBold: "Mod+B",

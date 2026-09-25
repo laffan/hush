@@ -124,6 +124,7 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutMoveSentenceBack) settings.shortcutMoveSentenceBack = "Alt+Mod+ArrowLeft";
   if (!settings.shortcutSelectPrevious) settings.shortcutSelectPrevious = "Mod+Shift+D";
   if (!settings.shortcutDeleteToSentenceEnd) settings.shortcutDeleteToSentenceEnd = "Alt+Shift+Backspace";
+  if (!settings.shortcutDeleteSentence) settings.shortcutDeleteSentence = "Mod+Backspace";
   if (!settings.shortcutToggleDry) settings.shortcutToggleDry = "Mod+Shift+R";
   if (!settings.shortcutToggleFocus) settings.shortcutToggleFocus = "Mod+S";
   if (!settings.shortcutToggleProperties) settings.shortcutToggleProperties = "Mod+;";
