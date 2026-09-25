@@ -4,6 +4,8 @@
  */
 import { ViewPlugin, Decoration, EditorView } from "@codemirror/view";
 import { RangeSetBuilder, Prec } from "@codemirror/state";
+import { syntaxHighlighting } from "@codemirror/language";
+import { tagHighlighter, tags } from "@lezer/highlight";
 
 // ===== Sentence boundary detection (mirrors sentence-navigator.js) =====
 
@@ -85,17 +87,30 @@ export function focusSentenceBounds(view, state) {
 
 const dimMark = Decoration.mark({ class: "focus-mode-dim" });
 
+// A stable class on heading tokens, so styles/focus-mode.css can grey a
+// heading out while it sits in a dim span. The markdown HighlightStyle
+// paints headings through generated class names, and a HighlightStyle
+// entry's `class` *replaces* its generated style rather than adding to
+// it — a second highlighter stacks its class alongside instead.
+// `tags.heading` matches heading1–6.
+const headingClass = syntaxHighlighting(
+  tagHighlighter([{ tag: tags.heading, class: "cm-md-heading" }])
+);
+
 // ===== ViewPlugin =====
 
 // `Prec.lowest` puts the dim marks at the bottom of the decoration
 // stack, and CodeMirror nests lower-precedence marks *outside* higher
 // ones — so the dim span wraps highlight / YOUAREHERE / find spans and
 // their backgrounds fade with the text instead of sitting at full
-// strength around a faded glyph. `cm-focus-mode` on the editor root is
-// the per-surface hook styles/focus-mode.css uses to grey those
-// backgrounds out (a pane's focus mode is its own, so <body> can't say).
+// strength around a faded glyph. Being the wrapper is also what lets
+// the CSS desaturate exactly what is dimmed (`.focus-mode-dim .x`), so
+// the current sentence — the one gap in the dim — keeps its colour.
+// `cm-focus-mode` on the editor root covers what no mark can wrap
+// (rendered tables); it is per surface because a pane's focus mode is
+// its own, so <body> can't say.
 export function createFocusModePlugin(state) {
-  return Prec.lowest(ViewPlugin.fromClass(
+  return [headingClass, Prec.lowest(ViewPlugin.fromClass(
     class {
       constructor(view) {
         this.lastFocusMode = state.focusMode;
@@ -158,5 +173,5 @@ export function createFocusModePlugin(state) {
         () => (state.focusMode ? { class: "cm-focus-mode" } : null)
       ),
     }
-  ));
+  ))];
 }

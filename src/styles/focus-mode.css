@@ -50,20 +50,32 @@ body.focus-mode-active #comments-panel > * {
   transition: opacity 0.15s ease;
 }
 
-/* Highlighted backgrounds go monochrome: `==highlight==` (and its
-   per-flag colours, set inline — hence !important), the same inside a
-   rendered table's cells, and the YOUAREHERE
-   tag take a neutral wash of the text colour (currentColor, so a pane
-   with a locked style washes in its own ink). Outside the current
-   sentence they fade with the dim span that wraps them. */
-.cm-focus-mode .cm-flag-highlight,
-.cm-focus-mode .cm-md-table mark {
+/* Colour goes monochrome wherever the text is dimmed: `==highlight==`
+   (and its per-flag colours, set inline — hence !important) and the
+   YOUAREHERE tag take a neutral wash of the text colour, and headings
+   drop to the body ink. Scoping these to `.focus-mode-dim` rather than
+   to the editor is what hands the current sentence its colour back —
+   the dim span wraps everything except the sentence being edited, so a
+   highlight or heading re-saturates the moment the caret enters it.
+   currentColor / inherit keep a pane with a locked style in its own
+   ink. */
+.focus-mode-dim .cm-flag-highlight {
   background-color: color-mix(in srgb, currentColor 14%, transparent) !important;
 }
 
-.cm-focus-mode .cm-youarehere {
+.focus-mode-dim .cm-youarehere {
   color: inherit;
   background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.focus-mode-dim .cm-md-heading {
+  color: inherit;
+}
+
+/* A rendered table is never the current sentence (see above), so its
+   cell highlights are always grey under focus mode. */
+.cm-focus-mode .cm-md-table mark {
+  background: color-mix(in srgb, currentColor 14%, transparent);
 }
 
 /* The sidebar's YOU ARE HERE badge follows suit. */
