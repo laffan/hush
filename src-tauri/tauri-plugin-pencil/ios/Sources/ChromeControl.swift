@@ -26,6 +26,15 @@ import ObjectiveC.runtime
 // the pointer sits in the top-left corner the bar is shown again
 // (`CornerHover`), and the controls come with it.
 //
+// A peek must not move the page. A status bar coming in grows the root
+// view's top safe area by its height, and the page reads that inset
+// (`env(safe-area-inset-top)`) in the sidebar header, the overview, the
+// panes and every top-pinned pill — so each peek used to shove all of
+// them down and back. For the length of a peek the root view controller
+// carries a negative `additionalSafeAreaInsets.top` of the bar's height,
+// which holds the safe area where the hidden bar left it: the bar, and
+// the window controls in it, draw over the page instead of pushing it.
+//
 // The webview hears about it too: `html.status-bar-hidden` is on while a
 // window's bar is hidden (a corner peek doesn't count), which is what
 // drops the iOS 27 status-bar blur band out of `--top-chrome-inset`.
@@ -45,6 +54,13 @@ enum ChromeControl {
     static var geometryObservers: [ObjectIdentifier: NSKeyValueObservation] = [:]
     /// What each window's page was last told about `status-bar-hidden`.
     static var reported: [ObjectIdentifier: Bool] = [:]
+    /// The status bar's height, cancelled out of the safe area during a
+    /// corner peek. 24 pt is the iPad bar; the first peek measures the
+    /// real one (`learnBarHeight`) and every later peek uses that.
+    static var barHeight: CGFloat = 24
+    /// How much of each root's `additionalSafeAreaInsets.top` is ours, so
+    /// only our share is ever added or taken away.
+    static var peekInsets: [ObjectIdentifier: CGFloat] = [:]
 
     static func install() {
         guard !installed else { return }
@@ -67,6 +83,7 @@ enum ChromeControl {
             ChromeControl.geometryObservers.removeValue(forKey: ObjectIdentifier(scene))
             for window in scene.windows {
                 ChromeControl.reported.removeValue(forKey: ObjectIdentifier(window))
+                ChromeControl.peekInsets.removeValue(forKey: ObjectIdentifier(window))
             }
         }
     }
@@ -121,8 +138,12 @@ enum ChromeControl {
                 // over from before the window went windowed must not
                 // survive its return to full screen.
                 if !resting { hover.endPeek() }
+                let peeking = resting && hover.peeking
 
                 let update = {
+                    // In the same pass as the bar, so the safe area never
+                    // sees the bar without its cancellation.
+                    ChromeControl.setPeekInset(root, window: window, peeking)
                     ChromeControl.setTaoFlag(root, "setPrefersStatusBarHidden:",
                                ChromeControl.statusBarHidden(for: window),
                                current: #selector(getter: UIViewController.prefersStatusBarHidden))
@@ -131,6 +152,9 @@ enum ChromeControl {
                     root.setNeedsStatusBarAppearanceUpdate()
                 }
                 if animated { UIView.animate(withDuration: 0.2, animations: update) } else { update() }
+                if peeking {
+                    DispatchQueue.main.async { ChromeControl.learnBarHeight(root, window: window) }
+                }
                 setTaoFlag(root, "setPrefersHomeIndicatorAutoHidden:", hidden,
                            current: #selector(getter: UIViewController.prefersHomeIndicatorAutoHidden))
                 root.setNeedsUpdateOfHomeIndicatorAutoHidden()
@@ -156,6 +180,31 @@ enum ChromeControl {
         geometryObservers[key] = scene.observe(\.effectiveGeometry, options: [.new]) { _, _ in
             DispatchQueue.main.async { ChromeControl.refresh() }
         }
+    }
+
+    /// Cancel (or stop cancelling) the status bar's share of `root`'s top
+    /// safe area. Only our own contribution moves; anything else in
+    /// `additionalSafeAreaInsets` is left as it was.
+    static func setPeekInset(_ root: UIViewController, window: UIWindow, _ peeking: Bool) {
+        let key = ObjectIdentifier(window)
+        let old = peekInsets[key] ?? 0
+        let new: CGFloat = peeking ? -barHeight : 0
+        guard old != new else { return }
+        peekInsets[key] = new == 0 ? nil : new
+        root.additionalSafeAreaInsets.top += new - old
+    }
+
+    /// Read the bar's real height once it is on screen and, if the guess
+    /// was off, correct the cancellation. A guess too small would leave
+    /// the page nudged down by the difference; too large is clamped away
+    /// by UIKit (a safe area is never negative) but would eat into any
+    /// inset the window has of its own.
+    static func learnBarHeight(_ root: UIViewController, window: UIWindow) {
+        guard CornerHover.existing(on: window)?.peeking == true,
+              let height = window.windowScene?.statusBarManager?.statusBarFrame.height,
+              height > 0, abs(height - barHeight) > 0.5 else { return }
+        barHeight = height
+        setPeekInset(root, window: window, true)
     }
 
     private static func webView(in view: UIView) -> WKWebView? {
