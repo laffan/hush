@@ -92,6 +92,7 @@ html[data-theme="dark"] .timer-sheet {
 
 .timer-task {
   width: 100%;
+  text-align: center;
   font-size: 16px;
   padding: 4px 0 7px;
 }
@@ -103,7 +104,10 @@ html[data-theme="dark"] .timer-sheet {
 
 /* Timer / Alarm — Courier's mode buttons: the choice in full ink and
    underlined, the other faded. */
-.timer-modes { margin-bottom: -6px; }
+.timer-modes {
+  justify-content: center;
+  margin-bottom: -6px;
+}
 
 .timer-mode {
   padding: 2px 0 3px;
@@ -120,6 +124,7 @@ html[data-theme="dark"] .timer-sheet {
 
 .timer-fields {
   display: flex;
+  justify-content: center;
   align-items: baseline;
   gap: 28px;
 }
@@ -154,6 +159,7 @@ html[data-theme="dark"] .timer-sheet {
    underlined, as Courier's modes are. */
 .timer-breaks {
   display: flex;
+  justify-content: center;
   align-items: baseline;
   flex-wrap: wrap;
   gap: 6px 14px;
@@ -260,13 +266,14 @@ html[data-theme="dark"] .timer-sheet {
 
 .timer-summary {
   margin-top: -6px;
+  text-align: center;
   font-size: 12px;
   opacity: 0.45;
 }
 
 .timer-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 18px;
 }
 

@@ -4,12 +4,12 @@
  * from the bottom of the window, controls that read as text, Escape /
  * Cancel to dismiss.
  *
- * Top to bottom: the task; Timer / Alarm; either hours and minutes (a
- * timer's length) or a clock time (an alarm's — the next time the clock
- * reads it, today or tomorrow); how often to break; and a timeline of
- * the session laid out from the current time — each break and the
- * finish, re-laid on every change (and every few seconds, since "now"
- * moves). Start replaces any timer already there: there is only ever
+ * Top to bottom, every row centred: the task; Timer / Alarm; either
+ * hours and minutes (a timer's length) or a clock time (an alarm's — the
+ * next time the clock reads it, today or tomorrow); a timeline of the
+ * session laid out from the current time — each break and the finish,
+ * re-laid on every change (and every few seconds, since "now" moves);
+ * and under it, how often to break. Start replaces any timer already there: there is only ever
  * one (timer-store.js).
  */
 
@@ -70,6 +70,11 @@ export function openTimerSheet(state) {
           <button type="button" class="timer-period" data-period="pm">PM</button>
         </div>
       </div>
+      <div class="timer-timeline" aria-hidden="true">
+        <div class="timer-track"><div class="timer-rule"></div></div>
+        <div class="timer-labels"></div>
+      </div>
+      <div class="timer-summary"></div>
       <div class="timer-breaks">
         <span class="timer-caption">Break every</span>
         <div class="timer-seg" role="group" aria-label="Break every">
@@ -77,11 +82,6 @@ export function openTimerSheet(state) {
         </div>
         <span class="timer-caption timer-unit">min</span>
       </div>
-      <div class="timer-timeline" aria-hidden="true">
-        <div class="timer-track"><div class="timer-rule"></div></div>
-        <div class="timer-labels"></div>
-      </div>
-      <div class="timer-summary"></div>
       <div class="timer-actions">
         <button type="button" class="timer-cancel">Cancel</button>
         <button type="button" class="timer-start">Start</button>
