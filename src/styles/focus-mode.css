@@ -68,8 +68,9 @@ body.focus-mode-active .cmd-floating-button:not(.active) {
 }
 
 /* The timer's ring (sidebar closed) mounts on <body> too, and scales
-   from its resting 0.55 the same way; hovered, it reads at full. */
-body.focus-mode-active .timer-ring:not(:hover) {
+   from its resting 0.55 the same way; hovered, it reads at full, and an
+   alarm's red last ten minutes stay lit like the word-count warning. */
+body.focus-mode-active .timer-ring:not(:hover):not(.alarm-soon) {
   opacity: calc(0.55 * var(--focus-mode-opacity, 0.5));
 }
 

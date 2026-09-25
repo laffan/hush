@@ -59,9 +59,13 @@ html[data-theme="dark"] .timer-sheet {
   .timer-sheet, .timer-backdrop { transition-duration: 0.01s; }
 }
 
+.timer-root [hidden] { display: none !important; }
+
 .timer-task,
 .timer-num,
 .timer-break,
+.timer-mode,
+.timer-period,
 .timer-cancel,
 .timer-start {
   font: inherit;
@@ -97,10 +101,33 @@ html[data-theme="dark"] .timer-sheet {
   opacity: 0.3;
 }
 
+/* Timer / Alarm — Courier's mode buttons: the choice in full ink and
+   underlined, the other faded. */
+.timer-modes { margin-bottom: -6px; }
+
+.timer-mode {
+  padding: 2px 0 3px;
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0.4;
+  border-bottom: 1px solid transparent;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+
+.timer-mode:hover { opacity: 0.75; }
+.timer-mode:focus-visible { opacity: 0.85; }
+.timer-mode.active { opacity: 1; border-bottom-color: currentColor; }
+
 .timer-fields {
   display: flex;
+  align-items: baseline;
   gap: 28px;
 }
+
+/* The alarm's clock: hour : minute, then AM / PM where the locale uses
+   them. */
+.timer-clock { gap: 4px; }
+.timer-colon { font-size: 22px; opacity: 0.45; }
 
 .timer-field {
   display: flex;
@@ -137,7 +164,8 @@ html[data-theme="dark"] .timer-sheet {
   gap: 12px;
 }
 
-.timer-break {
+.timer-break,
+.timer-period {
   padding: 2px 0 3px;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
@@ -147,10 +175,13 @@ html[data-theme="dark"] .timer-sheet {
   transition: opacity 0.15s, border-color 0.15s;
 }
 
-.timer-break:hover { opacity: 0.75; }
-.timer-break:focus-visible { opacity: 0.85; }
+.timer-break:hover,
+.timer-period:hover { opacity: 0.75; }
+.timer-break:focus-visible,
+.timer-period:focus-visible { opacity: 0.85; }
 
-.timer-break.active {
+.timer-break.active,
+.timer-period.active {
   opacity: 1;
   border-bottom-color: currentColor;
 }
@@ -469,6 +500,18 @@ html[data-theme="dark"] .sidebar-timer {
 
 .timer-ring:hover .timer-ring-label,
 .timer-ring:focus-visible .timer-ring-label { opacity: 1; }
+
+/* An alarm's last ten minutes: the minutes to go turn red, in the box
+   and in the ring, where they show without a hover. */
+.sidebar-timer.alarm-soon .sidebar-timer-countdown { color: var(--timer-alarm-red); }
+.timer-ring.alarm-soon { opacity: 1; }
+.timer-ring.alarm-soon .timer-ring-label {
+  opacity: 1;
+  color: var(--timer-alarm-red);
+}
+
+.sidebar-timer,
+.timer-ring { --timer-alarm-red: #d2453b; }
 
 /* Let the last rows scroll out from under the box. */
 #panel-overlay.has-timer .panel-overlay-body:has(+ .sidebar-timer-slot) { padding-bottom: 84px; }

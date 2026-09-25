@@ -3,12 +3,17 @@
  * (and every window: it lives in `settings.timer`, opaque to Rust — see
  * `timer` on `AppSettings`):
  *
- *   { active: { task, startedAt, durationMs, breakEveryMs } | null,
- *     last:   { hours, minutes, breakEvery } }
+ *   { active: { task, mode, startedAt, durationMs, breakEveryMs } | null,
+ *     last:   { mode, hours, minutes, alarmHour, alarmMinute, breakEvery } }
  *
  * `active` holds absolute times, so a timer keeps running while the app
  * is closed and every window reads the same clock. `last` is what the
  * Start timer sheet opens on next time.
+ *
+ * `mode` is "timer" (a length: hours and minutes from now) or "alarm" (a
+ * time of day). Both are stored the same way — an alarm is a timer whose
+ * length is whatever is left until that time — and the mode only
+ * changes how the sheet asks and how the last ten minutes look.
  *
  * Breaks are moments, not intervals: every `breakEveryMs` from the start,
  * stopping short of the finish. The countdown never pauses for them.
@@ -19,7 +24,12 @@ const MINUTE = 60 * 1000;
 /** Break frequencies the sheet offers, in minutes (0 = no breaks). */
 export const BREAK_CHOICES = [0, 25, 30, 45, 60, 90];
 
-export const DEFAULT_LAST = { hours: 1, minutes: 0, breakEvery: 25 };
+export const DEFAULT_LAST = {
+  mode: "timer", hours: 1, minutes: 0, alarmHour: null, alarmMinute: 0, breakEvery: 25,
+};
+
+/** The final stretch of an alarm, which the sidebar paints red. */
+export const ALARM_WARNING_MS = 10 * MINUTE;
 
 function read(state) {
   const t = state.settings?.timer;
@@ -54,12 +64,28 @@ function write(state, patch) {
 }
 
 /** Start a timer, replacing any other (there is only ever one). */
-export function startTimer(state, { task, hours, minutes, breakEvery }, now = Date.now()) {
-  const durationMs = (hours * 60 + minutes) * MINUTE;
+export function startTimer(state, { task, mode = "timer", durationMs, breakEvery, last }, now = Date.now()) {
   return write(state, {
-    active: { task: task.trim(), startedAt: now, durationMs, breakEveryMs: breakEvery * MINUTE },
-    last: { hours, minutes, breakEvery },
+    active: { task: task.trim(), mode, startedAt: now, durationMs, breakEveryMs: breakEvery * MINUTE },
+    last: { ...lastValues(state), ...last, mode, breakEvery },
   });
+}
+
+/** The next time the clock reads `hour24:minute` — later today, or
+ *  tomorrow if that has already passed (or is this very minute). */
+export function nextOccurrence(hour24, minute, now = Date.now()) {
+  const d = new Date(now);
+  d.setHours(hour24, minute, 0, 0);
+  if (d.getTime() <= now) d.setDate(d.getDate() + 1);
+  return d.getTime();
+}
+
+/** Whether this locale writes times on a 12-hour clock (with AM / PM). */
+export function uses12HourClock() {
+  const fmt = new Intl.DateTimeFormat([], { hour: "numeric" });
+  const hc = fmt.resolvedOptions().hourCycle;
+  if (hc) return hc === "h11" || hc === "h12";
+  return fmt.formatToParts(new Date()).some((p) => p.type === "dayPeriod");
 }
 
 /** Change the task's wording; the clock is left exactly as it was. */

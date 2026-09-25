@@ -22,7 +22,7 @@
  */
 
 import {
-  getTimer, timerStatus, formatMinutes, minutesLeft, formatClock, renameTimer,
+  getTimer, timerStatus, formatMinutes, minutesLeft, formatClock, renameTimer, ALARM_WARNING_MS,
 } from "./timer-store.js";
 
 /** How long after a break the box says "break now" instead of counting
@@ -160,6 +160,12 @@ export function mountTimerBox(slot, state, panelOverlay) {
     els.ringFill.style.strokeDashoffset = String(100 - st.progress * 100);
     ring.classList.toggle("finished", st.finished);
 
+    // An alarm's last ten minutes: the minutes to go in red, and the ring
+    // shows them without being hovered.
+    const alarmSoon = timer.mode === "alarm" && !st.finished && st.remaining <= ALARM_WARNING_MS;
+    box.classList.toggle("alarm-soon", alarmSoon);
+    ring.classList.toggle("alarm-soon", alarmSoon);
+
     if (st.finished) {
       box.classList.remove("break-now");
       els.countdown.textContent = "Done";
@@ -177,16 +183,18 @@ export function mountTimerBox(slot, state, panelOverlay) {
         : st.untilBreak != null ? `break<span class="w-in"> in</span> ${formatMinutes(st.untilBreak)}` : "";
       els.end.innerHTML = `<span class="w-ends">ends </span>${clockHtml(st.end)}`;
       // Minutes to the next break, or to the finish once none are left.
-      const toNext = st.untilBreak ?? st.remaining;
+      const toNext = alarmSoon ? st.remaining : (st.untilBreak ?? st.remaining);
       const mins = minutesLeft(toNext);
       els.ringLabel.textContent = mins > 99 ? `${Math.floor(mins / 60)}h` : String(mins);
-      ring.setAttribute("aria-label", st.untilBreak != null
+      ring.setAttribute("aria-label", !alarmSoon && st.untilBreak != null
         ? `${mins} min to the next break` : `${mins} min to go`);
     }
     ring.title = ring.getAttribute("aria-label");
 
     if (seen) {
-      if (st.finished && !seen.finished) void toast(`Timer done${timer.task ? ` — ${timer.task}` : ""}`);
+      if (st.finished && !seen.finished) {
+        void toast(`${timer.mode === "alarm" ? "Alarm" : "Timer done"}${timer.task ? ` — ${timer.task}` : ""}`);
+      }
       else if (st.breaksPassed > seen.breaksPassed) void toast("Time for a break");
     }
     seen = { breaksPassed: st.breaksPassed, finished: st.finished };
