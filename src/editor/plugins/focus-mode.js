@@ -2,8 +2,8 @@
  * Focus Mode — dims all text except the current sentence to 50% opacity.
  * Uses the same sentence-boundary detection as sentence-navigator.js.
  */
-import { ViewPlugin, Decoration } from "@codemirror/view";
-import { RangeSetBuilder } from "@codemirror/state";
+import { ViewPlugin, Decoration, EditorView } from "@codemirror/view";
+import { RangeSetBuilder, Prec } from "@codemirror/state";
 
 // ===== Sentence boundary detection (mirrors sentence-navigator.js) =====
 
@@ -87,8 +87,15 @@ const dimMark = Decoration.mark({ class: "focus-mode-dim" });
 
 // ===== ViewPlugin =====
 
+// `Prec.lowest` puts the dim marks at the bottom of the decoration
+// stack, and CodeMirror nests lower-precedence marks *outside* higher
+// ones — so the dim span wraps highlight / YOUAREHERE / find spans and
+// their backgrounds fade with the text instead of sitting at full
+// strength around a faded glyph. `cm-focus-mode` on the editor root is
+// the per-surface hook styles/focus-mode.css uses to grey those
+// backgrounds out (a pane's focus mode is its own, so <body> can't say).
 export function createFocusModePlugin(state) {
-  return ViewPlugin.fromClass(
+  return Prec.lowest(ViewPlugin.fromClass(
     class {
       constructor(view) {
         this.lastFocusMode = state.focusMode;
@@ -144,6 +151,12 @@ export function createFocusModePlugin(state) {
         return builder.finish();
       }
     },
-    { decorations: (v) => v.decorations }
-  );
+    {
+      decorations: (v) => v.decorations,
+      // Re-read on every view update, which is also what re-dims on toggle.
+      provide: () => EditorView.editorAttributes.of(
+        () => (state.focusMode ? { class: "cm-focus-mode" } : null)
+      ),
+    }
+  ));
 }

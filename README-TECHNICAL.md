@@ -136,7 +136,7 @@ The field, the keymap and the panel are built **per editor** (`createOutlinePlug
 - **Overlapping replace/fold decorations crash the view layer** — filter candidates before applying (`applyFolds`).
 - A caret inside a folded range auto-unfolds it — park the cursor at the fold start when folding would strand it.
 - **No layout reads or dispatches inside `ViewPlugin.update`** — defer via `queueMicrotask` with a re-entry guard (wikilink decorator).
-- Replace-decoration **widgets render outside surrounding mark spans**, so focus-mode dimming must be baked onto widget DOM (links, citation pills) and rebuilt on toggle.
+- Replace-decoration **widgets render outside mark spans of higher precedence** (lower-precedence marks wrap them), so focus-mode dimming is also baked onto widget DOM (links, citation pills) and rebuilt on toggle. The focus plugin itself runs at `Prec.lowest` so its dim span wraps highlight / YOUAREHERE backgrounds and they fade with the text; `.focus-mode-dim .focus-mode-dim` resets to `opacity: 1` so a baked dim inside the wrapping one doesn't compound.
 - `EditorView.scrollIntoView` via `coordsAtPos` silently no-ops for offsets outside the rendered viewport — dispatch the scroll **state effect** instead (outline jumps).
 - Widget teardown races taps on iOS — see Platform gotchas.
 - A `getBoundingClientRect` read flushes CM's pending measure pass — some scroll-sync code (gutter) depends on that side effect; "optimizing" the read away breaks fresh-line measurements.

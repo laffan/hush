@@ -41,7 +41,7 @@ export function createFlagHighlightPlugin(stateRef) {
           builder.add(
             match.index,
             match.index + match[0].length,
-            Decoration.mark({ attributes: { style: `background-color: ${bg}; border-radius: 2px` } })
+            Decoration.mark({ class: "cm-flag-highlight", attributes: { style: `background-color: ${bg}; border-radius: 2px` } })
           );
         }
         return builder.finish();
