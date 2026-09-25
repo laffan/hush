@@ -1,7 +1,10 @@
 /**
- * Touch-mode floating buttons (iOS / iPadOS only).
+ * Touch-mode floating buttons (iOS / iPadOS only), shown while the
+ * Touch mode setting is on. The one exception is the palette pill on a
+ * phone, which is always there: a phone has no keyboard to reach the
+ * palette any other way.
  *
- * Three pills in the bottom-left of the editor for keyboard-free use:
+ * Pills in the bottom-left of the editor for keyboard-free use:
  *   - ⌘ button: hold to mimic the Cmd key being pressed (drag text
  *     out of a pane, Cmd-drag to merge flowchart nodes, Cmd-click on
  *     a link, etc.).
@@ -68,10 +71,16 @@ function applyButtonVisibility() {
     if (_paletteBtn) unmountButtons();
     return;
   }
-  // Palette pill is unconditional on iOS so users without a keyboard
-  // can always reach the command palette. Cmd / paste / undo still
-  // gate behind touchMode (legacy `showCmdButton` alias preserved).
+  // Every pill is a Touch mode pill (legacy `showCmdButton` alias
+  // preserved), the palette included — an iPad with Touch mode off is
+  // one with a keyboard, and ⌘P reaches the palette there. A phone keeps
+  // the palette pill regardless: it has no other way to the palette.
   const touchPills = !!(_state.settings?.touchMode || _state.settings?.showCmdButton);
+  const phone = document.documentElement.classList.contains("phone");
+  if (!touchPills && !phone) {
+    if (_paletteBtn) unmountButtons();
+    return;
+  }
   if (!_paletteBtn) mountButtons(touchPills);
   else syncTouchPills(touchPills);
 }
@@ -79,8 +88,7 @@ function applyButtonVisibility() {
 function mountButtons(touchPills) {
   if (_paletteBtn) { syncTouchPills(touchPills); return; }
 
-  // ☰ button — always present on iOS so the command palette is reachable
-  // without a hardware keyboard.
+  // ☰ button — the command palette without a hardware keyboard.
   _paletteBtn = document.createElement("button");
   _paletteBtn.className = "cmd-floating-button cmd-palette-button";
   _paletteBtn.setAttribute("aria-label", "Open command palette");
@@ -101,8 +109,9 @@ function mountButtons(touchPills) {
   }
 }
 
-/** Mount or unmount the touchMode-gated pills (⌘ hold, 📋 paste, ↶ undo).
- *  Palette stays mounted regardless. Phone (`html.phone`) skips ⌘ and ↶
+/** Mount or unmount the pills that ride beside the palette (⌘ hold,
+ *  📋 paste, ↶ undo). The palette itself is mounted and unmounted by
+ *  `applyButtonVisibility`. Phone (`html.phone`) skips ⌘ and ↶
  *  because Cmd-modified flows and notebook undo aren't useful there. */
 function syncTouchPills(enabled) {
   const phone = document.documentElement.classList.contains("phone");

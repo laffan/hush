@@ -83,7 +83,7 @@ There is no sync service. Every desk is a self-contained folder of ordinary file
 ## Everywhere you are
 
 - **macOS**: menu-bar app, optional dock icon, always-on-top, fullscreen, hidden traffic lights.
-- **iPad**: full app with Apple Pencil support, Files-app integration, real multi-window (Split View / Stage Manager), and touch-mode pills for keyboard-free use. A window that fills the screen hides the status bar (Settings → Hide status bar in full screen) and shows it again, window controls included, while the mouse is in the top-left corner; a windowed one keeps it, since that's where iPadOS puts the window controls. iPhone gets a phone-tuned layout.
+- **iPad**: full app with Apple Pencil support, Files-app integration, real multi-window (Split View / Stage Manager), and touch-mode pills for keyboard-free use (command palette, a holdable ⌘, paste and undo), shown while Settings → Touch mode is on. On iPhone the palette pill is always there. A window that fills the screen hides the status bar (Settings → Hide status bar in full screen) and shows it again, window controls included, while the mouse is in the top-left corner; a windowed one keeps it, since that's where iPadOS puts the window controls. iPhone gets a phone-tuned layout.
 - **Multiple windows** on desktop and iPad — each window can sit on its own desk, and edits sync live between windows.
 - **Keyboard-first**: every shortcut is rebindable in Settings, and **Show Shortcuts** displays a cheat sheet for whatever file type you're looking at.
 

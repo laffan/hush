@@ -186,9 +186,10 @@
 
 /* iPadOS 26: lift the *main* PDF viewer's bottom toolbar clear of both
    the bottom-centre grab handle (blocks the centred formatting buttons)
-   and the always-present touch-mode ☰ command-palette pill at the
-   bottom-left (whose top edge sits ~47px up and would otherwise cover
-   the left-most Bookmarks button). 52px = 11px pill inset + 36px pill
+   and the touch-mode ☰ command-palette pill at the bottom-left, when
+   Touch mode is on (its top edge sits ~47px up and would otherwise
+   cover the left-most Bookmarks button). The band stays with Touch mode
+   off: the grab handle is still there. 52px = 11px pill inset + 36px pill
    height + a 5px gap. Scoped to #pdf-container: floating PDF panes sit
    mid-screen and stack columns already reserve their own bottom band,
    so neither should grow this padding. */
