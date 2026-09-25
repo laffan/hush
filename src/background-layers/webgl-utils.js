@@ -63,7 +63,7 @@ let _colorCtx = null;
 export function normalizeColor(value, fallback = "#9ecbff") {
   const v = String(value || "").trim();
   if (!v) return fallback;
-  if (/^#[0-9a-f]{6}$/i.test(v)) return v;
+  if (/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(v)) return v;
   if (!_colorCtx) _colorCtx = document.createElement("canvas").getContext("2d");
   _colorCtx.fillStyle = "#000000";
   _colorCtx.fillStyle = v;
@@ -71,7 +71,15 @@ export function normalizeColor(value, fallback = "#9ecbff") {
   // A rejected value leaves the seed behind; treat that as "unparseable"
   // unless the caller genuinely asked for black.
   if (out === "#000000" && !/^(#000(000)?|black|rgba?\(0,\s*0,\s*0)/i.test(v)) return fallback;
-  return typeof out === "string" && out.startsWith("#") ? out : fallback;
+  if (typeof out !== "string") return fallback;
+  if (out.startsWith("#")) return out;
+  // A translucent colour reads back as `rgba(r, g, b, a)`; keep its
+  // alpha as `#rrggbbaa` so `hexToVec4` can hand it to the shader.
+  const m = out.match(/^rgba?\(\s*(\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\s*\)$/);
+  if (!m) return fallback;
+  const h = (n) => Math.round(Math.max(0, Math.min(255, n))).toString(16).padStart(2, "0");
+  const a = m[4] == null ? 1 : parseFloat(m[4]);
+  return `#${h(+m[1])}${h(+m[2])}${h(+m[3])}${a < 1 ? h(a * 255) : ""}`;
 }
 
 export function hexToVec3(hex) {
@@ -81,6 +89,15 @@ export function hexToVec3(hex) {
   const g = (parseInt(expand.slice(2, 4), 16) || 0) / 255;
   const b = (parseInt(expand.slice(4, 6), 16) || 0) / 255;
   return [r, g, b];
+}
+
+/** `#rrggbb` / `#rrggbbaa` → `[r, g, b, a]` (0-1). A colour with no
+ *  alpha of its own is opaque. */
+export function hexToVec4(hex) {
+  const h = (hex || "").replace("#", "");
+  const expand = h.length === 3 || h.length === 4 ? h.split("").map(c => c + c).join("") : h;
+  const a = expand.length === 8 ? (parseInt(expand.slice(6, 8), 16) || 0) / 255 : 1;
+  return [...hexToVec3("#" + expand.slice(0, 6)), a];
 }
 
 export function clamp01(v) {

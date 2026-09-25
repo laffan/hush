@@ -150,9 +150,13 @@ export default function mount(host, ctx) {
   let lastClock = start;
 
   function applyOptions() {
-    const c1 = hexToVec3(options.color1 || "#f334a6");
-    const c2 = hexToVec3(options.color2 || "#34c4f4");
-    const c3 = hexToVec3(options.color3 || "#8c4ce8");
+    // A colour's opacity (the picker's slider, stored as `#rrggbbaa`) is
+    // folded into the colour itself: a blob's glow is additive and its
+    // alpha comes from its brightness, so scaling the colour down fades
+    // that blob exactly as an opacity would.
+    const c1 = premultiplied(options.color1 || "#f334a6");
+    const c2 = premultiplied(options.color2 || "#34c4f4");
+    const c3 = premultiplied(options.color3 || "#8c4ce8");
     gl.uniform3f(uC1, c1[0], c1[1], c1[2]);
     gl.uniform3f(uC2, c2[0], c2[1], c2[2]);
     gl.uniform3f(uC3, c3[0], c3[1], c3[2]);
@@ -265,12 +269,14 @@ function num(v, fallback) {
   return (typeof v === "number" && !Number.isNaN(v)) ? v : fallback;
 }
 
-function hexToVec3(hex) {
-  // Accepts #rgb, #rrggbb. Returns [r, g, b] in 0..1.
+function premultiplied(hex) {
+  // Accepts #rgb(a), #rrggbb(aa). Returns [r, g, b] in 0..1, scaled by
+  // the colour's own alpha.
   const h = (hex || "").replace("#", "");
-  const expand = h.length === 3 ? h.split("").map(c => c + c).join("") : h;
+  const expand = h.length === 3 || h.length === 4 ? h.split("").map(c => c + c).join("") : h;
+  const a = expand.length === 8 ? (parseInt(expand.slice(6, 8), 16) || 0) / 255 : 1;
   const r = (parseInt(expand.slice(0, 2), 16) || 0) / 255;
   const g = (parseInt(expand.slice(2, 4), 16) || 0) / 255;
   const b = (parseInt(expand.slice(4, 6), 16) || 0) / 255;
-  return [r, g, b];
+  return [r * a, g * a, b * a];
 }

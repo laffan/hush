@@ -19,6 +19,7 @@
 import { escAttr, escHtml } from "./styles-panel-shared.js";
 import { getThemeById } from "../themes/index.js";
 import { themeColorFor } from "./style-modal-preview.js";
+import { splitAlphaColor, joinAlphaColor } from "../ui/color-picker.js";
 
 /** True when either appearance carries a line-indicator override. */
 export function hasCustomLineIndicatorColor(draft) {
@@ -39,13 +40,15 @@ function seedColor(draft, tab) {
 }
 
 /** One appearance's swatch — the same markup as the Cursor section's
- *  colour pair (style-modal-cursor.js), so the two read alike. */
+ *  colour pair (style-modal-cursor.js), so the two read alike, opted
+ *  into the picker's opacity slider the same way (`data-alpha`). */
 function swatchCell(id, label, value) {
+  const { hex, alpha } = splitAlphaColor(value);
   return `
           <span class="style-appearance-swatch">
             <span class="style-appearance-swatch-label">${escHtml(label)}</span>
             <span class="style-color-group">
-              <input type="color" id="${id}" value="${escAttr(value)}" aria-label="${escHtml(label)} line indicator color" />
+              <input type="color" id="${id}" value="${escAttr(hex)}" data-alpha="${alpha}" aria-label="${escHtml(label)} line indicator color" />
             </span>
           </span>`;
 }
@@ -106,7 +109,7 @@ export function bindLineIndicatorColorRows(root, draft, rerender, onCommit) {
       const target = tab === "light"
         ? (draft.lightColors || (draft.lightColors = {}))
         : (draft.darkColors || (draft.darkColors = {}));
-      target.lineIndicator = el.value;
+      target.lineIndicator = joinAlphaColor(el.value, el.dataset.alpha);
       onCommit();
     };
     el.addEventListener("input", handler);

@@ -20,7 +20,7 @@
  * element, exactly as for image and gradient layers) is what dials it
  * up and down — one control instead of two that multiplied together.
  */
-import { linkProgram, setupQuad, QUAD_VERT, hexToVec3, num, sizeCanvas } from "./webgl-utils.js";
+import { linkProgram, setupQuad, QUAD_VERT, hexToVec4, num, sizeCanvas } from "./webgl-utils.js";
 import { resolveCaretPreset } from "./effects-registry.js";
 
 const TRAIL = 16;
@@ -41,7 +41,7 @@ uniform vec2  u_resolution;
 uniform float u_time;
 uniform float u_px;        // backing-store px per CSS px
 uniform vec4  u_trail[${TRAIL}]; // x, y (backing px, y-down), birth (s), seed
-uniform vec3  u_color;
+uniform vec4  u_color;   // rgb + the colour's own opacity
 uniform vec2  u_caret;     // current caret (backing px, y-down)
 uniform float u_caretH;    // caret height (backing px)
 uniform float u_lineH;     // underline thickness (CSS px)
@@ -105,7 +105,7 @@ void main() {
       acc += (1.0 - smoothstep(rad - aa, rad + aa, d)) * fade;
     }
   }
-  outColor = vec4(u_color, clamp(acc, 0.0, 1.0) * 0.95);
+  outColor = vec4(u_color.rgb, clamp(acc, 0.0, 1.0) * 0.95 * u_color.a);
 }`;
 
 // Underline glow: a solid filled bar under the text, drawn as capsules
@@ -168,7 +168,7 @@ void main() {
     float glow = exp(-(d * d) / max(glowR * glowR * 2.0, 1e-4)) * 0.22;
     acc = max(acc, (core + glow) * fade);
   }
-  outColor = vec4(u_color, clamp(acc, 0.0, 1.0) * 0.9);
+  outColor = vec4(u_color.rgb, clamp(acc, 0.0, 1.0) * 0.9 * u_color.a);
 }`;
 
 // Flicker bar: a full-width phosphor bar at the caret's line, with a
@@ -184,7 +184,7 @@ void main() {
   float f2 = hash(floor(u_time * 43.0) + 7.0);
   float flicker = 0.82 + 0.12 * f1 + 0.06 * f2;
   float scan = 0.9 + 0.1 * sin(frag.y * 6.283 / max(3.0 * u_px, 1.0));
-  outColor = vec4(u_color, clamp(band * flicker * scan * 0.35, 0.0, 0.6));
+  outColor = vec4(u_color.rgb, clamp(band * flicker * scan * 0.35, 0.0, 0.6) * u_color.a);
 }`;
 
 const FRAGS = {
@@ -225,7 +225,7 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
   }
 
   let preset = resolveCaretPreset(cfg.preset);
-  let color = hexToVec3(cfg.color || "#9ecbff");
+  let color = hexToVec4(cfg.color || "#9ecbff");
   let lineH = num(cfg.height, UNDERLINE_DEFAULTS.height);
   let sparkH = num(cfg.sparkHeight, SPARK_DEFAULTS.height);
   let offsetY = num(cfg.offsetY, UNDERLINE_DEFAULTS.offsetY);
@@ -350,7 +350,7 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
     gl.uniform1f(uni.time, now());
     gl.uniform1f(uni.px, pxScale);
     gl.uniform4fv(uni.trail, trailSorted);
-    gl.uniform3f(uni.color, color[0], color[1], color[2]);
+    gl.uniform4f(uni.color, color[0], color[1], color[2], color[3]);
     gl.uniform1f(uni.lineH, lineH);
     gl.uniform1f(uni.life, life);
     gl.uniform1f(uni.sparkH, sparkH);
@@ -410,7 +410,7 @@ export function createCaretEffect(host, cfg, caretSource, ctx) {
   return {
     update(nextCfg) {
       const nextPreset = resolveCaretPreset(nextCfg.preset);
-      color = hexToVec3(nextCfg.color || "#9ecbff");
+      color = hexToVec4(nextCfg.color || "#9ecbff");
       lineH = num(nextCfg.height, UNDERLINE_DEFAULTS.height);
       sparkH = num(nextCfg.sparkHeight, SPARK_DEFAULTS.height);
       offsetY = num(nextCfg.offsetY, UNDERLINE_DEFAULTS.offsetY);

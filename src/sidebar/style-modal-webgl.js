@@ -15,6 +15,14 @@
 import { WEBGL_BG_EFFECTS, CARET_PRESETS, resolveEffectOptions } from "../background-layers/effects-registry.js";
 import { escAttr, escHtml } from "./styles-panel-shared.js";
 import { blendRowHtml, renderOpacityRows } from "./style-layer-ui.js";
+import { splitAlphaColor, joinAlphaColor } from "../ui/color-picker.js";
+
+/** A colour well opted into the picker's opacity slider: the stored
+ *  `#rrggbbaa` splits into the swatch's hex and its `data-alpha`. */
+function colorInput(attrs, value) {
+  const { hex, alpha } = splitAlphaColor(value);
+  return `<input type="color" ${attrs} value="${escAttr(hex)}" data-alpha="${alpha}" />`;
+}
 
 function knobHtml(s, v) {
   if (s.type === "range") {
@@ -34,7 +42,7 @@ function knobHtml(s, v) {
     return `<div class="style-editor-color-row">
       <label>${escHtml(s.label)}</label>
       <div class="style-color-group">
-        <input type="color" data-effect-opt="${escAttr(s.id)}" value="${escAttr(v)}" />
+        ${colorInput(`data-effect-opt="${escAttr(s.id)}"`, v)}
       </div>
     </div>`;
   }
@@ -91,6 +99,8 @@ export function bindWebglOptions(container, layer, { onCommit, rerender }) {
           const step = parseFloat(input.step);
           display.textContent = step >= 1 ? `${v}` : `${Math.round(v * 100)}%`;
         }
+      } else if (input.type === "color") {
+        layer.options[optId] = joinAlphaColor(input.value, input.dataset.alpha);
       } else {
         layer.options[optId] = input.value;
       }
@@ -144,7 +154,7 @@ export function renderCaretOptions(layer) {
     <div class="style-editor-color-row">
       <label>${label}</label>
       <div class="style-color-group">
-        <input type="color" id="${id}" value="${escAttr(value)}" />
+        ${colorInput(`id="${id}"`, value)}
       </div>
     </div>`;
 
@@ -211,7 +221,7 @@ export function bindCaretOptions(container, layer, { onCommit, rerender }) {
     const el = container.querySelector(sel);
     if (!el) return;
     const handler = () => {
-      layer[field] = el.value;
+      layer[field] = joinAlphaColor(el.value, el.dataset.alpha);
       // The single legacy `color` is ambiguous once the two diverge —
       // drop it so nothing downstream reads a stale shared value.
       delete layer.color;

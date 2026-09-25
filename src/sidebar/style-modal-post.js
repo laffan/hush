@@ -15,6 +15,7 @@
  * the effect code in.
  */
 import { escAttr, escHtml } from "./styles-panel-shared.js";
+import { splitAlphaColor, joinAlphaColor } from "../ui/color-picker.js";
 import { POST_EFFECTS, findPostEffect, resolvePostOptions, defaultPostLayer } from "../post-layers/registry.js";
 import {
   blendRowHtml, newLayerId, renderLayerList, renderAddRow, bindLayerSection,
@@ -101,10 +102,13 @@ function knobHtml(s, v) {
     </div>`;
   }
   if (s.type === "color") {
+    // Opted into the picker's opacity slider (`data-alpha`); the colour
+    // is stored as `#rrggbbaa` and effects.js honours the alpha.
+    const { hex, alpha } = splitAlphaColor(v);
     return `<div class="style-editor-color-row">
       <label>${escHtml(s.label)}</label>
       <div class="style-color-group">
-        <input type="color" data-post-opt="${escAttr(s.id)}" value="${escAttr(v)}" />
+        <input type="color" data-post-opt="${escAttr(s.id)}" value="${escAttr(hex)}" data-alpha="${alpha}" />
       </div>
     </div>`;
   }
@@ -201,6 +205,8 @@ export function bindPostSection(backdrop, draft, scheduleSave) {
             const unit = findPostEffect(sel.type)?.settings.find(s => s.id === key)?.unit || "";
             display.textContent = step >= 1 ? `${v}${unit}` : `${Math.round(v * 100)}%`;
           }
+        } else if (input.type === "color") {
+          sel[key] = joinAlphaColor(input.value, input.dataset.alpha);
         } else {
           sel[key] = input.value;
         }

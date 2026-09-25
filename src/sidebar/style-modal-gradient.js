@@ -10,6 +10,7 @@
  * pane / editor via the WebGL runtime).
  */
 import { escAttr } from "./styles-panel-shared.js";
+import { splitAlphaColor, joinAlphaColor } from "../ui/color-picker.js";
 
 const MAX_NODES = 8;
 
@@ -29,6 +30,9 @@ export function renderGradientOptions(layer) {
   if (_selLayerId !== layer.id) { _selLayerId = layer.id; _selIdx = 0; }
   if (_selIdx >= nodes.length) _selIdx = Math.max(0, nodes.length - 1);
   const sel = nodes[_selIdx] || null;
+  // The node colour carries its own opacity (`#rrggbbaa`), through the
+  // picker's slider — `data-alpha` opts the well in.
+  const selColor = splitAlphaColor(sel ? sel.color : "#888888");
   return `
     <div class="style-grad-pad" style="background:${escAttr(padBackground(nodes))}">
       ${nodes.map((n, i) => `
@@ -39,7 +43,7 @@ export function renderGradientOptions(layer) {
     <div class="style-editor-row">
       <label>Node color</label>
       <div class="style-color-group">
-        <input type="color" id="style-grad-node-color" value="${escAttr(sel ? sel.color : "#888888")}" ${sel ? "" : "disabled"} />
+        <input type="color" id="style-grad-node-color" value="${escAttr(selColor.hex)}" data-alpha="${selColor.alpha}" ${sel ? "" : "disabled"} />
       </div>
     </div>
     <div class="style-editor-row">
@@ -80,7 +84,14 @@ export function bindGradientOptions(container, layer, { onPreview, onCommit, rer
         container.querySelectorAll(".style-grad-node").forEach((d) => d.classList.remove("selected"));
         dot.classList.add("selected");
         const colorInput = container.querySelector("#style-grad-node-color");
-        if (colorInput && nodes[idx]) colorInput.value = nodes[idx].color;
+        if (colorInput && nodes[idx]) {
+          const { hex, alpha } = splitAlphaColor(nodes[idx].color);
+          colorInput.value = hex;
+          colorInput.dataset.alpha = String(alpha);
+          // The picker's well only re-reads its opacity on input events,
+          // and firing one would write the colour straight back.
+          colorInput.closest(".hush-color-well")?.style.setProperty("--well-alpha", String(alpha));
+        }
       }
       // Coordinates clamp to the pad.
       const rect = pad.getBoundingClientRect();
@@ -111,10 +122,11 @@ export function bindGradientOptions(container, layer, { onPreview, onCommit, rer
   if (colorEl) {
     const handler = () => {
       if (!nodes[_selIdx]) return;
-      nodes[_selIdx].color = colorEl.value;
+      const color = joinAlphaColor(colorEl.value, colorEl.dataset.alpha);
+      nodes[_selIdx].color = color;
       refreshPad();
       const dot = container.querySelector(`.style-grad-node[data-node-idx="${_selIdx}"]`);
-      if (dot) dot.style.setProperty("--node-color", colorEl.value);
+      if (dot) dot.style.setProperty("--node-color", color);
       onCommit();
     };
     colorEl.addEventListener("input", handler);

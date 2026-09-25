@@ -57,6 +57,15 @@ function rgbCsv(hex) {
   return `${r},${g},${b}`;
 }
 
+/** The opacity an `#rrggbbaa` colour carries (the style editor's picker
+ *  stores one when its opacity slider is below full), 1 otherwise. */
+function hexAlpha(hex) {
+  const h = String(hex || "").replace("#", "");
+  if (h.length === 8) return (parseInt(h.slice(6, 8), 16) || 0) / 255;
+  if (h.length === 4) return (parseInt(h[3] + h[3], 16) || 0) / 255;
+  return 1;
+}
+
 /** Both vendor spellings — WebKit still wants the prefixed property. */
 function setBackdropFilter(el, value) {
   el.style.setProperty("-webkit-backdrop-filter", value);
@@ -86,7 +95,7 @@ function simpleEffect(slot, layer, paint) {
 
 function mountVignette(slot, layer) {
   return simpleEffect(slot, layer, (el, l) => {
-    const strength = clamp01(num(l.strength, 0.5));
+    const strength = clamp01(num(l.strength, 0.5)) * hexAlpha(l.color);
     // Spread widens the darkened band inward: 0 hugs the corners, 1
     // reaches most of the way to the centre.
     const inner = (80 - clamp01(num(l.spread, 0.45)) * 70).toFixed(1);
@@ -97,7 +106,7 @@ function mountVignette(slot, layer) {
 
 function mountScanlines(slot, layer) {
   return simpleEffect(slot, layer, (el, l) => {
-    const alpha = clamp01(num(l.opacity, 0.15)).toFixed(3);
+    const alpha = (clamp01(num(l.opacity, 0.15)) * hexAlpha(l.color)).toFixed(3);
     const period = Math.max(2, Math.round(num(l.spacing, 2)));
     const rgb = rgbCsv(l.color || "#000000");
     el.style.background = `repeating-linear-gradient(

@@ -13,7 +13,7 @@
  * No-WebGL2 fallback: stacked CSS radial-gradients — visually coarser
  * but never blank.
  */
-import { linkProgram, setupQuad, QUAD_VERT, hexToVec3, sizeCanvas } from "./webgl-utils.js";
+import { linkProgram, setupQuad, QUAD_VERT, hexToVec4, sizeCanvas } from "./webgl-utils.js";
 import { defaultGradientNodes } from "./effects-registry.js";
 
 const MAX_NODES = 8;
@@ -27,11 +27,15 @@ uniform float u_time;
 uniform float u_animate;
 uniform int   u_count;
 uniform vec2  u_pos[${MAX_NODES}];
-uniform vec3  u_colors[${MAX_NODES}];
+uniform vec4  u_colors[${MAX_NODES}]; // rgb + each node's own opacity
 
 void main() {
   float aspect = u_resolution.x / max(u_resolution.y, 1.0);
+  // Colour is averaged weighted by each node's opacity, so a
+  // translucent node thins the gradient around it instead of tinting
+  // its neighbours toward black; the alpha is the plain weighted mean.
   vec3 col = vec3(0.0);
+  float asum = 0.0;
   float wsum = 0.0;
   for (int i = 0; i < ${MAX_NODES}; i++) {
     if (i >= u_count) break;
@@ -40,10 +44,11 @@ void main() {
     vec2 p = u_pos[i] + orbit;
     vec2 d = (v_uv - p) * vec2(aspect, 1.0);
     float w = 1.0 / (pow(length(d), 3.0) + 0.002);
-    col += u_colors[i] * w;
+    col += u_colors[i].rgb * u_colors[i].a * w;
+    asum += u_colors[i].a * w;
     wsum += w;
   }
-  outColor = vec4(col / max(wsum, 1e-6), 1.0);
+  outColor = vec4(col / max(asum, 1e-6), asum / max(wsum, 1e-6));
 }`;
 
 const DEFAULT_NODES = defaultGradientNodes();
@@ -116,19 +121,19 @@ export function mountGradientLayer(host, cfg, appearance, ctx) {
   };
 
   const posArr = new Float32Array(MAX_NODES * 2);
-  const colArr = new Float32Array(MAX_NODES * 3);
+  const colArr = new Float32Array(MAX_NODES * 4);
   function pushNodeUniforms() {
     for (let i = 0; i < nodes.length; i++) {
       posArr[i * 2] = nodes[i].x;
       // Node coords are stored y-down (matching the pad editor and the
       // editor surface); v_uv is y-up.
       posArr[i * 2 + 1] = 1 - nodes[i].y;
-      const c = hexToVec3(nodes[i].color);
-      colArr[i * 3] = c[0]; colArr[i * 3 + 1] = c[1]; colArr[i * 3 + 2] = c[2];
+      const c = hexToVec4(nodes[i].color);
+      colArr.set(c, i * 4);
     }
     gl.uniform1i(uni.count, nodes.length);
     gl.uniform2fv(uni.pos, posArr);
-    gl.uniform3fv(uni.colors, colArr);
+    gl.uniform4fv(uni.colors, colArr);
   }
 
   function drawFrame() {
