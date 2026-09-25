@@ -40,11 +40,11 @@ function isIOS() {
 let _initialised = false;
 let _lastChromeHidden = null;
 
-/** Push the current "hide system chrome" setting to the iPad shell.
- *  iPadOS doesn't expose a runtime toggle for the status bar or the
- *  Stage Manager resize handle, so the plugin's Swift side swizzles
- *  `prefersStatusBarHidden` + `prefersHomeIndicatorAutoHidden` and
- *  pins the scene size restrictions while chrome is hidden. */
+/** Push the current "hide system chrome" setting to the iOS shell.
+ *  The Swift side hides the status bar in every window that fills its
+ *  screen (a windowed iPad scene keeps it — the window controls live
+ *  there) and auto-hides the home indicator; it re-evaluates on its own
+ *  as a window moves between full screen and windowed. */
 export async function applyChromeHidden(hidden) {
   if (!IS_TAURI || !isIOS()) return;
   if (_lastChromeHidden === hidden) return;

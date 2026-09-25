@@ -74,7 +74,7 @@ export function renderGeneralTab(settings) {
         </select>
       </div>
       ${isIOSSettings() ? `<div class="settings-row"><label>Touch mode</label><input type="checkbox" id="setting-touch-mode" ${s.touchMode ? "checked" : ""} /></div>` : ""}
-      ${isIOSSettings() ? `<div class="settings-row"><label>Hide system chrome</label><input type="checkbox" id="setting-hide-system-chrome" ${s.hideSystemChrome !== false ? "checked" : ""} /></div>` : ""}
+      ${isIOSSettings() ? `<div class="settings-row"><label>Hide status bar in full screen</label><input type="checkbox" id="setting-hide-system-chrome" ${s.hideSystemChrome !== false ? "checked" : ""} /></div>` : ""}
     </div>
   `;
 }

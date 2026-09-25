@@ -169,6 +169,17 @@
     <dict/>
   </dict>
 
+  <!--
+    Status bar visibility is decided per view controller
+    (prefersStatusBarHidden), which is how tauri-plugin-pencil hides it
+    while a window is full screen. YES is the default, but it is the only
+    route left: apps linked against the iOS 27 SDK get no effect from
+    UIApplication.statusBarHidden, and with this key NO UIKit ignores the
+    view controller as well, leaving no way to hide the bar at all.
+  -->
+  <key>UIViewControllerBasedStatusBarAppearance</key>
+  <true/>
+
   <!-- Surface the app in Files.app and let users browse Hush's
        on-device documents through the Files sidebar. -->
   <key>UISupportsDocumentBrowser</key>
