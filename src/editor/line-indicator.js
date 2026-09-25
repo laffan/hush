@@ -16,7 +16,7 @@
  * **Margin geometry has two modes.** In the main editor the arrows and
  * border stripes hang 13-18 px *outside* the text column, into the wide
  * gutter `applyColumnLayout` leaves. A pane or stack column has no such
- * gutter — its scroller is 12 px of padding from the host's edge, and
+ * gutter — its scroller is 22 px of padding from the host's edge, and
  * the host clips — so those offsets put the marks under the pane's
  * rounded border and cropped them away. Those surfaces pass
  * `flush: true`, which spans the overlay across the whole scroller box
@@ -117,7 +117,7 @@ export function createLineIndicatorPlugin(state, opts) {
             // Flush mode measures the scroller's own box: the overlay is
             // absolutely positioned against that padding box, so left 0 /
             // width clientWidth is precisely the host's inner edges, with
-            // the 12 px scroller padding left as the margin the marks sit
+            // the 22 px scroller padding left as the margin the marks sit
             // in (see the module comment).
             if (flush) {
               return {

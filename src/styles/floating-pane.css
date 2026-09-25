@@ -292,9 +292,21 @@
   height: 100%;
 }
 
+/* 22 px at the sides: the margin the fold arrow (20 px from the text)
+   and the line indicator's marks sit in. At 12 px the fold arrow hung
+   past the pane's edge and was clipped. */
 .floating-pane-content .cm-scroller {
-  padding: 8px 12px 100px;
+  padding: 8px 22px 100px;
   overflow: auto;
+}
+
+/* A docked Doc pane can run the full width or height of the window, so
+   it keeps the main editor's measure: the text column stops at the
+   Doc column width (`--doc-column-width`, published by
+   editor/modes.js#applyColumnLayout) and centres in the pane. */
+.floating-pane.docked .floating-pane-content .cm-content {
+  max-width: var(--doc-column-width, 800px);
+  margin: 0 auto;
 }
 
 /* Notebook canvas in pane */

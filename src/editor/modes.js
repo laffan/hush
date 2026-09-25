@@ -191,6 +191,8 @@ export function updateColumnResizers(state) {
     const w = window.innerWidth;
     const colW = state.settings.columnWidth;
     const minPad = 50;
+    // Docked Doc panes keep this measure too (styles/floating-pane.css).
+    document.documentElement.style.setProperty("--doc-column-width", colW + "px");
 
     // Check if left sidebar/panel is occupying inset space
     const panelEl = document.getElementById("panel-overlay");

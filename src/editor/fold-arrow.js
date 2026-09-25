@@ -14,13 +14,21 @@
  *     toggled from the arrow as well as from the unwrap pill.
  *
  * Positioning mirrors the line-indicator overlay so the arrow lands in
- * the same left-margin gutter regardless of the surface's own padding.
+ * the same left-margin gutter regardless of the surface's own padding;
+ * where that margin is too narrow to hold it (a floating pane), the
+ * arrow attaches to the surface's left edge.
  */
 import { ViewPlugin } from "@codemirror/view";
 import { foldedRanges, unfoldEffect } from "@codemirror/language";
 import {
   foldRangeForHeading, isRangeFolded, applyFolds, headingLevel,
 } from "./folding.js";
+
+/** How far the arrow's left edge sits from its anchor: its 16 px width
+ *  plus the 4 px gap (`.hush-fold-arrow` translate in folding.css). */
+const ARROW_REACH = 20;
+/** The least gap kept between the arrow and the scroller's edge. */
+const EDGE_INSET = 2;
 
 const ARROW_SVG =
   '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4 L6 8 L9.5 4" /></svg>';
@@ -141,7 +149,15 @@ export function createFoldArrowPlugin() {
         const contentRect = view.contentDOM.getBoundingClientRect();
         const cs = getComputedStyle(view.contentDOM);
         const padLeft = parseFloat(cs.paddingLeft) || 0;
-        const left = contentRect.left - scrollerRect.left + padLeft + view.scrollDOM.scrollLeft;
+        // The arrow hangs ARROW_REACH px left of the text (the CSS
+        // translate). Where the surface leaves less margin than that — a
+        // pane, a narrow host — it attaches to the scroller's inner edge
+        // instead of being clipped by the host.
+        const scrollLeft = view.scrollDOM.scrollLeft;
+        const left = Math.max(
+          contentRect.left - scrollerRect.left + padLeft + scrollLeft,
+          scrollLeft + ARROW_REACH + EDGE_INSET,
+        );
 
         const out = [];
         for (const s of specs) {
