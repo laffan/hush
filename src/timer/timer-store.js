@@ -62,6 +62,13 @@ export function startTimer(state, { task, hours, minutes, breakEvery }, now = Da
   });
 }
 
+/** Change the task's wording; the clock is left exactly as it was. */
+export function renameTimer(state, task) {
+  const t = getTimer(state);
+  if (!t) return Promise.resolve();
+  return write(state, { active: { ...t, task: task.trim() } });
+}
+
 export function deleteTimer(state) {
   return write(state, { active: null });
 }
@@ -90,18 +97,28 @@ export function timerStatus(timer, now = Date.now()) {
   };
 }
 
-/** `1:05:09` / `5:09` — a countdown, rounded up so it reads 0:00 only
- *  at the finish. */
-export function formatCountdown(ms) {
-  const total = Math.max(0, Math.ceil(ms / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  const ss = String(s).padStart(2, "0");
-  return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+/** `1h 5m` / `5m` — time left, in whole minutes rounded up, so it reads
+ *  `0m` only at the finish. */
+export function formatMinutes(ms) {
+  const total = Math.max(0, Math.ceil(ms / MINUTE));
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return h ? `${h}h ${m}m` : `${m}m`;
 }
 
-/** A wall-clock time in the user's locale: `4:35 PM` / `16:35`. */
-export function formatClock(ms) {
-  return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+/** Whole minutes left, rounded up — the ring's hover figure. */
+export function minutesLeft(ms) {
+  return Math.max(0, Math.ceil(ms / MINUTE));
+}
+
+/** A wall-clock time in the user's locale: `4:35 PM` / `16:35`. With
+ *  `period: false` a 12-hour clock drops its AM / PM (`4:35`) — for the
+ *  timeline, where the labels are packed tight and all fall within a
+ *  day of now. */
+export function formatClock(ms, { period = true } = {}) {
+  const fmt = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit" });
+  if (period) return fmt.format(new Date(ms));
+  return fmt.formatToParts(new Date(ms))
+    .filter((p) => p.type !== "dayPeriod")
+    .map((p) => p.value).join("").trim();
 }

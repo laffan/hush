@@ -158,9 +158,10 @@ html[data-theme="dark"] .timer-sheet {
 .timer-unit { margin-left: -6px; }
 
 /* Timeline — a hairline from now to the finish, a short tick per break
-   and a taller one at the end, times hung underneath. */
+   and a taller one at the end, each time centred under its mark. The
+   side inset is room for half a label past either end of the rule. */
 .timer-timeline {
-  padding: 6px 0 0;
+  padding: 6px 18px 0;
 }
 
 .timer-root.timer-empty .timer-timeline { opacity: 0.25; }
@@ -223,8 +224,8 @@ html[data-theme="dark"] .timer-sheet {
   opacity: 0.45;
 }
 
-.timer-label-now { transform: none; }
-.timer-label-end { transform: translateX(-100%); opacity: 1; }
+.timer-label-now,
+.timer-label-end { opacity: 1; }
 
 .timer-summary {
   margin-top: -6px;
@@ -299,7 +300,12 @@ html[data-theme="dark"] .sidebar-timer {
   border-color: color-mix(in srgb, var(--fg) 18%, transparent);
 }
 
-.sidebar-timer-task {
+.sidebar-timer-task,
+.sidebar-timer-task-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
   font-size: 13px;
   line-height: 1.35;
   white-space: nowrap;
@@ -307,42 +313,162 @@ html[data-theme="dark"] .sidebar-timer {
   text-overflow: ellipsis;
 }
 
-.sidebar-timer-line {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-top: 3px;
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  overflow: hidden;
+.sidebar-timer-task-input {
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  outline: none;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
-.sidebar-timer-break,
-.sidebar-timer-end { opacity: 0.45; }
+.sidebar-timer-task-input::placeholder {
+  color: var(--fg);
+  opacity: 0.3;
+}
 
-.sidebar-timer-break:empty { display: none; }
-.sidebar-timer-end { margin-left: auto; }
-
-.sidebar-timer.break-now .sidebar-timer-break { opacity: 1; }
-.sidebar-timer.finished .sidebar-timer-task { opacity: 0.55; }
-
-/* Elapsed share of the session, a hairline along the bottom edge. */
+/* Elapsed share of the session, a thin bar under the task. */
 .sidebar-timer-progress {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 1px;
+  height: 2px;
+  margin: 6px 0 6px;
+  border-radius: 1px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
 
 .sidebar-timer-progress span {
   display: block;
   height: 100%;
   width: 0;
-  background: color-mix(in srgb, var(--fg) 35%, transparent);
+  background: color-mix(in srgb, var(--fg) 40%, transparent);
   transition: width 1s linear;
 }
+
+/* To go / next break / finish: three columns, the break centred between
+   the other two however wide the sidebar is. */
+.sidebar-timer-line {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sidebar-timer-line > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-timer-countdown { justify-self: start; }
+.sidebar-timer-break { justify-self: center; opacity: 0.45; }
+.sidebar-timer-end { justify-self: end; opacity: 0.45; }
+
+/* The figure itself in full ink; "to go" fades like the others. */
+.w-togo { opacity: 0.45; }
+
+/* A narrower sidebar sheds the filler words before anything collides:
+   first "in" and "ends", then "to go"; at the narrowest the AM / PM
+   goes too, and the three spread across the line rather than holding
+   the break dead centre. */
+.sidebar-timer { container-type: inline-size; }
+
+@container (max-width: 259px) {
+  .sidebar-timer-line .w-in,
+  .sidebar-timer-line .w-ends { display: none; }
+}
+
+@container (max-width: 228px) {
+  .sidebar-timer-line .w-togo { display: none; }
+}
+
+@container (max-width: 176px) {
+  .sidebar-timer-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: 11px;
+  }
+  .sidebar-timer-line > span { flex: none; }
+  .sidebar-timer-line .w-period { display: none; }
+}
+
+.sidebar-timer.break-now .sidebar-timer-break { opacity: 1; }
+.sidebar-timer.finished .sidebar-timer-task { opacity: 0.55; }
+
+/* ---- Ring (sidebar closed) ----
+   30 px across, a 5 px stroke: a faint full circle with the elapsed
+   share drawn over it from twelve o'clock. The middle is empty until
+   hovered, when it shows the minutes to the next break. */
+.timer-ring {
+  position: fixed;
+  left: 12px;
+  bottom: calc(14px + max(var(--ipad-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)));
+  z-index: 101; /* over the sidebar's grip strip (#panel-overlay, 100) */
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg);
+  background: none;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.timer-ring.visible { display: flex; }
+.timer-ring:hover,
+.timer-ring:focus-visible { opacity: 1; outline: none; }
+
+.timer-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  overflow: visible;
+}
+
+.timer-ring circle {
+  fill: none;
+  stroke-width: 5;
+}
+
+.timer-ring-track { stroke: color-mix(in srgb, var(--fg) 10%, transparent); }
+
+.timer-ring-fill {
+  stroke: color-mix(in srgb, var(--fg) 45%, transparent);
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  transition: stroke-dashoffset 1s linear;
+}
+
+.timer-ring-label {
+  position: relative;
+  font-family: var(--ui-font-family);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.timer-ring:hover .timer-ring-label,
+.timer-ring:focus-visible .timer-ring-label { opacity: 1; }
 
 /* Let the last rows scroll out from under the box. */
 #panel-overlay.has-timer .panel-overlay-body:has(+ .sidebar-timer-slot) { padding-bottom: 84px; }

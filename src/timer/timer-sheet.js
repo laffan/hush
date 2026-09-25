@@ -126,14 +126,14 @@ export function openTimerSheet(state) {
 
     // Now and the finish are always labelled; breaks fill in between
     // where there is room.
-    const labels = [{ t: now, text: formatClock(now), kind: "now" }];
+    const labels = [{ t: now, text: formatClock(now, { period: false }), kind: "now" }];
     for (const t of breaks) {
       const prev = labels[labels.length - 1];
       if (at(t) - at(prev.t) >= LABEL_GAP && 1 - at(t) >= LABEL_GAP) {
-        labels.push({ t, text: formatClock(t), kind: "break" });
+        labels.push({ t, text: formatClock(t, { period: false }), kind: "break" });
       }
     }
-    labels.push({ t: end, text: formatClock(end), kind: "end" });
+    labels.push({ t: end, text: formatClock(end, { period: false }), kind: "end" });
     labelsEl.innerHTML = labels.map((l) =>
       `<span class="timer-label timer-label-${l.kind}" style="left:${at(l.t) * 100}%">${esc(l.text)}</span>`).join("");
 
