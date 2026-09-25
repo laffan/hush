@@ -405,7 +405,7 @@ html[data-theme="dark"] .sidebar-timer {
 .sidebar-timer.finished .sidebar-timer-task { opacity: 0.55; }
 
 /* ---- Ring (sidebar closed) ----
-   30 px across, a 5 px stroke: a faint full circle with the elapsed
+   30 px across, a 3 px stroke: a faint full circle with the elapsed
    share drawn over it from twelve o'clock. The middle is empty until
    hovered, when it shows the minutes to the next break. */
 .timer-ring {
@@ -445,7 +445,7 @@ html[data-theme="dark"] .sidebar-timer {
 
 .timer-ring circle {
   fill: none;
-  stroke-width: 5;
+  stroke-width: 3;
 }
 
 .timer-ring-track { stroke: color-mix(in srgb, var(--fg) 10%, transparent); }

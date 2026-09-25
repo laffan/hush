@@ -29,10 +29,10 @@ import {
  *  to the next one. */
 const BREAK_NOW_MS = 60 * 1000;
 
-/** Ring geometry: 30 px across with a 5 px stroke, so the stroke's centre
- *  line runs at radius 12.5. */
+/** Ring geometry: 30 px across with a 3 px stroke, so the stroke's centre
+ *  line runs at radius 13.5. */
 const RING_SIZE = 30;
-const RING_STROKE = 5;
+const RING_STROKE = 3;
 const RING_R = (RING_SIZE - RING_STROKE) / 2;
 
 /** A clock time with its AM / PM in a span of its own, which the
