@@ -40,11 +40,13 @@
   --ipad-safe-top: 0px;
   --ipad-safe-bottom: 0px;
 
-  /* iOS 27 blurs the top ~30px of every window, so anything that carries
-     information pinned to the top edge (word count, ratchet timer, the
-     find / Google link bars, toasts) starts below it. `--top-chrome-inset`
-     is the offset to add: the blur band or the notch / status bar inset,
-     whichever is taller. 0 off iOS. */
+  /* iOS 27's status bar blurs the top ~30px of the window, so anything
+     that carries information pinned to the top edge (word count, ratchet
+     timer, the find / Google link bars, toasts) starts below it.
+     `--top-chrome-inset` is the offset to add: the blur band or the
+     notch / status bar inset, whichever is taller. 0 off iOS, and 0 while
+     the status bar is hidden (`html.status-bar-hidden`, set by the pencil
+     plugin's ChromeControl) — no bar, no blur. */
   --top-blur-inset: 0px;
   --top-chrome-inset: max(var(--top-blur-inset), env(safe-area-inset-top, 0px));
 
@@ -173,6 +175,10 @@ html.ios, html.ios body {
    env(safe-area-inset-*) rather than iPadOS's menu/grab-handle bands. */
 html.ios {
   --top-blur-inset: 30px;
+}
+
+html.ios.status-bar-hidden {
+  --top-blur-inset: 0px;
 }
 
 html.ios:not(.phone) {
