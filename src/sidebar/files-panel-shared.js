@@ -5,18 +5,25 @@
  * render rows on its behalf.
  */
 
+import { isProjectSupplementary } from "../state/tree-helpers.js";
+
 /**
  * Build outline-number labels (keyed by node id) for every row inside a
  * project that has `showNumbers` enabled. Nested containers get dotted
  * sub-numbers (1, 1.1, 1.2, 2, …). `isSkippable(node)` filters specials /
  * tab markers; `isInbox(id)` excludes the Inbox pseudo-project.
+ *
+ * The numbers are the main document's running order, so only what
+ * belongs to it is counted: notes, notebooks, stacks and the PDFs folder
+ * (`isProjectSupplementary`) go unnumbered and take no number from the
+ * documents after them.
  */
 export function computeNumberLabels(tree, isSkippable, isInbox) {
   const labels = new Map();
   const numberChildren = (node, prefix) => {
     let i = 0;
     for (const c of node.children || []) {
-      if (isSkippable(c)) continue;
+      if (isSkippable(c) || isProjectSupplementary(c)) continue;
       i += 1;
       const label = prefix ? `${prefix}.${i}` : String(i);
       labels.set(c.id, label);

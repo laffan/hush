@@ -879,7 +879,23 @@
   height: 1.15em;
   vertical-align: text-bottom;
   border-left: 2px solid currentColor;
-  animation: cursor-blink 1s step-end infinite;
+  /* CodeMirror's own rhythm (`steps(1) cm-blink 1.2s`), so the preview
+     blinks at the rate the editor does. */
+  animation: cursor-blink 1.2s steps(1) infinite;
+}
+
+/* The style's Idle Animation (style-modal-preview.js sets `data-idle`).
+   The pulse fades through `filter: opacity()` rather than `opacity`,
+   which the caret already carries inline (0.85 block, 0.7 underline);
+   the filter multiplies with it instead of overwriting it, the same way
+   the editor's pulse on `.cm-cursorLayer` (editor.css) multiplies with
+   the opacity on the `.cm-cursor` inside it. Same 70%–100% swell, same
+   2.4s period. */
+.preview-cursor[data-idle="pulse"] {
+  animation: preview-cursor-pulse 2.4s ease-in-out infinite;
+}
+.preview-cursor[data-idle="none"] {
+  animation: none;
 }
 
 /* Only toggle the "off" half — leaving 0%/100% undefined lets the caret's own
@@ -888,6 +904,10 @@
    instead of forcing every mode to full opacity. */
 @keyframes cursor-blink {
   50% { opacity: 0; }
+}
+@keyframes preview-cursor-pulse {
+  0%, 100% { filter: opacity(1); }
+  50% { filter: opacity(0.7); }
 }
 
 .preview-selected {
@@ -996,6 +1016,18 @@
   cursor: pointer;
 }
 .style-glow-option span {
+  font-size: 11px;
+  opacity: 0.55;
+}
+/* The Cursor section's per-appearance swatches, in the same two columns
+   as the Glow switches so the Light and Dark halves line up down the
+   section. */
+.style-cursor-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.style-cursor-swatch-label {
   font-size: 11px;
   opacity: 0.55;
 }

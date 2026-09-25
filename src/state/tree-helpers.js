@@ -186,6 +186,16 @@ export function isRealProjectNode(n) {
   return !!n && n.type === "project" && n.id !== "__inbox__" && !String(n.id || "").startsWith("__inbox__:");
 }
 
+/** A project child that sits in the supplementary block rather than in
+ *  the main document: notebooks (gutters included), stacks, docs marked
+ *  "Use as note", and the project's own PDFs folder. None of them feed
+ *  the joined editor buffer. */
+export function isProjectSupplementary(c) {
+  return !!c && (c.type === "stack" || c.type === "notebook"
+    || (c.type === "document" && !!c.useAsNote)
+    || (c.type === "folder" && !!c.pdfFolder));
+}
+
 export function normalizeProjectChildren(nodes) {
   if (!Array.isArray(nodes)) return nodes;
   for (const n of nodes) {
@@ -204,7 +214,7 @@ export function normalizeProjectChildren(nodes) {
         if (c.type === "notebook" && c.gutter) continue; // placed with its doc below
         // The project's own PDFs folder (pdf aliases) is supplementary
         // material like notebooks/stacks — it never feeds the buffer.
-        if (c.type === "stack" || c.type === "notebook" || (c.type === "document" && c.useAsNote) || (c.type === "folder" && c.pdfFolder)) {
+        if (isProjectSupplementary(c)) {
           below.push(c);
           continue;
         }

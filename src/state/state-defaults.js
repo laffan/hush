@@ -37,11 +37,14 @@ export function createDefaultSettings() {
     // `cursorGlow` key in defaultLight/DarkColors, or the caret's own.
     cursorGlow: false,
     // Per-appearance glow switches (null = follow `cursorGlow`), the
-    // glow's size, and a steady caret (see editor/cursor-options.js).
+    // glow's size, and the idle animation — "blink" / "pulse" / "none",
+    // null = follow the retired `cursorBlink` switch (see
+    // editor/cursor-options.js).
     cursorGlowLight: null,
     cursorGlowDark: null,
     cursorGlowIntensity: null,
     cursorBlink: null,
+    cursorIdleAnimation: null,
     // Active-line indicator for the Default style. Per-style overrides
     // live on `Style.lineIndicator`. One of "none", "left-arrow",
     // "double-arrow", "left-border", "border", "highlight". The

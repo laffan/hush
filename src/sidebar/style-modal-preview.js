@@ -15,7 +15,7 @@ import {
   applyPreviewCursorMode,
 } from "./styles-panel-shared.js";
 import { getThemeById } from "../themes/index.js";
-import { glowForAppearance, glowIntensity } from "../editor/cursor-options.js";
+import { glowForAppearance, glowIntensity, cursorIdleAnimation } from "../editor/cursor-options.js";
 
 export const PREVIEW_MD = `# The Art of Writing
 
@@ -183,6 +183,9 @@ export function updatePreview(state, backdrop, draft, colorTab, previewState) {
       ? (colors.cursorGlow || accent)
       : null;
     applyPreviewCursorMode(cursorEl, cursorMode, accent, cursor, glow, glowIntensity(draft));
+    // The idle animation, keyed by styles-panel.css. Like the painter
+    // (block-cursor.js), the system caret always keeps the plain blink.
+    cursorEl.dataset.idle = cursorMode === "system" ? "blink" : cursorIdleAnimation(draft);
   }
 
   const selEl = pane.querySelector(".preview-selected");

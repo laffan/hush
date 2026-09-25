@@ -1,6 +1,6 @@
 import { getActiveTheme } from "../themes/index.js";
 import { resolveStyleForAppearance } from "../sidebar/styles-panel.js";
-import { glowForAppearance, definesGlow, glowIntensity, cursorBlinks } from "./cursor-options.js";
+import { glowForAppearance, definesGlow, glowIntensity, definesIdleAnimation, cursorIdleAnimation } from "./cursor-options.js";
 
 /** Resolve the cursor mode (system / block / underline / thick). New `cursorMode`
  *  field wins; fall back to the legacy `blockCursor` boolean. Style
@@ -73,16 +73,16 @@ export function resolveCursorPaint(settings) {
   const fallbackCursor = (theme && theme.headingColor) || null;
   const mode = resolveCursorMode(settings, style);
   const glowOwner = definesGlow(style) ? style : settings;
-  const blinkOwner = style && style.cursorBlink != null ? style : settings;
+  const idleOwner = definesIdleAnimation(style) ? style : settings;
   return {
     mode,
     cursorColor: cursorOverride || fallbackCursor,
     lineIndicatorColor: lineIndicatorOverride || cursorOverride || fallbackCursor,
     glow: resolveCursorGlow(settings, style, mode, effectiveAppearance(settings)),
     glowScale: glowIntensity(glowOwner),
-    // Blinking is a custom-cursor option too; the system caret keeps
-    // CodeMirror's own rhythm.
-    blink: mode === "system" || cursorBlinks(blinkOwner),
+    // The idle animation is a custom-cursor option too; the system
+    // caret keeps CodeMirror's own blink.
+    idle: mode === "system" ? "blink" : cursorIdleAnimation(idleOwner),
     // No glow colour of its own means the caret's — a halo in a
     // different colour is a choice, not a default.
     glowColor: glowOverride || null,
@@ -101,7 +101,8 @@ export function paintCursorMode(el, paint) {
   el.classList.toggle("underline-cursor", paint.mode === "underline");
   el.classList.toggle("thick-cursor", paint.mode === "thick");
   el.classList.toggle("cursor-glow", !!paint.glow);
-  el.classList.toggle("cursor-no-blink", paint.blink === false);
+  el.classList.toggle("cursor-no-blink", paint.idle === "none");
+  el.classList.toggle("cursor-pulse", paint.idle === "pulse");
   el.style.setProperty("--cursor-glow-scale", String(paint.glowScale ?? 1));
   if (paint.cursorColor) el.style.setProperty("--block-cursor-color", paint.cursorColor);
   else el.style.removeProperty("--block-cursor-color");

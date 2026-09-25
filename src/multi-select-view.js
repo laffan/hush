@@ -1,6 +1,10 @@
 /**
  * Multi-select view — overlays the editor area with a list of the
- * currently-selected doc filenames, plus batch actions (Delete, Flag).
+ * currently-selected doc filenames, plus batch actions (Delete, Flag,
+ * colour, Create Stack / Project, Copy to Clipboard, Combine). The rows
+ * can be dragged into a different order by their handles; that order is
+ * the selection's, and every batch action takes its rows in it (see
+ * multi-select-reorder.js).
  * Mounts a single `#multi-select-view` container into the app root and
  * toggles it via the `multi-select-active` body class so the editor /
  * notebook stay laid out underneath without flicker.
@@ -13,11 +17,13 @@
  * Click on a row → opens that doc and clears the selection (matches
  * the single-click semantics elsewhere in the app).
  */
-import { typeIcons, escHtml, showDeleteConfirmModal, showPromptModal } from "./sidebar/files-panel-shared.js";
+import { typeIcons, escHtml, showDeleteConfirmModal, showPromptModal, DRAG_HANDLE_SVG } from "./sidebar/files-panel-shared.js";
 import { findNodeByFileId, findAncestorIds, findNode, removeNode, normalizeProjectChildren, enforceSpecialPositions } from "./state/tree-helpers.js";
 import { newProjectSite, placeNodeAt } from "./sidebar/multi-select-project-site.js";
 import { deleteTreeNode } from "./state/state-tree.js";
+import { readLiveProjectPart } from "./state/state-project.js";
 import { createColorPalette } from "./sidebar/files-panel-row-menu.js";
+import { wireMultiSelectReorder } from "./multi-select-reorder.js";
 
 let _hostEl = null;
 let _state = null;
@@ -146,7 +152,6 @@ function render(ids) {
       <header class="ms-view-header">
         <div class="ms-view-title">${rows.length} file${rows.length === 1 ? "" : "s"} selected</div>
         <div class="ms-view-actions">
-          <button type="button" class="ms-view-btn" data-ms-action="flag">${escHtml(flagBtnLabel)}</button>
           <button type="button" class="ms-view-btn ms-view-btn-danger" data-ms-action="delete">Delete</button>
           <button type="button" class="ms-view-btn" data-ms-action="clear">Clear selection</button>
         </div>
@@ -159,20 +164,25 @@ function render(ids) {
               ${r.path ? `<span class="ms-view-path">${escHtml(r.path)} / </span>` : ""}<span class="ms-view-name">${escHtml(r.name)}</span>
             </span>
             ${r.flagged ? `<span class="ms-view-flag">flagged</span>` : ""}
+            <button type="button" class="ms-view-drag" title="Drag to reorder" aria-label="Reorder ${escHtml(r.name)}">${DRAG_HANDLE_SVG}</button>
           </li>`).join("")}
       </ul>
-      <div class="ms-view-colors-row"></div>
+      <div class="ms-view-colors-row">
+        <button type="button" class="ms-view-btn" data-ms-action="flag">${escHtml(flagBtnLabel)}</button>
+      </div>
       <div class="ms-view-actions ms-view-actions-bottom">
         <button type="button" class="ms-view-btn" data-ms-action="stack">Create Stack</button>
         <button type="button" class="ms-view-btn" data-ms-action="project">Create Project</button>
+        ${allDocs ? `<button type="button" class="ms-view-btn" data-ms-action="copy">Copy to Clipboard</button>` : ""}
         ${allDocs ? `<button type="button" class="ms-view-btn" data-ms-action="combine">Combine</button>` : ""}
       </div>
     </div>
   `;
 
-  // Mount the color palette below the list. If every selected row has
-  // the same bgColor we highlight that swatch; mixed selections show no
-  // active swatch (clicking any swatch still applies it to all).
+  // Mount the color palette below the list, after the Flag button. If
+  // every selected row has the same bgColor we highlight that swatch;
+  // mixed selections show no active swatch (clicking any swatch still
+  // applies it to all).
   const colorsRow = _hostEl.querySelector(".ms-view-colors-row");
   if (colorsRow) {
     const keys = rows.map((r) => {
@@ -200,9 +210,21 @@ function render(ids) {
     });
   });
 
-  // Batch-action buttons.
+  // Batch-action buttons. The button rides along so an action can
+  // report back on it (Copy's "Copied").
   _hostEl.querySelectorAll("[data-ms-action]").forEach((btn) => {
-    btn.addEventListener("click", () => runBatchAction(btn.dataset.msAction, rows));
+    btn.addEventListener("click", () => runBatchAction(btn.dataset.msAction, rows, btn));
+  });
+
+  // Reordering rewrites the selection itself, which re-renders the view;
+  // a keyboard move hands focus back to the handle it came from.
+  wireMultiSelectReorder(_hostEl.querySelector(".ms-view-list"), (orderedIds, movedId) => {
+    const rest = (_state.selectedDocIds || []).filter((id) => !orderedIds.includes(id));
+    const hadFocus = _hostEl.contains(document.activeElement);
+    _state.setSelectedDocs([...orderedIds, ...rest]);
+    if (hadFocus) {
+      _hostEl.querySelector(`.ms-view-row[data-file-id="${CSS.escape(movedId)}"] .ms-view-drag`)?.focus();
+    }
   });
 }
 
@@ -217,9 +239,13 @@ function applyColorToSelected(rows, colorKey) {
   _state.emit("files-changed");
 }
 
-async function runBatchAction(action, rows) {
+async function runBatchAction(action, rows, btn) {
   if (action === "clear") {
     _state.clearSelectedDocs();
+    return;
+  }
+  if (action === "copy") {
+    await copyDocsToClipboard(rows.filter((r) => r.type === "document"), btn);
     return;
   }
   if (action === "stack") {
@@ -327,5 +353,50 @@ async function runBatchAction(action, rows) {
         _state.clearSelectedDocs();
       },
     );
+  }
+}
+
+/** Copy every selected document's text to the clipboard, in the view's
+ *  order, a blank line between each. Each body comes from its live copy
+ *  before the disk — the open project's buffer, the main editor, a pane —
+ *  so what lands on the clipboard is what is on screen rather than the
+ *  last autosave. */
+async function copyDocsToClipboard(docRows, btn) {
+  if (!docRows.length) return;
+  const restore = btn?.textContent;
+  let ok = false;
+  try {
+    const { readDocumentText } = await import("./courier/courier-send.js");
+    const bodies = [];
+    for (const r of docRows) {
+      const text = readLiveProjectPart(_state, r.fileId) ?? await readDocumentText(_state, r.fileId);
+      bodies.push(text.replace(/\s+$/, ""));
+    }
+    ok = await writeClipboardText(bodies.join("\n\n") + "\n");
+  } catch (e) {
+    console.warn("[multi-select] copy failed", e);
+  }
+  if (btn) {
+    btn.textContent = ok ? "Copied" : "Copy failed";
+    setTimeout(() => { if (btn.isConnected) btn.textContent = restore; }, 1600);
+  }
+}
+
+/** The clipboard plugin first (NSPasteboard directly — no permission
+ *  prompt, and no need for the click's transient activation, which the
+ *  reads above may already have spent), then the browser API. */
+async function writeClipboardText(text) {
+  if (window.__TAURI_INTERNALS__) {
+    try {
+      const { writeText } = await import("@tauri-apps/plugin-clipboard-manager");
+      await writeText(text);
+      return true;
+    } catch (_) { /* fall through to the browser API */ }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (_) {
+    return false;
   }
 }

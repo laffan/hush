@@ -283,14 +283,43 @@ body.file-in-trash #notebook-container .notes-canvas + * {
     0 0 calc(10px * var(--cursor-glow-scale, 1)) var(--cursor-glow-color, var(--block-cursor-color, var(--cursor)));
 }
 
-/* Steady caret — the style's "Blink" switch off. CodeMirror blinks by
-   running an animation on the cursor layer; with none the layer simply
-   stays at full opacity. */
+/* Steady caret — the style's Idle Animation set to None. CodeMirror
+   blinks by running an animation on the cursor layer; with none the
+   layer simply stays at full opacity. */
 .cursor-mode-surface.cursor-no-blink .cm-cursorLayer,
 #editor-container.cursor-no-blink .cm-cursorLayer,
 .zen-focus-overlay.cursor-no-blink .cm-cursorLayer,
 .selection-focus-overlay.cursor-no-blink .cm-cursorLayer {
   animation: none !important;
+}
+
+/* Pulsing caret — Idle Animation set to Pulse: a slow swell between 70%
+   and full opacity in place of the blink. `!important` beats the
+   duration CodeMirror writes inline (its blink rate). CodeMirror
+   restarts its blink on every selection change by flipping the layer's
+   inline `animation-name` between `cm-blink` and `cm-blink2`; the second
+   rule follows that flip onto a twin keyframe, so a keystroke restarts
+   the pulse at full opacity the same way it restarts the blink. The
+   preview pane runs the same keyframes (styles-panel.css). */
+.cursor-mode-surface.cursor-pulse .cm-focused .cm-cursorLayer,
+#editor-container.cursor-pulse .cm-focused .cm-cursorLayer,
+.zen-focus-overlay.cursor-pulse .cm-focused .cm-cursorLayer,
+.selection-focus-overlay.cursor-pulse .cm-focused .cm-cursorLayer {
+  animation: hush-cursor-pulse 2.4s ease-in-out infinite !important;
+}
+.cursor-mode-surface.cursor-pulse .cm-focused .cm-cursorLayer[style*="cm-blink2"],
+#editor-container.cursor-pulse .cm-focused .cm-cursorLayer[style*="cm-blink2"],
+.zen-focus-overlay.cursor-pulse .cm-focused .cm-cursorLayer[style*="cm-blink2"],
+.selection-focus-overlay.cursor-pulse .cm-focused .cm-cursorLayer[style*="cm-blink2"] {
+  animation-name: hush-cursor-pulse-2 !important;
+}
+@keyframes hush-cursor-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+@keyframes hush-cursor-pulse-2 {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }
 
 

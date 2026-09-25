@@ -18,28 +18,17 @@
 
 import { themeColorFor } from "./style-modal-preview.js";
 import { splitAlphaColor, joinAlphaColor } from "../ui/color-picker.js";
-import { hasAnyGlow } from "../editor/cursor-options.js";
 
-// The line-indicator colour is a per-appearance override like these,
-// but it lives beside the Line Indicator dropdown in Editing (behind
-// its "Custom color" checkbox) rather than in this list — an indicator
-// set to "none" has no colour to pick, and both appearances are
-// editable there at once.
+// Three per-appearance overrides live outside this list, each beside
+// the control it colours, with both appearances editable there at once:
+// the line indicator's in Editing (behind its "Custom color" checkbox —
+// an indicator set to "none" has no colour to pick), and the caret's and
+// its glow's in the Cursor section (style-modal-cursor.js).
 const COLOR_KEYS = [
   { key: "bg", label: "Background" }, { key: "fg", label: "Text" },
   { key: "header", label: "Header" }, { key: "links", label: "Links" },
-  { key: "cursor", label: "Cursor" }, { key: "selection", label: "Selection" },
+  { key: "selection", label: "Selection" },
 ];
-
-/** The colour rows this draft shows. Cursor Glow joins the list only
- *  while the glow is switched on — a colour for something that isn't
- *  drawn is a row that can't be read as anything. */
-export function colorKeysFor(draft) {
-  if (!hasAnyGlow(draft)) return COLOR_KEYS;
-  const i = COLOR_KEYS.findIndex(ck => ck.key === "cursor");
-  const glow = { key: "cursorGlow", label: "Cursor Glow" };
-  return [...COLOR_KEYS.slice(0, i + 1), glow, ...COLOR_KEYS.slice(i + 1)];
-}
 
 /**
  * The Colors section's rows for one appearance. `activeColors` is the
@@ -47,7 +36,7 @@ export function colorKeysFor(draft) {
  * fallback each unset row opens on.
  */
 export function renderColorRows(draft, activeColors, colorTab, themeId) {
-  return colorKeysFor(draft).map((ck) => {
+  return COLOR_KEYS.map((ck) => {
     const overrideVal = activeColors[ck.key];
     const { hex, alpha } = splitAlphaColor(overrideVal || themeColorFor(ck.key, themeId, colorTab));
     return `<div class="style-editor-color-row">
@@ -69,7 +58,7 @@ export function bindColorRows(backdrop, ctx) {
   const { draft, colorTab, updatePreview, scheduleSave, render } = ctx;
   const mapFor = () => (colorTab === "light" ? draft.lightColors : draft.darkColors);
 
-  backdrop.querySelectorAll(".style-editor-color-row input[type='color']").forEach((input) => {
+  backdrop.querySelectorAll(".style-editor-color-row input[type='color'][data-color-key]").forEach((input) => {
     input.addEventListener("input", () => {
       // `dataset.alpha` is the picker's other half — see the module
       // header. Absent means the platform panel wrote the value (or
@@ -80,7 +69,7 @@ export function bindColorRows(backdrop, ctx) {
     });
   });
 
-  backdrop.querySelectorAll(".style-reset-color").forEach((btn) => {
+  backdrop.querySelectorAll(".style-reset-color[data-color-key]").forEach((btn) => {
     btn.addEventListener("click", () => {
       delete mapFor()[btn.dataset.colorKey];
       render();

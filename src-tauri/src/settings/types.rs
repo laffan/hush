@@ -54,9 +54,15 @@ pub struct Style {
     /// Scale on the glow's two shadows (1 = 3px core + 10px bloom).
     #[serde(default)]
     pub cursor_glow_intensity: Option<f64>,
-    /// `Some(false)` holds a custom caret steady; absent blinks.
+    /// Retired steady-caret switch: `Some(false)` held a custom caret
+    /// still. Superseded by `cursor_idle_animation`, and still written
+    /// in lockstep (false only for "none") for older clients.
     #[serde(default)]
     pub cursor_blink: Option<bool>,
+    /// What a custom caret does at rest: "blink" | "pulse" | "none".
+    /// Absent falls back to `cursor_blink`, then to blinking.
+    #[serde(default)]
+    pub cursor_idle_animation: Option<String>,
     #[serde(default)]
     pub suppress_header_size: Option<bool>,
     #[serde(default)]

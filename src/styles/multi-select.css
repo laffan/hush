@@ -174,15 +174,59 @@ body.multi-select-active #notebook-container {
   letter-spacing: 0.06em;
 }
 
-/* Color palette row — reuses the swatch styles from files-panel.css
-   but sits in its own block under the list, sized for the wider
-   multi-select layout (taller / fuller-width swatches). */
+/* Reorder grip, pinned to the row's right edge. It changes the
+   selection's order (what the batch actions receive), never the tree. */
+.ms-view-drag {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  opacity: 0.45;
+  cursor: grab;
+  /* Keep touch drags from scrolling the view instead of reordering. */
+  touch-action: none;
+}
+.ms-view-drag:hover,
+.ms-view-drag:focus-visible {
+  opacity: 0.9;
+  background: rgba(128, 128, 128, 0.12);
+}
+.ms-view-row-dragging {
+  opacity: 0.4;
+}
+/* Thin insertion marker between rows while dragging — the same one the
+   Combine modal's list shows. */
+.ms-view-drop {
+  list-style: none;
+  height: 0;
+  margin: -1px 0;
+  padding: 0;
+  border-top: 2px solid var(--accent, #4285f4);
+}
+
+/* Flag + color row — the Flag button first, then the palette, which
+   reuses the swatch styles from files-panel.css in its own block under
+   the list, sized for the wider multi-select layout (taller /
+   fuller-width swatches). */
 .ms-view-colors-row {
   margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 .ms-view-colors-row .tree-row-menu-colors {
   padding: 0;
   max-width: 320px;
+  flex: 1 1 200px;
 }
 .ms-view-colors-row .tree-row-color-swatch {
   height: 14px;

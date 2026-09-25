@@ -28,6 +28,17 @@ function splitProjectBuffer(text, expectedCount) {
   return parts;
 }
 
+/** A project document's text as the open project buffer holds it —
+ *  unsaved edits included — or null when the open project doesn't hold
+ *  it. Reads only: nothing is written back. */
+export function readLiveProjectPart(state, fileId) {
+  if (!state.currentProjectId || !state.editor) return null;
+  const i = (state.projectDocIds || []).indexOf(fileId);
+  if (i < 0) return null;
+  const parts = splitProjectBuffer(state.editor.getContent(), state.projectDocIds.length);
+  return parts[i] ?? null;
+}
+
 async function tauriInvoke(cmd, args) {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke(cmd, args);

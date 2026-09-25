@@ -9,7 +9,7 @@ import {
   escHtml,
   migrateStyle,
 } from "./styles-panel-shared.js";
-import { renderCursorRows, bindCursorRows } from "./style-modal-cursor.js";
+import { renderCursorSection, bindCursorSection } from "./style-modal-cursor.js";
 import { renderPostSection, bindPostSection, endPostPreview } from "./style-modal-post.js";
 import {
   renderLineIndicatorColorRows,
@@ -64,6 +64,7 @@ function buildDefaultDraftFromSettings(state) {
     cursorGlowDark: s.cursorGlowDark,
     cursorGlowIntensity: s.cursorGlowIntensity,
     cursorBlink: s.cursorBlink,
+    cursorIdleAnimation: s.cursorIdleAnimation,
     lineIndicator: s.lineIndicator || "none",
     // Default style's post + background layers ride top-level
     // AppSettings fields so they persist alongside the other
@@ -185,6 +186,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         cursorGlowDark: draft.cursorGlowDark ?? null,
         cursorGlowIntensity: draft.cursorGlowIntensity ?? null,
         cursorBlink: draft.cursorBlink ?? null,
+        cursorIdleAnimation: draft.cursorIdleAnimation ?? null,
         lineIndicator: draft.lineIndicator || "none",
         shaderLayer: draft.shaderLayer || null,
         postLayers: draft.postLayers || null,
@@ -236,6 +238,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         cursorGlowDark: state.settings.cursorGlowDark,
         cursorGlowIntensity: state.settings.cursorGlowIntensity,
         cursorBlink: state.settings.cursorBlink,
+        cursorIdleAnimation: state.settings.cursorIdleAnimation,
         lineIndicator: state.settings.lineIndicator || "none",
         shaderLayer: state.settings.shaderLayer || null,
         postLayers: state.settings.postLayers || null,
@@ -326,6 +329,31 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
             ${titleHtml}
 
             <div class="style-modal-section">
+              <h3 class="style-modal-section-title">Colors</h3>
+              <div class="style-color-tabs">
+                <button class="style-color-tab${colorTab === 'light' ? ' active' : ''}" data-mode="light">Light</button>
+                <button class="style-color-tab${colorTab === 'dark' ? ' active' : ''}" data-mode="dark">Dark</button>
+              </div>
+              <div class="style-editor-row">
+                <label>Theme</label>
+                <div class="custom-dropdown" id="style-theme-dropdown" data-value="${escAttr(colorTab === 'light' ? ltId : dtId)}">
+                  <div class="custom-dropdown-selected">${escHtml(colorTab === 'light' ? ltLabel : dtLabel)}</div>
+                  <div class="custom-dropdown-options">
+                    ${(() => {
+                      const selId = colorTab === 'light' ? ltId : dtId;
+                      const opt = (t) => `<div class="custom-dropdown-option${t.id === selId ? ' selected' : ''}" data-value="${t.id}">${escHtml(t.name)}</div>`;
+                      const section = (label, themes) => themes.length
+                        ? `<div class="custom-dropdown-group-label">${label}</div>${themes.map(opt).join('')}`
+                        : '';
+                      return section('Light', lightThemes) + section('Dark', darkThemes);
+                    })()}
+                  </div>
+                </div>
+              </div>
+              ${renderColorRows(draft, activeColors, colorTab, colorTab === 'light' ? ltId : dtId)}
+            </div>
+
+            <div class="style-modal-section">
               <h3 class="style-modal-section-title">Editing</h3>
               <div class="style-editor-row">
                 <label>Font</label>
@@ -354,7 +382,6 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
                   <span class="style-slider-value">${draft.lineHeight || state.settings.lineHeight || 1.6}</span>
                 </div>
               </div>
-              ${renderCursorRows(draft, state.settings)}
               <div class="style-editor-row">
                 <label>Line Indicator</label>
                 <div class="style-select-group">
@@ -365,6 +392,8 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
               </div>
               ${renderLineIndicatorColorRows(draft)}
             </div>
+
+            ${renderCursorSection(draft, state.settings)}
 
             <div class="style-modal-section">
               <h3 class="style-modal-section-title">Headers</h3>
@@ -393,31 +422,6 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
                   <span class="style-slider-value">${headerScale.toFixed(2)}x</span>
                 </div>
               </div>
-            </div>
-
-            <div class="style-modal-section">
-              <h3 class="style-modal-section-title">Colors</h3>
-              <div class="style-color-tabs">
-                <button class="style-color-tab${colorTab === 'light' ? ' active' : ''}" data-mode="light">Light</button>
-                <button class="style-color-tab${colorTab === 'dark' ? ' active' : ''}" data-mode="dark">Dark</button>
-              </div>
-              <div class="style-editor-row">
-                <label>Theme</label>
-                <div class="custom-dropdown" id="style-theme-dropdown" data-value="${escAttr(colorTab === 'light' ? ltId : dtId)}">
-                  <div class="custom-dropdown-selected">${escHtml(colorTab === 'light' ? ltLabel : dtLabel)}</div>
-                  <div class="custom-dropdown-options">
-                    ${(() => {
-                      const selId = colorTab === 'light' ? ltId : dtId;
-                      const opt = (t) => `<div class="custom-dropdown-option${t.id === selId ? ' selected' : ''}" data-value="${t.id}">${escHtml(t.name)}</div>`;
-                      const section = (label, themes) => themes.length
-                        ? `<div class="custom-dropdown-group-label">${label}</div>${themes.map(opt).join('')}`
-                        : '';
-                      return section('Light', lightThemes) + section('Dark', darkThemes);
-                    })()}
-                  </div>
-                </div>
-              </div>
-              ${renderColorRows(draft, activeColors, colorTab, colorTab === 'light' ? ltId : dtId)}
             </div>
 
             ${renderPostSection(draft)}
@@ -582,7 +586,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
       scheduleSave();
     });
 
-    bindCursorRows(backdrop, draft, {
+    bindCursorSection(backdrop, draft, {
       render,
       scheduleSave,
       onLive: () => { updatePreview(); scheduleSave(); },

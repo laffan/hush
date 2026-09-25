@@ -1,6 +1,6 @@
 /**
- * Cursor options a style carries beside its mode: blinking, and the glow
- * split per appearance with a size ("intensity") of its own.
+ * Cursor options a style carries beside its mode: the idle animation,
+ * and the glow split per appearance with a size ("intensity") of its own.
  *
  * Pure readers, shared by the editor painter (`block-cursor.js`), the
  * style modal and its preview, so the fallbacks can't drift between
@@ -45,10 +45,27 @@ export function glowIntensity(obj) {
   return Math.min(GLOW_INTENSITY_MAX, Math.max(GLOW_INTENSITY_MIN, v));
 }
 
-/** Absent means blinking — CodeMirror's default, and what every style
- *  saved before the switch existed did. */
-export function cursorBlinks(obj) {
-  return obj?.cursorBlink !== false;
+/** What a custom caret does while it sits still: CodeMirror's own
+ *  blink, a slow pulse between 70% and full opacity, or nothing. */
+export const IDLE_ANIMATIONS = [
+  { value: "blink", label: "Blink" },
+  { value: "pulse", label: "Pulse" },
+  { value: "none", label: "None" },
+];
+
+/** Whether this object says anything about the idle animation. A style
+ *  that says nothing inherits the Default style's. */
+export function definesIdleAnimation(obj) {
+  return !!obj && (obj.cursorIdleAnimation != null || obj.cursorBlink != null);
+}
+
+/** The idle animation. `cursorIdleAnimation` wins; a style saved before
+ *  it existed has only the `cursorBlink` switch, where `false` held the
+ *  caret steady. Absent means blinking — CodeMirror's default. */
+export function cursorIdleAnimation(obj) {
+  const v = obj?.cursorIdleAnimation;
+  if (IDLE_ANIMATIONS.some(a => a.value === v)) return v;
+  return obj?.cursorBlink === false ? "none" : "blink";
 }
 
 /** The two box-shadows the glow is drawn with, at a given scale. Same

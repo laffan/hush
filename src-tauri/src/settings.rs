@@ -371,12 +371,13 @@ pub struct AppSettings {
     // wears one; its colour is the `cursorGlow` key in
     // `default_light_colors` / `default_dark_colors`.
     #[serde(default)] pub cursor_glow: bool,
-    // Per-appearance glow, its size, and blinking — same shape and
+    // Per-appearance glow, its size, and the idle animation — same shape and
     // fallbacks as on `Style` (see settings/types.rs).
     #[serde(default)] pub cursor_glow_light: Option<bool>,
     #[serde(default)] pub cursor_glow_dark: Option<bool>,
     #[serde(default)] pub cursor_glow_intensity: Option<f64>,
     #[serde(default)] pub cursor_blink: Option<bool>,
+    #[serde(default)] pub cursor_idle_animation: Option<String>,
 
     // Default style's active-line indicator. Per-style overrides live
     // on `Style.line_indicator`. The indicator colour rides per
@@ -788,6 +789,7 @@ impl Default for AppSettings {
             cursor_glow_dark: None,
             cursor_glow_intensity: None,
             cursor_blink: None,
+            cursor_idle_animation: None,
             line_indicator: None,
             ratchet_encourage_typing: false,
             persisted_panes: Vec::new(),
