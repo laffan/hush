@@ -50,6 +50,23 @@ body.focus-mode-active #comments-panel > * {
   transition: opacity 0.15s ease;
 }
 
+/* The chrome that floats over the text column fades with it: the word
+   count pill, and on iOS the touch-mode column (command palette, Cmd,
+   paste, undo). Both mount on <body>, outside every panel above. The
+   pills already rest at 0.85, so they scale from there rather than
+   jumping to a level of their own. Two states stay lit: a held Cmd pill
+   (`.active`), which is showing a modifier in effect, and a word count
+   in its red last-ten-words warning (word-limit.css) — a dimmed warning
+   is not a warning. */
+body.focus-mode-active .word-count-display:not(.limit-warning) {
+  opacity: var(--focus-mode-opacity, 0.5);
+  transition: opacity 0.15s ease;
+}
+
+body.focus-mode-active .cmd-floating-button:not(.active) {
+  opacity: calc(0.85 * var(--focus-mode-opacity, 0.5));
+}
+
 /* Colour goes monochrome wherever the text is dimmed: `==highlight==`
    (and its per-flag colours, set inline — hence !important) and the
    YOUAREHERE tag take a neutral wash of the text colour, and headings

@@ -15,7 +15,7 @@ A style also carries two stacks of layers, both built the same way — add, reor
 
 **Focus tools** keep you in the text:
 
-- **Focus Mode** (`⌘S`) dims everything but the current sentence — the sidebars fade to the same level, and headings, highlights and the YOUAREHERE tag go monochrome everywhere but the sentence you are in; **Typewriter Mode** pins the cursor to a fixed line.
+- **Focus Mode** (`⌘S`) dims everything but the current sentence — the sidebars, the word count and the iPad touch-mode buttons fade to the same level, and headings, highlights and the YOUAREHERE tag go monochrome everywhere but the sentence you are in; **Typewriter Mode** pins the cursor to a fixed line.
 - **Zen Focus** (`⌘⇧S`) is a fullscreen writing overlay with the current line centered and the edges of the screen faded away.
 - **Private Mode** (`⌘⇧P`) blacks out every word on screen so you can write in public — bars painted over the text rather than substituted for it, so nothing reflows and the page you were reading stays where it was. A dummy-document mode swaps the letters for plausible ones instead. Both cover every surface currently on screen: floating panes, stack columns and the Zen overlay, not just the editor.
 - **Word count** (`⌘⇧W`), an optional live pill above the text column.
