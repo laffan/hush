@@ -17,6 +17,7 @@ import { mountDeskSwitcher } from "./desk-switcher.js";
 import { mountAddPopup } from "./add-popup.js";
 import { mountProgressCenter } from "./sidebar-progress.js";
 import { createRecentFilesPanel } from "./recent-files-panel.js";
+import { mountTimerBox } from "../timer/timer-box.js";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
 
 function svgInner(raw) {
@@ -104,14 +105,22 @@ export function createSidebar(state) {
   bodyStack.appendChild(body);
   bodyStack.appendChild(footer);
 
+  // Focus timer — a zero-height slot right above the footer; the box in
+  // it floats up over whatever sits above (styles/timer.css).
+  const timerSlot = document.createElement("div");
+  timerSlot.className = "sidebar-timer-slot";
+  bodyStack.insertBefore(timerSlot, footer);
+  mountTimerBox(timerSlot, state, panelOverlay);
+
   // Recent Files panel sits between the body (file tree / find) and the
-  // footer (Add / Settings). Inserted lazily based on settings.
+  // footer (Add / Settings), above the timer slot. Inserted lazily based
+  // on settings.
   let recentPanel = null;
   function syncRecentPanel() {
     const want = !!state.settings.showRecentFiles;
     if (want && !recentPanel) {
       recentPanel = createRecentFilesPanel(state);
-      bodyStack.insertBefore(recentPanel, footer);
+      bodyStack.insertBefore(recentPanel, timerSlot);
     } else if (!want && recentPanel) {
       if (recentPanel._destroy) recentPanel._destroy();
       recentPanel.remove();

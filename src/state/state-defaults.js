@@ -96,6 +96,10 @@ export function createDefaultSettings() {
     // Courier's per-device memory: `{ mode, scope, locations: { [slot]: key } }`
     // (see src/courier/courier-store.js).
     courier: null,
+    // Focus timer: `{ active: { task, startedAt, durationMs, breakEveryMs } | null,
+    // last: { hours, minutes, breakEvery } }` (see src/timer/timer-store.js).
+    // One timer at a time, shared by every desk.
+    timer: null,
     // YOU ARE HERE marker registry — one `{ fileId, fileType, shapeId?,
     // offset? }` entry per desk id (see src/you-are-here.js).
     youAreHere: {},

@@ -1,0 +1,349 @@
+/* ===== Focus timer (src/timer/) =====
+   Two pieces in Courier's idiom (courier.css): a sheet of paper with a
+   hairline edge and a soft lift, and controls that read as text.
+
+   - The Start timer sheet slides up from the bottom of the window. It
+     rides --z-courier: the palette that opens it works over Zen, so the
+     sheet has to as well.
+   - The sidebar box floats over the foot of the file list, just above
+     Add / Settings, from a zero-height slot sidebar.js keeps there. */
+
+/* ---- Sheet ---- */
+
+.timer-root {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-courier);
+  font-family: var(--ui-font-family);
+  color: var(--fg);
+}
+
+.timer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.06);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.timer-sheet {
+  position: absolute;
+  left: 50%;
+  bottom: calc(max(var(--ipad-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)) + 20px);
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100% - var(--top-chrome-inset, 0px) - 48px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px 28px 16px;
+  background: var(--theme-bg, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--fg) 7%, transparent);
+  border-radius: 5px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 18px 50px rgba(0, 0, 0, 0.12);
+  transform: translate(-50%, calc(100% + 40px));
+  transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+html[data-theme="dark"] .timer-sheet {
+  border-color: color-mix(in srgb, var(--fg) 18%, transparent);
+}
+
+.timer-root.open .timer-backdrop { opacity: 1; }
+.timer-root.open .timer-sheet { transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  .timer-sheet, .timer-backdrop { transition-duration: 0.01s; }
+}
+
+.timer-task,
+.timer-num,
+.timer-break,
+.timer-cancel,
+.timer-start {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  outline: none;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.timer-task,
+.timer-num {
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 9%, transparent);
+  transition: border-color 0.15s;
+}
+
+.timer-task:focus,
+.timer-num:focus {
+  border-bottom-color: color-mix(in srgb, var(--fg) 28%, transparent);
+}
+
+.timer-task {
+  width: 100%;
+  font-size: 16px;
+  padding: 4px 0 7px;
+}
+
+.timer-task::placeholder {
+  color: var(--fg);
+  opacity: 0.3;
+}
+
+.timer-fields {
+  display: flex;
+  gap: 28px;
+}
+
+.timer-field {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.timer-field span,
+.timer-caption {
+  font-size: 12px;
+  opacity: 0.45;
+}
+
+.timer-num {
+  width: 2.2em;
+  padding: 2px 0 4px;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* Break frequency — segmented text buttons, the choice in full ink and
+   underlined, as Courier's modes are. */
+.timer-breaks {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.timer-seg {
+  display: flex;
+  gap: 12px;
+}
+
+.timer-break {
+  padding: 2px 0 3px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  opacity: 0.4;
+  border-bottom: 1px solid transparent;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+
+.timer-break:hover { opacity: 0.75; }
+.timer-break:focus-visible { opacity: 0.85; }
+
+.timer-break.active {
+  opacity: 1;
+  border-bottom-color: currentColor;
+}
+
+.timer-unit { margin-left: -6px; }
+
+/* Timeline — a hairline from now to the finish, a short tick per break
+   and a taller one at the end, times hung underneath. */
+.timer-timeline {
+  padding: 6px 0 0;
+}
+
+.timer-root.timer-empty .timer-timeline { opacity: 0.25; }
+
+.timer-track {
+  position: relative;
+  height: 12px;
+  margin: 0 1px;
+}
+
+.timer-rule {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: color-mix(in srgb, var(--fg) 25%, transparent);
+}
+
+/* The start is a dot: that's now. */
+.timer-rule::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -2.5px;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: var(--fg);
+}
+
+.timer-tick {
+  position: absolute;
+  top: 50%;
+  width: 1px;
+  height: 7px;
+  transform: translate(-50%, -50%);
+  background: color-mix(in srgb, var(--fg) 45%, transparent);
+}
+
+.timer-tick-end {
+  height: 12px;
+  background: var(--fg);
+}
+
+.timer-labels {
+  position: relative;
+  height: 16px;
+  margin: 6px 1px 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-label {
+  position: absolute;
+  top: 0;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  opacity: 0.45;
+}
+
+.timer-label-now { transform: none; }
+.timer-label-end { transform: translateX(-100%); opacity: 1; }
+
+.timer-summary {
+  margin-top: -6px;
+  font-size: 12px;
+  opacity: 0.45;
+}
+
+.timer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 18px;
+}
+
+.timer-cancel,
+.timer-start {
+  font-size: 13px;
+  padding: 4px 0;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.timer-cancel { opacity: 0.4; }
+.timer-cancel:hover { opacity: 0.8; }
+
+.timer-start { font-weight: 600; }
+.timer-start:hover:not(:disabled) { opacity: 0.7; }
+
+.timer-start:disabled {
+  opacity: 0.2;
+  cursor: default;
+}
+
+.timer-cancel:focus-visible,
+.timer-start:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---- Sidebar box ---- */
+
+.sidebar-timer-slot {
+  position: relative;
+  flex: 0 0 0;
+  height: 0;
+  z-index: 2;
+}
+
+/* The find panel owns the whole column while it's up. */
+#panel-overlay.panel-find-mode .sidebar-timer-slot { display: none; }
+
+.sidebar-timer {
+  position: absolute;
+  left: 12px;
+  right: 8px;
+  bottom: 4px;
+  overflow: hidden;
+  padding: 9px 12px 10px;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  border: 1px solid color-mix(in srgb, var(--fg) 7%, transparent);
+  border-radius: 5px;
+  /* A tighter lift than the sheet's: the sidebar clips at its edges. */
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 14px rgba(0, 0, 0, 0.07);
+  font-family: var(--ui-font-family);
+  cursor: default;
+  user-select: none;
+}
+
+html[data-theme="dark"] .sidebar-timer {
+  border-color: color-mix(in srgb, var(--fg) 18%, transparent);
+}
+
+.sidebar-timer-task {
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-timer-line {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 3px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.sidebar-timer-break,
+.sidebar-timer-end { opacity: 0.45; }
+
+.sidebar-timer-break:empty { display: none; }
+.sidebar-timer-end { margin-left: auto; }
+
+.sidebar-timer.break-now .sidebar-timer-break { opacity: 1; }
+.sidebar-timer.finished .sidebar-timer-task { opacity: 0.55; }
+
+/* Elapsed share of the session, a hairline along the bottom edge. */
+.sidebar-timer-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+}
+
+.sidebar-timer-progress span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: color-mix(in srgb, var(--fg) 35%, transparent);
+  transition: width 1s linear;
+}
+
+/* Let the last rows scroll out from under the box. */
+#panel-overlay.has-timer .panel-overlay-body:has(+ .sidebar-timer-slot) { padding-bottom: 84px; }
+#panel-overlay.has-timer .recent-files-panel:has(+ .sidebar-timer-slot) .recent-files-list { padding-bottom: 72px; }

@@ -577,6 +577,11 @@ pub struct AppSettings {
     #[serde(default)]
     pub courier: serde_json::Value,
 
+    // Focus timer — the running timer (shared by every desk) and the last
+    // values the Start timer sheet used. Opaque; see src/timer/timer-store.js.
+    #[serde(default)]
+    pub timer: serde_json::Value,
+
     // YOU ARE HERE marker registry — `{ deskId: { fileId, fileType,
     // shapeId?, offset? } }`, one marker per desk. Opaque to Rust; JS
     // owns detection and the one-per-desk enforcement.
@@ -795,6 +800,7 @@ impl Default for AppSettings {
             persisted_panes: Vec::new(),
             sticky_notes: Vec::new(),
             courier: serde_json::Value::Null,
+            timer: serde_json::Value::Null,
             you_are_here: serde_json::json!({}),
             panes_hidden_by_context: serde_json::json!({}),
             window_width: None, window_height: None, window_x: None, window_y: None,

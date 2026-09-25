@@ -1,5 +1,5 @@
 /**
- * Desk-scoped (and cross-desk: Courier) command palette entries — split out of
+ * Desk-scoped (and cross-desk: Courier, the focus timer) command palette entries — split out of
  * `command-palette-commands.js` to keep that file under the 700-line cap.
  *
  * `buildDeskCommands(ctx)` returns the same command descriptors
@@ -11,6 +11,10 @@
 
 import { getDeskRatchet } from "./state/state-desks.js";
 import { toggleDeskRatchet } from "./state/state-modes.js";
+import { getTimer, isTimerRunning, deleteTimer } from "./timer/timer-store.js";
+
+// Stopwatch — a round face with a crown and a single hand.
+const timerIcon = `<svg viewBox="0 0 24 24"><circle cx="12" cy="13.5" r="7.5"/><path d="M10 3 H14 M12 3 V6 M12 13.5 V9.5 M17.8 7.7 L19.3 6.2"/></svg>`;
 
 export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, enterDeskPicker, currentFileTreeNodeId }) {
   const multiDesk = (s) => (s.settings?.desks || []).length >= 2;
@@ -137,6 +141,18 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
     { id: "courier", section: "Create", label: "Courier — send a quick note", icon: icons.sticky, shortcutKey: null, ctx: "shared",
       keywords: "send note sticky append triple shift",
       action: async (s) => (await import("./courier/courier-sheet.js")).openCourier(s) },
+    // Focus timer — one at a time, shared by every desk, so `shared`
+    // context. Start is hidden while one runs (Delete first); a finished
+    // timer can simply be replaced. Delete sits with the turn-offs at the
+    // top of the palette for as long as there is a timer to delete.
+    { id: "timer-start", section: "Writing", label: "Start timer", icon: timerIcon, shortcutKey: null, ctx: "shared",
+      keywords: "focus pomodoro countdown break session clock",
+      hiddenIf: (s) => isTimerRunning(s),
+      action: async (s) => (await import("./timer/timer-sheet.js")).openTimerSheet(s) },
+    { id: "timer-delete", section: "Active Modes", label: "Delete timer", icon: timerIcon, shortcutKey: null, ctx: "shared",
+      keywords: "stop cancel clear focus pomodoro countdown",
+      hiddenIf: (s) => !getTimer(s),
+      action: (s) => deleteTimer(s) },
     { id: "desk-archives", section: "Desks", label: "View archived desks", icon: icons.desk, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const m = await import("./sidebar/desk-archive.js");
