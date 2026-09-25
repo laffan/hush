@@ -293,7 +293,7 @@ body.file-in-trash #notebook-container .notes-canvas + * {
   animation: none !important;
 }
 
-/* Pulsing caret — Idle Animation set to Pulse: a slow swell between 70%
+/* Pulsing caret — Idle Animation set to Pulse: a slow swell between 20%
    and full opacity in place of the blink. `!important` beats the
    duration CodeMirror writes inline (its blink rate). CodeMirror
    restarts its blink on every selection change by flipping the layer's
@@ -315,11 +315,11 @@ body.file-in-trash #notebook-container .notes-canvas + * {
 }
 @keyframes hush-cursor-pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+  50% { opacity: 0.2; }
 }
 @keyframes hush-cursor-pulse-2 {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+  50% { opacity: 0.2; }
 }
 
 
@@ -381,10 +381,31 @@ body.file-in-trash #notebook-container .notes-canvas + * {
 .line-ind-border .preview-active-line::after {
   right: -13px;
 }
+/* Underline — a rule under the current line, across the text column
+   (the overlay's width; edge to edge in flush mode). The overlay is the
+   caret's glyph box, not the line box, so it hangs 3 px below the
+   descenders; the preview's line is a whole line box, whose leading
+   already clears them. */
+.line-ind-underline .hush-line-ind::after,
+.line-ind-underline .preview-active-line::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -3px;
+  height: 2px;
+  border-radius: 1px;
+  background-color: var(--line-ind-paint);
+  pointer-events: none;
+}
+.line-ind-underline .preview-active-line::after {
+  bottom: 0;
+}
 .line-ind-left-arrow .preview-active-line,
 .line-ind-double-arrow .preview-active-line,
 .line-ind-left-border .preview-active-line,
-.line-ind-border .preview-active-line {
+.line-ind-border .preview-active-line,
+.line-ind-underline .preview-active-line {
   position: relative;
 }
 .line-ind-left-arrow .hush-line-ind::before,

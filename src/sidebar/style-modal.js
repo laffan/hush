@@ -90,6 +90,7 @@ const LINE_INDICATOR_OPTIONS = [
   { value: "double-arrow", label: "Double Arrow" },
   { value: "left-border", label: "Left Border" },
   { value: "border", label: "Border" },
+  { value: "underline", label: "Underline" },
   { value: "highlight", label: "Highlight" },
 ];
 

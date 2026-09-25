@@ -72,8 +72,8 @@ pub struct Style {
     #[serde(default)]
     pub header_scale: Option<f64>,
     /// "Highlight current line" affordance — one of "none", "left-arrow",
-    /// "double-arrow", "left-border", "border", "highlight". Unset / "none"
-    /// disables the indicator. Indicator colour rides per-appearance on
+    /// "double-arrow", "left-border", "border", "underline", "highlight".
+    /// Unset / "none" disables the indicator. Indicator colour rides per-appearance on
     /// `light_colors` / `dark_colors` under the `lineIndicator` key.
     #[serde(default)]
     pub line_indicator: Option<String>,

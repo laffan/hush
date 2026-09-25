@@ -79,8 +79,8 @@ function swatchCell(draft, key, tab, label, mode) {
   const override = colorsFor(draft, tab)[key];
   const { hex, alpha } = splitAlphaColor(override || seedColor(draft, key, tab, mode));
   return `
-                  <span class="style-cursor-swatch">
-                    <span class="style-cursor-swatch-label">${label}</span>
+                  <span class="style-appearance-swatch">
+                    <span class="style-appearance-swatch-label">${label}</span>
                     <span class="style-color-group">
                       <input type="color" data-cursor-color-key="${key}" data-appearance="${tab}" value="${hex}" data-alpha="${alpha}" aria-label="${label} ${key === "cursor" ? "cursor" : "glow"} color" />
                       ${override ? `<button class="style-reset-color" data-cursor-color-key="${key}" data-appearance="${tab}" title="Reset">&times;</button>` : ""}

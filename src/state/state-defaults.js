@@ -47,7 +47,7 @@ export function createDefaultSettings() {
     cursorIdleAnimation: null,
     // Active-line indicator for the Default style. Per-style overrides
     // live on `Style.lineIndicator`. One of "none", "left-arrow",
-    // "double-arrow", "left-border", "border", "highlight". The
+    // "double-arrow", "left-border", "border", "underline", "highlight". The
     // indicator colour rides per-appearance on defaultLightColors /
     // defaultDarkColors under the `lineIndicator` key.
     lineIndicator: "none",

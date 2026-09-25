@@ -889,7 +889,7 @@
    which the caret already carries inline (0.85 block, 0.7 underline);
    the filter multiplies with it instead of overwriting it, the same way
    the editor's pulse on `.cm-cursorLayer` (editor.css) multiplies with
-   the opacity on the `.cm-cursor` inside it. Same 70%–100% swell, same
+   the opacity on the `.cm-cursor` inside it. Same 20%–100% swell, same
    2.4s period. */
 .preview-cursor[data-idle="pulse"] {
   animation: preview-cursor-pulse 2.4s ease-in-out infinite;
@@ -907,7 +907,7 @@
 }
 @keyframes preview-cursor-pulse {
   0%, 100% { filter: opacity(1); }
-  50% { filter: opacity(0.7); }
+  50% { filter: opacity(0.2); }
 }
 
 .preview-selected {
@@ -1019,17 +1019,30 @@
   font-size: 11px;
   opacity: 0.55;
 }
-/* The Cursor section's per-appearance swatches, in the same two columns
-   as the Glow switches so the Light and Dark halves line up down the
-   section. */
-.style-cursor-swatch {
+/* Per-appearance swatches: the Cursor section's, in the same two
+   columns as the Glow switches so the Light and Dark halves line up down
+   the section, and the line indicator's, beside its Custom color box. */
+.style-appearance-swatch {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
-.style-cursor-swatch-label {
+.style-appearance-swatch-label {
   font-size: 11px;
   opacity: 0.55;
+}
+.style-line-ind-color {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.style-line-ind-color input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 auto;
+  cursor: pointer;
 }
 
 .style-select-group {

@@ -1,7 +1,7 @@
 /**
  * Line Indicator — paints the active style's "highlight the current
  * line" affordance (left arrow / double arrow / left border / border /
- * highlight) on the *visual* line carrying the cursor.
+ * underline / highlight) on the *visual* line carrying the cursor.
  *
  * Each editor (main view, every pane, every stack column) gets its own
  * overlay element inside `view.scrollDOM`. The overlay is positioned
@@ -30,7 +30,7 @@
  */
 import { ViewPlugin } from "@codemirror/view";
 
-const VARIANTS = ["left-arrow", "double-arrow", "left-border", "border", "highlight"];
+const VARIANTS = ["left-arrow", "double-arrow", "left-border", "border", "underline", "highlight"];
 
 function resolveLineIndicator(state) {
   const styleId = state.settings.activeStyleId;

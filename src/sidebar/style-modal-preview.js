@@ -168,7 +168,7 @@ export function updatePreview(state, backdrop, draft, colorTab, previewState) {
     || cursor;
   pane.style.setProperty("--line-indicator-color", liColor);
   const liVariant = draft.lineIndicator && draft.lineIndicator !== "none" ? draft.lineIndicator : null;
-  const allVariants = ["left-arrow", "double-arrow", "left-border", "border", "highlight"];
+  const allVariants = ["left-arrow", "double-arrow", "left-border", "border", "underline", "highlight"];
   allVariants.forEach(v => pane.classList.remove("line-ind-" + v));
   if (liVariant) pane.classList.add("line-ind-" + liVariant);
 

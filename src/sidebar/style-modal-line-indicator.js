@@ -1,12 +1,13 @@
 /**
  * Line Indicator rows for the style editor's Editing section.
  *
- * The indicator itself (none / arrows / borders / highlight) is a
+ * The indicator itself (none / arrows / borders / underline / highlight) is a
  * single per-style value, but its colour is per-appearance and
  * optional: with no override the indicator tracks the style's cursor
  * colour, which is what most styles want. "Custom color" is the opt-in
- * — checking it reveals a light and a dark picker, unchecking it drops
- * both overrides so the indicator falls back to the cursor again.
+ * — checking it reveals a light and a dark picker beside it on the same
+ * row, unchecking it drops both overrides so the indicator falls back to
+ * the cursor again.
  *
  * The overrides live where every other per-appearance colour lives —
  * `lightColors.lineIndicator` / `darkColors.lineIndicator` — so
@@ -37,29 +38,36 @@ function seedColor(draft, tab) {
   return getThemeById(themeId)?.headingColor || themeColorFor("cursor", themeId, tab);
 }
 
-/** Rows that sit under the Line Indicator dropdown. Nothing renders
- *  while the indicator is "none" — there's no mark to colour. */
+/** One appearance's swatch — the same markup as the Cursor section's
+ *  colour pair (style-modal-cursor.js), so the two read alike. */
+function swatchCell(id, label, value) {
+  return `
+          <span class="style-appearance-swatch">
+            <span class="style-appearance-swatch-label">${escHtml(label)}</span>
+            <span class="style-color-group">
+              <input type="color" id="${id}" value="${escAttr(value)}" aria-label="${escHtml(label)} line indicator color" />
+            </span>
+          </span>`;
+}
+
+/** The row under the Line Indicator dropdown: the "Custom color" box,
+ *  and while it's ticked the Light and Dark pickers beside it on the same
+ *  row. Nothing renders while the indicator is "none" — there's no mark
+ *  to colour. */
 export function renderLineIndicatorColorRows(draft) {
   if (!draft.lineIndicator || draft.lineIndicator === "none") return "";
   const custom = hasCustomLineIndicatorColor(draft);
-  const colorRow = (id, label, value) => `
-    <div class="style-editor-color-row">
-      <label>${escHtml(label)}</label>
-      <div class="style-color-group">
-        <input type="color" id="${id}" value="${escAttr(value)}" />
-      </div>
-    </div>`;
   return `
     <div class="style-editor-row">
-      <label>Custom color</label>
-      <div class="style-checkbox-group">
+      <label for="style-line-indicator-custom">Custom color</label>
+      <div class="style-line-ind-color">
         <input type="checkbox" id="style-line-indicator-custom" ${custom ? "checked" : ""} />
+        ${custom ? `<div class="style-glow-pair">
+          ${swatchCell("style-line-indicator-light", "Light", seedColor(draft, "light"))}
+          ${swatchCell("style-line-indicator-dark", "Dark", seedColor(draft, "dark"))}
+        </div>` : ""}
       </div>
-    </div>
-    ${custom
-      ? colorRow("style-line-indicator-light", "Color (Light)", seedColor(draft, "light"))
-        + colorRow("style-line-indicator-dark", "Color (Dark)", seedColor(draft, "dark"))
-      : ""}`;
+    </div>`;
 }
 
 /**

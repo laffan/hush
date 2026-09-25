@@ -46,7 +46,7 @@ export function glowIntensity(obj) {
 }
 
 /** What a custom caret does while it sits still: CodeMirror's own
- *  blink, a slow pulse between 70% and full opacity, or nothing. */
+ *  blink, a slow pulse between 20% and full opacity, or nothing. */
 export const IDLE_ANIMATIONS = [
   { value: "blink", label: "Blink" },
   { value: "pulse", label: "Pulse" },
