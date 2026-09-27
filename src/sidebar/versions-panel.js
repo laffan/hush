@@ -2,6 +2,8 @@
  * Versions Panel — shows document snapshots with preview and restore
  */
 
+import { buildCreatedNote } from "./versions-created-note.js";
+
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 async function tauriInvoke(cmd, args) {
@@ -121,6 +123,7 @@ async function loadSnapshots(container, state) {
 
   if (currentSnapshots.length === 0) {
     renderEmpty(container, "No versions yet");
+    appendCreatedNote(container, state);
     return;
   }
 
@@ -178,6 +181,7 @@ function renderSnapshotList(container, state) {
 
   if (filteredSnapshots.length === 0) {
     listContainer.innerHTML = `<div class="versions-empty">${searchQuery ? "No matching snapshots" : "No versions yet"}</div>`;
+    appendCreatedNote(container, state);
     return;
   }
 
@@ -216,6 +220,13 @@ function renderSnapshotList(container, state) {
 
   listContainer.innerHTML = "";
   listContainer.appendChild(ul);
+  appendCreatedNote(container, state);
+}
+
+/** When the file was made, under the last (oldest) snapshot. */
+function appendCreatedNote(container, state) {
+  const note = buildCreatedNote(state, currentSnapshots);
+  if (note) container.querySelector(".versions-list-container")?.appendChild(note);
 }
 
 function selectSnapshot(snap, container, state) {

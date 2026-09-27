@@ -102,6 +102,13 @@ pub struct TreeNode {
     // every doc the user hasn't capped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub word_limit: Option<u32>,
+    // Epoch seconds when the node was made, stamped at creation (Rust
+    // `files.rs#new_node`, JS `state-files.js#newFile` and friends). A
+    // filesystem birth time can't stand in: every save is tmp + rename
+    // (`atomic.rs`), so the inode is as new as the last write. Absent on
+    // nodes that predate the field — the Versions modal says so.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<u64>,
     // PDF-only, legacy — the shelf's "flag to top" feature originally
     // shipped as `pinned`; it now rides the shared `flagged` field. Kept
     // so existing trees deserialize and the JS side can migrate the

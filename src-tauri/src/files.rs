@@ -275,6 +275,10 @@ fn new_node(node_type: &str, name: &str, file_id: Option<&str>) -> TreeNode {
         show_numbers: false,
         gutter: false,
         proofread: false,
+        created_at: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_secs()),
         ..Default::default()
     }
 }

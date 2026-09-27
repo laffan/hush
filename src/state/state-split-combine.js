@@ -259,6 +259,7 @@ export async function splitDocAtHeadings(state, nodeId, opts = {}) {
       fileId: childFileId,
       children: [],
       flagged: false,
+      ...(node.createdAt ? { createdAt: node.createdAt } : {}),
     };
     childNodes.push(childNode);
     childContents.push(section.content);
@@ -283,6 +284,7 @@ export async function splitDocAtHeadings(state, nodeId, opts = {}) {
       children: childNodes,
       flagged: node.flagged,
       ...(node.bgColor ? { bgColor: node.bgColor } : {}),
+      ...(node.createdAt ? { createdAt: node.createdAt } : {}),
     };
     const siblings = parent ? parent.children : state.fileTree;
     const idx = siblings.findIndex((n) => n.id === nodeId);

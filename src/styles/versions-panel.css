@@ -132,6 +132,16 @@
   margin-top: 1px;
 }
 
+/* When the file was made — a quiet line under the oldest snapshot
+   (versions-created-note.js). Scrolls with the list. */
+.versions-created-note {
+  margin: 10px 12px 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--panel-border, rgba(128, 128, 128, 0.2));
+  font-size: 11px;
+  color: var(--sidebar-fg);
+}
+
 /* ===== Version Preview (right side, in the content area) =====
    Versions now live inside a modal — the overlay sits inside the modal's
    preview host (.versions-modal-preview-host with position: relative)

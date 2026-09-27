@@ -89,6 +89,7 @@ export async function convertProjectToDoc(state, nodeId) {
     children: [],
     flagged: node.flagged,
     ...(node.bgColor ? { bgColor: node.bgColor } : {}),
+    ...(node.createdAt ? { createdAt: node.createdAt } : {}),
   };
 
   let filesFolder = null;
@@ -187,6 +188,7 @@ export async function convertDocToProject(state, nodeId) {
       fileId: childFileId,
       children: [],
       flagged: false,
+      ...(node.createdAt ? { createdAt: node.createdAt } : {}),
     });
   }
 
@@ -220,6 +222,7 @@ export async function convertDocToProject(state, nodeId) {
       fileId: childFileId,
       children: [],
       flagged: false,
+      ...(node.createdAt ? { createdAt: node.createdAt } : {}),
     });
   }
 
@@ -230,6 +233,7 @@ export async function convertDocToProject(state, nodeId) {
     children: childNodes,
     flagged: node.flagged,
     ...(node.bgColor ? { bgColor: node.bgColor } : {}),
+    ...(node.createdAt ? { createdAt: node.createdAt } : {}),
   };
 
   const parent = findParentOfNode(state.fileTree, nodeId);

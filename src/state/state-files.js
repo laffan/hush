@@ -165,7 +165,7 @@ export async function newFile(state, parentId = null, opts = {}) {
   createdEntry.content = initialContent;
   if (IS_TAURI) state.files.unshift(createdEntry);
   else state._saveFilesLocal();
-  const treeNode = { id: crypto.randomUUID(), type: "document", name: initialName, fileId, children: [], flagged: false };
+  const treeNode = { id: crypto.randomUUID(), type: "document", name: initialName, fileId, children: [], flagged: false, createdAt: Math.floor(Date.now() / 1000) };
   // New files land at the *top* of the Inbox (newest-first); elsewhere
   // they keep the tail position so project/folder ordering is untouched.
   insertNode(state.fileTree, treeNode, targetParent, findNode, targetParent === state.getInboxId());
