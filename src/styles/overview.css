@@ -112,7 +112,8 @@ html.ios .side-panel-resize {
      sits at the outline panel's edge rather than overlapping the dock's
      own right-edge chrome — otherwise this arrow lands on top of the gutter
      notebook's shelf grip and clicking the shelf opens the doc outline. */
-  right: var(--pane-dock-right-width, 0px);
+  /* …and 5 px in from that edge, level with the left grip's chevron. */
+  right: calc(var(--pane-dock-right-width, 0px) + 5px);
   transform: translateY(-50%);
   width: 20px;
   height: 60px;
@@ -121,20 +122,22 @@ html.ios .side-panel-resize {
   justify-content: center;
   border: none;
   background: transparent;
-  color: var(--sidebar-fg);
-  /* The glyph is the desk switcher's caret, turned (ui/chevron.js). */
+  /* Colour and resting opacity match the left grip's chevron, so the
+     pair reads as one control. The glyph is the desk switcher's caret,
+     turned (ui/chevron.js). */
+  color: var(--fg);
   line-height: 0;
   padding: 0;
   margin: 0;
-  border-radius: 6px 0 0 6px;
+  border-radius: 6px;
   cursor: pointer;
-  opacity: 0.25;
+  opacity: 0.6;
   transition: opacity 0.15s, background 0.15s;
   z-index: 250;
 }
 
 .right-panel-trigger:hover {
-  opacity: 0.85;
+  opacity: 1;
   background: rgba(128, 128, 128, 0.18);
 }
 
