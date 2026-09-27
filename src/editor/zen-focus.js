@@ -34,6 +34,29 @@ let hintFadeTimer = null;
 
 const HINT_FADE_MS = 1500;
 
+/** The frost bands' blur radii (px) at the stock setting, edge-most
+ *  last. `zenFocusBlur` multiplies them: 0 is off, 5 the ceiling. */
+const FROST_RADII = [2, 5, 10];
+const FROST_MAX = 5;
+
+/** Paint the frost bands at the user's strength. The radii go on as
+ *  literal inline values rather than through a custom property: WebKit
+ *  has not always honoured var() inside -webkit-backdrop-filter. At 0
+ *  the bands are taken out entirely rather than left as six no-op
+ *  backdrop filters over the page. */
+function applyZenFrost(overlay, state) {
+  const raw = Number(state.settings.zenFocusBlur);
+  const m = Number.isFinite(raw) ? Math.max(0, Math.min(FROST_MAX, raw)) : 1;
+  for (const frost of overlay.querySelectorAll(".zen-focus-frost")) {
+    frost.style.display = m > 0 ? "" : "none";
+    frost.querySelectorAll("span").forEach((band, i) => {
+      const filter = m > 0 ? `blur(${+(FROST_RADII[i] * m).toFixed(2)}px)` : "none";
+      band.style.webkitBackdropFilter = filter;
+      band.style.backdropFilter = filter;
+    });
+  }
+}
+
 export function initZenFocus(state) {
   state.on("zen-focus-changed", () => {
     if (state.zenFocus) enterZenFocus(state);
@@ -43,6 +66,7 @@ export function initZenFocus(state) {
     if (!active || !active.overlay) return;
     const px = state.settings.zenFocusFontSize || 30;
     active.overlay.style.setProperty("--zen-font-size", `${px}px`);
+    applyZenFrost(active.overlay, state);
   });
 }
 
@@ -280,9 +304,10 @@ export function enterZenFocus(state) {
   for (const edge of ["top", "bottom"]) {
     const frost = document.createElement("div");
     frost.className = `zen-focus-frost zen-focus-frost-${edge}`;
-    for (let i = 0; i < 3; i++) frost.appendChild(document.createElement("span"));
+    for (let i = 0; i < FROST_RADII.length; i++) frost.appendChild(document.createElement("span"));
     overlay.appendChild(frost);
   }
+  applyZenFrost(overlay, state);
 
   const hint = document.createElement("div");
   hint.className = "zen-focus-hint";

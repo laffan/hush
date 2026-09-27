@@ -289,6 +289,7 @@ function bindAll() {
   bindSlider("setting-focus-mode-opacity", "focusModeOpacity", "%", v => (v * 100).toFixed(0));
   bindSlider("setting-comment-opacity", "commentOpacity", "%", v => (v * 100).toFixed(0));
   bindSlider("setting-zen-focus-font-size", "zenFocusFontSize", "px");
+  bindSlider("setting-zen-focus-blur", "zenFocusBlur", "×", v => v.toFixed(1));
   // Zen Focus window dropdown — odd values (1, 3, 5). Stored as a number
   // so the in-editor chip control and this dropdown share one type.
   const zenWindowEl = document.getElementById("setting-zen-focus-window");

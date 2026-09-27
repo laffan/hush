@@ -172,6 +172,10 @@ pub struct AppSettings {
     pub zen_focus_font_size: u32,
     #[serde(default = "default_selection_focus_font_multiplier")]
     pub selection_focus_font_multiplier: f32,
+    #[serde(default = "default_zen_focus_window")]
+    pub zen_focus_window: u32,
+    #[serde(default = "default_zen_focus_blur")]
+    pub zen_focus_blur: f32,
     #[serde(default)]
     pub word_count_visible: bool,
     #[serde(default = "default_shortcut_find")]
@@ -699,6 +703,8 @@ impl Default for AppSettings {
             shortcut_toggle_spellcheck: default_shortcut_toggle_spellcheck(),
             zen_focus_font_size: default_zen_focus_font_size(),
             selection_focus_font_multiplier: default_selection_focus_font_multiplier(),
+            zen_focus_window: default_zen_focus_window(),
+            zen_focus_blur: default_zen_focus_blur(),
             word_count_visible: false,
             shortcut_find: default_shortcut_find(),
             shortcut_quick_find: default_shortcut_quick_find(),

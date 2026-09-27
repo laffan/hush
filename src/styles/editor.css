@@ -599,13 +599,17 @@ body.cmd-held .column-mover:hover,
    needed on the pill. */
 .cmd-held-sliders-wrap {
   position: fixed;
-  left: 50%;
+  /* Full width, click-through, pill centred by the column flex. A
+     `left: 50%` box only has half the window to lay the pill out in,
+     which is what pushed a four-group pill off a narrow window. */
+  left: 0;
+  right: 0;
   bottom: 0;
-  transform: translateX(-50%);
   display: none;
   flex-direction: column;
   align-items: center;
-  /* Above --z-modal-top (zen overlay) so the controls reach the user. */
+  /* Above the Zen / Selection Focus overlays so the controls reach the
+     user. */
   z-index: calc(var(--z-modal-top) + 1);
   pointer-events: none;
 }
@@ -638,10 +642,18 @@ body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection
 .cmd-held-sliders {
   pointer-events: auto;
   display: flex;
-  gap: 18px;
+  /* Sliders give up width first (down to their floor below); only a
+     window too narrow even for that wraps the groups onto a second
+     row, which the 22 px radius keeps a rounded box rather than a
+     stretched capsule. */
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 18px;
+  box-sizing: border-box;
+  max-width: calc(100vw - 24px);
   margin-bottom: 8px;
   padding: 10px 16px;
-  border-radius: 999px;
+  border-radius: 22px;
   background: color-mix(in srgb, var(--theme-bg, var(--bg)) 92%, transparent);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -668,14 +680,18 @@ body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 .cmd-held-slider-label {
   opacity: 0.6;
   letter-spacing: 0.02em;
   min-width: 30px;
+  white-space: nowrap;
 }
 .cmd-held-slider-group input[type="range"] {
   width: 120px;
+  flex: 0 1 120px;
+  min-width: 64px;
   accent-color: var(--accent, currentColor);
   cursor: pointer;
 }
@@ -686,7 +702,7 @@ body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection
   font-variant-numeric: tabular-nums;
 }
 
-/* Window chip group — three numeric chips. Active wears a circle
+/* Centered lines chip group — four numeric chips. Active wears a circle
    outline; the rest are flat numbers. Replaces the slider+readout pair
    so it slots into the pill alongside Dim and Font. */
 .cmd-held-window-group .cmd-held-window-chips {

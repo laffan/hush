@@ -338,6 +338,9 @@ export function createDefaultSettings() {
     // the document scrolls. Symmetric so the centre line stays the
     // anchor.
     zenFocusWindow: 1,
+    // Zen's frosted curtains (zen-focus.js#applyZenFrost) — a multiple
+    // of the stock blur: 0 turns it off, 5 is the most it goes.
+    zenFocusBlur: 1,
     lastNotebookId: null,
 
     // Notebook shortcuts

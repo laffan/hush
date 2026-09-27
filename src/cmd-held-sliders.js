@@ -8,13 +8,14 @@
  *     that fades in while the cursor is near the bottom of the window
  *     (body class `sliders-near-bottom`, toggled by the proximity
  *     tracker installed below).
- *   • A horizontal pill carrying Dim opacity + Font size sliders that
- *     reveals on caret hover (and stays revealed while the pointer is
- *     on the pill itself).
+ *   • A horizontal pill carrying Dim opacity, Font size and Blur
+ *     sliders plus the Centered lines chips, which reveals on caret
+ *     hover (and stays revealed while the pointer is on the pill
+ *     itself).
  *
- * The pill writes back to `state.settings.focusModeOpacity` and
- * `state.settings.zenFocusFontSize` so the same values surfaced in the
- * Settings window update live — and vice versa.
+ * The pill writes back to `state.settings.focusModeOpacity`,
+ * `zenFocusFontSize`, `zenFocusBlur` and `zenFocusWindow` so the same
+ * values surfaced in the Settings window update live — and vice versa.
  */
 
 /** Vertical band — measured from the bottom edge — within which the
@@ -84,6 +85,16 @@ export function initCmdHeldSliders(state) {
     onChange: (v) => state.updateSettings({ zenFocusFontSize: Math.round(v) }),
   });
 
+  // Strength of Zen's frosted curtains, as a multiple of the stock
+  // blur (zen-focus.js#applyZenFrost): 0 is none, 5 the ceiling.
+  const blurGroup = makeSliderGroup({
+    label: "Blur",
+    min: 0, max: 5, step: 0.1,
+    value: normalizeBlur(state.settings.zenFocusBlur),
+    format: (v) => `${Number(v).toFixed(1)}×`,
+    onChange: (v) => state.updateSettings({ zenFocusBlur: normalizeBlur(v) }),
+  });
+
   const windowGroup = makeWindowChipGroup({
     value: normalizeWindow(state.settings.zenFocusWindow),
     onChange: (v) => state.updateSettings({ zenFocusWindow: v }),
@@ -91,6 +102,7 @@ export function initCmdHeldSliders(state) {
 
   pill.appendChild(dimGroup.el);
   pill.appendChild(fontGroup.el);
+  pill.appendChild(blurGroup.el);
   pill.appendChild(windowGroup.el);
   wrap.appendChild(pill);
   document.body.appendChild(wrap);
@@ -98,6 +110,7 @@ export function initCmdHeldSliders(state) {
   state.on("settings-changed", () => {
     dimGroup.set(clamp01(state.settings.focusModeOpacity ?? 0.5));
     fontGroup.set(Number(state.settings.zenFocusFontSize) || 30);
+    blurGroup.set(normalizeBlur(state.settings.zenFocusBlur));
     windowGroup.set(normalizeWindow(state.settings.zenFocusWindow));
   });
 }
@@ -108,6 +121,12 @@ function normalizeWindow(raw) {
   if (n === 5) return 5;
   if (n === 7) return 7;
   return 1;
+}
+
+function normalizeBlur(raw) {
+  const v = Number(raw ?? 1);
+  if (!Number.isFinite(v)) return 1;
+  return Math.max(0, Math.min(5, Math.round(v * 10) / 10));
 }
 
 function clamp01(n) {
@@ -162,15 +181,15 @@ function makeSliderGroup({ label, min, max, step, value, format, onChange }) {
   };
 }
 
-/** Window chip group — four numeric chips (1 / 3 / 5 / 7) with a
- *  circle outline on the active pick. */
+/** Centered lines chip group (`zenFocusWindow`) — four numeric chips
+ *  (1 / 3 / 5 / 7) with a circle outline on the active pick. */
 function makeWindowChipGroup({ value, onChange }) {
   const el = document.createElement("div");
   el.className = "cmd-held-slider-group cmd-held-window-group";
 
   const lbl = document.createElement("span");
   lbl.className = "cmd-held-slider-label";
-  lbl.textContent = "Window";
+  lbl.textContent = "Centered lines";
   el.appendChild(lbl);
 
   const chips = document.createElement("div");

@@ -184,6 +184,14 @@ pub fn default_zen_focus_font_size() -> u32 {
 pub fn default_selection_focus_font_multiplier() -> f32 {
     1.2
 }
+/// Lines the Zen caret may drift before the page scrolls (1 / 3 / 5 / 7).
+pub fn default_zen_focus_window() -> u32 {
+    1
+}
+/// Zen's frosted curtains — a multiple of the stock blur, 0 (off) to 5.
+pub fn default_zen_focus_blur() -> f32 {
+    1.0
+}
 pub fn default_shortcut_find() -> String {
     // Cross-file Find panel moved to Cmd+Shift+F; Cmd+F now drives the
     // minimal current-document quick find (default_shortcut_quick_find).
