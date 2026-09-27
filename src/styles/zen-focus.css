@@ -48,51 +48,64 @@
   background: linear-gradient(to top, var(--bg) 0%, var(--bg) 30%, transparent 100%);
 }
 
-/* Frosted glass under the curtains — the text blurs as it leaves the
- * centre band instead of only fading. Three stacked bands per edge,
- * blur rising toward the screen edge: each one is masked out before
- * its own inner edge, which is where a backdrop blur shows a seam (it
- * can't sample past the box it's drawn in), so no band has a visible
- * boundary. Past 30 % the curtain above is solid --bg, so the strongest
- * band only has to reach a little into the fade. The blur radii are
- * set inline by zen-focus.js#applyZenFrost, scaled by the Blur slider. */
+/* Frosted glass — the text blurs as soon as it leaves the centred
+ * lines, rising toward the screen edges, with the gradient curtains
+ * still fading it out on top. Each frost runs from the edge of the
+ * centred band (`--zen-frost-inner`: half the band's height, set by
+ * zen-focus.js#placeZenFrost from Centered lines and the measured line
+ * height) out to its screen edge, so more centred lines push the blur
+ * outward toward the curtains.
+ *
+ * Three stacked blur bands per edge, each fading in over a fixed
+ * distance from the band edge — the stronger the blur, the further out
+ * it starts — so the blur ramps up instead of stepping. Every mask is
+ * transparent at the inner edge, which is where a backdrop blur shows a
+ * seam (it can't sample past its own box); the outer edges are the
+ * screen's, under the curtains' solid --bg. The radii are set inline by
+ * zen-focus.js#applyZenFrost, scaled by the Blur slider. */
 .zen-focus-frost {
   position: absolute;
   left: 0;
   right: 0;
-  height: 33vh;
   pointer-events: none;
   z-index: 1;
 }
-.zen-focus-frost-top { top: 0; }
-.zen-focus-frost-bottom { bottom: 0; }
+.zen-focus-frost-top {
+  top: 0;
+  bottom: calc(50% + var(--zen-frost-inner, 22px));
+}
+.zen-focus-frost-bottom {
+  bottom: 0;
+  top: calc(50% + var(--zen-frost-inner, 22px));
+}
 .zen-focus-frost > span {
   position: absolute;
   inset: 0;
 }
+/* Top frost: its inner edge is its bottom, so the ramps run upward. */
 .zen-focus-frost-top > span:nth-child(1) {
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 92%);
-  mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 92%);
+  -webkit-mask-image: linear-gradient(to top, transparent 0px, #000 28px);
+  mask-image: linear-gradient(to top, transparent 0px, #000 28px);
 }
 .zen-focus-frost-top > span:nth-child(2) {
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 40%, transparent 75%);
-  mask-image: linear-gradient(to bottom, #000 0%, #000 40%, transparent 75%);
+  -webkit-mask-image: linear-gradient(to top, transparent 20px, #000 90px);
+  mask-image: linear-gradient(to top, transparent 20px, #000 90px);
 }
 .zen-focus-frost-top > span:nth-child(3) {
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 30%, transparent 58%);
-  mask-image: linear-gradient(to bottom, #000 0%, #000 30%, transparent 58%);
+  -webkit-mask-image: linear-gradient(to top, transparent 70px, #000 180px);
+  mask-image: linear-gradient(to top, transparent 70px, #000 180px);
 }
 .zen-focus-frost-bottom > span:nth-child(1) {
-  -webkit-mask-image: linear-gradient(to top, #000 0%, #000 50%, transparent 92%);
-  mask-image: linear-gradient(to top, #000 0%, #000 50%, transparent 92%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0px, #000 28px);
+  mask-image: linear-gradient(to bottom, transparent 0px, #000 28px);
 }
 .zen-focus-frost-bottom > span:nth-child(2) {
-  -webkit-mask-image: linear-gradient(to top, #000 0%, #000 40%, transparent 75%);
-  mask-image: linear-gradient(to top, #000 0%, #000 40%, transparent 75%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 20px, #000 90px);
+  mask-image: linear-gradient(to bottom, transparent 20px, #000 90px);
 }
 .zen-focus-frost-bottom > span:nth-child(3) {
-  -webkit-mask-image: linear-gradient(to top, #000 0%, #000 30%, transparent 58%);
-  mask-image: linear-gradient(to top, #000 0%, #000 30%, transparent 58%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 70px, #000 180px);
+  mask-image: linear-gradient(to bottom, transparent 70px, #000 180px);
 }
 
 .zen-focus-stage {

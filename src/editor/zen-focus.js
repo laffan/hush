@@ -57,6 +57,27 @@ function applyZenFrost(overlay, state) {
   }
 }
 
+/** Pin the frost's inner edges to the edges of the centred band — the
+ *  N lines (Centered lines) the caret keeps to, `centre ± N·lineH/2`,
+ *  the same band `maintainTypewriterWindow` scrolls against — so the
+ *  blur starts where the lines Zen centres stop, rather than out under
+ *  the gradient curtains where it can barely be seen. The line height
+ *  is the Zen editor's measured one (a style's line spacing reaches
+ *  it), read in CodeMirror's measure pass so a font change has landed
+ *  first; before there is an editor, the stock 1.5 stands in. */
+function placeZenFrost(overlay, state, view) {
+  const write = (lineH) => {
+    const half = (getZenWindow(state) * lineH) / 2;
+    overlay.style.setProperty("--zen-frost-inner", `${Math.round(half)}px`);
+  };
+  const fallback = (Number(state.settings.zenFocusFontSize) || 30) * 1.5;
+  if (!view) { write(fallback); return; }
+  view.requestMeasure({
+    read: (v) => (v.defaultLineHeight > 0 ? v.defaultLineHeight : fallback),
+    write,
+  });
+}
+
 export function initZenFocus(state) {
   state.on("zen-focus-changed", () => {
     if (state.zenFocus) enterZenFocus(state);
@@ -67,6 +88,7 @@ export function initZenFocus(state) {
     const px = state.settings.zenFocusFontSize || 30;
     active.overlay.style.setProperty("--zen-font-size", `${px}px`);
     applyZenFrost(active.overlay, state);
+    placeZenFrost(active.overlay, state, active.zenView);
   });
 }
 
@@ -308,6 +330,7 @@ export function enterZenFocus(state) {
     overlay.appendChild(frost);
   }
   applyZenFrost(overlay, state);
+  placeZenFrost(overlay, state, null);
 
   const hint = document.createElement("div");
   hint.className = "zen-focus-hint";
@@ -383,6 +406,7 @@ export function enterZenFocus(state) {
     ],
   });
   const zenView = new EditorView({ state: editorState, parent: stage });
+  placeZenFrost(overlay, state, zenView);
 
   // The freshly-built Zen editor includes the active theme, whose
   // extension paints its own `.cm-editor` foreground. When the active
