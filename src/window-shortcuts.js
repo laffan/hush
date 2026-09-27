@@ -35,7 +35,40 @@ export function installActivationFocus(state, notebookContainer) {
   });
 }
 
+/** Keydowns of one toggle closer together than this are one press
+ *  delivered twice, not two presses — no hand re-strikes a chord that
+ *  fast. */
+const TOGGLE_ECHO_MS = 90;
+const PANEL_TOGGLE_KEYS = ["shortcutToggleSidebar", "shortcutToggleOverview"];
+
+/**
+ * One press, one flip. The panel toggles are the only shortcuts whose
+ * second firing undoes the first, so a held chord's auto-repeat, or one
+ * press delivered to the page twice, leaves the sidebar wherever the
+ * last flip happened to land — "⌘\ doesn't open it", intermittently.
+ * Runs at window capture, ahead of CodeMirror's keymap and the fallback
+ * below, and swallows only the extra keydowns.
+ */
+function installPanelToggleGuard(state) {
+  let last = { key: null, at: -Infinity };
+  window.addEventListener("keydown", (e) => {
+    for (const key of PANEL_TOGGLE_KEYS) {
+      const sc = state.settings[key];
+      if (!sc || !matchesDomEvent(e, sc)) continue;
+      const now = performance.now();
+      if (e.repeat || (last.key === key && now - last.at < TOGGLE_ECHO_MS)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+      last = { key, at: now };
+      return;
+    }
+  }, true);
+}
+
 export function installWindowShortcuts(state, windowCommands) {
+  installPanelToggleGuard(state);
   window.addEventListener("keydown", (e) => {
     // Skip shortcuts already consumed by CodeMirror's keymap.  When the
     // editor is focused, CM calls `preventDefault()` as soon as it handles
