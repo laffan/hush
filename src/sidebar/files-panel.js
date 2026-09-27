@@ -23,7 +23,7 @@ import { collectVisibleDocs, handleDocMultiClick, installDragSelect } from "./fi
 import {
   handleRename, handleRevealInFinder, handleConvertContainer,
   handleDuplicate, handleDelete, handleEmptyTrash, handleOpenAsStack,
-  handleConvertProjectToDoc, handleConvertDocToProject,
+  handleConvertProjectToDoc,
   handleRestore, handlePermanentDelete, handleDeskAction, handleOpenInNewWindow,
 } from "./files-panel-actions.js";
 import { isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree, renderTabMarkerRow, openDocAtTab } from "./files-panel-tabs.js";
@@ -399,12 +399,6 @@ function dispatchRowAction(action, nodeId, opts) {
     handleOpenInNewWindow(nodeId, storedState);
   } else if (action === "convert-project-to-doc") {
     handleConvertProjectToDoc(nodeId, storedState, refresh);
-  } else if (action === "convert-doc-to-project") {
-    handleConvertDocToProject(nodeId, storedState, refresh);
-  } else if (action === "split-at-headings") {
-    import("./split-at-headings-modal.js").then((m) => m.openSplitAtHeadingsModal(storedState, nodeId));
-  } else if (action === "convert-headings-to-tabs") {
-    import("./convert-headings-to-tabs-modal.js").then((m) => m.openConvertHeadingsToTabsModal(storedState, nodeId));
   } else if (action === "toggle-numbering") {
     const node = findNode(storedState.fileTree, nodeId);
     if (node) {

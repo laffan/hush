@@ -200,15 +200,8 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
     entries.push({ action: "convert-project-to-doc", label: "Convert to Doc" });
     entries.push({ action: "toggle-numbering", label: item?.showNumbers ? "Hide numbers" : "Show numbers" });
   }
-  if (isDoc && !inProject) {
-    entries.push({ action: "convert-doc-to-project", label: "Convert to Project" });
-  }
-  // Split at Headings works on any doc. Standalone docs become a new
-  // project; a doc already inside a project splits into sibling docs.
-  if (isDoc) {
-    entries.push({ action: "split-at-headings", label: "Split Headings to Files" });
-    entries.push({ action: "convert-headings-to-tabs", label: "Convert Headings to Tabs" });
-  }
+  // Convert to Project, Split Headings to Files and Convert Headings to
+  // Tabs live in the command palette only (command-palette-commands.js).
   if (isContainer && !isImagesId(nodeId) && !isArchiveId(nodeId)) {
     entries.push({ action: "open-as-stack", label: "Open as Stack" });
   }
