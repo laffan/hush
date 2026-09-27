@@ -67,7 +67,8 @@
 .ratchet-timer {
   position: fixed;
   top: calc(var(--top-chrome-inset, 0px) + 10px);
-  left: 50%;
+  /* Over the text column, not the window — see .word-count-display. */
+  left: var(--doc-column-center, 50%);
   transform: translateX(-50%);
   font-family: system-ui, sans-serif;
   font-size: 12px;
@@ -85,7 +86,11 @@
 .word-count-display {
   position: fixed;
   top: calc(var(--top-chrome-inset, 0px) + 10px);
-  left: 50%;
+  /* Centred over the text column rather than the window: a pane, the
+     sidebar or the Overview moves the column off-centre, and the pill
+     goes with it. `--doc-column-center` is published by
+     editor/modes.js#applyColumnLayout. */
+  left: var(--doc-column-center, 50%);
   transform: translateX(-50%);
   font-family: system-ui, sans-serif;
   font-size: 12px;
@@ -103,6 +108,17 @@
    the timer. The JS toggles `.stacked` based on state.ratchetMode. */
 .word-count-display.stacked {
   top: calc(var(--top-chrome-inset, 0px) + 34px);
+}
+
+/* The main editor's column means nothing over a stack, a PDF or a
+   Desktop — back to the window's centre there. */
+body.stack-mode .word-count-display,
+body.stack-mode .ratchet-timer,
+body.pdf-mode .word-count-display,
+body.pdf-mode .ratchet-timer,
+body.desktop-active .word-count-display,
+body.desktop-active .ratchet-timer {
+  left: 50%;
 }
 
 /* Hide word count pill in notebook mode — it's a doc-only feature. */

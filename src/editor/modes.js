@@ -273,6 +273,10 @@ export function updateColumnResizers(state) {
       rightPad = basePad + rightInsetOffset;
     }
     const showResizers = availableWidth > colW + minPad * 2;
+    // Centre of the text column in viewport px — the word count pill and
+    // the ratchet timer above it hang over the column, so they follow it
+    // when a pane, sidebar or the Overview shifts it (styles/ratchet.css).
+    document.documentElement.style.setProperty("--doc-column-center", Math.round(leftPad + (w - leftPad - rightPad) / 2) + "px");
     const scroller = document.querySelector("#editor-container .cm-scroller");
     if (scroller) {
       scroller.style.paddingLeft = leftPad + "px";
