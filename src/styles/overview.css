@@ -139,6 +139,14 @@ html.ios .side-panel-resize {
   background: rgba(128, 128, 128, 0.18);
 }
 
+/* Typing-fade (sidebar.js) — goes the way the left grip's chevron does,
+   on the same slow ramp; pointer activity clears the class and brings
+   it back. */
+body.typing-fade .right-panel-trigger {
+  opacity: 0;
+  transition: opacity 1s ease, background 0.15s;
+}
+
 .right-panel-trigger.is-hidden {
   display: none;
 }
