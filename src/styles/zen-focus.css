@@ -1,6 +1,8 @@
 /* Zen Focus — fullscreen distraction-free overlay. The overlay sits
- * above every other piece of chrome at --z-modal-top so sidebars,
- * toolbars, panes, and shelves all disappear behind its background.
+ * at --z-zen: above every other piece of chrome, so sidebars, toolbars,
+ * panes, and shelves all disappear behind its background, but under the
+ * popover and modal bands — the command palette, Settings and the style
+ * editor open over Zen, not behind it.
  * The Zen editor is a freshly-built CodeMirror inside the stage; the
  * source editor stays put in its own DOM and gets the final content
  * pushed back on exit. */
@@ -8,7 +10,7 @@
 .zen-focus-overlay {
   position: fixed;
   inset: 0;
-  z-index: var(--z-modal-top);
+  z-index: var(--z-zen);
   background: var(--bg);
   color: var(--fg);
   display: flex;
@@ -44,6 +46,65 @@
 .zen-focus-overlay::after {
   bottom: 0;
   background: linear-gradient(to top, var(--bg) 0%, var(--bg) 30%, transparent 100%);
+}
+
+/* Frosted glass under the curtains — the text blurs as it leaves the
+ * centre band instead of only fading. Three stacked bands per edge,
+ * blur rising toward the screen edge: each one is masked out before
+ * its own inner edge, which is where a backdrop blur shows a seam (it
+ * can't sample past the box it's drawn in), so no band has a visible
+ * boundary. Past 30 % the curtain above is solid --bg, so the strongest
+ * band only has to reach a little into the fade. Radii are literals:
+ * WebKit has not always honoured var() inside -webkit-backdrop-filter. */
+.zen-focus-frost {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 33vh;
+  pointer-events: none;
+  z-index: 1;
+}
+.zen-focus-frost-top { top: 0; }
+.zen-focus-frost-bottom { bottom: 0; }
+.zen-focus-frost > span {
+  position: absolute;
+  inset: 0;
+}
+.zen-focus-frost > span:nth-child(1) {
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+.zen-focus-frost > span:nth-child(2) {
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+}
+.zen-focus-frost > span:nth-child(3) {
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.zen-focus-frost-top > span:nth-child(1) {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 92%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 92%);
+}
+.zen-focus-frost-top > span:nth-child(2) {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 40%, transparent 75%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 40%, transparent 75%);
+}
+.zen-focus-frost-top > span:nth-child(3) {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 30%, transparent 58%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 30%, transparent 58%);
+}
+.zen-focus-frost-bottom > span:nth-child(1) {
+  -webkit-mask-image: linear-gradient(to top, #000 0%, #000 50%, transparent 92%);
+  mask-image: linear-gradient(to top, #000 0%, #000 50%, transparent 92%);
+}
+.zen-focus-frost-bottom > span:nth-child(2) {
+  -webkit-mask-image: linear-gradient(to top, #000 0%, #000 40%, transparent 75%);
+  mask-image: linear-gradient(to top, #000 0%, #000 40%, transparent 75%);
+}
+.zen-focus-frost-bottom > span:nth-child(3) {
+  -webkit-mask-image: linear-gradient(to top, #000 0%, #000 30%, transparent 58%);
+  mask-image: linear-gradient(to top, #000 0%, #000 30%, transparent 58%);
 }
 
 .zen-focus-stage {
@@ -99,10 +160,14 @@
 
 /* While Zen is open, hide the floating chrome that would otherwise
  * peek through. The typewriter boundary is hidden too in case the
- * user already had typewriter mode on. */
+ * user already had typewriter mode on. The touch-mode pills and the
+ * sync indicator ride the modal band, above --z-zen, so they have to
+ * be hidden by name to stay behind Zen as they always have. */
 body.zen-focus-active .ratchet-timer,
 body.zen-focus-active .word-count-display,
 body.zen-focus-active .sidebar-floating-toggle,
+body.zen-focus-active .cmd-floating-button,
+body.zen-focus-active .sync-indicator,
 body.zen-focus-active .typewriter-boundary {
   display: none !important;
 }

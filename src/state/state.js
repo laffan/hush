@@ -145,8 +145,12 @@ export class AppState {
      *  - `syncPullingFileId`   — internal id of the file being pulled,
      *    or null. Other files can still save freely while one file is
      *    being pulled.
+     *  - `zenView`             — the Zen Focus editor while Zen is open
+     *    (editor/zen-focus.js), else null. The command palette hands
+     *    focus back to it rather than to the main editor behind Zen.
      */
     this.runtime = {
+      zenView: null,
       columnResizeHandler: null,
       hasVisibleDocPane: false,
       pendingScrollPosition: null,

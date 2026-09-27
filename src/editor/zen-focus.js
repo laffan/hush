@@ -273,6 +273,17 @@ export function enterZenFocus(state) {
   stage.className = "zen-focus-stage";
   overlay.appendChild(stage);
 
+  // Frosted glass under the gradient curtains: a stack of blur bands per
+  // edge, each masked to fade out before its own inner edge (see
+  // styles/zen-focus.css). Pseudo-elements can't carry them — the
+  // curtains already use ::before / ::after.
+  for (const edge of ["top", "bottom"]) {
+    const frost = document.createElement("div");
+    frost.className = `zen-focus-frost zen-focus-frost-${edge}`;
+    for (let i = 0; i < 3; i++) frost.appendChild(document.createElement("span"));
+    overlay.appendChild(frost);
+  }
+
   const hint = document.createElement("div");
   hint.className = "zen-focus-hint";
   hint.textContent = formatShortcutForHint(state.settings.shortcutZenFocus || "Mod+Shift+S");
@@ -364,6 +375,11 @@ export function enterZenFocus(state) {
   const zenResizerCleanup = installZenResizers(state, overlay, stage);
 
   const onKeydown = (e) => {
+    // The palette and the modal band sit above Zen (--z-zen), and this
+    // listener runs at document capture — ahead of theirs. An Escape
+    // aimed at one of them is theirs to close, not a request to leave.
+    const t = e.target;
+    if (t && t !== document.body && t !== document.documentElement && !overlay.contains(t)) return;
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
@@ -403,6 +419,11 @@ export function enterZenFocus(state) {
 
   showHint(hint);
 
+  // What a surface above Zen (the command palette) hands focus back to
+  // when it closes — the main editor is behind the overlay, and anything
+  // typed there would be overwritten by the write-back on exit.
+  state.runtime.zenView = zenView;
+
   active = {
     source,
     zenView,
@@ -421,6 +442,7 @@ export function exitZenFocus(state) {
   if (!active) return;
   const a = active;
   active = null;
+  if (state.runtime.zenView === a.zenView) state.runtime.zenView = null;
 
   // Snapshot final content + selection before tearing down the editor.
   const finalContent = a.zenView.state.doc.toString();

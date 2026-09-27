@@ -219,6 +219,8 @@ function open(state) {
   // clicked back into it.
   const restoreFocusToActiveSurface = () => {
     if (suspendedNotebookText) return; // close() will focus the textarea
+    // Zen covers every other surface; the palette opens above it.
+    if (state.runtime.zenView) { state.runtime.zenView.focus(); return; }
     const ctx = getActiveModeContext(state);
     if (ctx?.view) { ctx.view.focus(); return; }
     if (state.editor) state.editor.focus();
