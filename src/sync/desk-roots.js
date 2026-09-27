@@ -415,9 +415,13 @@ export async function reconcileDesk(state, deskId) {
   // the reconciler otherwise has nothing to say about, because the files
   // on disk and the tree on disk agree with each other perfectly. It's
   // our copy that's stale, and until this it stayed that way.
-  if (report && (report.added > 0 || report.removed > 0 || report.renamed > 0
+  // `reload` is Rust's own verdict (`ScanReport::needs_tree_reload`). The
+  // list below it used to be the whole test and lacked `restored` and
+  // `relocated`, so a window kept — and re-saved — a tree the reconcile
+  // had just repaired.
+  if (report && (report.reload || report.added > 0 || report.removed > 0 || report.renamed > 0
       || report.matched > 0 || report.rekeyed > 0 || report.deferred > 0
-      || report.treeChanged)) {
+      || report.deduped > 0 || report.treeChanged)) {
     const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
     logActivity("desks", report.removed > 0 ? "warn" : "info",
       `Desk folder reconciled: "${desk?.name || deskId}"`, report);
@@ -431,6 +435,9 @@ export async function reconcileDesk(state, deskId) {
       if (report.matched) bits.push(`${report.matched} re-paired`);
       if (report.rekeyed) bits.push(`${report.rekeyed} re-keyed`);
       if (report.deferred) bits.push(`${report.deferred} id(s) yielded`);
+      if (report.restored) bits.push(`${report.restored} row(s) restored`);
+      if (report.relocated) bits.push(`${report.relocated} row(s) moved to follow their file`);
+      if (report.deduped) bits.push(`${report.deduped} duplicate(s) folded into the file they shared`);
       if (report.treeChanged) bits.push("structure changed on the other device");
       appendSyncLog(`Desk folder reconciled: ${bits.join(", ")}`);
     } catch (_) {}
@@ -511,8 +518,26 @@ export async function acquireLocalDeskAccess(state) {
  *  foreground. */
 async function reconcileAllLocalDesks(state) {
   for (const deskId of Object.keys(state.deskRoots || {})) {
+    // A registration with no desk in the tree is a folder that is gone
+    // (deleted, or moved outside Hush) — reconciling it can only fail
+    // with "no tree for desk". iOS still tries: there a failed reconcile
+    // is what asks iCloud for the desk's undelivered sidecars.
+    if (!isIOSTauri() && !(state.fileTree || []).some((n) => n.type === "desk" && n.id === deskId)) {
+      noteStaleRoot(deskId, state.deskRoots[deskId]);
+      continue;
+    }
     await reconcileDesk(state, deskId).catch((e) => console.warn("desk reconcile failed:", e));
   }
+}
+
+const _staleRootsNoted = new Set();
+
+/** Once per launch, say which registered folder isn't a desk any more —
+ *  the "desk watcher failed … Not a directory" lines in a dev console. */
+function noteStaleRoot(deskId, path) {
+  if (_staleRootsNoted.has(deskId)) return;
+  _staleRootsNoted.add(deskId);
+  logActivity("desks", "warn", "A registered local desk folder isn't there — skipped", { deskId, path });
 }
 
 /** iOS live updates: an NSMetadataQuery per local desk root makes

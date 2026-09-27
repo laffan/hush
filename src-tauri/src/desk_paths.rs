@@ -101,6 +101,71 @@ pub(crate) fn dedupe(base: &str, ext: &str, used: &mut HashSet<String>) -> Strin
     candidate
 }
 
+/// The physical identity of a file — device and inode — when it exists.
+///
+/// On macOS the default filesystem is case- and normalization-
+/// insensitive: `My title.md`, `my title.md` and a decomposed `é` are
+/// one file with several spellings. Comparing path *strings* then says
+/// "two files" where there is one (and a reconcile mints a second id for
+/// it), or says "someone else's file" where the path is our own. The
+/// inode is the only answer that doesn't depend on how a name is spelt.
+#[cfg(unix)]
+pub(crate) fn file_key(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.dev(), meta.ino()))
+}
+
+#[cfg(not(unix))]
+pub(crate) fn file_key(_path: &Path) -> Option<(u64, u64)> {
+    None
+}
+
+/// True when both paths exist and are one file under two spellings.
+pub(crate) fn same_file(a: &Path, b: &Path) -> bool {
+    match (file_key(a), file_key(b)) {
+        (Some(x), Some(y)) => x == y,
+        _ => false,
+    }
+}
+
+/// `dir/Stem (n).ext` for `dir/Stem.ext`.
+pub(crate) fn numbered_variant(rel: &str, n: usize) -> String {
+    let path = Path::new(rel);
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or(rel);
+    let name = match path.extension().and_then(|e| e.to_str()) {
+        Some(ext) => format!("{} ({}).{}", stem, n, ext),
+        None => format!("{} ({})", stem, n),
+    };
+    match path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        Some(dir) => format!("{}/{}", dir.to_string_lossy().replace('\\', "/"), name),
+        None => name,
+    }
+}
+
+/// Whether `candidate` is `rel` itself or one of its ` (n)` variants —
+/// the names a collision is allowed to push a file onto.
+pub(crate) fn is_variant_of(candidate: &str, rel: &str) -> bool {
+    if candidate == rel {
+        return true;
+    }
+    let (c, r) = (Path::new(candidate), Path::new(rel));
+    if c.parent() != r.parent() || c.extension() != r.extension() {
+        return false;
+    }
+    let (Some(cs), Some(rs)) = (
+        c.file_stem().and_then(|s| s.to_str()),
+        r.file_stem().and_then(|s| s.to_str()),
+    ) else {
+        return false;
+    };
+    cs.strip_prefix(rs)
+        .and_then(|rest| rest.strip_prefix(" ("))
+        .and_then(|rest| rest.strip_suffix(')'))
+        .map(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        .unwrap_or(false)
+}
+
 /// A tree name as a single path segment: no separators, no leading dot,
 /// never empty, bounded length.
 pub fn sanitize_segment(name: &str) -> String {

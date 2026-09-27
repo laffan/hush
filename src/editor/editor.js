@@ -637,6 +637,17 @@ export function createEditor(container, state) {
       // re-seed like setContent does.
       if (state.typewriterMode) ensureTypewriterRunway(view, state);
     },
+    /** Apply externally-produced edits as explicit change specs (in the
+     *  current buffer's offsets), so a caret between two of them stays
+     *  put — a conflict merge can touch several distant paragraphs at
+     *  once, which one prefix/suffix splice would sweep the caret past. */
+    applyExternalChanges: (changes) => {
+      view.dispatch({
+        changes,
+        annotations: [bypassRatchet.of(true), bypassSeparatorFilter.of(true), ...programmaticAnnotations()],
+      });
+      if (state.typewriterMode) ensureTypewriterRunway(view, state);
+    },
     /** Stash the live EditorState under a file key before switching
      *  away, so the file's undo history / selection / folds are still
      *  there when it's reopened. Callers: openFile / openProject /

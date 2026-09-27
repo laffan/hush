@@ -434,3 +434,8 @@ mod index_tests;
 #[path = "desk_relocate_tests.rs"]
 mod relocate_tests;
 
+
+// Name collisions and duplicated identities inside one desk — the shapes
+// that let one file's autosave land on another file's bytes.
+#[path = "desk_collision_tests.rs"]
+mod collision_tests;

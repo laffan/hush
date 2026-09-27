@@ -70,11 +70,23 @@ pub fn file_mtimes(
 // it into a zip on the way down — as a sync command that work froze the
 // webview for the whole write (frame stalls exactly matching the save
 // duration in stroke-heavy sessions).
+//
+// `base_hash` is the hash of what the caller's buffer was loaded from —
+// `FileEntry.hash` from `load_file`, or the `hash` of its last save's
+// report (`desk_write::content_hash`). When it's given and the
+// file no longer holds that, nothing is written and the report carries a
+// `conflict` with what the disk holds instead — the other device's edit
+// is never overwritten by a buffer that predates it. Omitted, the save is
+// unconditional (every caller that has no base: new files, panes, …).
 #[tauri::command]
-pub async fn save_file(state: State<'_, AppState>, id: String, content: String) -> Result<(), String> {
+pub async fn save_file(
+    state: State<'_, AppState>,
+    id: String,
+    content: String,
+    base_hash: Option<String>,
+) -> Result<crate::desk_write::SaveReport, String> {
     let fm = state.file_manager.lock().unwrap();
-    fm.save_file(&id, &content).map_err(|e| e.to_string())?;
-    Ok(())
+    fm.save_file_checked(&id, &content, base_hash.as_deref()).map_err(|e| e.to_string())
 }
 
 /// Raw-body variant of `save_file` for large payloads (notebook

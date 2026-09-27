@@ -16,6 +16,26 @@ fn store() -> DeskStore {
     DeskStore::new(&crate::get_data_dir())
 }
 
+/// A desk watcher that couldn't arm — almost always a registration whose
+/// folder is gone (deleted, or moved outside Hush), which `notify`
+/// reports as "Not a directory". Harmless in itself: nothing reads or
+/// writes through a registration without a `tree.json` behind it. Said
+/// once per desk in the activity log, where it can be found afterwards,
+/// rather than only on a dev build's console.
+fn note_watch_failure(desk_id: &str, e: &str) {
+    use std::collections::HashSet;
+    use std::sync::{Mutex, OnceLock};
+    static NOTED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    eprintln!("desk watcher failed for {}: {}", desk_id, e);
+    if NOTED.get_or_init(|| Mutex::new(HashSet::new())).lock().unwrap().insert(desk_id.to_string()) {
+        crate::activity_log::note(
+            "desks",
+            "warn",
+            format!("Not watching local desk {}: {}", desk_id, e),
+        );
+    }
+}
+
 /// deskId → external root path for every local desk.
 #[tauri::command]
 pub fn desk_list_roots() -> Result<HashMap<String, String>, String> {
@@ -67,7 +87,7 @@ pub fn desk_make_local(
             .desk_watch_manager
             .watch_path(app, &desk_id, &target, "desk-changed")
         {
-            eprintln!("desk watcher failed for {}: {}", desk_id, e);
+            note_watch_failure(&desk_id, &e);
         }
     }
     Ok(())
@@ -170,7 +190,7 @@ fn rearm_after_relocate(app: &AppHandle, state: &State<AppState>, desk_id: &str)
         Path::new(entry.path()),
         "desk-changed",
     ) {
-        eprintln!("desk watcher failed for {}: {}", desk_id, e);
+        note_watch_failure(&desk_id, &e);
     }
 }
 
@@ -223,7 +243,7 @@ pub fn desk_open_folder_as_desk(
                 .desk_watch_manager
                 .watch_path(app, &desk_id, Path::new(&path), "desk-changed")
         {
-            eprintln!("desk watcher failed for {}: {}", desk_id, e);
+            note_watch_failure(&desk_id, &e);
         }
     }
     Ok(outcome)
@@ -261,7 +281,7 @@ pub fn desk_rearm_watchers(app: AppHandle, state: State<AppState>) -> Result<(),
             Path::new(entry.path()),
             "desk-changed",
         ) {
-            eprintln!("desk watcher failed for {}: {}", desk_id, e);
+            note_watch_failure(&desk_id, &e);
         }
     }
     Ok(())

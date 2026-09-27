@@ -17,11 +17,15 @@
 //! recents, and every write the *far* device aims at that id — depends on
 //! it not moving.
 
+use crate::desk_hashes::HashEntry;
 use crate::desk_paths::collect_expected;
+use crate::desk_scan::{ensure_container_chain, new_node, walk_files};
+use crate::desk_tree_ops::find_node_by_file_id;
 use crate::TreeNode;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
+use uuid::Uuid;
 
 /// (desk root path, deskId) → the placement this device last committed:
 /// the fileId → relPath map that its `tree.json` and `index.json` agreed
@@ -313,4 +317,78 @@ pub(crate) fn restore_missing_rows(
         restored += 1;
     }
     restored
+}
+
+/// Hand back ids this pass minted for paths the folder's index already
+/// names, adopting the published id instead — in the index, on the tree
+/// row, and in the hash cache. Returns how many were handed back.
+///
+/// Always *adopting* rather than asserting is the point: it's what makes
+/// two installs that both minted for the same arriving file converge on
+/// one answer, instead of taking turns overwriting each other's.
+pub(crate) fn defer_to_published(
+    minted: &[(String, String)],
+    published: &HashMap<String, String>,
+    index: &mut HashMap<String, String>,
+    desk: &mut TreeNode,
+    hashes: &mut HashMap<String, HashEntry>,
+) -> usize {
+    let by_path: HashMap<&str, &str> =
+        published.iter().map(|(id, rel)| (rel.as_str(), id.as_str())).collect();
+    let mut handed_back = 0;
+    for (ours, rel) in minted {
+        let Some(theirs) = by_path.get(rel.as_str()) else { continue };
+        if *theirs == ours.as_str() {
+            continue;
+        }
+        index.remove(ours);
+        index.insert((*theirs).to_string(), rel.clone());
+        if crate::desk_rows::has_row(&desk.children, theirs) {
+            // The published id is a file the tree already shows — the far
+            // device renamed or moved it and our row predates that. The
+            // minted row was a second row for that file; re-keying it made
+            // the doc appear twice. Drop it: the existing row follows the
+            // file once the index says where it went (`relocate_rows`).
+            while crate::desk_tree_ops::remove_node_by_file_id(&mut desk.children, ours) {}
+            hashes.remove(ours);
+        } else {
+            if let Some(node) = find_node_by_file_id(&mut desk.children, ours) {
+                node.file_id = Some((*theirs).to_string());
+            }
+            if let Some(entry) = hashes.remove(ours) {
+                hashes.insert((*theirs).to_string(), entry);
+            }
+        }
+        handed_back += 1;
+    }
+    handed_back
+}
+
+/// Absorb a folder's existing files into a fresh desk node + index —
+/// the initialise-in-place half of `open_folder_as_desk`. Same mapping
+/// the reconciler applies (directories mirror as containers, an
+/// existing `Inbox/` folds into the seeded special) but built *before*
+/// any sidecar exists, so the desk's first `tree.json` already carries
+/// the folder's contents and there is no empty-skeleton window for a
+/// concurrent tree save to mistake for a desk with no files.
+pub(crate) fn absorb_disk_files(
+    root: &Path,
+    desk: &mut TreeNode,
+    index: &mut std::collections::HashMap<String, String>,
+) {
+    let mut on_disk = Vec::new();
+    walk_files(root, root, &mut on_disk);
+    for rel in on_disk {
+        let Some((node_type, name, segments)) = crate::desk_index::node_shape(&rel) else {
+            continue;
+        };
+        let file_id = if node_type == "image" {
+            name.clone()
+        } else {
+            Uuid::new_v4().to_string()
+        };
+        let container = ensure_container_chain(desk, &segments);
+        container.push(new_node(&node_type, &name, Some(&file_id)));
+        index.insert(file_id, rel);
+    }
 }

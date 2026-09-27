@@ -24,6 +24,7 @@
  */
 
 import { applyExternalDocContent } from "./apply-external.js";
+import { setDocBase } from "./doc-conflict.js";
 import { movedSince } from "./file-freshness.js";
 
 async function invoke(cmd, args) {
@@ -53,11 +54,15 @@ async function maybeReloadOpenDoc(state, deskId) {
   try {
     const file = await invoke("load_file", { id: fileId });
     if (!file || state.currentFileId !== fileId) return;
-    applyExternalDocContent(state, {
+    const applied = applyExternalDocContent(state, {
       content: file.content,
       lockKey: fileId,
       skipWhenDirty: true,
     });
+    // The buffer now *is* the disk's version, so that is what the next
+    // save is based on. A dirty buffer keeps its old base: its save is
+    // the one that has to notice the disk moved (sync/doc-conflict.js).
+    if (applied) setDocBase(state, fileId, file.content, file.hash);
   } catch (_) { /* file may have just been removed by the reconcile */ }
 }
 

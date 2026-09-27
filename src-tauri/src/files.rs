@@ -140,6 +140,7 @@ impl FileManager {
             name: "Untitled".to_string(),
             content: String::new(),
             modified: now,
+            hash: crate::desk_write::content_hash(""),
         })
     }
 
@@ -158,11 +159,23 @@ impl FileManager {
         self.store.write_by_id(id, content)
     }
 
+    /// `save_file` for an editor that knows which content it was based
+    /// on — see `desk_write::write_checked`.
+    pub fn save_file_checked(
+        &self,
+        id: &str,
+        content: &str,
+        base_hash: Option<&str>,
+    ) -> Result<crate::desk_write::SaveReport, Box<dyn std::error::Error>> {
+        self.store.write_checked(id, content, base_hash)
+    }
+
     pub fn load_file(&self, id: &str) -> Result<FileEntry, Box<dyn std::error::Error>> {
         let (content, modified, name) = self.store.read_by_id(id)?;
         Ok(FileEntry {
             id: id.to_string(),
             name,
+            hash: crate::desk_write::content_hash(&content),
             content,
             modified,
         })

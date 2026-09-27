@@ -16,6 +16,11 @@ pub struct FileEntry {
     pub name: String,
     pub content: String,
     pub modified: u64,
+    /// `desk_write::content_hash` of `content` — what an editor passes
+    /// back as `save_file`'s `base_hash`, so a save can tell whether the
+    /// disk still holds what the buffer was loaded from.
+    #[serde(default)]
+    pub hash: String,
 }
 
 /// One row of the library listing (`list_files`).

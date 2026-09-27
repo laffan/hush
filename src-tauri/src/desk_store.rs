@@ -29,7 +29,7 @@
 
 use crate::atomic::{write_atomic, write_atomic_str};
 use crate::desk_identity::{undelivered_or, OrderFile};
-use crate::desk_paths::{collect_expected, sanitize_segment};
+use crate::desk_paths::collect_expected;
 use crate::hushnote;
 use crate::TreeNode;
 use std::collections::{HashMap, HashSet};
@@ -126,9 +126,18 @@ impl DeskStore {
     /// loses the far device's ids.
     pub(crate) fn save_index_merged(&self, desk_id: &str, ours: &HashMap<String, String>) -> Result<(), BoxError> {
         let published = self.try_load_index(desk_id).unwrap_or_default();
-        let merged = crate::desk_index::merge_published(ours, &published, |rel| {
+        let mut merged = crate::desk_index::merge_published(ours, &published, |rel| {
             self.abs_path(desk_id, rel).exists()
         });
+        // A kept entry for a file we already index under another spelling
+        // (case, Unicode normalisation) is that file twice — see
+        // `desk_paths::file_key`.
+        let kept: Vec<String> = merged.keys().filter(|id| !ours.contains_key(*id)).cloned().collect();
+        if !kept.is_empty() {
+            let key = |rel: &str| crate::desk_paths::file_key(&self.abs_path(desk_id, rel));
+            let ours_files: HashSet<(u64, u64)> = ours.values().filter_map(|r| key(r)).collect();
+            merged.retain(|id, rel| !kept.contains(id) || key(rel).map_or(true, |k| !ours_files.contains(&k)));
+        }
         self.save_index(desk_id, &merged)
     }
 
@@ -197,7 +206,13 @@ impl DeskStore {
         // failure that made a project show up in two desks at once and
         // then go unopenable when one of them was deleted. Repair the
         // forest before anything is written.
-        let owned = crate::desk_dedupe::repair_forest(tree, &old_global);
+        let mut owned = crate::desk_dedupe::repair_forest(tree, &old_global);
+        // And one row per file *inside* a desk: with two rows for one
+        // fileId the file follows whichever row is walked last, so
+        // trashing the "duplicate" trashes the original. See desk_rows.rs.
+        if let Some(fixed) = crate::desk_rows::dedupe_forest_rows(owned.as_deref().unwrap_or(tree), &old_global) {
+            owned = Some(fixed);
+        }
         let tree: &[TreeNode] = owned.as_deref().unwrap_or(tree);
 
         let desks: Vec<&TreeNode> = tree.iter().filter(|n| n.node_type == "desk").collect();
@@ -298,11 +313,10 @@ impl DeskStore {
                 for dir in expected_dirs.get(&desk.id).into_iter().flatten() {
                     fs::create_dir_all(self.desk_dir(&desk.id).join(dir))?;
                 }
-                let files = &new_indexes[&desk.id];
-                for (id, rel) in files {
-                    self.place_file(id, &desk.id, rel, &old_global)?;
-                }
-                Ok(())
+                // Rewrites the desk's entries to where each file actually
+                // landed — never to a path that holds another file.
+                let files = new_indexes.get_mut(&desk.id).expect("computed above");
+                self.place_desk_files(&desk.id, files, &old_global)
             })();
             if let Err(e) = res {
                 desk_errors.push(format!("desk {}: {}", desk.id, e));
@@ -519,95 +533,8 @@ impl DeskStore {
         Err(format!("file not found: {}", id).into())
     }
 
-    pub fn write_by_id(&self, id: &str, content: &str) -> Result<(), BoxError> {
-        if let Some((desk_id, rel)) = self.locate(id) {
-            let abs = self.abs_path(&desk_id, &rel);
-            let hash = write_content_at(&abs, content)?;
-            if !is_image_rel(&rel) {
-                self.record_hash(&desk_id, id, &hash, crate::desk_hashes::mtime_ms(&abs));
-            }
-            crate::desk_recovery::note_desk_edit(&desk_id);
-            return Ok(());
-        }
-        // Not placed yet — keep (or put) it in staging; the next tree save
-        // moves it to its real path.
-        let staged = self.staging_path(id);
-        if let Some(parent) = staged.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        // `create_file` stages a new id before its first write, so an
-        // existing staging file is the normal case. Nothing there means
-        // this id *was* placed and has fallen out of its desk's index.
-        // Staging catches the bytes but is per-device — the edit reaches
-        // no other machine — and the symptom looks exactly like nothing
-        // happening, so say so.
-        if !staged.exists() {
-            crate::activity_log::note(
-                "desks",
-                "error",
-                format!("Wrote {} to staging — no desk index places it", id),
-            );
-        }
-        write_atomic_str(&staged, content)?;
-        Ok(())
-    }
-
-    pub fn delete_by_id(&self, id: &str) -> Result<(), BoxError> {
-        if let Some((desk_id, rel)) = self.locate(id) {
-            let abs = self.abs_path(&desk_id, &rel);
-            if abs.exists() {
-                fs::remove_file(&abs)?;
-            }
-            let mut index = self.load_index(&desk_id);
-            index.remove(id);
-            self.save_index(&desk_id, &index)?;
-            crate::desk_recovery::note_desk_edit(&desk_id);
-            return Ok(());
-        }
-        let staged = self.staging_path(id);
-        if staged.exists() {
-            fs::remove_file(&staged)?;
-        }
-        Ok(())
-    }
-
-    /// Rename the backing file in place (same directory, extension kept).
-    /// Staged / unplaced ids are a no-op — the tree name wins at placement.
-    pub fn rename_by_id(&self, id: &str, new_name: &str) -> Result<(), BoxError> {
-        let Some((desk_id, rel)) = self.locate(id) else { return Ok(()) };
-        let rel_path = Path::new(&rel);
-        let ext = rel_path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let dir = rel_path.parent().unwrap_or(Path::new(""));
-        let mut base = sanitize_segment(new_name);
-        if !ext.is_empty() {
-            let suffix = format!(".{}", ext);
-            if base.to_lowercase().ends_with(&suffix) {
-                base.truncate(base.len() - suffix.len());
-            }
-        }
-        let new_rel_path = if ext.is_empty() {
-            dir.join(&base)
-        } else {
-            dir.join(format!("{}.{}", base, ext))
-        };
-        let new_rel = new_rel_path.to_string_lossy().replace('\\', "/");
-        if new_rel == rel {
-            return Ok(());
-        }
-        let src = self.abs_path(&desk_id, &rel);
-        let dst = self.abs_path(&desk_id, &new_rel);
-        if dst.exists() {
-            return Ok(()); // collision — leave it; reconcile dedupes on the next tree save
-        }
-        if src.exists() {
-            fs::rename(&src, &dst)?;
-        }
-        let mut index = self.load_index(&desk_id);
-        index.insert(id.to_string(), new_rel);
-        self.save_index(&desk_id, &index)?;
-        crate::desk_recovery::note_desk_edit(&desk_id);
-        Ok(())
-    }
+    // `write_by_id` / `write_checked` / `delete_by_id` / `rename_by_id`
+    // live in desk_write.rs (split for the line cap).
 
     /// All known file ids: indexed (with desk + rel) plus staged.
     pub fn list_ids(&self) -> (Vec<(String, String, String)>, Vec<String>) {
@@ -627,7 +554,7 @@ fn is_hushnote(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()) == Some("hushnote")
 }
 
-fn is_image_rel(rel: &str) -> bool {
+pub(crate) fn is_image_rel(rel: &str) -> bool {
     let ext = Path::new(rel)
         .extension()
         .and_then(|e| e.to_str())

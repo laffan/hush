@@ -148,6 +148,9 @@ export class AppState {
      *  - `zenView`             — the Zen Focus editor while Zen is open
      *    (editor/zen-focus.js), else null. The command palette hands
      *    focus back to it rather than to the main editor behind Zen.
+     *  - `docBase` / `docConflict` — what the open doc's buffer was loaded
+     *    from, and a conflict with another device's version awaiting the
+     *    user. Owned by sync/doc-conflict.js.
      */
     this.runtime = {
       zenView: null,
@@ -157,6 +160,8 @@ export class AppState {
       localSyncWriteFlag: 0,
       syncPulling: false,
       syncPullingFileId: null,
+      docBase: null,
+      docConflict: null,
     };
   }
 

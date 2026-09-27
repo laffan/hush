@@ -7,6 +7,7 @@
 import { findNode, findNodeByFileId, insertNode, removeNode, uniqueChildName } from "./tree-helpers.js";
 import { stashActiveEditorState } from "./editor-cache-key.js";
 import * as _naming from "./state-naming.js";
+import * as _conflict from "../sync/doc-conflict.js";
 import { logActivity } from "../activity-log.js";
 // The empty-Untitled hygiene pass lives beside the rule it enforces;
 // re-exported so callers keep importing from this barrel.
@@ -63,35 +64,36 @@ export async function saveCurrentFile(state) {
   // pre-pull buffer over the just-arriving remote content. The pull
   // releases the lock and clears `dirty`, so we'll resume normally.
   if (state._isPullLockedForCurrent()) return;
+  const fileId = state.currentFileId;
+  // Another device's version is waiting on the user's decision: hold the
+  // save (the buffer goes to Versions instead). See sync/doc-conflict.js.
+  if (_conflict.conflictPending(state, fileId)) return _conflict.keepHeldBuffer(state, fileId);
   const content = state.editor.getContent();
   state.dirty = false;
   // Empty Untitled docs aren't worth saving or syncing — the user never
   // gave them a title or content, so writing them to disk just produces
   // ghost files that haunt the next session.
-  const node = findNodeByFileId(state.fileTree, state.currentFileId);
+  const node = findNodeByFileId(state.fileTree, fileId);
   if (isEmptyUntitled(node?.name, content)) return;
   if (IS_TAURI) {
-    try {
-      await tauriInvoke("save_file", { id: state.currentFileId, content });
-      // Patch just this file's entry in place rather than re-reading the
-      // whole library. `list_files` loads and re-parses every file (and
-      // every desk index, once per file) — an O(N²) whole-library scan
-      // that ran on every 2 s autosave and stalled typing on large
-      // libraries. A content save only changes this one file's content +
-      // mtime, so update that entry directly. (Local Folder and notebook
-      // saves take other paths that never called list_files — which is
-      // why they never lagged.)
-      const cached = state.files.find((f) => f.id === state.currentFileId);
-      if (cached) {
-        cached.content = content;
-        cached.modified = Math.floor(Date.now() / 1000);
-      } else {
-        // A freshly-created file not yet in the cache — one full refresh
-        // to pick it up. Rare, and off the steady-state typing hot path.
-        state.files = await tauriInvoke("list_files");
-      }
-      state.syncFileToExternal(state.currentFileId, content);
-    } catch (e) { console.error("Save failed:", e); }
+    // Checked against what the buffer was loaded from: a newer version
+    // from another device is merged or asked about, never overwritten.
+    // A save that didn't land leaves the buffer dirty for the next try.
+    if (!(await _conflict.saveDocChecked(state, fileId, content))) { state.dirty = true; return; }
+    // Patch just this file's entry in place rather than re-reading the
+    // whole library: `list_files` re-parses every file and every desk
+    // index — an O(N²) scan that ran on every 2 s autosave and stalled
+    // typing on large libraries. A content save only changes this entry.
+    const cached = state.files.find((f) => f.id === fileId);
+    if (cached) {
+      cached.content = content;
+      cached.modified = Math.floor(Date.now() / 1000);
+    } else {
+      // A freshly-created file not yet in the cache — one full refresh
+      // to pick it up. Rare, and off the steady-state typing hot path.
+      state.files = await tauriInvoke("list_files").catch(() => state.files);
+    }
+    state.syncFileToExternal(fileId, content);
   } else {
     const file = state.files.find((f) => f.id === state.currentFileId);
     if (file) {
@@ -280,6 +282,7 @@ export async function openFile(state, id) {
   state.projectDocIds = [];
   state.currentLocalSync = null;
   state.currentFileId = file.id;
+  _conflict.setDocBase(state, file.id, file.content, file.hash);
   if (state.editor) state.editor.loadDocState(`doc:${file.id}`, file.content);
   // Restore the saved per-doc scroll. setContent above resets scrollTop
   // to 0, so we re-apply after CodeMirror has laid out the new buffer.

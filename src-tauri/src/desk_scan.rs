@@ -46,12 +46,16 @@
 //! so a rename never has to wait out the window.
 
 use crate::desk_hashes::{fnv1a_hex, mtime_ms, HashEntry};
+use crate::desk_paths::file_key;
 use crate::desk_identity::{note_tree_seen, tree_is_foreign};
 use crate::desk_tree_ops::{
     find_node_by_file_id, remove_node_by_file_id, rename_or_move_node,
 };
 use crate::desk_store::DeskStore;
 use crate::TreeNode;
+// Moved to desk_index.rs for the line cap; re-exported so the paths
+// callers already use keep resolving.
+pub(crate) use crate::desk_index::{absorb_disk_files, defer_to_published};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
@@ -131,6 +135,10 @@ pub struct ScanReport {
     /// (or our own placement rebase) put it somewhere the tree doesn't
     /// say. This is how a far device's move to Trash reaches the sidebar.
     pub relocated: usize,
+    /// Identity repairs that collapsed two claims on one file into one:
+    /// extra tree rows for a fileId (see desk_rows.rs), and index entries
+    /// naming one path under two ids.
+    pub deduped: usize,
     /// Index entries whose file is absent but deliberately *kept*: an
     /// iCloud placeholder stands in for it, or the absence hasn't
     /// outlasted the removal grace window yet.
@@ -139,6 +147,11 @@ pub struct ScanReport {
     /// (indexed or not) — the frontend asks the provider to download
     /// these on iOS, where nothing else ever would.
     pub pending_downloads: Vec<String>,
+    /// `needs_tree_reload()`, computed here so the frontend doesn't keep
+    /// its own copy of the list — it had one, and it was missing
+    /// `restored` and `relocated`, so a window kept (and re-saved) a tree
+    /// the reconcile had just repaired.
+    pub reload: bool,
 }
 
 impl ScanReport {
@@ -147,7 +160,7 @@ impl ScanReport {
     pub fn changed(&self) -> bool {
         self.added > 0 || self.removed > 0 || self.renamed > 0
             || self.matched > 0 || self.rekeyed > 0 || self.deferred > 0
-            || self.restored > 0 || self.relocated > 0
+            || self.restored > 0 || self.relocated > 0 || self.deduped > 0
     }
 
     /// Whether the *tree* changed — what the frontend needs to reload
@@ -156,7 +169,7 @@ impl ScanReport {
     pub fn structural(&self) -> bool {
         self.added > 0 || self.removed > 0 || self.renamed > 0
             || self.rekeyed > 0 || self.deferred > 0 || self.restored > 0
-            || self.relocated > 0
+            || self.relocated > 0 || self.deduped > 0
     }
 
     /// Whether the frontend should re-read the tree: either we changed
@@ -179,6 +192,9 @@ impl DeskStore {
         let mut index = self.try_load_index(desk_id)?;
         let root = self.desk_dir(desk_id);
         let mut report = ScanReport::default();
+        // One path, one id: an index naming a file under two ids lets
+        // either document's autosave replace the other's text.
+        report.deduped += crate::desk_rows::unshare_index_paths(&root, &mut desk, &mut index);
         // Did the far device restructure this desk while we weren't
         // looking? Nothing else in this pass can tell: the tree on disk
         // and the files on disk agree with each other, and it's *our*
@@ -273,8 +289,23 @@ impl DeskStore {
         }
         let mut tree_claims: HashMap<String, String> = HashMap::new();
         for (id, rel) in &expected {
-            if !index.contains_key(id) {
-                tree_claims.insert(rel.clone(), id.clone());
+            match index.get(id) {
+                None => {
+                    tree_claims.insert(rel.clone(), id.clone());
+                }
+                // The far device renamed or moved this file: its tree —
+                // already delivered — puts it at `rel`, and the path our
+                // index still names is gone. Same identity, not a new
+                // file. (A title edited on the other device is exactly
+                // this, and its new bytes defeat the hash pairing below.)
+                Some(indexed)
+                    if indexed != rel
+                        && !root.join(indexed).exists()
+                        && !placeholders.contains(indexed) =>
+                {
+                    tree_claims.insert(rel.clone(), id.clone());
+                }
+                _ => {}
             }
         }
 
@@ -299,6 +330,15 @@ impl DeskStore {
             })
             .collect();
         for (stale, published) in rekeys {
+            // The published id already has its row: this one is a second
+            // row for the same file, not a row that lost its id. Re-keying
+            // it made the sidebar show one document twice.
+            if crate::desk_rows::has_row(&desk.children, &published) {
+                while remove_node_by_file_id(&mut desk.children, &stale) {}
+                hashes.remove(&stale);
+                report.rekeyed += 1;
+                continue;
+            }
             if let Some(node) = find_node_by_file_id(&mut desk.children, &stale) {
                 node.file_id = Some(published.clone());
                 if let Some(entry) = hashes.remove(&stale) {
@@ -329,6 +369,11 @@ impl DeskStore {
         let known: HashSet<String> = index.values().cloned().collect();
         let mut on_disk = Vec::new();
         walk_files(&root, &root, &mut on_disk);
+        let listed: HashSet<String> = on_disk.iter().cloned().collect();
+        let indexed_files: HashMap<(u64, u64), String> = index
+            .iter()
+            .filter_map(|(id, rel)| file_key(&root.join(rel)).map(|k| (k, id.clone())))
+            .collect();
         for rel in on_disk {
             if known.contains(&rel) {
                 continue;
@@ -347,8 +392,20 @@ impl DeskStore {
                         hashes_dirty = true;
                     }
                 }
+                paired.insert(id.clone());
                 index.insert(id, rel);
                 report.matched += 1;
+                continue;
+            }
+            // The same file as one already indexed, under another spelling
+            // (case, Unicode normalisation) — macOS answers to both. Never
+            // a new file; if the folder only lists this spelling, the
+            // index takes it.
+            if let Some(owner) = file_key(&root.join(&rel)).and_then(|k| indexed_files.get(&k)) {
+                if !listed.contains(index[owner].as_str()) {
+                    index.insert(owner.clone(), rel);
+                    report.matched += 1;
+                }
                 continue;
             }
             let Some((node_type, name, segments)) = crate::desk_index::node_shape(&rel) else {
@@ -461,6 +518,14 @@ impl DeskStore {
             }
         }
 
+        // Last line of defence for one row per file, keeping the row that
+        // already says where the file is. A handed-back id can land on an
+        // id the tree had a row for; that row then has to follow the file.
+        report.deduped += crate::desk_rows::dedupe_rows_by_file_id(&mut desk, &index);
+        if report.deferred > 0 {
+            report.relocated += crate::desk_index::relocate_rows(&root, &mut desk, &index);
+        }
+
         if report.changed() {
             // Merged, not replaced — the far device may have published
             // entries we've never seen while this pass was walking.
@@ -483,43 +548,9 @@ impl DeskStore {
         if hashes_dirty {
             let _ = self.save_hashes(desk_id, &hashes);
         }
+        report.reload = report.needs_tree_reload();
         Ok(report)
     }
-}
-
-/// Hand back ids this pass minted for paths the folder's index already
-/// names, adopting the published id instead — in the index, on the tree
-/// row, and in the hash cache. Returns how many were handed back.
-///
-/// Always *adopting* rather than asserting is the point: it's what makes
-/// two installs that both minted for the same arriving file converge on
-/// one answer, instead of taking turns overwriting each other's.
-pub(crate) fn defer_to_published(
-    minted: &[(String, String)],
-    published: &HashMap<String, String>,
-    index: &mut HashMap<String, String>,
-    desk: &mut TreeNode,
-    hashes: &mut HashMap<String, HashEntry>,
-) -> usize {
-    let by_path: HashMap<&str, &str> =
-        published.iter().map(|(id, rel)| (rel.as_str(), id.as_str())).collect();
-    let mut handed_back = 0;
-    for (ours, rel) in minted {
-        let Some(theirs) = by_path.get(rel.as_str()) else { continue };
-        if *theirs == ours.as_str() {
-            continue;
-        }
-        index.remove(ours);
-        index.insert((*theirs).to_string(), rel.clone());
-        if let Some(node) = find_node_by_file_id(&mut desk.children, ours) {
-            node.file_id = Some((*theirs).to_string());
-        }
-        if let Some(entry) = hashes.remove(ours) {
-            hashes.insert((*theirs).to_string(), entry);
-        }
-        handed_back += 1;
-    }
-    handed_back
 }
 
 /// The directory chain of a desk-relative path, as name segments.
@@ -638,35 +669,6 @@ pub(crate) fn ensure_container_chain<'a>(
         current = &mut current[idx].children;
     }
     current
-}
-
-/// Absorb a folder's existing files into a fresh desk node + index —
-/// the initialise-in-place half of `open_folder_as_desk`. Same mapping
-/// the reconciler applies (directories mirror as containers, an
-/// existing `Inbox/` folds into the seeded special) but built *before*
-/// any sidecar exists, so the desk's first `tree.json` already carries
-/// the folder's contents and there is no empty-skeleton window for a
-/// concurrent tree save to mistake for a desk with no files.
-pub(crate) fn absorb_disk_files(
-    root: &Path,
-    desk: &mut TreeNode,
-    index: &mut std::collections::HashMap<String, String>,
-) {
-    let mut on_disk = Vec::new();
-    walk_files(root, root, &mut on_disk);
-    for rel in on_disk {
-        let Some((node_type, name, segments)) = crate::desk_index::node_shape(&rel) else {
-            continue;
-        };
-        let file_id = if node_type == "image" {
-            name.clone()
-        } else {
-            Uuid::new_v4().to_string()
-        };
-        let container = ensure_container_chain(desk, &segments);
-        container.push(new_node(&node_type, &name, Some(&file_id)));
-        index.insert(file_id, rel);
-    }
 }
 
 pub(crate) fn new_node(node_type: &str, name: &str, file_id: Option<&str>) -> TreeNode {
