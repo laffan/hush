@@ -18,6 +18,7 @@ import { mountAddPopup } from "./add-popup.js";
 import { mountProgressCenter } from "./sidebar-progress.js";
 import { createRecentFilesPanel } from "./recent-files-panel.js";
 import { mountTimerBox } from "../timer/timer-box.js";
+import { chevronSvg } from "../ui/chevron.js";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
 
 function svgInner(raw) {
@@ -140,7 +141,7 @@ export function createSidebar(state) {
   const gripToggle = document.createElement("button");
   gripToggle.className = "sidebar-grip-toggle";
   gripToggle.type = "button";
-  gripToggle.innerHTML = `<span class="sidebar-grip-chevron">›</span>`;
+  gripToggle.innerHTML = `<span class="sidebar-grip-chevron">${chevronSvg("right")}</span>`;
   gripToggle.addEventListener("click", (e) => {
     e.stopPropagation();
     state.emit("toggle-left-panel");
@@ -159,7 +160,7 @@ export function createSidebar(state) {
   // Sync the chevron direction with the panel's hidden / open state.
   function syncGripGlyph() {
     const isOpen = !panelOverlay.classList.contains("hidden");
-    gripToggle.querySelector(".sidebar-grip-chevron").textContent = isOpen ? "‹" : "›";
+    gripToggle.querySelector(".sidebar-grip-chevron").innerHTML = chevronSvg(isOpen ? "left" : "right");
   }
   new MutationObserver(syncGripGlyph).observe(panelOverlay, { attributes: true, attributeFilter: ["class"] });
   syncGripGlyph();

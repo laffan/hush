@@ -324,8 +324,8 @@ html.ios .panel-overlay-footer {
 .sidebar-grip-chevron {
   position: relative;
   z-index: 1;
-  font-size: 12px;
-  line-height: 1;
+  /* The desk switcher's caret, turned to point (ui/chevron.js). */
+  display: inline-flex;
   /* Default visible — `body.typing-fade` fades it out, and any
      pointer / key activity clears that class (see sidebar.js's
      endTypingFade), so the chevron tracks cursor movement the same

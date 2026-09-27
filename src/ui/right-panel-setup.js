@@ -4,6 +4,7 @@
  */
 import { createOverview } from "../overview/overview.js";
 import { attachSidePanelResize, sidePanelWidthPx } from "./side-panel-resizer.js";
+import { chevronSvg } from "./chevron.js";
 
 export function setupRightPanel(state) {
   const rightPanelOverlay = document.getElementById("right-panel-overlay");
@@ -101,7 +102,7 @@ export function setupRightPanel(state) {
   rightTrigger.className = "right-panel-trigger";
   rightTrigger.type = "button";
   rightTrigger.setAttribute("aria-label", "Open Overview");
-  rightTrigger.textContent = "‹";
+  rightTrigger.innerHTML = chevronSvg("left");
   document.getElementById("app").appendChild(rightTrigger);
   rightTrigger.addEventListener("click", () => {
     if (rightPanelOverlay.classList.contains("hidden")) {
