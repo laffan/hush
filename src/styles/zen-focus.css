@@ -56,9 +56,10 @@
  * height) out to its screen edge, so more centred lines push the blur
  * outward toward the curtains.
  *
- * Three stacked blur bands per edge, each fading in over a fixed
- * distance from the band edge — the stronger the blur, the further out
- * it starts — so the blur ramps up instead of stepping. Every mask is
+ * Three stacked blur bands per edge, their fades staggered across the
+ * whole frost — the stronger the blur, the further out it starts — so
+ * the blur is at its faintest at the band edge and reaches full
+ * strength only at the window edge, where the last band's fade ends. Every mask is
  * transparent at the inner edge, which is where a backdrop blur shows a
  * seam (it can't sample past its own box); the outer edges are the
  * screen's, under the curtains' solid --bg. The radii are set inline by
@@ -84,28 +85,28 @@
 }
 /* Top frost: its inner edge is its bottom, so the ramps run upward. */
 .zen-focus-frost-top > span:nth-child(1) {
-  -webkit-mask-image: linear-gradient(to top, transparent 0px, #000 28px);
-  mask-image: linear-gradient(to top, transparent 0px, #000 28px);
+  -webkit-mask-image: linear-gradient(to top, transparent 0%, #000 45%);
+  mask-image: linear-gradient(to top, transparent 0%, #000 45%);
 }
 .zen-focus-frost-top > span:nth-child(2) {
-  -webkit-mask-image: linear-gradient(to top, transparent 20px, #000 90px);
-  mask-image: linear-gradient(to top, transparent 20px, #000 90px);
+  -webkit-mask-image: linear-gradient(to top, transparent 20%, #000 75%);
+  mask-image: linear-gradient(to top, transparent 20%, #000 75%);
 }
 .zen-focus-frost-top > span:nth-child(3) {
-  -webkit-mask-image: linear-gradient(to top, transparent 70px, #000 180px);
-  mask-image: linear-gradient(to top, transparent 70px, #000 180px);
+  -webkit-mask-image: linear-gradient(to top, transparent 45%, #000 100%);
+  mask-image: linear-gradient(to top, transparent 45%, #000 100%);
 }
 .zen-focus-frost-bottom > span:nth-child(1) {
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0px, #000 28px);
-  mask-image: linear-gradient(to bottom, transparent 0px, #000 28px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 45%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 45%);
 }
 .zen-focus-frost-bottom > span:nth-child(2) {
-  -webkit-mask-image: linear-gradient(to bottom, transparent 20px, #000 90px);
-  mask-image: linear-gradient(to bottom, transparent 20px, #000 90px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 20%, #000 75%);
+  mask-image: linear-gradient(to bottom, transparent 20%, #000 75%);
 }
 .zen-focus-frost-bottom > span:nth-child(3) {
-  -webkit-mask-image: linear-gradient(to bottom, transparent 70px, #000 180px);
-  mask-image: linear-gradient(to bottom, transparent 70px, #000 180px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 45%, #000 100%);
+  mask-image: linear-gradient(to bottom, transparent 45%, #000 100%);
 }
 
 .zen-focus-stage {
