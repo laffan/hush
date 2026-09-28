@@ -1,16 +1,17 @@
 /**
  * Wall clock — an analog clock floating over every surface, switched on
  * and off from the palette ("Toggle clock"). Twelve short 1 px marks, one
- * every five minutes, and two 2 px hands — the hour hand in the text
- * colour, the minute hand in the heading colour — meeting at the centre,
- * on a disc of the window's background: invisible against a
- * document, a solid face over a canvas or a PDF. No numbers. It sits
- * over the document, panes included, and under the sidebars (`--z-clock`).
+ * every five minutes, and two 2 px hands meeting at the centre, all in
+ * the text colour, on a disc of the window's background: invisible
+ * against a document, a solid face over a canvas or a PDF. No numbers.
+ * It sits over the document, panes included, and under the sidebars
+ * (`--z-clock`).
  *
  * Drag it anywhere; the spot is kept with the toggle (clock-store.js),
  * so it survives a desk switch and a relaunch. A click on a mark sets the
  * alarm there, and that mark grows to twice the others' length and the
- * hands' width — the press counts anywhere in a band round the marks and
+ * hands' width; it and the minute hand turn the heading colour while the
+ * rest fades back. The press counts anywhere in a band round the marks and
  * resolves to the nearest one by angle, since a 1 px line is no target.
  * Clicking the armed mark again clears it; there is one alarm at a time.
  * Five minutes before the minute hand reaches it, every line turns red;
@@ -288,6 +289,9 @@ export function initWallClock(state) {
     armMark(armed, false);
     armed = armedMark(clock);
     armMark(armed, true);
+    // Colours the minute hand and fades the rest (styles/clock.css). It
+    // lasts until the alarm is cleared, so through the red and the blink.
+    face.el.classList.toggle("has-alarm", clock.alarmAt != null);
     face.el.setAttribute("aria-label", clock.alarmAt == null ? "Clock"
       : `Clock, alarm at ${new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit" }).format(clock.alarmAt)}`);
     render();

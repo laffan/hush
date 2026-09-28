@@ -60,9 +60,9 @@ There is one timer at a time, the same one on every desk and in every window, an
 
 ## Clock
 
-**Toggle clock** in the command palette floats a small analog clock over whatever you're working on: twelve short 1px marks, one every five minutes, and two 2px hands — the hour hand in the text colour, the minute hand in the heading colour — meeting at the centre. No numbers. Its face is the window's background colour, so over a document it's just the marks and hands, and over a notebook or a PDF it's a solid disc. It floats over the document and any floating panes, and slides under the sidebars. Drag it anywhere; it stays on, and where you put it, across desks and relaunches.
+**Toggle clock** in the command palette floats a small analog clock over whatever you're working on: twelve short 1px marks, one every five minutes, and two 2px hands meeting at the centre, all in the text colour. No numbers. Its face is the window's background colour, so over a document it's just the marks and hands, and over a notebook or a PDF it's a solid disc. It floats over the document and any floating panes, and slides under the sidebars. Drag it anywhere; it stays on, and where you put it, across desks and relaunches.
 
-Click a mark to set an alarm at that five-minute point. The mark grows to twice the length of the others and to the width of the hands; five minutes before the minute hand reaches it, every line on the clock turns red, and when it arrives they blink a few times and the clock goes back to normal. Click the same mark again to clear it. There is one alarm at a time — clicking another mark moves it.
+Click a mark to set an alarm at that five-minute point. The mark grows to twice the length of the others and to the width of the hands, it and the minute hand turn the heading colour, and the rest of the clock fades back to 35%, so the two lines closing on each other are what you see; five minutes before the minute hand reaches it, every line on the clock turns red, and when it arrives they blink a few times and the clock goes back to normal. Click the same mark again to clear it. There is one alarm at a time — clicking another mark moves it.
 
 ## Organizing
 

@@ -1,12 +1,12 @@
 /* ===== Wall clock (src/clock/wall-clock.js) =====
    A disc of the window's background colour — so it disappears against a
    document and reads as a solid face over a canvas, a PDF or a stack —
-   holding twelve 1 px marks, an hour hand in the text colour and a
-   minute hand in the heading colour. The script owns the geometry: the
-   element's size, every length and the hands' stroke width. */
+   holding twelve 1 px marks and two hands, all in the text colour. The
+   script owns the geometry: the element's size, every length and the
+   hands' stroke width. */
 .wall-clock {
   --wc-ink: var(--fg);
-  --wc-minute: var(--heading-color, var(--wc-ink));
+  --wc-accent: var(--heading-color, var(--wc-ink));
   --wc-alarm-red: #d2453b;
   position: fixed;
   top: calc(var(--top-chrome-inset, 0px) + 44px);
@@ -35,21 +35,32 @@
   stroke-width: 1;
 }
 
-/* The mark under the pointer thickens. The one holding the alarm takes
-   the minute hand's colour; its length (twice the others') and width
-   (the hands') are set by the script. */
+/* The mark under the pointer thickens. */
 .wall-clock .wc-mark.hover { stroke-width: 2; }
-.wall-clock .wc-mark.armed { stroke: var(--wc-minute); }
 
 .wall-clock .wc-hour,
-.wall-clock .wc-minute { stroke-linecap: round; }
-.wall-clock .wc-hour { stroke: var(--wc-ink); }
-.wall-clock .wc-minute { stroke: var(--wc-minute); }
+.wall-clock .wc-minute {
+  stroke: var(--wc-ink);
+  stroke-linecap: round;
+}
 
-/* Five minutes before the alarm every line turns red… */
+/* With an alarm set (`has-alarm`), the minute hand and the armed mark
+   take the heading colour and everything else fades back, so the two
+   lines that meet at the alarm are the ones left to read. The armed
+   mark's length (twice the others') and width (the hands') are set by
+   the script. A mark under the pointer comes back up — it's the one a
+   click would move the alarm to. */
+.wall-clock.has-alarm .wc-minute,
+.wall-clock .wc-mark.armed { stroke: var(--wc-accent); }
+
+.wall-clock.has-alarm .wc-hour,
+.wall-clock.has-alarm .wc-mark:not(.armed):not(.hover) { opacity: 0.35; }
+
+/* Five minutes before the alarm every line turns red — the faded ones
+   too, still faded… */
 .wall-clock.alarm-soon {
   --wc-ink: var(--wc-alarm-red);
-  --wc-minute: var(--wc-alarm-red);
+  --wc-accent: var(--wc-alarm-red);
 }
 
 /* …and on the minute they blink: 4 × 600 ms, BLINKS × BLINK_MS in
