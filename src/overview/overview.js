@@ -49,8 +49,16 @@ export const OVERVIEW_DEFAULTS = {
  * Create and manage the Overview panel inside the right panel overlay.
  * @param {HTMLElement} container - The #right-panel-overlay element
  * @param {object} state - AppState instance
+ * @param {object} [opts]
+ * @param {() => import("@codemirror/view").EditorView | null} [opts.getView]
+ *   A surface other than the main editor (a docked doc pane). It has no
+ *   `doc-content-changed` / `file-opened` of its own, so the instance
+ *   watches that view's document instead of the app's events.
  */
-export function createOverview(container, state) {
+export function createOverview(container, state, opts = {}) {
+  const isMain = !opts.getView;
+  const getView = opts.getView || (() => state.editor?.view || null);
+  const goTo = (offset) => scrollToOffset(getView(), offset);
   let headingEntries = []; // { offset, element }
   let paragraphEntries = []; // { offset, element }
   let activeHeadingEl = null;
@@ -115,12 +123,14 @@ export function createOverview(container, state) {
 
     wrapper.appendChild(buildContent(s));
     container.appendChild(wrapper);
-    setupScrollTracking(state);
+    setupScrollTracking();
   }
 
   /** Build (or rebuild) just the outline content area */
   function buildContent(s) {
-    const text = state.editor ? state.editor.getContent() : "";
+    const text = isMain
+      ? (state.editor ? state.editor.getContent() : "")
+      : (getView()?.state.doc.toString() || "");
     const { headings, flags, tabs } = parseDocument(text);
     const sectionColors = { ...CALLOUT_COLORS, ...(s.flagColors || {}), ...(s.overviewSectionColors || {}) };
     const calloutStacks = computeHeadingCalloutStacks(headings, sectionColors);
@@ -145,7 +155,7 @@ export function createOverview(container, state) {
     const { hasMarkers, routeFor: containerForOffset } = buildTabContainers(
       content,
       tabs,
-      (offset) => scrollToOffset(state, offset),
+      goTo,
     );
 
     headingEntries = [];
@@ -187,7 +197,7 @@ export function createOverview(container, state) {
         headingEl.textContent = numbering ? `${numbering} ${h.text}` : h.text;
         headingEl.addEventListener("click", (e) => {
           e.stopPropagation();
-          scrollToOffset(state, h.startOffset);
+          goTo(h.startOffset);
         });
         flowEl.appendChild(headingEl);
         headingEntries.push({ offset: h.startOffset, element: headingEl });
@@ -234,7 +244,7 @@ export function createOverview(container, state) {
             // heading-click behaviour so the whole outline is interactive.
             p.addEventListener("click", (e) => {
               e.stopPropagation();
-              scrollToOffset(state, entry.offset);
+              goTo(entry.offset);
               setActiveParagraph(p);
             });
             flowEl.appendChild(p);
@@ -249,7 +259,7 @@ export function createOverview(container, state) {
           openCalloutWrappers = result.wrappers;
           flowEl = createSectionStructure(result.container, currentLevel);
         }
-        flowEl.appendChild(createFlagElement(frag.flag, s, state));
+        flowEl.appendChild(createFlagElement(frag.flag, s, goTo));
       }
     }
     return content;
@@ -263,7 +273,7 @@ export function createOverview(container, state) {
     const newContent = buildContent(getSettings());
     if (oldContent) wrapper.replaceChild(newContent, oldContent);
     else wrapper.appendChild(newContent);
-    setupScrollTracking(state);
+    setupScrollTracking();
   }
 
   /** Apply CSS variable changes live without rebuilding DOM */
@@ -339,16 +349,17 @@ export function createOverview(container, state) {
     return row;
   }
 
-  function setupScrollTracking(state) {
+  let trackedScroller = null;
+  function setupScrollTracking() {
     if (scrollHandler) {
-      state.editor?.view?.scrollDOM?.removeEventListener("scroll", scrollHandler);
+      trackedScroller?.removeEventListener("scroll", scrollHandler);
     }
     if (selectionHandler) {
       document.removeEventListener("selectionchange", selectionHandler);
     }
     scrollHandler = () => {
-      if (!state.editor) return;
-      const view = state.editor.view;
+      const view = getView();
+      if (!view) return;
       const rect = view.scrollDOM.getBoundingClientRect();
       const contentEl = view.contentDOM;
       const contentRect = contentEl.getBoundingClientRect();
@@ -365,18 +376,17 @@ export function createOverview(container, state) {
     // the editor's own selection state to avoid round-tripping through
     // window.getSelection() ranges.
     selectionHandler = () => {
-      if (!state.editor) return;
-      const view = state.editor.view;
+      const view = getView();
+      if (!view) return;
       if (!view.hasFocus) return;
       highlightForOffset(view.state.selection.main.head);
     };
-    state.editor?.view?.scrollDOM?.addEventListener("scroll", scrollHandler);
+    trackedScroller = getView()?.scrollDOM || null;
+    trackedScroller?.addEventListener("scroll", scrollHandler);
     document.addEventListener("selectionchange", selectionHandler);
     // Initial highlight
-    if (state.editor) {
-      const pos = state.editor.view.state.selection.main.head;
-      highlightForOffset(pos);
-    }
+    const view = getView();
+    if (view) highlightForOffset(view.state.selection.main.head);
   }
 
   /** Update both the active heading and the active paragraph for the
@@ -456,9 +466,9 @@ export function createOverview(container, state) {
   }
 
   function destroy() {
-    if (scrollHandler && state.editor) {
-      state.editor.view?.scrollDOM?.removeEventListener("scroll", scrollHandler);
-    }
+    if (scrollHandler) trackedScroller?.removeEventListener("scroll", scrollHandler);
+    trackedScroller = null;
+    clearInterval(docWatch);
     if (selectionHandler) {
       document.removeEventListener("selectionchange", selectionHandler);
     }
@@ -472,7 +482,7 @@ export function createOverview(container, state) {
 
   // Listen for content changes to auto-refresh
   const onFileOpened = () => { if (!container.classList.contains("hidden")) render(); };
-  state.on("file-opened", onFileOpened);
+  if (isMain) state.on("file-opened", onFileOpened);
 
   // Debounced live refresh as the user types — the editor fires this
   // event on every keystroke via `state.markDirty`. Throttled so heavy
@@ -483,16 +493,27 @@ export function createOverview(container, state) {
     clearTimeout(contentTimer);
     contentTimer = setTimeout(() => { renderContent(); }, 250);
   };
-  state.on("doc-content-changed", onContentChanged);
+  if (isMain) state.on("doc-content-changed", onContentChanged);
+  // Another surface: watch its document directly. A doc is immutable, so
+  // an identity check is the whole diff, and it costs nothing at rest.
+  let docWatch = null;
+  if (!isMain) {
+    let lastDoc = getView()?.state.doc;
+    docWatch = setInterval(() => {
+      const doc = getView()?.state.doc;
+      if (!doc || doc === lastDoc) return;
+      lastDoc = doc;
+      onContentChanged();
+    }, 500);
+  }
 
   return { render, destroy, onFileOpened };
 }
 
 // ===== Helper functions =====
 
-function scrollToOffset(state, offset) {
-  if (!state.editor) return;
-  const view = state.editor.view;
+function scrollToOffset(view, offset) {
+  if (!view) return;
   // `EditorView.scrollIntoView` is the only path that works for an
   // offset below the currently-rendered viewport — `coordsAtPos`
   // returns null for unrendered positions, so the previous manual
@@ -580,7 +601,7 @@ function updateCalloutWrappers(contentEl, wrappers, activeStack, newStack, secti
   return { wrappers, stack: filteredStack, container };
 }
 
-function createFlagElement(flag, settings, state) {
+function createFlagElement(flag, settings, goTo) {
   const el = document.createElement("div");
   el.className = "overview-flag";
   if (settings.overviewWrapFlagText) el.classList.add("wrap-flag-text");
@@ -620,7 +641,7 @@ function createFlagElement(flag, settings, state) {
 
   el.addEventListener("click", (e) => {
     e.stopPropagation();
-    scrollToOffset(state, flag.startOffset);
+    goTo(flag.startOffset);
   });
 
   return el;

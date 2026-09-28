@@ -66,7 +66,7 @@ export function createMiniPalette(opts: {
       position: "absolute",
       display: "none",
       flexDirection: "row",
-      zIndex: "150",
+      zIndex: "86", // toolbar band — under floating panes (90)
       userSelect: "none",
       overflow: "hidden",
       boxShadow: "0 2px 6px rgba(0,0,0,0.18)",

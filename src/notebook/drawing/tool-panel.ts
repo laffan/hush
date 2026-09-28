@@ -149,7 +149,7 @@ export function createDrawingToolPanel(
     background: "transparent",
     cursor: "grab",
     touchAction: "none",
-    zIndex: "101",
+    zIndex: "86", // over the bar (85), under floating panes (90)
     padding: "0",
     margin: "0",
     userSelect: "none",

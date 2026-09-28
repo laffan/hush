@@ -89,32 +89,61 @@ export function clearCache() {
 
 // ===== Fuzzy Search =====
 
+/** Best score `q` earns against one reference: a substring hit in any
+ *  field beats a subsequence (fuzzy) one, and a hit that covers more of
+ *  its field beats one that covers less. 0 is no match. */
+function refScore(ref, q, allowFuzzy) {
+  const fields = [ref.title, ref.shortTitle, ref.authors, ref.year, ref.key, ref.citekey];
+  let bestScore = 0;
+  for (const field of fields) {
+    if (!field) continue;
+    const text = String(field).toLowerCase();
+    const idx = text.indexOf(q);
+    if (idx !== -1) {
+      bestScore = Math.max(bestScore, 100 + (q.length / text.length) * 50);
+      continue;
+    }
+    if (!allowFuzzy) continue;
+    let qi = 0, consecutive = 0, score = 0;
+    for (let i = 0; i < text.length && qi < q.length; i++) {
+      if (text[i] === q[qi]) {
+        qi++;
+        consecutive++;
+        score += consecutive * 2;
+      } else {
+        consecutive = 0;
+      }
+    }
+    if (qi === q.length) bestScore = Math.max(bestScore, score);
+  }
+  return bestScore;
+}
+
+/**
+ * Search the library. The whole query is tried first, as one string,
+ * against every field. A query of several words — "Hoskins 2011",
+ * "hoskins, 2011", "Hoskins (2011)" — is also tried word by word: a
+ * reference matches when *every* word lands in some field, which is what
+ * lets an author and a year find `@hoskins2011a` though no single field
+ * holds "hoskins 2011". Word matches are substring hits, plus fuzzy ones
+ * for words of four letters or more; a one-letter fuzzy "match" is
+ * everything.
+ */
 export function fuzzySearch(refs, query) {
   if (!query.trim()) return refs.slice(0, 50);
-  const q = query.toLowerCase();
+  const q = query.trim().toLowerCase();
+  const words = q.split(/[\s,;()]+/).filter(Boolean);
   const scored = [];
   for (const ref of refs) {
-    const fields = [ref.title, ref.shortTitle, ref.authors, ref.year, ref.key, ref.citekey];
-    let bestScore = 0;
-    for (const field of fields) {
-      if (!field) continue;
-      const text = field.toLowerCase();
-      const idx = text.indexOf(q);
-      if (idx !== -1) {
-        bestScore = Math.max(bestScore, 100 + (q.length / text.length) * 50);
-        continue;
+    let bestScore = refScore(ref, q, true);
+    if (words.length > 1) {
+      let sum = 0;
+      for (const w of words) {
+        const s = refScore(ref, w, w.length >= 4);
+        if (!s) { sum = 0; break; }
+        sum += s;
       }
-      let qi = 0, consecutive = 0, score = 0;
-      for (let i = 0; i < text.length && qi < q.length; i++) {
-        if (text[i] === q[qi]) {
-          qi++;
-          consecutive++;
-          score += consecutive * 2;
-        } else {
-          consecutive = 0;
-        }
-      }
-      if (qi === q.length) bestScore = Math.max(bestScore, score);
+      if (sum) bestScore = Math.max(bestScore, sum / words.length);
     }
     if (bestScore > 0) scored.push({ ref, score: bestScore });
   }

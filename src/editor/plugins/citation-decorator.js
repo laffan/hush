@@ -23,11 +23,12 @@
  *      `[@citekey](zotero://select/library/items/KEY)`.
  */
 
-import { ViewPlugin, Decoration, WidgetType, EditorView, keymap } from "@codemirror/view";
+import { ViewPlugin, Decoration, WidgetType, keymap } from "@codemirror/view";
 import { RangeSetBuilder, Prec } from "@codemirror/state";
 import { isIOS } from "../../settings/settings-ui.js";
 import { openCitationPopup } from "../../links/citation-popup.js";
 import { focusSentenceBounds } from "./focus-mode.js";
+import { attachCitationOpen, createCitationClickHandler } from "./citation-click.js";
 
 // Keep in sync with CITE_RE in doc-export-modal.js and is_citekey_char
 // in src-tauri/src/typst_export/markdown.rs.
@@ -339,8 +340,9 @@ function attachHover(span, citekey, url, appState) {
 // ───────────────────── decorations ─────────────────────
 
 class CitationWidget extends WidgetType {
-  constructor(citekey, url, bracketed, appState, dimmed) {
+  constructor(citekey, url, bracketed, appState, dimmed, length) {
     super();
+    this.length = length;
     this.citekey = citekey;
     this.url = url;
     this.bracketed = bracketed;
@@ -367,7 +369,9 @@ class CitationWidget extends WidgetType {
     span.textContent = this.bracketed ? `[@${this.citekey}]` : `@${this.citekey}`;
     span.dataset.citekey = this.citekey;
     if (this.url) span.dataset.citeUrl = this.url;
+    span.dataset.length = String(this.length);
     attachHover(span, this.citekey, this.url, this.appState);
+    attachCitationOpen(span);
     return span;
   }
 
@@ -399,7 +403,7 @@ function buildDecorations(view, appState) {
         ? (to <= focusBounds.from || from >= focusBounds.to)
         : false;
       builder.add(from, to, Decoration.replace({
-        widget: new CitationWidget(item.citekey, item.url, item.bracketed, appState, dimmed),
+        widget: new CitationWidget(item.citekey, item.url, item.bracketed, appState, dimmed, to - from),
       }));
     }
   }
@@ -419,82 +423,8 @@ function citationAtPos(doc, pos) {
 
 // ───────────────────── click handling ─────────────────────
 
-/** On iOS, modifier state from a paired keyboard doesn't always reach
- *  touch-synthesized events — mirror link-decorator's tracker. */
-let _modifierHeld = false;
-if (isIOS()) {
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Meta" || e.key === "Control") _modifierHeld = true;
-  });
-  document.addEventListener("keyup", (e) => {
-    if (e.key === "Meta" || e.key === "Control") _modifierHeld = false;
-  });
-  window.addEventListener("blur", () => { _modifierHeld = false; });
-}
-
-function hasModifier(e) {
-  // Honour the touch-mode ⌘ pill too (its synthetic Meta keydown is
-  // dispatched on `window`, so the document-level `_modifierHeld` tracker
-  // never sees it) — mirrors link-decorator + the notebook canvas.
-  return e.metaKey || e.ctrlKey || _modifierHeld ||
-    (typeof window !== "undefined" && !!window.__hushCmdHeld);
-}
-
-/**
- * Open the Zotero tooltip menu for a citation instead of jumping
- * straight to the Zotero app — "Open in Zotero" / "Open in Hush" /
- * "Download to Hush", the same menu `[Title](zotero://…)` links use. A
- * bare `@citekey` with no deep link is resolved to its item's select URL
- * first. The anchor rect is captured by the caller (synchronously, since
- * the citation widget can be torn down while the menu module imports).
- */
-async function openCitationMenu(url, citekey, anchor) {
-  let target = url || null;
-  if (!target && citekey) {
-    try {
-      const { loadReferences } = await import("../../zotero.js");
-      const ref = ((await loadReferences()) || []).find((r) => r.citekey === citekey);
-      if (ref) target = `zotero://select/library/items/${ref.key}`;
-    } catch { /* Zotero not configured */ }
-  }
-  if (!target) return;
-  try {
-    const { openZoteroLinkMenu } = await import("../../links/zotero-link-menu.js");
-    openZoteroLinkMenu(target, anchor);
-  } catch {
-    void openUrl(target); // fallback: open Zotero directly
-  }
-}
-
-function createClickHandler() {
-  return EditorView.domEventHandlers({
-    mousedown(e, view) {
-      if (!hasModifier(e)) return false;
-      // Rendered pill: open the tooltip menu. Capture the rect now — the
-      // widget can be torn down while the menu module imports.
-      const widget = e.target.closest?.(".cm-citation-rendered");
-      if (widget) {
-        e.preventDefault();
-        const r = widget.getBoundingClientRect();
-        void openCitationMenu(widget.dataset.citeUrl || null, widget.dataset.citekey || null,
-          { left: r.left, top: r.top, bottom: r.bottom });
-        return true;
-      }
-      // Raw `[@…]` markdown (caret inside, or the widget was already
-      // re-rendered away on a touch tap) — resolve at the click point.
-      const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
-      if (pos == null) return false;
-      const item = citationAtPos(view.state.doc, pos);
-      if (item) {
-        e.preventDefault();
-        void openCitationMenu(item.url || null, item.citekey || null,
-          { x: e.clientX, y: e.clientY });
-        return true;
-      }
-      return false;
-    },
-  });
-}
+// ⌘-click lives in citation-click.js: the menu, and keeping the pill
+// rendered while it opens.
 
 // ───────────────────── `[@` search trigger ─────────────────────
 
@@ -670,5 +600,5 @@ export function createCitationPlugin(appState) {
     { key: "Escape",    run: () => controller?.isOpen() ? (controller.dismiss(), true) : false },
   ]));
 
-  return [renderPlugin, citationKeymap, createClickHandler()];
+  return [renderPlugin, citationKeymap, createCitationClickHandler(citationAtPos)];
 }

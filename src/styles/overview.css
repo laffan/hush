@@ -24,7 +24,7 @@
   background: var(--theme-bg, var(--bg));
   color: var(--fg);
   border-left: 1px solid var(--panel-border);
-  z-index: 100;
+  z-index: var(--z-under-pane);
   padding: 0;
   overflow-y: auto;
   transition: transform 0.2s, opacity 0.2s;
@@ -33,7 +33,7 @@
 #right-panel-overlay.panel-inset {
   background: var(--theme-bg, var(--bg));
   border-left: none;
-  z-index: 100;
+  z-index: var(--z-under-pane);
 }
 
 #right-panel-overlay.hidden {
@@ -65,7 +65,7 @@ html.ios #right-panel-overlay {
      rather than a strip sitting beside it. */
   margin-right: -3px;
   cursor: col-resize;
-  z-index: 101; /* the bars sit at 100 */
+  z-index: calc(var(--z-under-pane) + 1); /* over the bars, under panes */
   touch-action: none;
 }
 

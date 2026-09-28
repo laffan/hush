@@ -27,6 +27,7 @@ import { instanceHighlightField } from "./select-instance-highlight.js";
 import { createMultiLineCommentPlugin, createCommentAfterPlugin } from "./comment-plugins.js";
 import { createCommentAnchorPlugin } from "./plugins/comment-anchors.js";
 import { createImagePasteExtension } from "./image-paste.js";
+import { caretFollowPlugin } from "./caret-follow.js";
 import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js";
 import { getMarkdownHighlight, resolveHeaderColorOverride } from "./markdown-highlight.js";
 import { CommentExtension, HighlightExtension } from "./markdown-extensions.js";
@@ -262,6 +263,7 @@ export function createBaseExtensions(state, onChange, opts) {
     // list order — see the matching note in editor.js.
     Prec.high(createImagePasteExtension(state, { getImageContext })),
     createGoogleDocsPasteExtension(),
+    caretFollowPlugin,
     headingIndentPlugin,
     findHighlightField,
     instanceHighlightField,

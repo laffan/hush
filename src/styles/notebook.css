@@ -10,8 +10,10 @@
   left: 0;
   width: 100%;
   height: 100%;
-  /* No z-index — avoids creating a stacking context so the shelf
-     panel (z-index: 150) can render above floating panes (z-index: 90). */
+  /* No z-index — avoids creating a stacking context, so the canvas
+     chrome's own numbers are compared against the app's: the toolbar
+     and shelf (85–88) sit under floating panes (90), the scroll wheel
+     (95) over them, both under the file sidebar. */
 }
 
 #notebook-container.hidden {

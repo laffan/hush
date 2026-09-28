@@ -17,7 +17,7 @@
   color: var(--fg);
   border-left: 1px solid var(--panel-border);
   border-right: 1px solid var(--panel-border);
-  z-index: 100;
+  z-index: var(--z-under-pane);
   display: flex;
   flex-direction: column;
   overflow: hidden; /* the list inside scrolls, not the whole panel */

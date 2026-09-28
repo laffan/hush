@@ -170,6 +170,18 @@ html[data-theme="dark"] .timer-sheet {
   gap: 12px;
 }
 
+.timer-chimes {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.timer-chimes span { opacity: 0.6; }
+.timer-chimes input { margin: 0; accent-color: var(--fg); cursor: pointer; }
+
 .timer-break,
 .timer-period {
   padding: 2px 0 3px;
@@ -373,10 +385,10 @@ html[data-theme="dark"] .sidebar-timer {
 
 /* Elapsed share of the session, a thin bar under the task. */
 .sidebar-timer-progress {
+  position: relative;
   height: 2px;
   margin: 6px 0 6px;
   border-radius: 1px;
-  overflow: hidden;
   background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
 
@@ -384,9 +396,29 @@ html[data-theme="dark"] .sidebar-timer {
   display: block;
   height: 100%;
   width: 0;
+  border-radius: 1px;
   background: color-mix(in srgb, var(--fg) 40%, transparent);
   transition: width 1s linear;
 }
+
+/* A break's place along the session: a faint tick through the bar. */
+.sidebar-timer-mark {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  margin-left: -0.5px;
+  background: color-mix(in srgb, var(--fg) 30%, transparent);
+  pointer-events: none;
+}
+
+/* The break under way, counting down directly under the session's bar. */
+.sidebar-timer-break-bar {
+  height: 1px;
+  margin-top: -3px;
+}
+.sidebar-timer-break-bar[hidden] { display: none; }
+.sidebar-timer-break-bar span { transition: width 1s linear; }
 
 /* To go / next break / finish: three columns, the break centred between
    the other two however wide the sidebar is. */
@@ -447,9 +479,14 @@ html[data-theme="dark"] .sidebar-timer {
    share drawn over it from twelve o'clock. The middle is empty until
    hovered, when it shows the minutes to the next break. */
 .timer-ring {
+  /* The same distance from the left edge as from the bottom — and the
+     bottom's includes the iPad's reserved band, so the left matches it
+     rather than hugging the edge. A drag replaces both inline. */
+  --timer-ring-inset: calc(14px + max(var(--ipad-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)));
   position: fixed;
-  left: 12px;
-  bottom: calc(14px + max(var(--ipad-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)));
+  left: calc(var(--timer-ring-inset) + env(safe-area-inset-left, 0px));
+  bottom: var(--timer-ring-inset);
+  touch-action: none;
   z-index: 101; /* over the sidebar's grip strip (#panel-overlay, 100) */
   width: 30px;
   height: 30px;
@@ -469,6 +506,7 @@ html[data-theme="dark"] .sidebar-timer {
 }
 
 .timer-ring.visible { display: flex; }
+.timer-ring.dragging { cursor: grabbing; opacity: 1; }
 .timer-ring:hover,
 .timer-ring:focus-visible { opacity: 1; outline: none; }
 
@@ -487,6 +525,26 @@ html[data-theme="dark"] .sidebar-timer {
 }
 
 .timer-ring-track { stroke: color-mix(in srgb, var(--fg) 10%, transparent); }
+
+.timer-ring-mark {
+  stroke: color-mix(in srgb, var(--fg) 40%, transparent);
+  stroke-width: 1;
+  fill: none;
+}
+
+/* The break's countdown: a thin circle inside the ring, emptying as the
+   break runs. Only there while one is. */
+.timer-ring circle.timer-ring-break {
+  stroke: color-mix(in srgb, var(--fg) 45%, transparent);
+  stroke-width: 1.5;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+  display: none;
+  transition: stroke-dashoffset 1s linear;
+}
+.timer-ring.on-break circle.timer-ring-break { display: inline; }
+/* The minutes figure would sit on top of the inner circle. */
+.timer-ring.on-break .timer-ring-label { font-size: 8px; }
 
 .timer-ring-fill {
   stroke: color-mix(in srgb, var(--fg) 45%, transparent);

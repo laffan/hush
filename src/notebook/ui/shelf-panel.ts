@@ -68,7 +68,7 @@ export function createShelfPanel(
     // Edge offsets are written by `applyPlacement` — they depend on
     // `state.paneHosted`, which a pane / stack host sets after this
     // function has already returned.
-    style: { position: "absolute", zIndex: "150", display: "flex", flexDirection: "column", transition: "width 0.2s", overflow: "hidden", width: "24px", minWidth: "24px", borderRadius: "12px 0 0 12px" },
+    style: { position: "absolute", zIndex: "87" /* under floating panes (90) */, display: "flex", flexDirection: "column", transition: "width 0.2s", overflow: "hidden", width: "24px", minWidth: "24px", borderRadius: "12px 0 0 12px" },
   });
   panel.classList.add("notebook-shelf");
 

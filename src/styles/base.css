@@ -56,12 +56,19 @@
    * each time. Layers stack from low to high; intermediate values
    * (e.g. 95, 101, 250) are local-only and stay as literals.
    *
+   *   --z-under-pane     chrome that has to clear the editor and the macOS
+   *                      drag strip (80) but give way to floating panes:
+   *                      the right-hand bars (#right-panel-overlay,
+   *                      #comments-panel), the notebook toolbar and shelf.
+   *                      The notebook's values are literals in the TS
+   *                      bundle (85–88) — keep them inside this band
    *   --z-pane           floating reference panes above editor content
    *   --z-clock          the wall clock — over panes and the macOS drag
    *                      strip (80, which swallows clicks beneath it),
-   *                      under the side panels (#panel-overlay,
-   *                      #right-panel-overlay, #comments-panel: 100)
-   *   --z-shelf          notebook shelf panel
+   *                      and so over the right-hand bars too; under the
+   *                      file sidebar (#panel-overlay: 100)
+   *   --z-shelf          typewriter boundary line (the notebook shelf used
+   *                      to sit here, above panes)
    *   --z-sidebar        left sidebar column + floating toggle
    *   --z-sticky         sticky notes — above all content chrome
    *                      (panes, shelf, sidebar), below overlays/modals
@@ -85,6 +92,7 @@
    *   --z-drag-ghost     drag preview that must escape every stacking
    *                      context (text drag chip from sidebar to editor)
    */
+  --z-under-pane: 85;
   --z-pane: 90;
   --z-clock: 95;
   --z-shelf: 150;

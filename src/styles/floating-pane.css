@@ -175,9 +175,13 @@
   border-radius: 8px;
   z-index: 5;
   user-select: none;
+  /* Chrome, not text: the pane root inherits the style's writing face,
+     and the popover and its buttons would otherwise pick it up. */
+  font-family: var(--ui-font-family);
 }
 
 .fp-size-step {
+  font-family: inherit;
   width: 22px;
   height: 22px;
   display: inline-flex;
@@ -307,6 +311,26 @@
 .floating-pane.docked .floating-pane-content .cm-content {
   max-width: var(--doc-column-width, 800px);
   margin: 0 auto;
+}
+
+/* A docked Doc pane's own Overview (pane/pane-overview.js): the main
+   Overview's panel, mounted against the pane's right edge. It takes the
+   Overview's width off the editor rather than covering the text. */
+.floating-pane.has-overview .floating-pane-content .cm-editor {
+  width: calc(100% - var(--right-panel-width, 200px));
+}
+.fp-overview {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--right-panel-width, 200px);
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  border-left: 1px solid var(--panel-border);
+  font-family: var(--ui-font-family);
+  overflow: hidden;
+  z-index: 2;
 }
 
 /* Notebook canvas in pane */

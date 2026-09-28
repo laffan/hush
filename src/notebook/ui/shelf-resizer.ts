@@ -14,7 +14,7 @@ export function createShelfResizer(
   const el = document.createElement("div");
   el.className = "notebook-shelf-resizer";
   Object.assign(el.style, {
-    position: "fixed", width: "10px", zIndex: "152",
+    position: "fixed", width: "10px", zIndex: "88",
     cursor: "ew-resize", background: "transparent",
     transition: "background 120ms ease", display: "none",
   } as Partial<CSSStyleDeclaration>);

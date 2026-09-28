@@ -88,7 +88,8 @@ export function createToolbar(state: DrawingState): HTMLElement {
       position: "absolute", top: "20px",
       display: "flex", alignItems: "center", gap: "4px", padding: "1px 8px",
       borderRadius: "12px",
-      boxShadow: "0 2px 12px rgba(0,0,0,0.12)", zIndex: "100", userSelect: "none",
+      // Under floating panes (90): a pane dragged over the bar covers it.
+      boxShadow: "0 2px 12px rgba(0,0,0,0.12)", zIndex: "85", userSelect: "none",
       backdropFilter: "blur(8px)",
       flexWrap: "nowrap",
     },

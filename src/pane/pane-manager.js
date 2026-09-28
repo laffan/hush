@@ -30,6 +30,8 @@ import {
 } from "./pane-layout.js";
 import { measureEditorColumnWidth } from "./pane-inline.js";
 import { syncPaneRatchetLock, previewPaneStyle, syncPaneThemes } from "./pane-theme-sync.js";
+import { installPaneHoverFocus } from "./pane-hover-focus.js";
+import { closePaneOverview } from "./pane-overview.js";
 
 // Inject local DOM-builder + context handler (avoids pane-persistence → pane-manager cycle).
 const restorePanes = () => _restorePanes({ buildPaneDOM, onContextChange });
@@ -88,6 +90,7 @@ export function initPaneManager(state) {
     saveAllPanes();
     deactivateAllPanes();
   }, true);
+  installPaneHoverFocus({ focusPane, deactivateAllPanes, saveAllPanes });
   state.on("file-opened", onContextChange);
   state.on("notebook-open", onContextChange);
   state.on("notebook-unmount", onContextChange);
@@ -352,6 +355,7 @@ function teardownPaneContent(pane) {
   }
   if (pane._scrollListenerCleanup) { try { pane._scrollListenerCleanup(); } catch (_) {} pane._scrollListenerCleanup = null; }
   if (pane.attached) stopAttachSync(pane);
+  if (pane._overview) closePaneOverview(pane);
   if (pane.editor) { try { pane.editor.destroy(); } catch (_) {} pane.editor = null; }
   if (pane.notebook) { try { pane.notebook.destroy(); } catch (_) {} pane.notebook = null; }
   if (pane.pdfViewer) { try { pane.pdfViewer.destroy(); } catch (_) {} pane.pdfViewer = null; }
@@ -411,7 +415,10 @@ export function closePane(id) {
   schedulePersist();
 }
 
-export function focusPane(id) {
+/** `opts.hover` is focus-follows-pointer (pane-hover-focus.js): the
+ *  pane takes the keyboard but keeps its place in the stack, and leaves
+ *  no History breadcrumb — a pointer crossing the window isn't an act. */
+export function focusPane(id, opts = {}) {
   // Ratchet locks all panes — clicking into one shouldn't unlock the
   // editor and let the user write outside the ratcheted document.
   if (appState?.ratchetMode) return;
@@ -428,9 +435,9 @@ export function focusPane(id) {
   setActivePaneId(id);
   const pane = panes.get(id);
   if (!pane) return;
-  if (!wasActive) emitPaneActivity("focused", pane);
+  if (!wasActive && !opts.hover) emitPaneActivity("focused", pane);
   pane.el.classList.add("active");
-  pane.el.style.zIndex = zForPane(pane);
+  if (!opts.hover) pane.el.style.zIndex = zForPane(pane);
   // Skip the notebook notify when the pane was already active — every
   // notify("tool") rebuilds the shelf, eating the click on shelf rows
   // because pointerdown fires this on every press.

@@ -60,7 +60,7 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
       display: "flex",
       alignItems: "center",
       gap: "8px",
-      zIndex: "120",
+      zIndex: "86", // toolbar band — under floating panes (90)
     },
   });
 

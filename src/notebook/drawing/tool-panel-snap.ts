@@ -38,7 +38,7 @@ export function createSnapZones(state: DrawingState, bottomToolbar: HTMLElement)
       background: "rgba(66, 153, 225, 0.18)",
       border: "2px dashed rgba(66, 153, 225, 0.65)",
       pointerEvents: "none",
-      zIndex: "99",
+      zIndex: "84",
       transition: "background 80ms",
     } as Partial<CSSStyleDeclaration>);
     return z;

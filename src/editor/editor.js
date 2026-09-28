@@ -37,6 +37,7 @@ import { instanceHighlightField } from "./select-instance-highlight.js";
 import { createMultiLineCommentPlugin, createCommentAfterPlugin } from "./comment-plugins.js";
 import { createCommentAnchorPlugin } from "./plugins/comment-anchors.js";
 import { createImagePasteExtension } from "./image-paste.js";
+import { caretFollowPlugin } from "./caret-follow.js";
 import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js";
 import { createGrammarCheckPlugin, createGrammarHoverTooltip } from "./plugins/grammar-check.js";
 import { createSpellcheckPlugin, spellcheckClickHandler } from "./plugins/spellcheck.js";
@@ -323,6 +324,7 @@ export function createEditor(container, state) {
       // HTML path would convert that to nothing and swallow the event.
       Prec.high(createImagePasteExtension(state)),
       createGoogleDocsPasteExtension(),
+      caretFollowPlugin,
       headingIndentPlugin,
       findHighlightField,
       instanceHighlightField,

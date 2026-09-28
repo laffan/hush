@@ -163,6 +163,22 @@ async function init() {
       if (grip) grip.click();
       return;
     }
+    // A focused docked pane owns the shortcut: its own sidebar — the
+    // Overview for a doc, the shelf for a notebook or a PDF.
+    {
+      const { panes, activePaneId } = await import("./pane/pane-state.js");
+      const ap = activePaneId ? panes.get(activePaneId) : null;
+      if (ap && ap.docked && !ap.gutter) {
+        if (ap.editor?.view) {
+          const { togglePaneOverview } = await import("./pane/pane-overview.js");
+          if (togglePaneOverview(ap, state)) return;
+        } else if (ap.pdfViewer?.toggleShelf) { ap.pdfViewer.toggleShelf(); return; }
+        else {
+          const grip = ap.el?.querySelector(".notebook-shelf button");
+          if (grip) { grip.click(); return; }
+        }
+      }
+    }
     // Stack mode: toggle the active item's sidebar
     if (state.currentStackFileId) {
       import("./stack/stack-bridge.js").then(async ({ getStackInstance }) => {
