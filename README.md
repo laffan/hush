@@ -60,9 +60,9 @@ There is one timer at a time, the same one on every desk and in every window, an
 
 ## Clock
 
-**Toggle clock** in the command palette floats a small analog clock over whatever you're working on: sixty 1px minute marks, an hour hand in the text colour and a minute hand in the heading colour, no numbers. Its face is the window's background colour, so over a document it's just the marks and hands, and over a notebook or a PDF it's a solid disc. It sits above everything except Zen Focus and modal windows. Drag it anywhere; it stays on, and where you put it, across desks and relaunches.
+**Toggle clock** in the command palette floats a small analog clock over whatever you're working on: twelve short 1px marks, one every five minutes, and two 3px hands — the hour hand in the text colour, the minute hand in the heading colour — turning round an empty centre, so they never meet. No numbers. Its face is the window's background colour, so over a document it's just the marks and hands, and over a notebook or a PDF it's a solid disc. It sits above everything except Zen Focus and modal windows. Drag it anywhere; it stays on, and where you put it, across desks and relaunches.
 
-Click a minute mark to set an alarm there. The mark thickens; five minutes before the minute hand reaches it, every line on the clock turns red, and when it arrives they blink a few times and the clock goes back to normal. Click the same mark again to clear it. There is one alarm at a time — clicking another mark moves it.
+Click a mark to set an alarm at that five-minute point. The mark grows to twice the length of the others; five minutes before the minute hand reaches it, every line on the clock turns red, and when it arrives they blink a few times and the clock goes back to normal. Click the same mark again to clear it. There is one alarm at a time — clicking another mark moves it.
 
 ## Organizing
 

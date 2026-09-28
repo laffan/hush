@@ -1,9 +1,9 @@
 /* ===== Wall clock (src/clock/wall-clock.js) =====
    A disc of the window's background colour — so it disappears against a
    document and reads as a solid face over a canvas, a PDF or a stack —
-   holding sixty 1 px minute marks, an hour hand in the text colour and a
-   minute hand in the heading colour. The element's size is set by the
-   script, which owns the geometry. */
+   holding twelve 1 px marks, an hour hand in the text colour and a
+   minute hand in the heading colour. The script owns the geometry: the
+   element's size, every length and the hands' stroke width. */
 .wall-clock {
   --wc-ink: var(--fg);
   --wc-minute: var(--heading-color, var(--wc-ink));
@@ -36,15 +36,16 @@
 }
 
 /* The mark under the pointer, and the one holding the alarm, thicken —
-   the armed one in the minute hand's colour. */
+   the armed one in the minute hand's colour, at twice the others'
+   length (set by the script). */
 .wall-clock .wc-mark.hover,
 .wall-clock .wc-mark.armed { stroke-width: 2; }
 .wall-clock .wc-mark.armed { stroke: var(--wc-minute); }
 
 .wall-clock .wc-hour,
 .wall-clock .wc-minute { stroke-linecap: round; }
-.wall-clock .wc-hour { stroke: var(--wc-ink); stroke-width: 2; }
-.wall-clock .wc-minute { stroke: var(--wc-minute); stroke-width: 1.5; }
+.wall-clock .wc-hour { stroke: var(--wc-ink); }
+.wall-clock .wc-minute { stroke: var(--wc-minute); }
 
 /* Five minutes before the alarm every line turns red… */
 .wall-clock.alarm-soon {

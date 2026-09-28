@@ -1,19 +1,20 @@
 /**
  * Wall clock — an analog clock floating over every surface, switched on
- * and off from the palette ("Toggle clock"). Sixty 1 px minute marks, an
- * hour hand in the text colour and a minute hand in the heading colour,
- * on a disc of the window's background: invisible against a document, a
- * solid face over a canvas or a PDF. No numbers. It sits above
- * everything but Zen and the modal band (`--z-clock`).
+ * and off from the palette ("Toggle clock"). Twelve short 1 px marks, one
+ * every five minutes, and two 3 px hands — the hour hand in the text
+ * colour, the minute hand in the heading colour — turning round an empty
+ * centre, on a disc of the window's background: invisible against a
+ * document, a solid face over a canvas or a PDF. No numbers. It sits
+ * above everything but Zen and the modal band (`--z-clock`).
  *
  * Drag it anywhere; the spot is kept with the toggle (clock-store.js),
- * so it survives a desk switch and a relaunch. A click on a minute mark
- * sets the alarm there — the press counts anywhere in a band a few px
- * either side of the marks and resolves to the nearest one by angle, since
- * a 1 px line is no target. Clicking the armed mark again clears it; there
- * is one alarm at a time. Five minutes before the minute hand reaches it,
- * every line turns red; when it does, they blink and the clock goes back
- * to normal.
+ * so it survives a desk switch and a relaunch. A click on a mark sets the
+ * alarm there, and that mark grows to twice the others' length — the
+ * press counts anywhere in a band round the marks and resolves to the
+ * nearest one by angle, since a 1 px line is no target. Clicking the
+ * armed mark again clears it; there is one alarm at a time. Five minutes
+ * before the minute hand reaches it, every line turns red; when it does,
+ * they blink and the clock goes back to normal.
  */
 
 import {
@@ -22,17 +23,23 @@ import {
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-/** Geometry, in CSS px. The marks run from R_IN to R_OUT; the disc
- *  reaches HIT_PAD past them so the band that counts as clicking a mark
- *  is inside the element on both sides. */
-const R_OUT = 64;
-const MARK_LEN = 15;
-const R_IN = R_OUT - MARK_LEN;
-const HIT_PAD = 6;
+/** Geometry, in CSS px — all of it here, none in the stylesheet. The
+ *  marks run inward from the rim at R_OUT, the armed one twice as far;
+ *  the disc reaches HIT_PAD past the rim so the band that counts as
+ *  clicking a mark is inside the element. The hands turn round an empty
+ *  disc HUB_R in radius, so they never meet; their reach is to the end
+ *  of the visible stroke, round cap included. */
+const MARKS = 12;
+const R_OUT = 51;
+const MARK_LEN = 7.5;
+const ALARM_MARK_LEN = 15;
+const HIT_PAD = 5;
 const SIZE = 2 * (R_OUT + HIT_PAD);
 const C = SIZE / 2;
-const MINUTE_HAND = R_IN - 5;
-const HOUR_HAND = 28;
+const HAND_WIDTH = 3;
+const HUB_R = 10;
+const MINUTE_HAND = 40;
+const HOUR_HAND = 26;
 
 /** Pointer travel that makes a press a drag rather than a click. */
 const DRAG_SLOP = 4;
@@ -47,6 +54,17 @@ const EDGE = 4;
 
 const fmt = (n) => n.toFixed(2);
 
+/** Mark `i` runs `len` inward from the rim. */
+function setMarkLength(mark, i, len) {
+  const a = (i * 2 * Math.PI) / MARKS;
+  const sin = Math.sin(a);
+  const cos = Math.cos(a);
+  mark.setAttribute("x1", fmt(C + (R_OUT - len) * sin));
+  mark.setAttribute("y1", fmt(C - (R_OUT - len) * cos));
+  mark.setAttribute("x2", fmt(C + R_OUT * sin));
+  mark.setAttribute("y2", fmt(C - R_OUT * cos));
+}
+
 function buildFace() {
   const el = document.createElement("div");
   el.className = "wall-clock";
@@ -56,26 +74,23 @@ function buildFace() {
   svg.setAttribute("viewBox", `0 0 ${SIZE} ${SIZE}`);
   svg.setAttribute("aria-hidden", "true");
   const marks = [];
-  for (let i = 0; i < 60; i++) {
-    const a = (i * Math.PI) / 30;
-    const sin = Math.sin(a);
-    const cos = Math.cos(a);
+  for (let i = 0; i < MARKS; i++) {
     const mark = document.createElementNS(SVG_NS, "line");
     mark.setAttribute("class", "wc-mark");
-    mark.setAttribute("x1", fmt(C + R_IN * sin));
-    mark.setAttribute("y1", fmt(C - R_IN * cos));
-    mark.setAttribute("x2", fmt(C + R_OUT * sin));
-    mark.setAttribute("y2", fmt(C - R_OUT * cos));
+    setMarkLength(mark, i, MARK_LEN);
     svg.appendChild(mark);
     marks.push(mark);
   }
-  const hand = (cls, len) => {
+  // A round cap reaches half the stroke past each end, so both ends are
+  // pulled in by that much: the stroke spans HUB_R to `reach`.
+  const hand = (cls, reach) => {
     const line = document.createElementNS(SVG_NS, "line");
     line.setAttribute("class", cls);
+    line.setAttribute("stroke-width", HAND_WIDTH);
     line.setAttribute("x1", C);
-    line.setAttribute("y1", C);
+    line.setAttribute("y1", C - HUB_R - HAND_WIDTH / 2);
     line.setAttribute("x2", C);
-    line.setAttribute("y2", C - len);
+    line.setAttribute("y2", C - reach + HAND_WIDTH / 2);
     svg.appendChild(line);
     return line;
   };
@@ -90,7 +105,7 @@ export function initWallClock(state) {
   let key = null;            // the settings the clock was last synced to
   let face = null;
   let tick = null;
-  let press = null;          // { id, x, y, left, top, minute, dragging }
+  let press = null;          // { id, x, y, left, top, mark, dragging }
   let hovered = -1;
   let armed = -1;
   let ringingAt = null;      // the alarm whose blink is running
@@ -184,40 +199,44 @@ export function initWallClock(state) {
     if (getClock(state).alarmAt === at) void setClockAlarm(state, null);
   }
 
-  function setMarkClass(i, cls, on) {
-    if (face && i >= 0) face.marks[i].classList.toggle(cls, on);
+  function setHover(i) {
+    if (i === hovered) return;
+    if (face && hovered >= 0) face.marks[hovered].classList.remove("hover");
+    hovered = i;
+    if (face && hovered >= 0) face.marks[hovered].classList.add("hover");
+    face?.el.classList.toggle("over-mark", i >= 0);
   }
 
-  function setHover(minute) {
-    if (minute === hovered) return;
-    setMarkClass(hovered, "hover", false);
-    hovered = minute;
-    setMarkClass(hovered, "hover", true);
-    face?.el.classList.toggle("over-mark", minute >= 0);
+  /** The armed mark stands out by length as well as colour. */
+  function armMark(i, on) {
+    if (!face || i < 0) return;
+    face.marks[i].classList.toggle("armed", on);
+    setMarkLength(face.marks[i], i, on ? ALARM_MARK_LEN : MARK_LEN);
   }
 
-  /** The minute mark a pointer is on, or -1 outside the band round the
-   *  marks. */
-  function minuteAt(e) {
+  /** The mark a pointer is on, or -1 outside the band round the marks —
+   *  from HIT_PAD inside the armed mark's inner end to HIT_PAD past the
+   *  rim, so the armed mark can be hit anywhere along it. */
+  function markAt(e) {
     const r = face.el.getBoundingClientRect();
     const dx = e.clientX - (r.left + r.width / 2);
     const dy = e.clientY - (r.top + r.height / 2);
     const dist = Math.hypot(dx, dy);
-    if (dist < R_IN - HIT_PAD || dist > R_OUT + HIT_PAD) return -1;
+    if (dist < R_OUT - ALARM_MARK_LEN - HIT_PAD || dist > R_OUT + HIT_PAD) return -1;
     const turn = Math.atan2(dx, -dy) / (2 * Math.PI); // 0 at twelve, clockwise
-    return ((Math.round(turn * 60) % 60) + 60) % 60;
+    return ((Math.round(turn * MARKS) % MARKS) + MARKS) % MARKS;
   }
 
   function onDown(e) {
     if (e.button !== 0 || press) return;
     e.preventDefault();
     const r = face.el.getBoundingClientRect();
-    press = { id: e.pointerId, x: e.clientX, y: e.clientY, left: r.left, top: r.top, minute: minuteAt(e), dragging: false };
+    press = { id: e.pointerId, x: e.clientX, y: e.clientY, left: r.left, top: r.top, mark: markAt(e), dragging: false };
     face.el.setPointerCapture(e.pointerId);
   }
 
   function onMove(e) {
-    if (!press) { setHover(minuteAt(e)); return; }
+    if (!press) { setHover(markAt(e)); return; }
     if (e.pointerId !== press.id) return;
     const dx = e.clientX - press.x;
     const dy = e.clientY - press.y;
@@ -238,13 +257,19 @@ export function initWallClock(state) {
     if (p.dragging) {
       const r = face.el.getBoundingClientRect();
       void moveClock(state, Math.round(r.left), Math.round(r.top));
-    } else if (e.type === "pointerup" && p.minute >= 0) {
-      void setClockAlarm(state, p.minute === armedMinute(getClock(state)) ? null : nextMinuteMark(p.minute));
+    } else if (e.type === "pointerup" && p.mark >= 0) {
+      const minute = p.mark * (60 / MARKS);
+      void setClockAlarm(state, p.mark === armedMark(getClock(state)) ? null : nextMinuteMark(minute));
     }
   }
 
-  function armedMinute(c) {
-    return c.alarmAt == null ? -1 : new Date(c.alarmAt).getMinutes();
+  /** The mark holding the alarm, or -1. An alarm off the five-minute
+   *  grid (set when every minute had a mark) still rings; it just has no
+   *  mark to show it. */
+  function armedMark(c) {
+    if (c.alarmAt == null) return -1;
+    const minute = new Date(c.alarmAt).getMinutes();
+    return minute % (60 / MARKS) === 0 ? minute / (60 / MARKS) : -1;
   }
 
   function sync() {
@@ -257,9 +282,9 @@ export function initWallClock(state) {
     if (!face) mount();
     if (!press?.dragging) place(clock.x, clock.y);
     if (ringingAt != null && clock.alarmAt !== ringingAt) stopRinging();
-    setMarkClass(armed, "armed", false);
-    armed = armedMinute(clock);
-    setMarkClass(armed, "armed", true);
+    armMark(armed, false);
+    armed = armedMark(clock);
+    armMark(armed, true);
     face.el.setAttribute("aria-label", clock.alarmAt == null ? "Clock"
       : `Clock, alarm at ${new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit" }).format(clock.alarmAt)}`);
     render();
