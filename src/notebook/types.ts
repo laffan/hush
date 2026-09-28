@@ -1,6 +1,6 @@
 // === Tools ===
 export type Tool = "select" | "text" | "drag-area" | "brainstorm" | "pen"
-  | "split" | "grab";
+  | "split" | "grab" | "pin";
 
 /** Sub-tool while Tool === "pen" (drawing mode). The top-level `tool`
  *  stays "pen"; `drawingSubTool` picks which pen-mode operation is
@@ -43,6 +43,11 @@ export interface CameraBookmark {
 // === Shapes ===
 export const FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 export const LINE_HEIGHT_RATIO = 1.3;
+
+/** A pin's dot (world px): its radius, and the gap between it and the
+ *  label. The dot sits left of `position` — see pins.ts. */
+export const PIN_RADIUS = 7;
+export const PIN_GAP = 6;
 
 interface ShapeBase {
   id: string;
@@ -172,6 +177,12 @@ export interface TextShape extends ShapeBase {
    *  instead of in world space, so it holds its place while the canvas
    *  pans and zooms under it. */
   outlinePin?: boolean;
+  /** Marks this text shape as a **pin** — a named point a Doc can link
+   *  to (`hush-pin://`). `text` is its name, `color` its colour, and a
+   *  dot is drawn left of the label. A flag for the reason `outline` is
+   *  one; see pins.ts. (Not to be confused with `outlinePin`, which
+   *  pins an outline to the frame.) */
+  pin?: boolean;
   /** Marks this text shape as a persisted gutter header label. Renders
    *  with the faded shadow-header style + horizontal rule above, is
    *  immune to selection / drag / edit, and gets its y position synced

@@ -208,6 +208,7 @@ async function loadNotebookPane(pane) {
   // The pane carves around the window chrome itself — the canvas must
   // not mirror global dock footprints or window safe-area insets.
   canvas.state.paneHosted = true;
+  canvas.state.hostFileId = pane.fileId; // pins build their links from it
   pane.notebook = canvas;
   // A pane that was already docked when this canvas mounted (restore at
   // boot, or a file swapped into a docked pane) needs its chrome inset

@@ -141,6 +141,15 @@ async function openUrl(url, anchor) {
     } catch (e) { console.warn("PDF bookmark link failed:", e); }
     return;
   }
+  // Proofread pins (`hush-pin://<notebookFileId>/<pinId>`) open the
+  // proof at the pin.
+  if (url && url.startsWith("hush-pin://")) {
+    try {
+      const { openPinUrl } = await import("../../notebook/pin-links.js");
+      await openPinUrl(url);
+    } catch (e) { console.warn("Pin link failed:", e); }
+    return;
+  }
   // Zotero deep links get a tooltip menu at the click point — "Open in
   // Zotero" vs "Open in Hush" / "Download to Hush" (see zotero-link-menu).
   if (url && url.startsWith("zotero://")) {

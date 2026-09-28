@@ -72,6 +72,7 @@ import { NotebookSaveGate } from "./notebook-save-gate.js";
 import { perf, mountPerfHud } from "./perf-hud.ts";
 import { loadNotebookSnapshot } from "./notebook-load.js";
 import { computeNotebookSettings } from "./notebook-style-settings.js";
+import { applyPendingPinJump } from "./pin-links.js";
 export { computeNotebookSettings } from "./notebook-style-settings.js";
 
 /** Lifecycle serialization. `openNotebook` (and every other file-open
@@ -204,6 +205,8 @@ async function _mountNotebookImpl(container, fileId, state) {
 
   // Shapes are loaded and the first render is queued — drop the overlay.
   _unmountLoadingOverlay();
+  canvasInstance.state.hostFileId = fileId; // pins build their links from it
+  applyPendingPinJump(fileId, canvasInstance);
 
   _appState = state;
 

@@ -39,6 +39,8 @@ const PATHS: Record<string, string> = {
   "crop": `<path d="M21 18H6V3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 6H18V21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
   // Split — two dashed rules with arrows pushing them apart, the shape
   // of the gesture: cut here, then open the page.
+  "link": `<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
+  "location-pin": `<path d="M12 21s-6.5-5.8-6.5-11a6.5 6.5 0 0 1 13 0c0 5.2-6.5 11-6.5 11z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.5" fill="currentColor"/>`,
   "split": `<path d="M3 9H21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="3 3"/><path d="M3 15H21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="3 3"/><path d="M12 6.5V2.5M12 2.5L10 4.5M12 2.5L14 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 17.5V21.5M12 21.5L10 19.5M12 21.5L14 19.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
   // Grab — two solid rules with arrows closing on the band between
   // them: lift this out and draw the sides together.

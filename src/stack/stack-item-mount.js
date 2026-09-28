@@ -295,6 +295,7 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
     };
 
     const canvas = new NotesCanvas(wrapper, shortcuts);
+    canvas.state.hostFileId = item.fileId; // pins build their links from it
     // A stack column lives inside #stack-container, which already
     // shrinks via the pane-dock CSS vars — mirroring the global dock
     // footprints here would double-apply them.

@@ -9,6 +9,11 @@ export async function openExternalUrl(url: string, anchor?: { x: number; y: numb
     const hook = (window as unknown as { __hushOpenPdfBookmark?: (u: string) => void }).__hushOpenPdfBookmark;
     if (typeof hook === "function") { hook(url); return; }
   }
+  // Proofread pin links — same route, the app's `pin-links.js`.
+  if (url.startsWith("hush-pin://")) {
+    const hook = (window as unknown as { __hushOpenPin?: (u: string) => void }).__hushOpenPin;
+    if (typeof hook === "function") { hook(url); return; }
+  }
   // Zotero deep links open the "Open in Zotero" / "Open in Hush" tooltip
   // menu at the click point (registered by zotero-link-menu.js).
   if (url.startsWith("zotero://")) {

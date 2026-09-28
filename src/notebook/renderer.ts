@@ -13,6 +13,7 @@ import { drawSelectionHighlight, drawGroupHighlight, drawSelectionBox, drawCropO
 import { drawBackground, drawBackgroundImage } from "./renderer-background";
 import type { BackgroundImageConfig } from "./renderer-background";
 import { drawSplitChrome } from "./renderer-splits";
+import { drawPinDot } from "./pins";
 import type { SplitRenderState } from "./renderer-splits";
 import type { FlowchartLayer } from "./flowchart";
 
@@ -277,7 +278,10 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       // the canvas — it is drawn at 1:1 in the screen-space pass below.
       if (shape.type === "text" && shape.outline && shape.outlinePin) return;
       if (shape.type === "text" && shape.outline) drawOutlineShape(ctx, shape, theme, false, state.flagColors);
-      else if (shape.type === "text") drawTextShape(ctx, shape, theme, state.fontFamily, false, state.flagColors);
+      else if (shape.type === "text") {
+        drawTextShape(ctx, shape, theme, state.fontFamily, false, state.flagColors);
+        if (shape.pin) drawPinDot(ctx, shape, theme.foreground, theme.canvasBackground);
+      }
       // Every file thumbnail casts the same subtle drop shadow, so a
       // Desktop reads as cards laid on a surface (stacked piles get it
       // for free — each member is a thumbnail).
@@ -530,7 +534,10 @@ function drawPinnedOutline(
 // Reorder-preview ghost — paints a clone via main-pass draw fns; strokes fall back to a polyline.
 function drawGhostShape(ctx: CanvasRenderingContext2D, s: Shape, state: RenderState, theme: CanvasTheme): void {
   if (s.type === "text" && s.outline) drawOutlineShape(ctx, s, theme, false, state.flagColors);
-  else if (s.type === "text") drawTextShape(ctx, s, theme, state.fontFamily, false, state.flagColors);
+  else if (s.type === "text") {
+    drawTextShape(ctx, s, theme, state.fontFamily, false, state.flagColors);
+    if (s.pin) drawPinDot(ctx, s, theme.foreground, theme.canvasBackground);
+  }
   else if (s.type === "image") drawImageShape(ctx, s, state.imageCache, false, theme);
   else if (s.type === "drag-area") drawDragArea(ctx, s);
   else if (s.type === "draw") drawStroke(ctx, s.points, s.color || theme.foreground, 3);
@@ -1361,7 +1368,10 @@ function drawPocketEntries(
     for (const shape of entry.shapes) {
       if (shape.type === "drag-area") continue;
       if (shape.type === "text" && shape.outline) drawOutlineShape(ctx, shape, theme, false, flagColors);
-      else if (shape.type === "text") drawTextShape(ctx, shape, theme, fontFamily, false, flagColors);
+      else if (shape.type === "text") {
+        drawTextShape(ctx, shape, theme, fontFamily, false, flagColors);
+        if (shape.pin) drawPinDot(ctx, shape, theme.foreground, theme.canvasBackground);
+      }
       else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, false);
       // DrawShapes are handled in one pass below — we blit the whole
       // group's world bbox from the done canvas at once instead of

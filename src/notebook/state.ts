@@ -43,6 +43,7 @@ import {
 } from "./state-splits";
 // PERF-HUD (temporary): tracer singleton — see perf-hud.ts.
 import { perf } from "./perf-hud";
+import { placePin } from "./pins";
 
 /**
  * A pinned outline is drawn against the frame, not the canvas, so its
@@ -293,6 +294,10 @@ export class DrawingState extends EventTarget {
    *  absorb its *own* height and push its toolbar to the ceiling) and
    *  must not apply window safe-area insets — its edges are interior. */
   paneHosted = false;
+  /** The notebook file this canvas shows, set by whoever mounts it (the
+   *  bridge, a pane). Pins build their `hush-pin://` links from it; null
+   *  on surfaces with no file of their own (a Desktop). */
+  hostFileId: string | null = null;
   /** Height of the host's own chrome overlapping the top of the canvas
    *  box, in px. Non-zero only for a docked pane on iPad, whose title
    *  bar floats as a pill *over* the content rather than sitting above
@@ -1546,7 +1551,7 @@ export class DrawingState extends EventTarget {
       }
     }
 
-    const willEditText = this.tool === "text" && !this.brainstormMode;
+    const willEditText = (this.tool === "text" || this.tool === "pin") && !this.brainstormMode;
     if (!willEditText) canvas.setPointerCapture(e.pointerId);
 
     // Exit crop mode when clicking outside the cropping image (unless clicking its handles)
@@ -1583,7 +1588,9 @@ export class DrawingState extends EventTarget {
       return;
     }
 
-    if (this.tool === "text" && !this.brainstormMode) {
+    if (this.tool === "pin") {
+      placePin(this, canvasPt);
+    } else if (this.tool === "text" && !this.brainstormMode) {
       // Text tool (not brainstorm — brainstorm has its own input widget)
       const hit = findShapeAtPoint(canvasPt, this._interactableShapes(), this.fontFamily);
       if (hit && hit.type === "text") {
@@ -3653,6 +3660,9 @@ export class DrawingState extends EventTarget {
    *  inset so paste / addTextShapeAtCenter land at the *visible* centre,
    *  not the geometric centre of the canvas element. Falls back to
    *  window centre when the canvas isn't yet laid out (rect 0×0). */
+  /** Public face of `_visibleScreenCenter`, for pins.ts. */
+  visibleScreenCenter(): Point { return this._visibleScreenCenter(); }
+
   private _visibleScreenCenter(): Point {
     const leftInset = this.leftInset || 0;
     const rightInset = this.rightInset || 0;

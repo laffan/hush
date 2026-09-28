@@ -1,4 +1,4 @@
-import { LINE_HEIGHT_RATIO, FONT_FAMILY, COLOR_PALETTE } from "./types";
+import { LINE_HEIGHT_RATIO, FONT_FAMILY, COLOR_PALETTE, PIN_GAP, PIN_RADIUS } from "./types";
 import type { Bounds, Camera, DragAreaShape, ImageShape, Point, Shape } from "./types";
 import { parseText } from "./markdown";
 import { outlineBounds } from "./outline-shape";
@@ -48,6 +48,15 @@ export function getShapeBounds(shape: Shape, fontFamily?: string): Bounds {
       // user drags, resizes, selects and points an arrow at, so every
       // caller of getShapeBounds has to see the frame.
       if (shape.outline) return outlineBounds(shape);
+      // A pin's box takes in the dot left of its label.
+      if (shape.pin) {
+        const b = getTextBounds(shape.position, shape.text, shape.fontSize, shape.width, shape.fontFamily || fontFamily);
+        const cy = shape.position.y + (shape.fontSize * LINE_HEIGHT_RATIO) / 2;
+        return {
+          minX: b.minX - PIN_GAP - 2 * PIN_RADIUS, maxX: b.maxX,
+          minY: Math.min(b.minY, cy - PIN_RADIUS), maxY: Math.max(b.maxY, cy + PIN_RADIUS),
+        };
+      }
       // A shape carrying its own face measures in that face, not the
       // canvas's — otherwise a proof note in Courier wraps against
       // Inter's metrics and its bounds miss the glyphs by a word.

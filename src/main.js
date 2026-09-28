@@ -236,6 +236,8 @@ async function init() {
   import("./pdf/pdf-shelf.js").then(({ initPdfShelf }) => initPdfShelf(state));
   // PDF bookmarks — deep-link navigation + the notebook link-click hook.
   import("./pdf/pdf-bookmarks.js").then(({ initPdfBookmarks }) => initPdfBookmarks(state));
+  // Proofread pins — `hush-pin://` links from Docs and canvases.
+  import("./notebook/pin-links.js").then(({ initPinLinks }) => initPinLinks(state));
   // Zotero link menu — Cmd+click on a zotero:// link offers "Open in
   // Zotero" / "Open in Hush" / "Download to Hush" (+ notebook hook).
   import("./links/zotero-link-menu.js").then(({ initZoteroLinkMenu }) => initZoteroLinkMenu(state));

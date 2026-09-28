@@ -40,6 +40,10 @@ function wantsFollow(update) {
     if (tr.annotation(programmaticChange)) return false;
     if (tr.isUserEvent("select.pointer")) return false;
   }
+  // Select All puts the head at the end of the document, and following
+  // it there would throw the reader to the last page.
+  const sel = update.state.selection.main;
+  if (sel.from === 0 && sel.to === update.state.doc.length && !sel.empty) return false;
   return true;
 }
 

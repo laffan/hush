@@ -8,6 +8,8 @@ import { flashRecognitionNotice, describeRecognitionError } from "../../recognit
 import { h, clearChildren } from "./dom-helpers";
 import { icon } from "./icons";
 import { makeColorsMenu } from "./selection-colors-menu";
+import { pinClipboardText } from "../pins";
+import { writeClipboardText } from "../canvas-paste";
 // PERF-HUD (temporary): tracer singleton — see ../perf-hud.ts.
 import { perf } from "../perf-hud";
 
@@ -479,6 +481,14 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
       }));
       container.appendChild(arrangeWrapper);
       if (savedPopup === "arrange") togglePopup("arrange", arrangeWrapper, () => makeArrangeMenu(dragArea));
+    }
+
+    // Pins: copy their links, to paste into a Doc (⌘C does the same).
+    const pinLinks = pinClipboardText(state);
+    if (pinLinks) {
+      container.appendChild(makeIconBtn("link", selected.length > 1 ? "Copy links" : "Copy link", () => {
+        void writeClipboardText(pinLinks);
+      }));
     }
 
     // Rasterize: bake the whole selection (groups, drag-areas with

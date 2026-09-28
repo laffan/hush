@@ -13,6 +13,7 @@
 import { EditorView } from "@codemirror/view";
 import { isCmdHeld } from "../cmd-button.js";
 import { outlineFromFlowchart } from "../outline/outline-model.ts";
+import { pinMarkdownLink } from "../notebook/pin-link.ts";
 
 let active = null;
 
@@ -250,6 +251,12 @@ export function attachNotebookTextShapeDrag(canvasEl, containerEl, state, helper
         // One parser for both surfaces — see src/outline/outline-model.ts.
         editorText = outlineFromFlowchart(expanded, flow.edges || [], hit.id);
       }
+    }
+
+    // Pins drop into a Doc as their links (pins.ts); a canvas still
+    // takes the shapes.
+    if (!editorText && state.hostFileId && shapes.every((s) => s.pin)) {
+      editorText = shapes.map((s) => pinMarkdownLink(state.hostFileId, s)).join("\n");
     }
 
     e.preventDefault();

@@ -183,9 +183,15 @@ function makeId(prefix, i) {
  * `opts.annotations` is a normalized Zotero annotation list for the
  * source PDF; its marks are baked into the page rasters. Callers that
  * don't have one pass nothing and get clean pages.
+ *
+ * `opts.bookmarks` is the source PDF's bookmark list. Each one on a
+ * chosen page becomes a pin on the notes layer (notebook/pins.ts): a
+ * clip at its point, a whole-page bookmark at the page's top-left
+ * corner — so the places marked while reading are linkable in the proof.
  */
 export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFileId, pageNumbers, opts = {}) {
-  const { onProgress, annotations = [] } = opts;
+  const { onProgress, annotations = [], bookmarks = [] } = opts;
+  const { makePin } = await import("../notebook/pins.ts");
   const pdfjs = await getPdfjs();
   const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise;
   try {
@@ -233,6 +239,16 @@ export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFile
         width: raster.width,
         thumbDataUrl: raster.thumbDataUrl,
       });
+      for (const bm of bookmarks) {
+        if (bm.page !== pageNumber) continue;
+        const clip = Number.isFinite(bm.x) && Number.isFinite(bm.y);
+        const at = clip
+          ? { x: bm.x * raster.width, y: y + bm.y * raster.height }
+          : { x: 24, y: y + 24 };
+        shapes.push(makePin(at, {
+          name: bm.name || `Page ${pageNumber}`, color: bm.color, fontSize: 16, layerId: inkLayerId,
+        }));
+      }
       y += raster.height + PAGE_GAP;
     }
 
@@ -255,6 +271,14 @@ export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFile
   } finally {
     await doc.destroy();
   }
+}
+
+/** The source PDF's bookmarks (clips and whole pages), or none. */
+async function sourceBookmarks(fileId) {
+  try {
+    const { getPdfBookmarks } = await import("../sync/pdf-sync.js");
+    return getPdfBookmarks(fileId) || [];
+  } catch (_) { return []; }
 }
 
 /** Page count without paying for a full render — the page picker needs
@@ -323,7 +347,10 @@ export async function createProofNotebook(state, fileId) {
   try {
     content = await buildProofNotebookContent(
       data, sourceName, fileId, pageNumbers,
-      { onProgress: (done, pageNumber) => progress.step(done, pageNumber), annotations },
+      {
+        onProgress: (done, pageNumber) => progress.step(done, pageNumber), annotations,
+        bookmarks: await sourceBookmarks(fileId),
+      },
     );
   } catch (e) {
     console.error("Create Proofread Notebook: render failed:", e);

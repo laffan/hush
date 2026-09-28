@@ -5,6 +5,7 @@ import {
   fileToDataUrl, getImageDimensions, isImageFile, isTextFile,
 } from "./external-content";
 import { screenToCanvas } from "./utils";
+import { pinClipboardText } from "./pins";
 import {
   handleCanvasPasteEvent, handleCanvasPasteShortcut, isClipboardOwner,
   releasePasteCatcher, writeClipboardText,
@@ -406,6 +407,12 @@ export function bindInputEvents(
     // window, or into Steiner. Cut additionally deletes the source.
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === "c" || e.key === "C" || e.key === "x" || e.key === "X")) {
       if (!isClipboardOwner(state)) return;
+      // Copying pins copies their links, ready to paste into a Doc
+      // (a cut still carries the shapes — a link to a pin being deleted
+      // would lead nowhere).
+      const isCopy = e.key === "c" || e.key === "C";
+      const links = isCopy ? pinClipboardText(state) : null;
+      if (links) { e.preventDefault(); void writeClipboardText(links); return; }
       const payload = state.serializeSelection();
       if (!payload) return;
       e.preventDefault();

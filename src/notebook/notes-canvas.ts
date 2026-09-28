@@ -31,6 +31,7 @@ import type { DrawingLayer } from "./drawing/drawing-layer";
 import { perf } from "./perf-hud";
 import { createDrawingToolPanel } from "./drawing/tool-panel";
 import { createBgSettingsFixedButton } from "./ui/bg-settings-fixed-button";
+import { pinClipboardText } from "./pins";
 
 /** Read the user's flag-colour map from Hush settings. Notebook text
  *  shapes mirror Docs by colouring `==FLAG==` highlights with the flag's
@@ -358,7 +359,7 @@ export class NotesCanvas {
       select: "default", text: "text", "drag-area": "crosshair", brainstorm: "text",
       // Split and Grab paint their own full-width rule under the
       // pointer, so the cursor gets out of its way.
-      split: "crosshair", grab: "crosshair",
+      split: "crosshair", grab: "crosshair", pin: "crosshair",
     };
     this.state.addEventListener("change", () => {
       // Brainstorm mode behaves like select on the canvas — keep the default cursor instead of the text I-beam.
@@ -1058,6 +1059,12 @@ export class NotesCanvas {
    * Cmd+C handler in input-handler.ts is a backstop with the same payload.
    */
   handleCopy(e: ClipboardEvent): boolean {
+    const links = pinClipboardText(this.state);
+    if (links && e.clipboardData) {
+      e.clipboardData.setData("text/plain", links);
+      e.preventDefault();
+      return true;
+    }
     const json = this.state.serializeSelection();
     if (!json) return false;
     if (!e.clipboardData) return false;

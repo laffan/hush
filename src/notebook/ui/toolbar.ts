@@ -39,6 +39,9 @@ const TOOLS: ToolDef[] = [
   // the content tools and before the drawing divider.
   { iconName: "split", label: "Split", tool: "split", shortcut: "S" },
   { iconName: "grab-tool", label: "Grab", tool: "grab", shortcut: "G" },
+  // Proofread notebooks only (hidden elsewhere in update()): drop a
+  // named point a Doc can link to — see pins.ts.
+  { iconName: "location-pin", label: "Pin", tool: "pin", shortcut: "" },
 ];
 
 const EDGE_PAD = 20;
@@ -48,7 +51,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
 
   function makeBtn(def: ToolDef): HTMLButtonElement {
     const btn = h("button", {
-      title: `${def.label} (${def.shortcut})`,
+      title: def.shortcut ? `${def.label} (${def.shortcut})` : def.label,
       style: { width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderRadius: "8px", cursor: "pointer", background: "transparent", transition: "all 0.15s" },
       children: [icon(def.iconName, 20)],
       onClick: () => {
@@ -225,6 +228,10 @@ export function createToolbar(state: DrawingState): HTMLElement {
     const accent = theme.accent;
 
     for (const [key, btn] of buttons) {
+      if (key === "pin") {
+        const show = !!state.proof;
+        if ((btn.style.display === "none") === show) btn.style.display = show ? "flex" : "none";
+      }
       let active: boolean;
       if (key === "brainstorm") {
         active = state.brainstormMode;
