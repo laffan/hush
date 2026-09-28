@@ -5,16 +5,16 @@
  * colour, the minute hand in the heading colour — turning round an empty
  * centre, on a disc of the window's background: invisible against a
  * document, a solid face over a canvas or a PDF. No numbers. It sits
- * above everything but Zen and the modal band (`--z-clock`).
+ * over the document, panes included, and under the sidebars (`--z-clock`).
  *
  * Drag it anywhere; the spot is kept with the toggle (clock-store.js),
  * so it survives a desk switch and a relaunch. A click on a mark sets the
- * alarm there, and that mark grows to twice the others' length — the
- * press counts anywhere in a band round the marks and resolves to the
- * nearest one by angle, since a 1 px line is no target. Clicking the
- * armed mark again clears it; there is one alarm at a time. Five minutes
- * before the minute hand reaches it, every line turns red; when it does,
- * they blink and the clock goes back to normal.
+ * alarm there, and that mark grows to twice the others' length and the
+ * hands' width — the press counts anywhere in a band round the marks and
+ * resolves to the nearest one by angle, since a 1 px line is no target.
+ * Clicking the armed mark again clears it; there is one alarm at a time.
+ * Five minutes before the minute hand reaches it, every line turns red;
+ * when it does, they blink and the clock goes back to normal.
  */
 
 import {
@@ -30,16 +30,16 @@ const SVG_NS = "http://www.w3.org/2000/svg";
  *  disc HUB_R in radius, so they never meet; their reach is to the end
  *  of the visible stroke, round cap included. */
 const MARKS = 12;
-const R_OUT = 51;
-const MARK_LEN = 7.5;
-const ALARM_MARK_LEN = 15;
-const HIT_PAD = 5;
+const R_OUT = 25.5;
+const MARK_LEN = 3.75;
+const ALARM_MARK_LEN = 7.5;
+const HIT_PAD = 2.5;
 const SIZE = 2 * (R_OUT + HIT_PAD);
 const C = SIZE / 2;
 const HAND_WIDTH = 3;
-const HUB_R = 10;
-const MINUTE_HAND = 40;
-const HOUR_HAND = 26;
+const HUB_R = 5;
+const MINUTE_HAND = 20;
+const HOUR_HAND = 13;
 
 /** Pointer travel that makes a press a drag rather than a click. */
 const DRAG_SLOP = 4;
@@ -207,11 +207,15 @@ export function initWallClock(state) {
     face?.el.classList.toggle("over-mark", i >= 0);
   }
 
-  /** The armed mark stands out by length as well as colour. */
+  /** The armed mark stands out by length, width and colour: twice the
+   *  others' length, as wide as the hands (inline, so it beats the
+   *  stylesheet's mark width). */
   function armMark(i, on) {
     if (!face || i < 0) return;
-    face.marks[i].classList.toggle("armed", on);
-    setMarkLength(face.marks[i], i, on ? ALARM_MARK_LEN : MARK_LEN);
+    const mark = face.marks[i];
+    mark.classList.toggle("armed", on);
+    mark.style.strokeWidth = on ? `${HAND_WIDTH}px` : "";
+    setMarkLength(mark, i, on ? ALARM_MARK_LEN : MARK_LEN);
   }
 
   /** The mark a pointer is on, or -1 outside the band round the marks —

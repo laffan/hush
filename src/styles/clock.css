@@ -35,11 +35,10 @@
   stroke-width: 1;
 }
 
-/* The mark under the pointer, and the one holding the alarm, thicken —
-   the armed one in the minute hand's colour, at twice the others'
-   length (set by the script). */
-.wall-clock .wc-mark.hover,
-.wall-clock .wc-mark.armed { stroke-width: 2; }
+/* The mark under the pointer thickens. The one holding the alarm takes
+   the minute hand's colour; its length (twice the others') and width
+   (the hands') are set by the script. */
+.wall-clock .wc-mark.hover { stroke-width: 2; }
 .wall-clock .wc-mark.armed { stroke: var(--wc-minute); }
 
 .wall-clock .wc-hour,
