@@ -1,9 +1,9 @@
 /**
  * Wall clock — an analog clock floating over every surface, switched on
  * and off from the palette ("Toggle clock"). Twelve short 1 px marks, one
- * every five minutes, and two 3 px hands — the hour hand in the text
- * colour, the minute hand in the heading colour — turning round an empty
- * centre, on a disc of the window's background: invisible against a
+ * every five minutes, and two 2 px hands — the hour hand in the text
+ * colour, the minute hand in the heading colour — meeting at the centre,
+ * on a disc of the window's background: invisible against a
  * document, a solid face over a canvas or a PDF. No numbers. It sits
  * over the document, panes included, and under the sidebars (`--z-clock`).
  *
@@ -26,18 +26,16 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 /** Geometry, in CSS px — all of it here, none in the stylesheet. The
  *  marks run inward from the rim at R_OUT, the armed one twice as far;
  *  the disc reaches HIT_PAD past the rim so the band that counts as
- *  clicking a mark is inside the element. The hands turn round an empty
- *  disc HUB_R in radius, so they never meet; their reach is to the end
- *  of the visible stroke, round cap included. */
+ *  clicking a mark is inside the element. A hand's reach is to the end
+ *  of its visible stroke, round cap included. */
 const MARKS = 12;
 const R_OUT = 25.5;
-const MARK_LEN = 3.75;
+const MARK_LEN = 4.5;
 const ALARM_MARK_LEN = 7.5;
 const HIT_PAD = 2.5;
 const SIZE = 2 * (R_OUT + HIT_PAD);
 const C = SIZE / 2;
-const HAND_WIDTH = 3;
-const HUB_R = 5;
+const HAND_WIDTH = 2;
 const MINUTE_HAND = 20;
 const HOUR_HAND = 13;
 
@@ -81,14 +79,15 @@ function buildFace() {
     svg.appendChild(mark);
     marks.push(mark);
   }
-  // A round cap reaches half the stroke past each end, so both ends are
-  // pulled in by that much: the stroke spans HUB_R to `reach`.
+  // Both hands start on the centre, where their round caps overlap into
+  // one pivot; the tip is pulled in by half the stroke, which is how far
+  // a round cap reaches past it, so the stroke ends at `reach`.
   const hand = (cls, reach) => {
     const line = document.createElementNS(SVG_NS, "line");
     line.setAttribute("class", cls);
     line.setAttribute("stroke-width", HAND_WIDTH);
     line.setAttribute("x1", C);
-    line.setAttribute("y1", C - HUB_R - HAND_WIDTH / 2);
+    line.setAttribute("y1", C);
     line.setAttribute("x2", C);
     line.setAttribute("y2", C - reach + HAND_WIDTH / 2);
     svg.appendChild(line);
