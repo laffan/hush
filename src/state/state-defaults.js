@@ -100,6 +100,9 @@ export function createDefaultSettings() {
     // last: { hours, minutes, breakEvery } }` (see src/timer/timer-store.js).
     // One timer at a time, shared by every desk.
     timer: null,
+    // Wall clock: `{ visible, x, y, alarmAt }` (see src/clock/clock-store.js).
+    // App-wide, so the toggle and position hold across desks.
+    clock: null,
     // YOU ARE HERE marker registry — one `{ fileId, fileType, shapeId?,
     // offset? }` entry per desk id (see src/you-are-here.js).
     youAreHere: {},

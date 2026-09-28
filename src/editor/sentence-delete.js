@@ -10,11 +10,31 @@
  * when the sentence was followed by more text, the whitespace before it
  * when it was the last on its line (trailing spaces, a markdown hard
  * break, are left where they are).
+ *
+ * A caret inside a parenthetical takes the parenthetical first, the way
+ * ⌘L selects it first (sentence-parenthetical.js): "He left (tired) and
+ * slept." reads "He left and slept.", and the next press takes that.
  */
 import { EditorSelection } from "@codemirror/state";
 import {
   getLine, posToOffset, offsetToPos, findSentenceStart, findSentenceEnd, sentenceEndingAt,
 } from "./sentence-core.js";
+import { parentheticalAt } from "./sentence-parenthetical.js";
+
+/** A parenthetical plus the one run of spaces that would otherwise be
+ *  left doubled: the space before it, unless it starts the line's text
+ *  (then the space after it) or butts against a word after it
+ *  ("left (tired)and" keeps its space). */
+function parentheticalDeletion(paren) {
+  const { line } = paren;
+  let { from, to } = paren;
+  const before = line.text.slice(0, from - line.from);
+  const after = line.text.slice(to - line.from);
+  const lead = before.match(/[ \t]*$/)[0].length;
+  if (lead === before.length) to += after.match(/^[ \t]*/)[0].length;
+  else if (lead && !/^[\p{L}\p{N}]/u.test(after)) from -= lead;
+  return { from, to };
+}
 
 /** The sentence under a bare caret, as offsets — the range `selectSentence`
  *  selects when there is no selection. */
@@ -49,6 +69,13 @@ export function deleteSentence(view) {
   const sel = state.selection.main;
   if (!sel.empty) {
     view.dispatch({ changes: { from: sel.from, to: sel.to }, selection: EditorSelection.cursor(sel.from), userEvent: "delete" });
+    return true;
+  }
+
+  const paren = parentheticalAt(doc, sel.head);
+  if (paren) {
+    const cut = parentheticalDeletion(paren);
+    view.dispatch({ changes: cut, selection: EditorSelection.cursor(cut.from), userEvent: "delete", scrollIntoView: true });
     return true;
   }
 

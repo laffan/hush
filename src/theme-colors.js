@@ -9,8 +9,9 @@ import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 // On iOS WKWebView these do not repaint reliably when the app regains
 // focus, so `updatePrivateBoxColor` force-refreshes each with an inline
 // background. The left files sidebar's main panel and its grip strip,
-// plus the right-side outline / comments / PDF-shelf panels.
-const THEME_BG_SURFACES = "#panel-overlay, .sidebar-grip, #right-panel-overlay, #comments-panel, .pdf-shelf-view";
+// the right-side outline / comments / PDF-shelf panels, and the wall
+// clock's face.
+const THEME_BG_SURFACES = "#panel-overlay, .sidebar-grip, #right-panel-overlay, #comments-panel, .pdf-shelf-view, .wall-clock";
 
 export const fontFallbacks = {
   "Helvetica": "'Helvetica Neue', 'Helvetica', 'Arial', sans-serif",

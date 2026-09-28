@@ -22,13 +22,14 @@ import { openSettingsWindow } from "../settings/settings-ui.js";
 import { openFindReplace, openQuickFindBar, findNext, findPrev } from "./find-replace.js";
 import { toggleCommandPalette } from "../command-palette.js";
 import {
-  selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence,
+  reduceSentenceSelection, shiftSelectionToNextSentence,
   shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack,
   deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence,
   jumpToPrevParagraph, jumpToNextParagraph, joinLines, joinLinesUp, selectParagraph,
   selectToParagraphAbove, selectToParagraphBelow, insertBreakAfter, insertBreakBefore,
 } from "./sentence-navigator.js";
 import { deleteSentence } from "./sentence-delete.js";
+import { selectSentenceOrParenthetical } from "./sentence-parenthetical.js";
 import {
   toggleBold, toggleItalic, toggleHighlight, toggleComment, toggleStrikethrough,
 } from "./formatting.js";
@@ -286,7 +287,7 @@ export function buildEditorCommands() {
     },
 
     // ===== Editing =====
-    shortcutSelectSentence: (_state, view) => (view ? selectSentence(view) : false),
+    shortcutSelectSentence: (_state, view) => (view ? selectSentenceOrParenthetical(view) : false),
     shortcutSelectParagraph: (_state, view) => (view ? selectParagraph(view) : false),
     shortcutSelectParagraphUp: (_state, view) => (view ? selectToParagraphAbove(view) : false),
     shortcutSelectParagraphDown: (_state, view) => (view ? selectToParagraphBelow(view) : false),

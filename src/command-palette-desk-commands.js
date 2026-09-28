@@ -1,5 +1,5 @@
 /**
- * Desk-scoped (and cross-desk: Courier, the focus timer) command palette entries — split out of
+ * Desk-scoped (and cross-desk: Courier, the focus timer, the wall clock) command palette entries — split out of
  * `command-palette-commands.js` to keep that file under the 700-line cap.
  *
  * `buildDeskCommands(ctx)` returns the same command descriptors
@@ -12,9 +12,12 @@
 import { getDeskRatchet } from "./state/state-desks.js";
 import { toggleDeskRatchet } from "./state/state-modes.js";
 import { getTimer, isTimerRunning, deleteTimer } from "./timer/timer-store.js";
+import { toggleClock } from "./clock/clock-store.js";
 
 // Stopwatch — a round face with a crown and a single hand.
 const timerIcon = `<svg viewBox="0 0 24 24"><circle cx="12" cy="13.5" r="7.5"/><path d="M10 3 H14 M12 3 V6 M12 13.5 V9.5 M17.8 7.7 L19.3 6.2"/></svg>`;
+// Wall clock — a plain face with two hands.
+const clockIcon = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7 V12 L15.5 14"/></svg>`;
 
 export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, enterDeskPicker, currentFileTreeNodeId }) {
   const multiDesk = (s) => (s.settings?.desks || []).length >= 2;
@@ -153,6 +156,11 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
       keywords: "stop cancel clear focus pomodoro countdown",
       hiddenIf: (s) => !getTimer(s),
       action: (s) => deleteTimer(s) },
+    // The wall clock is app-wide, like the timer: the toggle outlives a
+    // desk switch (clock/clock-store.js).
+    { id: "clock-toggle", section: "View", label: "Toggle clock", icon: clockIcon, shortcutKey: null, ctx: "shared",
+      keywords: "wall analog time alarm show hide",
+      action: (s) => toggleClock(s) },
     { id: "desk-archives", section: "Desks", label: "View archived desks", icon: icons.desk, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const m = await import("./sidebar/desk-archive.js");

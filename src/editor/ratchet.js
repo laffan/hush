@@ -4,7 +4,9 @@
  *   - **Timed Ratchet** (`state.ratchetMode`) — a session with an end
  *     time, started from the palette's duration grid. Deletion,
  *     selection, the mouse, and every navigation key are dead until the
- *     clock runs out.
+ *     clock runs out. Its **Untimed** entry is the same session with no
+ *     end time (`ratchetEndTime` null), which runs until the End Ratchet
+ *     Mode button in the countdown's slot is pressed.
  *   - **Desk Ratchet** (`desksMeta[deskId].ratchet`) — the same premise
  *     with no end time: every Doc in the desk is forward-only until the
  *     user turns it off, across sessions. Notebooks are a canvas, not a

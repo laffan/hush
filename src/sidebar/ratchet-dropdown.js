@@ -23,11 +23,13 @@ export function showRatchetDropdownCentered(state, onStart) {
 
   const grid = document.createElement("div");
   grid.className = "ratchet-duration-grid";
-  const durations = [5, 10, 15, 20, 25, 30, 45, 60];
+  // Untimed runs until it is ended by hand — the timer's slot holds an
+  // "End Ratchet Mode" button instead of a countdown (editor/modes.js).
+  const durations = [null, 5, 10, 15, 20, 25, 30, 45, 60];
   durations.forEach((min) => {
     const opt = document.createElement("div");
-    opt.className = "ratchet-option";
-    opt.textContent = min === 60 ? "1 hr" : `${min} min`;
+    opt.className = min == null ? "ratchet-option ratchet-option-untimed" : "ratchet-option";
+    opt.textContent = min == null ? "Untimed" : min === 60 ? "1 hr" : `${min} min`;
     opt.addEventListener("click", () => {
       state.startRatchet(min);
       dropdown.remove();

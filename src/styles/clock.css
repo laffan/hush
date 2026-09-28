@@ -1,0 +1,63 @@
+/* ===== Wall clock (src/clock/wall-clock.js) =====
+   A disc of the window's background colour — so it disappears against a
+   document and reads as a solid face over a canvas, a PDF or a stack —
+   holding sixty 1 px minute marks, an hour hand in the text colour and a
+   minute hand in the heading colour. The element's size is set by the
+   script, which owns the geometry. */
+.wall-clock {
+  --wc-ink: var(--fg);
+  --wc-minute: var(--heading-color, var(--wc-ink));
+  --wc-alarm-red: #d2453b;
+  position: fixed;
+  top: calc(var(--top-chrome-inset, 0px) + 44px);
+  right: 24px;
+  border-radius: 50%;
+  background: var(--theme-bg, var(--bg));
+  z-index: var(--z-clock);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.wall-clock.over-mark { cursor: pointer; }
+.wall-clock.dragging { cursor: grabbing; }
+
+.wall-clock svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.wall-clock .wc-mark {
+  stroke: var(--wc-ink);
+  stroke-width: 1;
+}
+
+/* The mark under the pointer, and the one holding the alarm, thicken —
+   the armed one in the minute hand's colour. */
+.wall-clock .wc-mark.hover,
+.wall-clock .wc-mark.armed { stroke-width: 2; }
+.wall-clock .wc-mark.armed { stroke: var(--wc-minute); }
+
+.wall-clock .wc-hour,
+.wall-clock .wc-minute { stroke-linecap: round; }
+.wall-clock .wc-hour { stroke: var(--wc-ink); stroke-width: 2; }
+.wall-clock .wc-minute { stroke: var(--wc-minute); stroke-width: 1.5; }
+
+/* Five minutes before the alarm every line turns red… */
+.wall-clock.alarm-soon {
+  --wc-ink: var(--wc-alarm-red);
+  --wc-minute: var(--wc-alarm-red);
+}
+
+/* …and on the minute they blink: 4 × 600 ms, BLINKS × BLINK_MS in
+   wall-clock.js, which clears the alarm when the last one ends. */
+.wall-clock.alarm-ringing svg {
+  animation: wall-clock-blink 600ms steps(1, end) 4;
+}
+
+@keyframes wall-clock-blink {
+  50% { opacity: 0; }
+}

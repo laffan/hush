@@ -279,7 +279,10 @@ export class AppState {
 
     // Check for active ratchet timer
     const ratchetEnd = localStorage.getItem("hush_ratchet_end");
-    if (ratchetEnd) {
+    if (ratchetEnd === _modes.RATCHET_UNTIMED) {
+      this.ratchetEndTime = null;
+      this.ratchetMode = true;
+    } else if (ratchetEnd) {
       const endTime = parseInt(ratchetEnd, 10);
       if (Date.now() < endTime) {
         this.ratchetEndTime = endTime;

@@ -232,6 +232,8 @@ async function init() {
   revealApp(state);
   // Sticky notes — temporary reminders floating above every surface.
   import("./sticky/sticky-notes.js").then(({ initStickyNotes }) => initStickyNotes(state));
+  // Wall clock — "Toggle clock"; mounts only while switched on.
+  import("./clock/wall-clock.js").then(({ initWallClock }) => initWallClock(state));
   // YOU ARE HERE — one marker per desk; save-pipeline detection +
   // one-per-desk enforcement (see src/you-are-here.js).
   import("./you-are-here.js").then(({ initYouAreHere }) => initYouAreHere(state));

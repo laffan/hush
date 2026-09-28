@@ -433,11 +433,35 @@ export function updateColumnResizers(state) {
   installMoverDrag(moverRight);
 }
 
-export function updateRatchetTimer(state) {
-  let timerEl = document.querySelector(".ratchet-timer");
+/** The countdown's pending tick. `mode-changed` fires for every mode, and
+ *  each call here would otherwise start a second chain beside the first. */
+let ratchetTick = null;
 
-  if (!state.ratchetMode) {
+export function updateRatchetTimer(state) {
+  clearTimeout(ratchetTick);
+  ratchetTick = null;
+  let timerEl = document.querySelector(".ratchet-timer");
+  const untimed = state.ratchetMode && !state.ratchetEndTime;
+
+  if (!state.ratchetMode || (timerEl && timerEl.classList.contains("untimed") !== untimed)) {
     if (timerEl) timerEl.remove();
+    timerEl = null;
+    if (!state.ratchetMode) return;
+  }
+
+  // Untimed: no clock to count down, so the slot holds the way out.
+  if (untimed) {
+    if (timerEl) return;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ratchet-timer untimed";
+    btn.textContent = "End Ratchet Mode";
+    // Keep the caret in the editor: the press must not take focus (WebKit
+    // sends `mousedown` even when `pointerdown` is cancelled).
+    btn.addEventListener("pointerdown", (e) => e.preventDefault());
+    btn.addEventListener("mousedown", (e) => e.preventDefault());
+    btn.addEventListener("click", () => state.stopRatchet());
+    document.body.appendChild(btn);
     return;
   }
 
@@ -448,6 +472,7 @@ export function updateRatchetTimer(state) {
   }
 
   function tick() {
+    ratchetTick = null;
     if (!state.ratchetMode || !state.ratchetEndTime) {
       timerEl.remove();
       return;
@@ -464,7 +489,7 @@ export function updateRatchetTimer(state) {
     // The display only changes once per second, so wake exactly on the
     // next second boundary instead of burning a 60 fps rAF loop on a
     // clock. Aligning to the boundary keeps the countdown visually crisp.
-    setTimeout(tick, remaining % 1000 || 1000);
+    ratchetTick = setTimeout(tick, remaining % 1000 || 1000);
   }
 
   tick();

@@ -20,13 +20,18 @@ export async function toggleDeskRatchet(state) {
   return next;
 }
 
+/** `minutes == null` starts an untimed session: no end time, and it runs
+ *  (across reloads too) until `stopRatchet`. */
 export function startRatchet(state, minutes) {
-  const endTime = Date.now() + minutes * 60 * 1000;
+  const endTime = minutes == null ? null : Date.now() + minutes * 60 * 1000;
   state.ratchetEndTime = endTime;
   state.ratchetMode = true;
-  localStorage.setItem("hush_ratchet_end", endTime.toString());
+  localStorage.setItem("hush_ratchet_end", endTime == null ? RATCHET_UNTIMED : endTime.toString());
   state.emit("mode-changed");
 }
+
+/** What `hush_ratchet_end` holds for an untimed session. */
+export const RATCHET_UNTIMED = "untimed";
 
 export function stopRatchet(state) {
   state.ratchetMode = false;

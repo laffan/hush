@@ -79,9 +79,11 @@ export function initPaneManager(state) {
   getNotebookBridge().catch(() => {});
   // Zen Focus reparents the editor out of `.floating-pane`, so the
   // overlay is whitelisted — otherwise every Zen click would deactivate.
+  // The wall clock keeps the caret where it is, so it leaves the pane
+  // being written in live too.
   window.addEventListener("pointerdown", (e) => {
     if (!activePaneId) return;
-    if (e.target instanceof Element && e.target.closest(".floating-pane")) return;
+    if (e.target instanceof Element && e.target.closest(".floating-pane, .wall-clock")) return;
     if (document.body.classList.contains("zen-focus-active")) return;
     saveAllPanes();
     deactivateAllPanes();

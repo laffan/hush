@@ -62,7 +62,9 @@
    *   --z-sticky         sticky notes — above all content chrome
    *                      (panes, shelf, sidebar), below overlays/modals
    *   --z-overlay        transient inline overlays (find/replace, action sheets)
-   *   --z-zen            the Zen Focus overlay — covers every piece of
+   *   --z-clock          the wall clock — over every surface and its
+   *                      chrome, under Zen and the popover / modal bands
+   *   --z-zen           the Zen Focus overlay — covers every piece of
    *                      app chrome, but sits under the popover and modal
    *                      bands so the palette, Settings and the style
    *                      editor (and anything the palette opens) come up
@@ -86,6 +88,7 @@
   --z-sidebar: 200;
   --z-sticky: 250;
   --z-overlay: 300;
+  --z-clock: 380;
   --z-zen: 390;
   --z-popover: 400;
   --z-modal: 500;

@@ -53,6 +53,11 @@
   background: rgba(128, 128, 128, 0.2);
 }
 
+/* Untimed spans both columns, above the durations. */
+.ratchet-dropdown .ratchet-option-untimed {
+  grid-column: 1 / -1;
+}
+
 /* Ratchet active state — typewriter-like scrolling, current line centered */
 
 /* Centered variant (launched from command palette) */
@@ -78,6 +83,20 @@
   border-radius: 6px;
   z-index: var(--z-modal-top);
   opacity: 0.6;
+}
+
+/* An untimed session has no countdown; the slot holds the way out. */
+.ratchet-timer.untimed {
+  border: none;
+  margin: 0;
+  cursor: pointer;
+  line-height: inherit;
+  transition: opacity 0.15s ease;
+}
+
+.ratchet-timer.untimed:hover,
+.ratchet-timer.untimed:focus-visible {
+  opacity: 1;
 }
 
 /* Word count pill — occupies the same slot as the ratchet timer when
