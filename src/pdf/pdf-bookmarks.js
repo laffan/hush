@@ -33,6 +33,7 @@ import {
   openBookmarkEditor as openSharedEditor, openBookmarkListPopup as openSharedList,
   refreshBookmarkList, startBookmarkStamp, bookmarkStampKey, endBookmarkStamp,
 } from "../ui/bookmark-ui.js";
+import { setPdfBookmarkLookup, pdfBookmarksChanged } from "../links/bookmark-colors.js";
 
 export { BOOKMARK_ICON, BOOKMARK_COLORS, closeBookmarkPopup };
 
@@ -97,6 +98,9 @@ export function initPdfBookmarks(state) {
   // pattern as __hushOpenWikilink).
   window.__hushOpenPdfBookmark = (url) => { openPdfBookmarkUrl(url); };
   state.on("pdf-bookmarks-changed", onBookmarksChanged);
+  // A Doc's `hush-pdf://` links draw the bookmark's ribbon in its colour.
+  setPdfBookmarkLookup(getPdfBookmarks);
+  state.on("pdf-bookmarks-changed", pdfBookmarksChanged);
 }
 
 // ===== hush-pdf:// links =====

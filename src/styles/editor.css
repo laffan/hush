@@ -746,6 +746,25 @@ body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection
   text-decoration-color: var(--fg);
 }
 
+/* A link to a PDF or notebook bookmark carries the bookmark's ribbon, in
+   its colour (links/bookmark-colors.js), just ahead of the text. Sized
+   to the text so it scales with the style's font size. */
+.cm-link-bm-icon {
+  display: inline-block;
+  width: 0.75em;
+  height: 0.75em;
+  margin-right: 0.22em;
+  vertical-align: -0.04em;
+}
+.cm-link-bm-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* Colour unknown on this device (a deleted bookmark, a notebook not yet
+   opened here): the ribbon in the link's own colour, faded. */
+.cm-link-bm-icon.unknown { opacity: 0.45; }
+
 /* Block quote: subtle left rule + indent. The border colour is the text
    colour at 50% so it sits close to the prose without competing with it. */
 .cm-line.cm-blockquote {

@@ -11,6 +11,7 @@ import {
   BOOKMARK_ICON, bookmarkStampKey, endBookmarkStamp, openBookmarkEditor, openBookmarkListPopup,
   refreshBookmarkList,
 } from "../../ui/bookmark-ui.js";
+import { publishNotebookBookmarks } from "../../links/bookmark-colors.js";
 import {
   armBookmarkStamp, bookmarkLinkText, bookmarkStampKeyFor, deleteBookmark, focusBookmark, updateBookmark,
 } from "../bookmarks";
@@ -61,6 +62,8 @@ export function createBookmarksButton(state: DrawingState): HTMLElement {
   btn.appendChild(glyph);
 
   let lastList: unknown = null;
+  let publishedList: unknown = null;
+  let publishedFile: string | null = null;
   const update = () => {
     const t = state.theme;
     btn.style.color = t.foreground;
@@ -73,6 +76,15 @@ export function createBookmarksButton(state: DrawingState): HTMLElement {
     if (state.bookmarks !== lastList) {
       lastList = state.bookmarks;
       refreshBookmarkList(bookmarkListKey(state));
+    }
+    // Tell the Doc's link icons what colour each bookmark is. Only once
+    // the mount has said which file this is — until then the list is
+    // the canvas's empty starting one, not the notebook's.
+    if (state.hostFileId && !state.desktopMode
+      && (state.bookmarks !== publishedList || state.hostFileId !== publishedFile)) {
+      publishedList = state.bookmarks;
+      publishedFile = state.hostFileId;
+      publishNotebookBookmarks(state.hostFileId, state.bookmarks);
     }
   };
   state.addEventListener("change", update);

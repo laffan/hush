@@ -8,26 +8,45 @@ import { ViewPlugin, Decoration, WidgetType, EditorView } from "@codemirror/view
 import { RangeSetBuilder } from "@codemirror/state";
 import { isIOS } from "../../settings/settings-ui.js";
 import { focusSentenceBounds } from "./focus-mode.js";
+import { bookmarkLinkInfo, BOOKMARK_COLORS_EVENT } from "../../links/bookmark-colors.js";
+import { bookmarkGlyph } from "../../ui/bookmark-ui.js";
 
 // Matches [text](url) but not ![alt](img)
 const LINK_RE = /(?<!!)\[([^\]]+)\]\(([^)]+)\)/g;
 
 class LinkWidget extends WidgetType {
-  constructor(text, url, dimmed) {
+  /** `bookmark` is `{ color }` for a link to a PDF or notebook bookmark
+   *  (links/bookmark-colors.js), drawn as the bookmark's ribbon before
+   *  the text; null for any other link. */
+  constructor(text, url, dimmed, bookmark) {
     super();
     this.text = text;
     this.url = url;
     this.dimmed = !!dimmed;
+    this.bookmark = bookmark || null;
   }
 
   eq(other) {
-    return this.text === other.text && this.url === other.url && this.dimmed === other.dimmed;
+    return this.text === other.text && this.url === other.url && this.dimmed === other.dimmed
+      && (this.bookmark?.color ?? "-") === (other.bookmark?.color ?? "-")
+      && !!this.bookmark === !!other.bookmark;
   }
 
   toDOM() {
     const span = document.createElement("span");
     span.className = "cm-link-rendered" + (this.dimmed ? " focus-mode-dim" : "");
-    span.textContent = this.text;
+    if (this.bookmark) {
+      // The ribbon, in the bookmark's colour — or a neutral one when the
+      // colour isn't known on this device. Part of the link: pressing it
+      // opens the link like the text does.
+      const icon = document.createElement("span");
+      icon.className = "cm-link-bm-icon" + (this.bookmark.color ? "" : " unknown");
+      icon.innerHTML = bookmarkGlyph(this.bookmark.color || "currentColor", 12);
+      span.appendChild(icon);
+      span.appendChild(document.createTextNode(this.text));
+    } else {
+      span.textContent = this.text;
+    }
     span.title = this.url;
     span.dataset.linkUrl = this.url;
     if (isIOS()) span.style.cursor = "pointer"; // reads as tappable on touch
@@ -112,7 +131,7 @@ function buildDecorations(view, appState) {
         : false;
 
       builder.add(from, to, Decoration.replace({
-        widget: new LinkWidget(text, url, dimmed),
+        widget: new LinkWidget(text, url, dimmed, bookmarkLinkInfo(url)),
       }));
     }
   }
@@ -247,6 +266,17 @@ export function createLinkDecoratorPlugin(appState) {
       constructor(view) {
         this.lastFocusMode = !!appState?.focusMode;
         this.decorations = buildDecorations(view, appState);
+        // A bookmark recoloured, added or deleted — anywhere — repaints
+        // the icons. An empty dispatch is the update that rebuilds.
+        this.colorsStale = false;
+        this.onColors = () => {
+          this.colorsStale = true;
+          if (view.dom.isConnected) view.dispatch({});
+        };
+        window.addEventListener(BOOKMARK_COLORS_EVENT, this.onColors);
+      }
+      destroy() {
+        window.removeEventListener(BOOKMARK_COLORS_EVENT, this.onColors);
       }
       update(update) {
         // Rebuild on focus-mode toggle as well as the usual triggers —
@@ -254,7 +284,8 @@ export function createLinkDecoratorPlugin(appState) {
         // doesn't fire docChanged / selectionSet on its own.
         const focusToggled = !!appState?.focusMode !== this.lastFocusMode;
         this.lastFocusMode = !!appState?.focusMode;
-        if (focusToggled || update.docChanged || update.viewportChanged || update.selectionSet) {
+        if (focusToggled || this.colorsStale || update.docChanged || update.viewportChanged || update.selectionSet) {
+          this.colorsStale = false;
           this.decorations = buildDecorations(update.view, appState);
         }
       }
