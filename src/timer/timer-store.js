@@ -3,8 +3,8 @@
  * (and every window: it lives in `settings.timer`, opaque to Rust — see
  * `timer` on `AppSettings`):
  *
- *   { active: { task, mode, startedAt, durationMs, breakEveryMs, chimes } | null,
- *     last:   { mode, hours, minutes, alarmHour, alarmMinute, breakEvery, chimes } }
+ *   { active: { task, mode, startedAt, durationMs, breakEveryMs } | null,
+ *     last:   { mode, hours, minutes, alarmHour, alarmMinute, breakEvery } }
  *
  * `active` holds absolute times, so a timer keeps running while the app
  * is closed and every window reads the same clock. `last` is what the
@@ -19,9 +19,6 @@
  * the finish, and last `BREAK_MS` (cut short by the finish). The session
  * countdown never pauses for them — a break is counted inside the
  * session, with a countdown of its own while it runs.
- *
- * `chimes` plays a tone as a break ends and another as the session does
- * (timer-chimes.js).
  */
 
 const MINUTE = 60 * 1000;
@@ -30,7 +27,7 @@ const MINUTE = 60 * 1000;
 export const BREAK_CHOICES = [0, 25, 30, 45, 60, 90];
 
 export const DEFAULT_LAST = {
-  mode: "timer", hours: 1, minutes: 0, alarmHour: null, alarmMinute: 0, breakEvery: 25, chimes: false,
+  mode: "timer", hours: 1, minutes: 0, alarmHour: null, alarmMinute: 0, breakEvery: 25,
 };
 
 /** Every break is this long. */
@@ -72,10 +69,10 @@ function write(state, patch) {
 }
 
 /** Start a timer, replacing any other (there is only ever one). */
-export function startTimer(state, { task, mode = "timer", durationMs, breakEvery, chimes = false, last }, now = Date.now()) {
+export function startTimer(state, { task, mode = "timer", durationMs, breakEvery, last }, now = Date.now()) {
   return write(state, {
-    active: { task: task.trim(), mode, startedAt: now, durationMs, breakEveryMs: breakEvery * MINUTE, chimes: !!chimes },
-    last: { ...lastValues(state), ...last, mode, breakEvery, chimes: !!chimes },
+    active: { task: task.trim(), mode, startedAt: now, durationMs, breakEveryMs: breakEvery * MINUTE },
+    last: { ...lastValues(state), ...last, mode, breakEvery },
   });
 }
 
@@ -128,8 +125,6 @@ export function timerStatus(timer, now = Date.now()) {
     remaining: Math.max(0, end - now),
     untilBreak: nextBreak == null ? null : nextBreak - now,
     breaksPassed: breaks.filter((b) => b <= now).length,
-    /** Breaks that have run their course — what the break chime counts. */
-    breaksDone: breaks.filter((b) => breakEnd(b) <= now && breakEnd(b) < end).length,
     /** The break under way: its time left and how far through it is. */
     onBreak: current == null ? null : {
       remaining: breakEnd(current) - now,

@@ -96,13 +96,19 @@ export function bookmarkLinkText(state: DrawingState, bm: NotebookBookmark): str
 }
 
 /** Bring a bookmark to the middle of the visible canvas — a list row, a
- *  shelf row, the far end of a link. Returns false for an unknown id. */
+ *  shelf row, the far end of a link. Returns false for an unknown id.
+ *
+ *  On a proofread notebook only the vertical moves: a proof is read down
+ *  a column the reader has already lined up sideways, and centring the
+ *  bookmark across would undo that. The page rail's glide keeps the
+ *  horizontal for the same reason. */
 export function focusBookmark(state: DrawingState, id: string): boolean {
   const bm = state.bookmarks.find((b) => b.id === id);
   if (!bm) return false;
   const target = canvasToScreen({ x: bm.x, y: bm.y }, state.camera);
   const center = state.visibleScreenCenter();
-  state.camera = { ...state.camera, x: state.camera.x + center.x - target.x, y: state.camera.y + center.y - target.y };
+  const dx = state.proof ? 0 : center.x - target.x;
+  state.camera = { ...state.camera, x: state.camera.x + dx, y: state.camera.y + center.y - target.y };
   // A camera move is repaint-only; the flash rides it rather than a
   // "bookmarks" notify, which would mark the notebook dirty.
   state.flashBookmarkId = id;

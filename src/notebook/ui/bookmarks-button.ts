@@ -59,13 +59,6 @@ export function createBookmarksButton(state: DrawingState): HTMLElement {
   const glyph = h("span", { style: { display: "inline-flex", width: "18px", height: "18px" } });
   glyph.innerHTML = BOOKMARK_ICON;
   btn.appendChild(glyph);
-  const badge = h("span", {
-    style: {
-      position: "absolute", top: "2px", right: "2px", fontSize: "9px", color: "#fff",
-      borderRadius: "8px", padding: "0px 4px", fontWeight: "600", lineHeight: "14px", display: "none",
-    },
-  });
-  btn.appendChild(badge);
 
   let lastList: unknown = null;
   const update = () => {
@@ -76,13 +69,9 @@ export function createBookmarksButton(state: DrawingState): HTMLElement {
     if (state.tool !== "bookmark" && bookmarkStampKey() === bookmarkStampKeyFor(state)) endBookmarkStamp();
     // A Desktop has no file for a bookmark to live in or link to.
     btn.style.display = state.desktopMode ? "none" : "flex";
-    badge.style.background = t.accent;
     // Every bookmark edit replaces the array, so identity is the diff.
     if (state.bookmarks !== lastList) {
       lastList = state.bookmarks;
-      const n = state.bookmarks.length;
-      badge.textContent = String(n);
-      badge.style.display = n ? "block" : "none";
       refreshBookmarkList(bookmarkListKey(state));
     }
   };

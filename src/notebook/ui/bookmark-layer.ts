@@ -26,9 +26,12 @@ import { bookmarkLinkText, deleteBookmark, updateBookmark } from "../bookmarks";
 import { writeClipboardText } from "../canvas-paste";
 
 const DRAG_SLOP_2 = 16;
-/** Half the ribbon's box: the marker is placed so the ribbon's centre is
- *  the bookmark's point. */
+/** The ribbon's box. The marker is placed so the ribbon's centre is the
+ *  bookmark's point, which means stepping in by the marker's own border
+ *  and padding too (styles/notebook.css: `.nb-bookmark` — keep in step). */
 const ICON = 18;
+const INSET_X = 1 + 5;
+const INSET_Y = 1 + 3;
 
 interface Marker { el: HTMLElement; icon: HTMLElement; label: HTMLElement; bm: NotebookBookmark; renaming: boolean }
 
@@ -53,7 +56,9 @@ export function createBookmarkLayer(state: DrawingState): HTMLElement {
     const w = layer.clientWidth || 99999, hgt = layer.clientHeight || 99999;
     const off = p.x < -300 || p.y < -40 || p.x > w + 40 || p.y > hgt + 40;
     m.el.style.display = off ? "none" : "";
-    if (!off) m.el.style.transform = `translate(${Math.round(p.x - ICON / 2)}px, ${Math.round(p.y - ICON / 2)}px)`;
+    if (!off) {
+      m.el.style.transform = `translate(${Math.round(p.x - INSET_X - ICON / 2)}px, ${Math.round(p.y - INSET_Y - ICON / 2)}px)`;
+    }
   }
 
   function paint(m: Marker): void {
@@ -122,6 +127,9 @@ export function createBookmarkLayer(state: DrawingState): HTMLElement {
         return;
       }
       const onLabel = m.label.contains(e.target as Node);
+      // The chip's padding and the gap are only a handle — a click there
+      // opens nothing.
+      const onIcon = m.icon.contains(e.target as Node);
       const start = { x: e.clientX, y: e.clientY };
       const startBm = { x: m.bm.x, y: m.bm.y };
       let dragging = false;
@@ -144,7 +152,7 @@ export function createBookmarkLayer(state: DrawingState): HTMLElement {
         if (dragging) { state.recordHistory(); return; }
         if (ue.type === "pointercancel") return;
         if (onLabel) rename(m);
-        else openPalette(m);
+        else if (onIcon) openPalette(m);
       };
       const cancel = (ce: PointerEvent) => up(ce);
       m.el.addEventListener("pointermove", move);

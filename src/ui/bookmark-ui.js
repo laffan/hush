@@ -32,7 +32,7 @@ export const BOOKMARK_COLORS = [
 /** The ribbon, filled in `color` — the stamped marker and list rows. */
 export function bookmarkGlyph(color, size = 16) {
   const c = escAttr(color || BOOKMARK_COLORS[0]);
-  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true"><path d="M6 3.5h12V21l-6-4.4L6 21z" fill="${c}" stroke="rgba(0,0,0,0.28)" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true"><path d="M6 3.5h12V21l-6-4.4L6 21z" fill="${c}"/></svg>`;
 }
 
 /** The pointer while a stamp is armed: the ribbon, hot spot at its

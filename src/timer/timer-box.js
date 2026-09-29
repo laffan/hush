@@ -24,15 +24,12 @@
  * bottom edges.
  *
  * When a break or the finish passes while the app is open, a toast says
- * so — and, for a timer started with chimes on, a tone as a break ends
- * and as the session does; ones that passed while it was closed stay
- * quiet.
+ * so; ones that passed while it was closed stay quiet.
  */
 
 import {
   getTimer, timerStatus, formatMinutes, minutesLeft, formatClock, renameTimer, ALARM_WARNING_MS,
 } from "./timer-store.js";
-import { playChime } from "./timer-chimes.js";
 import { installRingDrag } from "./timer-ring-drag.js";
 
 /** Ring geometry: 30 px across with a 3 px stroke, so the stroke's centre
@@ -248,14 +245,10 @@ export function mountTimerBox(slot, state, panelOverlay) {
     if (seen) {
       if (st.finished && !seen.finished) {
         void toast(`${timer.mode === "alarm" ? "Alarm" : "Timer done"}${timer.task ? ` — ${timer.task}` : ""}`);
-        if (timer.chimes) playChime("session");
       }
-      else {
-        if (st.breaksPassed > seen.breaksPassed) void toast("Time for a break");
-        if (st.breaksDone > seen.breaksDone && timer.chimes) playChime("break");
-      }
+      else if (st.breaksPassed > seen.breaksPassed) void toast("Time for a break");
     }
-    seen = { breaksPassed: st.breaksPassed, breaksDone: st.breaksDone, finished: st.finished };
+    seen = { breaksPassed: st.breaksPassed, finished: st.finished };
     if (st.finished && tick) { clearInterval(tick); tick = null; }
   }
 

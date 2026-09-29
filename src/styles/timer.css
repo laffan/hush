@@ -170,17 +170,6 @@ html[data-theme="dark"] .timer-sheet {
   gap: 12px;
 }
 
-.timer-chimes {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  cursor: pointer;
-  user-select: none;
-}
-.timer-chimes span { opacity: 0.6; }
-.timer-chimes input { margin: 0; accent-color: var(--fg); cursor: pointer; }
 
 .timer-break,
 .timer-period {
@@ -401,14 +390,15 @@ html[data-theme="dark"] .sidebar-timer {
   transition: width 1s linear;
 }
 
-/* A break's place along the session: a faint tick through the bar. */
+/* A break's place along the session: a 2px gap cut through the bar, in
+   the box's own background colour. */
 .sidebar-timer-mark {
   position: absolute;
-  top: -2px;
-  bottom: -2px;
-  width: 1px;
-  margin-left: -0.5px;
-  background: color-mix(in srgb, var(--fg) 30%, transparent);
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--theme-bg, var(--bg));
   pointer-events: none;
 }
 
@@ -526,9 +516,12 @@ html[data-theme="dark"] .sidebar-timer {
 
 .timer-ring-track { stroke: color-mix(in srgb, var(--fg) 10%, transparent); }
 
+/* A break's place round the ring: a 2px gap in the window's background
+   colour, like the bar's. */
 .timer-ring-mark {
-  stroke: color-mix(in srgb, var(--fg) 40%, transparent);
-  stroke-width: 1;
+  stroke: var(--theme-bg, var(--bg));
+  stroke-width: 2;
+  stroke-linecap: butt;
   fill: none;
 }
 

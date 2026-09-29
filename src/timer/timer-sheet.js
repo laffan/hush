@@ -82,10 +82,6 @@ export function openTimerSheet(state) {
         </div>
         <span class="timer-caption timer-unit">min</span>
       </div>
-      <label class="timer-chimes">
-        <input type="checkbox" class="timer-chimes-box" />
-        <span>Play finish chimes</span>
-      </label>
       <div class="timer-actions">
         <button type="button" class="timer-cancel">Cancel</button>
         <button type="button" class="timer-start">Start</button>
@@ -106,8 +102,6 @@ export function openTimerSheet(state) {
   const clockHourEl = root.querySelector(".timer-clock-hour");
   const clockMinuteEl = root.querySelector(".timer-clock-minute");
   const periodsEl = root.querySelector(".timer-periods");
-  const chimesEl = root.querySelector(".timer-chimes-box");
-  chimesEl.checked = !!last.chimes;
 
   let breakEvery = BREAK_CHOICES.includes(last.breakEvery) ? last.breakEvery : 0;
   let mode = last.mode === "alarm" ? "alarm" : "timer";
@@ -206,7 +200,6 @@ export function openTimerSheet(state) {
       mode,
       durationMs,
       breakEvery,
-      chimes: chimesEl.checked,
       last: mode === "alarm"
         ? { alarmHour: alarmHour24(), alarmMinute: clampInt(clockMinuteEl.value, 59) }
         : { hours: clampInt(hoursEl.value, 23), minutes: clampInt(minutesEl.value, 59) },
