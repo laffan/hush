@@ -31,7 +31,8 @@ import type { DrawingLayer } from "./drawing/drawing-layer";
 import { perf } from "./perf-hud";
 import { createDrawingToolPanel } from "./drawing/tool-panel";
 import { createBgSettingsFixedButton } from "./ui/bg-settings-fixed-button";
-import { pinClipboardText } from "./pins";
+import { createBookmarkLayer } from "./ui/bookmark-layer";
+import { BOOKMARK_STAMP_CURSOR } from "../ui/bookmark-ui.js";
 
 /** Read the user's flag-colour map from Hush settings. Notebook text
  *  shapes mirror Docs by colouring `==FLAG==` highlights with the flag's
@@ -359,7 +360,9 @@ export class NotesCanvas {
       select: "default", text: "text", "drag-area": "crosshair", brainstorm: "text",
       // Split and Grab paint their own full-width rule under the
       // pointer, so the cursor gets out of its way.
-      split: "crosshair", grab: "crosshair", pin: "crosshair",
+      split: "crosshair", grab: "crosshair",
+      // The bookmark stamp: the ribbon itself, hot spot at its centre.
+      bookmark: BOOKMARK_STAMP_CURSOR,
     };
     this.state.addEventListener("change", () => {
       // Brainstorm mode behaves like select on the canvas — keep the default cursor instead of the text I-beam.
@@ -604,6 +607,8 @@ export class NotesCanvas {
       getImageCache: () => this._imageCache,
       getDrawingLayer: () => this._drawingLayer,
     }));
+    // Bookmark markers — DOM over the canvas (bookmarks.ts).
+    container.appendChild(createBookmarkLayer(this.state));
     container.appendChild(createTextEditor(this.state));
     container.appendChild(createBrainstormInput(this.state));
     container.appendChild(createGrabPopup(this.state));
@@ -846,12 +851,20 @@ export class NotesCanvas {
     shapes: Shape[],
     layers?: import("./types").Layer[],
     activeLayerId?: string,
-    extras?: { splits?: import("./types").Split[]; proof?: import("./types").ProofMeta | null },
+    extras?: {
+      splits?: import("./types").Split[];
+      proof?: import("./types").ProofMeta | null;
+      bookmarks?: import("./types").NotebookBookmark[];
+    },
   ) {
     // Splits and proofread metadata land before the shapes so the first
     // notify already carries a consistent canvas — the rail reads
     // `proof` off the same change event the shapes arrive on.
     this.state.splits = extras?.splits ? extras.splits.slice() : [];
+    // Before `initHistory`: the first checkpoint has to hold them, or the
+    // first ⌘Z would take every bookmark away.
+    this.state.bookmarks = extras?.bookmarks ? extras.bookmarks.slice() : [];
+    this.state.renamingBookmarkId = null;
     this.state.proof = extras?.proof ?? null;
     this.state.applyProofTextDefaults();
     this.applyProofDrawingDefaults();
@@ -869,6 +882,7 @@ export class NotesCanvas {
     this.state.notify("layers");
     this.state.notify("activeLayerId");
     this.state.notify("shapes");
+    this.state.notify("bookmarks");
   }
 
   /** Mirror externally-produced content for the SAME notebook onto this
@@ -881,16 +895,10 @@ export class NotesCanvas {
     shapes: Shape[];
     layers?: import("./types").Layer[];
     flowEdges?: import("./flowchart").FlowEdge[];
-    bookmarks?: import("./types").CameraBookmark[];
+    bookmarks?: import("./types").NotebookBookmark[];
     splits?: import("./types").Split[];
     proof?: import("./types").ProofMeta | null;
   }) {
-    // Bookmarks travel outside the undo checkpoint — apply them even
-    // when the shape content turns out to be identical.
-    if (Array.isArray(snapshot.bookmarks)) {
-      this.state.bookmarks = snapshot.bookmarks;
-      this.state.notify("bookmarks");
-    }
     // No-op guard: mirror events can fire for changes that don't touch
     // the shape content (or echo content this side already has).
     // Recording a checkpoint for those would silently clear this
@@ -904,7 +912,15 @@ export class NotesCanvas {
     // still has a change to mirror, even though every shape matches.
     const sameSplits = !snapshot.splits
       || JSON.stringify(this.state.splits) === JSON.stringify(snapshot.splits);
-    if (sameShapes && sameEdges && sameLayers && sameSplits) return;
+    // Bookmarks are content and ride the checkpoint: one renamed, moved
+    // or stamped on the other surface is a change to mirror.
+    const sameBookmarks = !Array.isArray(snapshot.bookmarks)
+      || JSON.stringify(this.state.bookmarks) === JSON.stringify(snapshot.bookmarks);
+    if (sameShapes && sameEdges && sameLayers && sameSplits && sameBookmarks) return;
+    if (!sameBookmarks) {
+      this.state.bookmarks = snapshot.bookmarks!.slice();
+      this.state.notify("bookmarks");
+    }
 
     const nextLayers = snapshot.layers && snapshot.layers.length ? snapshot.layers : this.state.layers;
     const topLayerId = nextLayers[0]?.id ?? this.state.activeLayerId;
@@ -1059,12 +1075,6 @@ export class NotesCanvas {
    * Cmd+C handler in input-handler.ts is a backstop with the same payload.
    */
   handleCopy(e: ClipboardEvent): boolean {
-    const links = pinClipboardText(this.state);
-    if (links && e.clipboardData) {
-      e.clipboardData.setData("text/plain", links);
-      e.preventDefault();
-      return true;
-    }
     const json = this.state.serializeSelection();
     if (!json) return false;
     if (!e.clipboardData) return false;

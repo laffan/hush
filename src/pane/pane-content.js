@@ -208,7 +208,7 @@ async function loadNotebookPane(pane) {
   // The pane carves around the window chrome itself — the canvas must
   // not mirror global dock footprints or window safe-area insets.
   canvas.state.paneHosted = true;
-  canvas.state.hostFileId = pane.fileId; // pins build their links from it
+  canvas.state.hostFileId = pane.fileId; // bookmark links are built from it
   pane.notebook = canvas;
   // A pane that was already docked when this canvas mounted (restore at
   // boot, or a file swapped into a docked pane) needs its chrome inset
@@ -245,15 +245,9 @@ async function loadNotebookPane(pane) {
     canvas.loadShapes(snapshot.shapes, snapshot.layers, undefined, {
       splits: snapshot.splits,
       proof: snapshot.proof || null,
+      bookmarks: snapshot.bookmarks,
     });
     canvas.state.flowchart.deserialize(snapshot.flowEdges);
-    // Bookmarks ride alongside shapes through the same JSON envelope; without
-    // this the pane's local state stays empty and a save from the pane
-    // would overwrite the disk file with no bookmarks (silent loss).
-    if (Array.isArray(snapshot.bookmarks)) {
-      canvas.state.bookmarks = snapshot.bookmarks;
-      canvas.state.notify("bookmarks");
-    }
     // Per-notebook background ride-along (pattern / spacing / opacity).
     // Pane and main canvas pull from the same file so a bg pick from
     // either side sticks across reopens.

@@ -82,7 +82,7 @@ The `content` field is a versioned JSON envelope (`notebook-content.ts`):
   "format": "hushnote", "version": 1,
   "shapes": [...], "layers": [...],      // layers ordered top-first
   "flowEdges": [...],                     // flowchart edges
-  "bookmarks": [...],                     // optional camera bookmarks
+  "bookmarks": [...],                     // optional point bookmarks {id,name,color,x,y}
   "splits": [...],                        // optional split lines
   "proof": {...},                         // optional proofread metadata
   "camera": {...},                        // optional saved viewport
@@ -109,7 +109,7 @@ All shapes extend `ShapeBase` `{ id, color, parentId?, groupId?, pocketed?, laye
 
 **The canvas host carries the app's UI font, not the style's.** Everything `NotesCanvas` builds in DOM is chrome — toolbars, the shelf, colour menus, popups — and plenty of it asks for `font-family: inherit`, which was picking up the writing face the active style sets on the page; a colour menu rendered in EB Garamond. The constructor pins `--ui-font-family` on the container instead. Canvas *content* is unaffected either way (painted through an explicit `ctx.font`), and the inline text editor sets its own face.
 
-**Pins** (`pins.ts`, proofread notebooks) are text shapes with `pin: true`: the text is the name, the colour is the pin's, and `drawPinDot` paints a dot left of `position` (`PIN_RADIUS` / `PIN_GAP` in `types.ts`, which `getShapeBounds` widens the box by). The Pin tool (`tool: "pin"`, shown in the toolbar only while `state.proof` is set) drops one, selects it, opens its name for editing and hands back to Select. Links are `hush-pin://<hostFileId>/<shapeId>` — see README-TECHNICAL's notebook contracts.
+**Bookmarks** (`bookmarks.ts`, `bookmark-model.ts`, `ui/bookmark-layer.ts`, `ui/bookmarks-button.ts`) are `{ id, name, color, x, y }` points on `DrawingState.bookmarks` — not shapes: no bounds, layer or selection, drawn as DOM markers (ribbon + label in the UI font, fixed screen size, upright under rotation) in a layer at z 82, over the canvas and ink and under the toolbar band. They are content all the same: they ride the undo checkpoint (`NotebookCheckpoint.bookmarks`, and `GrabSession.bufferBookmarks` / `restore.bookmarks`), notify the content key `"bookmarks"`, and every split / grab operation carries them on the split-line rule (`translateBookmarks` and the collapse / lift / land helpers). `loadShapes` takes them in `extras` so the first checkpoint holds them. The toolbar button and the list, palette, editor and stamp are the shared `src/ui/bookmark-ui.js`; Add Bookmark arms `tool: "bookmark"` and the next canvas press is `placeBookmark`. The envelope's `bookmarks` field is the same one the retired camera bookmarks used: `normalizeBookmarks` drops entries without a point, and `pinsToBookmarks` turns the day-old proofread pins (text shapes with `pin: true`) into bookmarks with the same ids. The shelf lists them (`shelf-bookmarks.ts`); the proof rail paints a dot for each (`proof-rail-ink.ts`).
 
 Layers are notebook-level (every shape type, ordered top-first, hidden/locked per layer); legacy shapes fall back to the bottom layer. The pocket is a right-edge stash drawn at fixed screen positions, anchored against `pocketRightInset` (right-docked pane edge, else shelf edge).
 

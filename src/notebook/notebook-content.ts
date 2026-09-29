@@ -19,7 +19,8 @@
  * don't branch on format. Encoding always emits the new envelope.
  */
 
-import type { Shape, Layer, CameraBookmark, Camera, BackgroundPattern, ProofMeta, Split } from "./types";
+import type { Shape, Layer, NotebookBookmark, Camera, BackgroundPattern, ProofMeta, Split } from "./types";
+import { normalizeBookmarks, pinsToBookmarks } from "./bookmark-model";
 import type { FlowEdge } from "./flowchart";
 
 /** Per-notebook background overrides. Saved alongside shapes so each
@@ -40,7 +41,7 @@ export interface NotebookContent {
   shapes: Shape[];
   layers?: Layer[];
   flowEdges?: FlowEdge[];
-  bookmarks?: CameraBookmark[];
+  bookmarks?: NotebookBookmark[];
   camera?: Camera;
   background?: NotebookBackground;
   splits?: Split[];
@@ -51,7 +52,7 @@ export interface NotebookSnapshotInput {
   shapes: Shape[];
   layers?: Layer[];
   flowEdges?: FlowEdge[];
-  bookmarks?: CameraBookmark[];
+  bookmarks?: NotebookBookmark[];
   camera?: Camera;
   background?: NotebookBackground;
   splits?: Split[];
@@ -96,7 +97,7 @@ export function encodeNotebookBody(
     shapes: snapshot.shapes.map(quantizeShape),
     layers: snapshot.layers,
     flowEdges: snapshot.flowEdges,
-    bookmarks: snapshot.bookmarks,
+    bookmarks: snapshot.bookmarks && snapshot.bookmarks.length ? snapshot.bookmarks : undefined,
     // Splits and proofread metadata are content, not viewport — they
     // belong in the cached body so a camera-only save reuses them.
     splits: snapshot.splits && snapshot.splits.length ? snapshot.splits : undefined,
@@ -204,10 +205,13 @@ export function decodeNotebookContent(content: string | null | undefined): Noteb
   }
   if (parsed && typeof parsed === "object") {
     const obj = parsed as Record<string, unknown>;
-    const shapes = Array.isArray(obj.shapes) ? (obj.shapes as Shape[]) : [];
+    // Proofread pins (text shapes, for a day) come out of the shapes and
+    // into the bookmarks they became.
+    const { shapes, bookmarks: fromPins } = pinsToBookmarks(Array.isArray(obj.shapes) ? (obj.shapes as Shape[]) : []);
     const layers = Array.isArray(obj.layers) ? (obj.layers as Layer[]) : undefined;
     const flowEdges = Array.isArray(obj.flowEdges) ? (obj.flowEdges as FlowEdge[]) : undefined;
-    const bookmarks = Array.isArray(obj.bookmarks) ? (obj.bookmarks as CameraBookmark[]) : undefined;
+    // Point bookmarks only — the old camera bookmarks are dropped.
+    const bookmarks = [...normalizeBookmarks(obj.bookmarks), ...fromPins];
     const camera = isCamera(obj.camera) ? (obj.camera as Camera) : undefined;
     const background = parseBackground(obj.background);
     const splits = Array.isArray(obj.splits) ? (obj.splits as Split[]).filter(isSplit) : undefined;

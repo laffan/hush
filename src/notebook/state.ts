@@ -1,5 +1,5 @@
 import type {
-  Bounds, Camera, CameraBookmark, DragAreaShape, DrawingSlot, DrawingSubTool,
+  Bounds, Camera, NotebookBookmark, DragAreaShape, DrawingSlot, DrawingSubTool,
   GrabSession, ImageShape, Layer, Point, ProofMeta, SelectionBox, Shape, Split,
   SplitLine, TextShape, Tool,
 } from "./types";
@@ -43,7 +43,7 @@ import {
 } from "./state-splits";
 // PERF-HUD (temporary): tracer singleton — see perf-hud.ts.
 import { perf } from "./perf-hud";
-import { placePin } from "./pins";
+import { placeBookmark } from "./bookmarks";
 
 /**
  * A pinned outline is drawn against the frame, not the canvas, so its
@@ -143,7 +143,13 @@ export class DrawingState extends EventTarget {
   canvasRotationEnabled = false;
   selectionBox: SelectionBox | null = null;
   editingText: EditingText | null = null;
-  bookmarks: CameraBookmark[] = [];
+  /** Point bookmarks — see bookmarks.ts. Ride the undo checkpoint. */
+  bookmarks: NotebookBookmark[] = [];
+  /** A bookmark whose label should open for renaming — set by the stamp,
+   *  consumed by the marker layer. */
+  renamingBookmarkId: string | null = null;
+  /** A bookmark just jumped to — its marker pulses once. Transient. */
+  flashBookmarkId: string | null = null;
   /** Per-shape text style a *new* text shape starts from, or null to
    *  follow the canvas. Set when a proofread notebook mounts (see
    *  `PROOF_TEXT_STYLE`); untouched everywhere else. */
@@ -845,6 +851,7 @@ export class DrawingState extends EventTarget {
       layers: this.layers,
       splits: this.splits,
       grab: this.grab,
+      bookmarks: this.bookmarks,
     };
   }
 
@@ -855,6 +862,8 @@ export class DrawingState extends EventTarget {
     // completed place has to hand the buffer back to the place stage.
     this.splits = cp.splits || [];
     this.grab = cp.grab || null;
+    this.bookmarks = cp.bookmarks || [];
+    this.notify("bookmarks");
     this.splitDrag = null;
     this.grabBandDrag = null;
     this.splitHover = null;
@@ -1551,7 +1560,7 @@ export class DrawingState extends EventTarget {
       }
     }
 
-    const willEditText = (this.tool === "text" || this.tool === "pin") && !this.brainstormMode;
+    const willEditText = this.tool === "text" && !this.brainstormMode;
     if (!willEditText) canvas.setPointerCapture(e.pointerId);
 
     // Exit crop mode when clicking outside the cropping image (unless clicking its handles)
@@ -1588,8 +1597,8 @@ export class DrawingState extends EventTarget {
       return;
     }
 
-    if (this.tool === "pin") {
-      placePin(this, canvasPt);
+    if (this.tool === "bookmark") {
+      placeBookmark(this, canvasPt);
     } else if (this.tool === "text" && !this.brainstormMode) {
       // Text tool (not brainstorm — brainstorm has its own input widget)
       const hit = findShapeAtPoint(canvasPt, this._interactableShapes(), this.fontFamily);
@@ -3617,11 +3626,6 @@ export class DrawingState extends EventTarget {
     this.notify("reorderPreview");
   }
 
-  // === Bookmarks ===
-  addBookmark(name: string) { this.bookmarks = [...this.bookmarks, { id: generateId(), name, camera: { ...this.camera } }]; this.notify("bookmarks"); }
-  goToBookmark(bm: CameraBookmark) { this.camera = { ...bm.camera }; this.notify("camera"); }
-  updateBookmark(id: string) { this.bookmarks = this.bookmarks.map((b) => b.id === id ? { ...b, camera: { ...this.camera } } : b); this.notify("bookmarks"); }
-  deleteBookmark(id: string) { this.bookmarks = this.bookmarks.filter((b) => b.id !== id); this.notify("bookmarks"); }
 
   renameImage(id: string, name: string) {
     this.shapes = this.shapes.map((s) => s.id === id && s.type === "image" ? { ...s, name } : s);
@@ -3660,7 +3664,7 @@ export class DrawingState extends EventTarget {
    *  inset so paste / addTextShapeAtCenter land at the *visible* centre,
    *  not the geometric centre of the canvas element. Falls back to
    *  window centre when the canvas isn't yet laid out (rect 0×0). */
-  /** Public face of `_visibleScreenCenter`, for pins.ts. */
+  /** Public face of `_visibleScreenCenter`, for bookmarks.ts. */
   visibleScreenCenter(): Point { return this._visibleScreenCenter(); }
 
   private _visibleScreenCenter(): Point {

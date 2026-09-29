@@ -105,7 +105,7 @@
   border-radius: 8px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
   padding: 10px;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: var(--ui-font-family);
   font-size: 12px;
   box-sizing: border-box;
 }
@@ -183,7 +183,7 @@
   border-radius: 8px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
   padding: 4px;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: var(--ui-font-family);
   font-size: 12px;
   box-sizing: border-box;
 }
@@ -374,4 +374,46 @@ body.cmd-held .pdf-clip-dot {
   height: 9px;
   border-radius: 0;
   clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+/* ── Shared bookmark UI (ui/bookmark-ui.js) — notebooks use it too ── */
+
+/* List rows carry the ribbon in the bookmark's colour. */
+.bm-row-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+}
+
+/* Add Bookmark, at the foot of the list: arms the stamp. */
+.bm-add-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  margin-top: 2px;
+  padding: 7px 8px;
+  border: none;
+  border-top: 1px solid var(--panel-border, rgba(128, 128, 128, 0.25));
+  border-radius: 0 0 5px 5px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.bm-add-row:hover { opacity: 1; background: rgba(128, 128, 128, 0.12); }
+.bm-add-row svg { width: 13px; height: 13px; flex: 0 0 auto; }
+
+/* The colour-only palette a stamped notebook bookmark opens. */
+.pdf-bm-popover.bm-palette { width: auto; }
+.pdf-bm-popover.bm-palette .pdf-bm-colors { margin: 0; }
+.pdf-bm-popover.bm-palette .pdf-bm-actions { margin-top: 8px; }
+
+/* The armed stamp's pointer, over this surface's pages only. */
+body.bookmark-stamping-pdf .pdf-page-wrapper,
+body.bookmark-stamping-pdf .pdf-page-wrapper * {
+  cursor: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2222%22%20height%3D%2222%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M6%203.5h12V21l-6-4.4L6%2021z%22%20fill%3D%22%23ef5350%22%20stroke%3D%22%23fff%22%20stroke-width%3D%221.5%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E") 11 11, crosshair !important;
 }

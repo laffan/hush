@@ -72,7 +72,7 @@ import { NotebookSaveGate } from "./notebook-save-gate.js";
 import { perf, mountPerfHud } from "./perf-hud.ts";
 import { loadNotebookSnapshot } from "./notebook-load.js";
 import { computeNotebookSettings } from "./notebook-style-settings.js";
-import { applyPendingPinJump } from "./pin-links.js";
+import { applyPendingBookmarkJump } from "./bookmark-links.js";
 export { computeNotebookSettings } from "./notebook-style-settings.js";
 
 /** Lifecycle serialization. `openNotebook` (and every other file-open
@@ -177,12 +177,9 @@ async function _mountNotebookImpl(container, fileId, state) {
     canvasInstance.loadShapes(snapshot.shapes, snapshot.layers, undefined, {
       splits: snapshot.splits,
       proof: snapshot.proof || null,
+      bookmarks: snapshot.bookmarks,
     });
     canvasInstance.state.flowchart.deserialize(snapshot.flowEdges);
-    if (Array.isArray(snapshot.bookmarks)) {
-      canvasInstance.state.bookmarks = snapshot.bookmarks;
-      canvasInstance.state.notify("bookmarks");
-    }
     // Restore the saved pan / zoom so reopening a notebook lands the
     // user back where they were. Only applied on the initial mount —
     // sync pulls (`reloadNotebookShapes`) deliberately leave the camera
@@ -205,8 +202,8 @@ async function _mountNotebookImpl(container, fileId, state) {
 
   // Shapes are loaded and the first render is queued — drop the overlay.
   _unmountLoadingOverlay();
-  canvasInstance.state.hostFileId = fileId; // pins build their links from it
-  applyPendingPinJump(fileId, canvasInstance);
+  canvasInstance.state.hostFileId = fileId; // bookmark links are built from it
+  applyPendingBookmarkJump(fileId, canvasInstance);
 
   _appState = state;
 

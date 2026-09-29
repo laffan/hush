@@ -13,7 +13,12 @@
  *  - the fold-mode button beside each fold's expand toggle
  *  - the create / edit popover (name + color)
  *  - the bookmark list popup (view / edit / delete rows) used by the
- *    viewer toolbar and the shelf's thumbnail badge
+ *    viewer toolbar and the shelf's thumbnail badge; from the toolbar
+ *    it ends in Add Bookmark, which arms the stamp — the next click on
+ *    a page of this PDF drops a clip there
+ *
+ * The popups themselves, the palette and the stamp are the shared
+ * bookmark UI (`ui/bookmark-ui.js`) that notebooks use too.
  *  - `hush-pdf://<fileId>/<bookmarkId>` links: building them for the
  *    cmd-drag-into-doc/notebook gesture, and resolving them back into
  *    "open that PDF at that bookmark" on click.
@@ -23,15 +28,13 @@ import {
   getPdfBookmarks, addPdfBookmark, updatePdfBookmark, removePdfBookmark,
 } from "../sync/pdf-sync.js";
 import { POPOUT_ICON } from "./pdf-viewer-icons.js";
+import {
+  BOOKMARK_ICON, BOOKMARK_COLORS, escHtml, pointAnchor, closeBookmarkPopup,
+  openBookmarkEditor as openSharedEditor, openBookmarkListPopup as openSharedList,
+  refreshBookmarkList, startBookmarkStamp, bookmarkStampKey, endBookmarkStamp,
+} from "../ui/bookmark-ui.js";
 
-export const BOOKMARK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h12V21l-6-4.4L6 21z"/></svg>`;
-const EDIT_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4.5-1L20 7.5 16.5 4 5 15.5z"/></svg>`;
-
-// Mirrors the sidebar ROW_COLORS swatches so the palette reads familiar.
-export const BOOKMARK_COLORS = [
-  "#ef5350", "#ff9800", "#ffeb3b", "#4caf50",
-  "#00bcd4", "#42a5f5", "#ab47bc", "#ec407a",
-];
+export { BOOKMARK_ICON, BOOKMARK_COLORS, closeBookmarkPopup };
 
 let _state = null;
 
@@ -42,9 +45,6 @@ let _state = null;
 const _pageButtons = new Set();
 // Clip-bookmark overlays, same lifecycle as the page buttons above.
 const _clipLayers = new Set();
-// The open list popup, so registry changes rebuild it in place (a
-// bookmark added from a pane appears in an already-open menu).
-let _openList = null;
 
 /** A bookmark that points at a spot on the page rather than the page as
  *  a whole. `x` / `y` are fractions of the page box (0–1, y down), so
@@ -76,7 +76,9 @@ function onBookmarksChanged(fileId) {
     if (!entry.layer.isConnected) { _clipLayers.delete(entry); continue; }
     if (entry.fileId === fileId) paintClipLayer(entry);
   }
-  if (_openList && _openList.fileId === fileId) _openList.rebuild();
+  // An open list rebuilds in place — a bookmark added from a pane
+  // appears in an already-open menu.
+  refreshBookmarkList(stampKey(fileId));
 }
 
 /** Touch-mode ⌘ (`cmd-button.js`), resolved once at boot. The clip drag
@@ -140,56 +142,6 @@ export async function openPdfAtBookmark(fileId, bookmarkId, fallbackPage = 0) {
   await state.openPdf(fileId);
 }
 
-// ===== Floating popup plumbing (one open at a time) =====
-
-let _popupEl = null;
-let _popupCleanup = null;
-
-export function closeBookmarkPopup() {
-  if (_popupCleanup) { _popupCleanup(); _popupCleanup = null; }
-  if (_popupEl) { _popupEl.remove(); _popupEl = null; }
-  _openList = null;
-}
-
-function mountPopup(el, anchor) {
-  closeBookmarkPopup();
-  _popupEl = el;
-  document.body.appendChild(el);
-  const r = anchor.getBoundingClientRect();
-  const w = el.offsetWidth;
-  const h = el.offsetHeight;
-  let top = r.bottom + 6;
-  if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
-  let left = Math.min(r.left, window.innerWidth - w - 8);
-  if (left < 8) left = 8;
-  el.style.top = `${top}px`;
-  el.style.left = `${left}px`;
-
-  const onDown = (e) => { if (_popupEl && !_popupEl.contains(e.target)) closeBookmarkPopup(); };
-  const onKey = (e) => {
-    if (e.key === "Escape") { e.stopPropagation(); closeBookmarkPopup(); }
-  };
-  // Defer one frame so the opening click doesn't instantly close it.
-  // `pointerdown`, not `mousedown`: iOS delivers the synthetic
-  // `mousedown` hundreds of ms after `touchend`, well past that frame,
-  // so a touch-opened popup would dismiss itself on the very tap that
-  // opened it (README-TECHNICAL, Platform gotchas).
-  requestAnimationFrame(() => {
-    document.addEventListener("pointerdown", onDown, true);
-    document.addEventListener("keydown", onKey, true);
-  });
-  _popupCleanup = () => {
-    document.removeEventListener("pointerdown", onDown, true);
-    document.removeEventListener("keydown", onKey, true);
-  };
-}
-
-function escHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str || "";
-  return div.innerHTML;
-}
-
 // ===== Create / edit popover =====
 
 /**
@@ -205,57 +157,30 @@ function escHtml(str) {
 export function openBookmarkEditor({ anchor, fileId, page, bookmark, point, onDone }) {
   const isEdit = !!bookmark;
   const isClip = isEdit ? isClipBookmark(bookmark) : !!point;
-  const el = document.createElement("div");
-  el.className = "pdf-bm-popover";
-  let color = bookmark?.color || BOOKMARK_COLORS[0];
-  const title = isEdit
-    ? (isClip ? "Edit clip" : "Edit bookmark")
-    : (isClip ? `Clip on page ${page}` : `Bookmark page ${page}`);
-  el.innerHTML = `
-    <div class="pdf-bm-popover-title">${title}</div>
-    <input type="text" class="pdf-bm-name" placeholder="Bookmark name" value="${escHtml(bookmark?.name || "")}" />
-    <div class="pdf-bm-colors">
-      ${BOOKMARK_COLORS.map((c) => `<button type="button" class="pdf-bm-swatch${c === color ? " active" : ""}" data-color="${c}" style="--bm-color:${c}"></button>`).join("")}
-    </div>
-    <div class="pdf-bm-actions">
-      ${isEdit ? `<button type="button" class="pdf-bm-btn pdf-bm-delete">Delete</button>` : ""}
-      <span class="pdf-bm-actions-spacer"></span>
-      <button type="button" class="pdf-bm-btn pdf-bm-cancel">Cancel</button>
-      <button type="button" class="pdf-bm-btn pdf-bm-save">${isEdit ? "Save" : (isClip ? "Add clip" : "Add bookmark")}</button>
-    </div>
-  `;
-  mountPopup(el, anchor);
-
-  const nameInput = el.querySelector(".pdf-bm-name");
-  el.querySelectorAll(".pdf-bm-swatch").forEach((sw) => {
-    sw.addEventListener("click", () => {
-      color = sw.dataset.color;
-      el.querySelectorAll(".pdf-bm-swatch").forEach((s) => s.classList.toggle("active", s === sw));
-    });
+  openSharedEditor({
+    anchor,
+    title: isEdit
+      ? (isClip ? "Edit clip" : "Edit bookmark")
+      : (isClip ? `Clip on page ${page}` : `Bookmark page ${page}`),
+    name: bookmark?.name || "",
+    color: bookmark?.color,
+    saveLabel: isEdit ? "Save" : (isClip ? "Add clip" : "Add bookmark"),
+    onSave: async (name, color) => {
+      if (isEdit) await updatePdfBookmark(fileId, bookmark.id, { name, color });
+      else await addPdfBookmark(fileId, { name, color, page, x: point?.x, y: point?.y });
+      onDone?.();
+    },
+    onDelete: isEdit ? async () => {
+      await removePdfBookmark(fileId, bookmark.id);
+      onDone?.();
+    } : undefined,
   });
-
-  const save = async () => {
-    const name = nameInput.value;
-    closeBookmarkPopup();
-    if (isEdit) await updatePdfBookmark(fileId, bookmark.id, { name, color });
-    else await addPdfBookmark(fileId, { name, color, page, x: point?.x, y: point?.y });
-    onDone?.();
-  };
-  el.querySelector(".pdf-bm-save").addEventListener("click", save);
-  el.querySelector(".pdf-bm-cancel").addEventListener("click", () => closeBookmarkPopup());
-  el.querySelector(".pdf-bm-delete")?.addEventListener("click", async () => {
-    closeBookmarkPopup();
-    await removePdfBookmark(fileId, bookmark.id);
-    onDone?.();
-  });
-  nameInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); save(); }
-  });
-  nameInput.focus();
-  nameInput.select();
 }
 
 // ===== Bookmark list popup (view / edit / delete / drag-out) =====
+
+/** The list's / stamp's key for a PDF's bookmark set. */
+function stampKey(fileId) { return `pdf:${fileId}`; }
 
 /**
  * @param {object} opts
@@ -264,74 +189,31 @@ export function openBookmarkEditor({ anchor, fileId, page, bookmark, point, onDo
  * @param {(bm: object) => void} [opts.onPick]  Row click. Defaults to
  *        opening the PDF at the bookmark in the main viewer.
  * @param {Function} [opts.onChanged]  Fires after any edit / delete.
+ * @param {boolean} [opts.canAdd]  End the list in Add Bookmark (a viewer
+ *        showing this PDF is there to take the stamp).
  */
-export function openBookmarkListPopup({ anchor, fileId, onPick, onChanged }) {
-  const el = document.createElement("div");
-  el.className = "pdf-bm-popup";
-  const pick = onPick || ((bm) => openPdfAtBookmark(fileId, bm.id));
-
-  const rebuild = () => {
-    const bookmarks = getPdfBookmarks(fileId);
-    if (!bookmarks.length) {
-      el.innerHTML = `<div class="pdf-bm-empty">No bookmarks yet.</div>`;
-      return;
-    }
-    el.innerHTML = bookmarks.map((bm) => `
-      <div class="pdf-bm-row" data-bm-id="${escHtml(bm.id)}">
-        <span class="pdf-bm-dot${isClipBookmark(bm) ? " is-clip" : ""}" style="--bm-color:${escHtml(bm.color)}"></span>
-        <span class="pdf-bm-row-name">${escHtml(bm.name)}</span>
-        <span class="pdf-bm-row-page">p. ${bm.page}</span>
-        <button type="button" class="pdf-bm-row-btn pdf-bm-row-edit" title="Edit bookmark">${EDIT_ICON}</button>
-        <button type="button" class="pdf-bm-row-btn pdf-bm-row-delete" title="Delete bookmark">×</button>
-      </div>
-    `).join("");
-
-    el.querySelectorAll(".pdf-bm-row").forEach((row) => {
-      const bm = bookmarks.find((b) => b.id === row.dataset.bmId);
-      if (!bm) return;
-      row.addEventListener("click", (e) => {
-        if (e.target.closest(".pdf-bm-row-btn")) return;
-        closeBookmarkPopup();
-        pick(bm);
+export function openBookmarkListPopup({ anchor, fileId, onPick, onChanged, canAdd }) {
+  const reopen = () => openBookmarkListPopup({ anchor, fileId, onPick, onChanged, canAdd });
+  openSharedList({
+    anchor,
+    key: stampKey(fileId),
+    getItems: () => getPdfBookmarks(fileId),
+    meta: (bm) => `p. ${bm.page}`,
+    onPick: onPick || ((bm) => openPdfAtBookmark(fileId, bm.id)),
+    onEdit: (bm, rect) => {
+      openBookmarkEditor({
+        anchor: { getBoundingClientRect: () => rect }, fileId, bookmark: bm,
+        onDone: () => { onChanged?.(); reopen(); },
       });
-      // Cmd-drag a row out as a markdown deep link — drops into any doc
-      // editor or notebook canvas via the shared text-drag pipeline.
-      row.addEventListener("pointerdown", async (e) => {
-        const { isCmdHeld } = await import("../cmd-button.js");
-        if (!(e.metaKey || e.ctrlKey || isCmdHeld())) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const { startTextDrag } = await import("../pane/text-drag.js");
-        closeBookmarkPopup();
-        startTextDrag({ text: bookmarkMarkdownLink(fileId, bm), initialEvent: e });
-      });
-      row.querySelector(".pdf-bm-row-edit").addEventListener("click", (e) => {
-        e.stopPropagation();
-        const anchorRect = row.getBoundingClientRect();
-        const fakeAnchor = { getBoundingClientRect: () => anchorRect };
-        openBookmarkEditor({
-          anchor: fakeAnchor, fileId, bookmark: bm,
-          onDone: () => {
-            onChanged?.();
-            openBookmarkListPopup({ anchor, fileId, onPick, onChanged });
-          },
-        });
-      });
-      row.querySelector(".pdf-bm-row-delete").addEventListener("click", async (e) => {
-        e.stopPropagation();
-        await removePdfBookmark(fileId, bm.id);
-        onChanged?.();
-        rebuild();
-        if (!getPdfBookmarks(fileId).length) closeBookmarkPopup();
-      });
-    });
-  };
-
-  rebuild();
-  mountPopup(el, anchor);
-  // Registry changes rebuild the open popup in place — e.g. a bookmark
-  // added from a page button in a pane while this menu is up.
-  _openList = { fileId, rebuild };
+    },
+    onDelete: async (bm) => {
+      await removePdfBookmark(fileId, bm.id);
+      onChanged?.();
+      if (!getPdfBookmarks(fileId).length && !canAdd) closeBookmarkPopup();
+    },
+    linkText: (bm) => bookmarkMarkdownLink(fileId, bm),
+    onAdd: canAdd ? () => startBookmarkStamp(stampKey(fileId)) : undefined,
+  });
 }
 
 // ===== Page-hover buttons (viewer pages) =====
@@ -427,6 +309,16 @@ export function attachPageClipBookmarks(wrapper, pageNum, { fileId }) {
     return true;
   };
 
+  // An armed stamp (Add Bookmark in the list) takes the next click on
+  // any page of this PDF, in whichever viewer shows it.
+  wrapper.addEventListener("click", (e) => {
+    if (bookmarkStampKey() !== stampKey(fileId)) return;
+    if (!clipAt(e.clientX, e.clientY, e.target)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    endBookmarkStamp();
+  }, true);
+
   let lastTouchClip = 0;
   wrapper.addEventListener("dblclick", (e) => {
     // iOS synthesises a click pair after a double tap the detector
@@ -472,16 +364,6 @@ export function attachPageClipBookmarks(wrapper, pageNum, { fileId }) {
 }
 
 function clamp01(n) { return n < 0 ? 0 : n > 1 ? 1 : n; }
-
-/** A zero-size anchor at a screen point, for popups that open at the
- *  pointer rather than off an element. */
-function pointAnchor(x, y) {
-  return {
-    getBoundingClientRect: () => ({
-      left: x, right: x, top: y, bottom: y, width: 0, height: 0, x, y,
-    }),
-  };
-}
 
 function paintClipLayer(entry) {
   const clips = getPdfBookmarks(entry.fileId)
@@ -579,7 +461,7 @@ export function createToolbarBookmarkButton({ getFileId, goToPage }) {
     const fileId = typeof getFileId === "function" ? getFileId() : getFileId;
     if (!fileId) return;
     openBookmarkListPopup({
-      anchor: btn, fileId,
+      anchor: btn, fileId, canAdd: true,
       onPick: (bm) => goToPage(bm.page),
     });
   });

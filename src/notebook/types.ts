@@ -1,6 +1,6 @@
 // === Tools ===
 export type Tool = "select" | "text" | "drag-area" | "brainstorm" | "pen"
-  | "split" | "grab" | "pin";
+  | "split" | "grab" | "bookmark";
 
 /** Sub-tool while Tool === "pen" (drawing mode). The top-level `tool`
  *  stays "pen"; `drawingSubTool` picks which pen-mode operation is
@@ -34,20 +34,25 @@ export interface Camera {
   rotation?: number;
 }
 
-export interface CameraBookmark {
+/** A bookmark: a named, coloured point on the canvas, stamped from the
+ *  toolbar's bookmark list and drawn as a DOM marker (icon + label) over
+ *  the canvas — see bookmarks.ts. Not a shape: it has no bounds, layer
+ *  or selection, but Splits and Grabs carry it like content, and it
+ *  rides the undo checkpoint. `x` / `y` are world coordinates of the
+ *  icon's centre. The id is what `hush-nb://<fileId>/<id>` links name. */
+export interface NotebookBookmark {
   id: string;
   name: string;
-  camera: Camera;
+  color: string;
+  x: number;
+  y: number;
+  createdAt?: number;
 }
 
 // === Shapes ===
 export const FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 export const LINE_HEIGHT_RATIO = 1.3;
 
-/** A pin's dot (world px): its radius, and the gap between it and the
- *  label. The dot sits left of `position` — see pins.ts. */
-export const PIN_RADIUS = 7;
-export const PIN_GAP = 6;
 
 interface ShapeBase {
   id: string;
@@ -177,12 +182,6 @@ export interface TextShape extends ShapeBase {
    *  instead of in world space, so it holds its place while the canvas
    *  pans and zooms under it. */
   outlinePin?: boolean;
-  /** Marks this text shape as a **pin** — a named point a Doc can link
-   *  to (`hush-pin://`). `text` is its name, `color` its colour, and a
-   *  dot is drawn left of the label. A flag for the reason `outline` is
-   *  one; see pins.ts. (Not to be confused with `outlinePin`, which
-   *  pins an outline to the frame.) */
-  pin?: boolean;
   /** Marks this text shape as a persisted gutter header label. Renders
    *  with the faded shadow-header style + horizontal rule above, is
    *  immune to selection / drag / edit, and gets its y position synced
@@ -349,9 +348,11 @@ export interface GrabSession {
   buffer: Shape[];
   /** Splits that were lifted along with the content, same convention. */
   bufferSplits: Split[];
+  /** Bookmarks lifted with the content, same convention. */
+  bufferBookmarks?: NotebookBookmark[];
   /** Canvas state captured immediately before Apply, so Cancel can put
    *  everything back in one step at any point in the two-stage flow. */
-  restore: { shapes: Shape[]; splits: Split[] } | null;
+  restore: { shapes: Shape[]; splits: Split[]; bookmarks?: NotebookBookmark[] } | null;
 }
 
 // === Proofreading ===

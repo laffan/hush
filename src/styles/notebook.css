@@ -260,31 +260,66 @@ body.notebook-proof-rail-resizing * {
   padding: 1px 4px;
 }
 
-/* Bookmark-jump confirmation toast — fades in/out on Option+1..5.
-   Positioned at the top of the canvas so it doesn't fight the bottom
-   pocket tray or the side shelves. */
-.bookmark-jump-toast {
-  position: fixed;
-  top: calc(var(--top-chrome-inset, 0px) + 24px);
-  left: 50%;
-  transform: translate(-50%, -8px);
-  padding: 8px 14px;
-  background: var(--theme-bg, var(--bg));
-  color: var(--fg);
-  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.3));
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-  font-size: 13px;
-  font-family: system-ui, -apple-system, sans-serif;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.18s ease, transform 0.18s ease;
-  z-index: 9999;
+/* Notebook bookmarks (ui/bookmark-layer.ts): ribbon + name, in the
+   app's UI font, at a fixed screen size over the canvas. Colours come
+   from the canvas theme via custom properties the layer sets. */
+.nb-bookmark {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  font-family: var(--ui-font-family);
+  font-size: 12px;
+  line-height: 18px;
   white-space: nowrap;
+  -webkit-user-select: none;
+  user-select: none;
 }
-.bookmark-jump-toast.visible {
-  opacity: 1;
-  transform: translate(-50%, 0);
+.nb-bookmark.dragging { cursor: grabbing; }
+.nb-bookmark-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.25));
+}
+.nb-bookmark-label {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--nb-bm-bg);
+  border: 1px solid var(--nb-bm-border);
+  color: var(--nb-bm-fg);
+  cursor: text;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nb-bookmark-input {
+  width: 140px;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  -webkit-user-select: text;
+  user-select: text;
+}
+/* A jump to a bookmark pulses it once, so the eye finds it. */
+.nb-bookmark.flash .nb-bookmark-icon { animation: nb-bookmark-flash 0.9s ease-out; }
+@keyframes nb-bookmark-flash {
+  0% { transform: scale(1); }
+  25% { transform: scale(1.6); }
+  100% { transform: scale(1); }
+}
+/* The armed stamp's pointer over everything a marker can sit on. */
+body.bookmark-stamping-nb .nb-bookmark {
+  cursor: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2222%22%20height%3D%2222%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M6%203.5h12V21l-6-4.4L6%2021z%22%20fill%3D%22%23ef5350%22%20stroke%3D%22%23fff%22%20stroke-width%3D%221.5%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E") 11 11, crosshair;
 }
 
 /* Loading overlay — shown while a notebook's shapes load. Covers the

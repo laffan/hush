@@ -295,7 +295,7 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
     };
 
     const canvas = new NotesCanvas(wrapper, shortcuts);
-    canvas.state.hostFileId = item.fileId; // pins build their links from it
+    canvas.state.hostFileId = item.fileId; // bookmark links are built from it
     // A stack column lives inside #stack-container, which already
     // shrinks via the pane-dock CSS vars — mirroring the global dock
     // footprints here would double-apply them.
@@ -318,12 +318,9 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
       canvas.loadShapes(snapshot.shapes, snapshot.layers, undefined, {
         splits: snapshot.splits,
         proof: snapshot.proof || null,
+        bookmarks: snapshot.bookmarks,
       });
       canvas.state.flowchart.deserialize(snapshot.flowEdges);
-      if (Array.isArray(snapshot.bookmarks)) {
-        canvas.state.bookmarks = snapshot.bookmarks;
-        canvas.state.notify("bookmarks");
-      }
     }
 
     // Restore camera or center on content

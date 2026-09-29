@@ -1,4 +1,4 @@
-import type { GrabSession, Shape, Layer, Split } from "./types";
+import type { GrabSession, Shape, Layer, Split, NotebookBookmark } from "./types";
 import type { FlowEdge } from "./flowchart";
 
 const MAX_HISTORY = 100;
@@ -21,6 +21,9 @@ export interface NotebookCheckpoint {
    *  checkpoint taken at Apply carries `stage: "place"`) instead of
    *  unwinding the whole two-stage operation at once. */
   grab: GrabSession | null;
+  /** Bookmarks. Not shapes either, and Splits and Grabs move them, so
+   *  undoing a line drag has to put them back with the content. */
+  bookmarks?: NotebookBookmark[];
 }
 
 /** Checkpoint copy with structural sharing.
@@ -54,6 +57,7 @@ function snapshot(cp: NotebookCheckpoint): NotebookCheckpoint {
     // Splits are a handful of numbers each — copy per element, like
     // layers and edges, so an in-place line drag can't rewrite history.
     splits: (cp.splits || []).map((s) => ({ ...s })),
+    bookmarks: (cp.bookmarks || []).map((b) => ({ ...b })),
     // The grab session's arrays hold live shape references (same
     // structural sharing as `shapes`); only the record itself and its
     // two lists need their own identity per checkpoint.
@@ -62,8 +66,13 @@ function snapshot(cp: NotebookCheckpoint): NotebookCheckpoint {
         ...cp.grab,
         buffer: cp.grab.buffer.slice(),
         bufferSplits: cp.grab.bufferSplits.map((s) => ({ ...s })),
+        bufferBookmarks: (cp.grab.bufferBookmarks || []).map((b) => ({ ...b })),
         restore: cp.grab.restore
-          ? { shapes: cp.grab.restore.shapes.slice(), splits: cp.grab.restore.splits.map((s) => ({ ...s })) }
+          ? {
+            shapes: cp.grab.restore.shapes.slice(),
+            splits: cp.grab.restore.splits.map((s) => ({ ...s })),
+            bookmarks: (cp.grab.restore.bookmarks || []).map((b) => ({ ...b })),
+          }
           : null,
       }
       : null,

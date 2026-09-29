@@ -141,13 +141,13 @@ async function openUrl(url, anchor) {
     } catch (e) { console.warn("PDF bookmark link failed:", e); }
     return;
   }
-  // Proofread pins (`hush-pin://<notebookFileId>/<pinId>`) open the
-  // proof at the pin.
-  if (url && url.startsWith("hush-pin://")) {
+  // Notebook bookmarks (`hush-nb://<notebookFileId>/<bookmarkId>`, and
+  // the older `hush-pin://`) open the notebook at the bookmark.
+  if (url && /^hush-(nb|pin):\/\//.test(url)) {
     try {
-      const { openPinUrl } = await import("../../notebook/pin-links.js");
-      await openPinUrl(url);
-    } catch (e) { console.warn("Pin link failed:", e); }
+      const { openNotebookBookmarkUrl } = await import("../../notebook/bookmark-links.js");
+      await openNotebookBookmarkUrl(url);
+    } catch (e) { console.warn("Notebook bookmark link failed:", e); }
     return;
   }
   // Zotero deep links get a tooltip menu at the click point — "Open in

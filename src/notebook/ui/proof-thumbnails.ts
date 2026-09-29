@@ -183,6 +183,7 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
   let segments: RailSegment[] = [];
   let inkTimer: ReturnType<typeof setTimeout> | null = null;
   let inkShapes: unknown = null;
+  let inkBookmarks: unknown = null;
   let tweenRaf = 0;
 
   // ── layout ──
@@ -313,7 +314,9 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
         return;
       }
       inkShapes = state.shapes;
+      inkBookmarks = state.bookmarks;
       drawProofRailInk(ink, {
+        bookmarks: state.bookmarks,
         shapes: state.shapes,
         segments,
         theme: state.theme,
@@ -510,7 +513,7 @@ export function createProofThumbnails(state: DrawingState): ProofThumbnailRail {
     // notices when a stroke or a text shape is added — this is what
     // keeps the overlay live. Identity, not deep compare: every
     // DrawingState mutation replaces the shapes array.
-    if (inkShapes !== state.shapes) scheduleInk();
+    if (inkShapes !== state.shapes || inkBookmarks !== state.bookmarks) scheduleInk();
 
     const theme = state.theme;
     // Only touch style properties that changed — this runs on every

@@ -24,7 +24,7 @@ import type { DrawingState } from "../state";
 import type { Tool } from "../types";
 import { h } from "./dom-helpers";
 import { icon } from "./icons";
-import { createBookmarksPanel } from "./bookmarks-panel";
+import { createBookmarksButton } from "./bookmarks-button";
 import { createLayersPanel } from "../drawing/layers-panel";
 
 interface ToolDef { iconName: string; label: string; tool: Tool | "brainstorm"; shortcut: string }
@@ -39,9 +39,6 @@ const TOOLS: ToolDef[] = [
   // the content tools and before the drawing divider.
   { iconName: "split", label: "Split", tool: "split", shortcut: "S" },
   { iconName: "grab-tool", label: "Grab", tool: "grab", shortcut: "G" },
-  // Proofread notebooks only (hidden elsewhere in update()): drop a
-  // named point a Doc can link to — see pins.ts.
-  { iconName: "location-pin", label: "Pin", tool: "pin", shortcut: "" },
 ];
 
 const EDGE_PAD = 20;
@@ -83,7 +80,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
     return btn;
   }
 
-  const bookmarksEl = createBookmarksPanel(state);
+  const bookmarksEl = createBookmarksButton(state);
   const layersEl = createLayersPanel(state);
 
   const container = h("div", {
@@ -228,10 +225,6 @@ export function createToolbar(state: DrawingState): HTMLElement {
     const accent = theme.accent;
 
     for (const [key, btn] of buttons) {
-      if (key === "pin") {
-        const show = !!state.proof;
-        if ((btn.style.display === "none") === show) btn.style.display = show ? "flex" : "none";
-      }
       let active: boolean;
       if (key === "brainstorm") {
         active = state.brainstormMode;

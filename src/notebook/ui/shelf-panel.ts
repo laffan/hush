@@ -9,6 +9,7 @@ import {
   getDesktopStickies, revealDesktopSticky,
 } from "./shelf-label";
 import { perf } from "../perf-hud"; // PERF-HUD (temporary)
+import { makeShelfBookmarksSection } from "./shelf-bookmarks";
 
 interface ShelfNode {
   id: string; type: string; label: string; excerpt: string;
@@ -389,6 +390,10 @@ export function createShelfPanel(
       body.appendChild(section);
     }
 
+    // Bookmarks, each in its colour — a click centres it.
+    const bookmarkSection = activeTag ? null : makeShelfBookmarksSection(state, search);
+    if (bookmarkSection) body.appendChild(bookmarkSection);
+
     // Pane rows — pinned canvas panes show alongside shapes and their
     // contents are searchable from the same input. The list is read live
     // from the pane manager so editor edits are picked up on every
@@ -422,7 +427,7 @@ export function createShelfPanel(
 
     // All items
     const scrollArea = h("div", { style: { flex: "1", overflowY: "auto", padding: "4px 0" } });
-    if (unpinnedItems.length === 0 && visiblePanes.length === 0) {
+    if (unpinnedItems.length === 0 && visiblePanes.length === 0 && !bookmarkSection) {
       scrollArea.appendChild(h("div", { text: "No items. Add shapes to the canvas.", style: { padding: "16px", textAlign: "center", fontSize: "12px", color: muted } }));
     }
     unpinnedItems.forEach((n) => scrollArea.appendChild(makeNodeRow(n, false)));

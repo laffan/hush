@@ -28,7 +28,7 @@
  * real world point.
  */
 
-import type { DrawShape, Shape, TextShape } from "../types";
+import type { DrawShape, NotebookBookmark, Shape, TextShape } from "../types";
 import { FONT_FAMILY, LINE_HEIGHT_RATIO } from "../types";
 import type { CanvasTheme } from "../themes";
 import { parseText } from "../markdown";
@@ -137,7 +137,12 @@ export interface RailInkOptions {
   /** Canvas font stack, so heading text measures and paints the same
    *  way it does on the canvas itself. */
   fontFamily: string;
+  /** Bookmarks — a small dot each, in its colour, over everything. */
+  bookmarks?: NotebookBookmark[];
 }
+
+/** Radius of a bookmark's dot on the rail, CSS px. */
+const BOOKMARK_DOT_R = 3;
 
 /**
  * Repaint the whole overlay. Cheap enough to redraw wholesale — the
@@ -215,6 +220,17 @@ export function drawProofRailInk(canvas: HTMLCanvasElement, opts: RailInkOptions
     }
   }
   ctx.globalAlpha = 1;
+  // Bookmarks last, so no annotation paints over where they are.
+  for (const bm of opts.bookmarks || []) {
+    const p = map(bm.x, bm.y);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, BOOKMARK_DOT_R, 0, Math.PI * 2);
+    ctx.fillStyle = bm.color;
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = theme.uiBackground;
+    ctx.stroke();
+  }
 }
 
 /**

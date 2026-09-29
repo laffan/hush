@@ -19,9 +19,13 @@
  * layer precisely so they can't be nudged — is exactly the case where
  * the locked material has to move. Hidden layers ARE skipped: content
  * nobody can see must not silently move or be cut.
+ *
+ * Bookmarks are points, not shapes, so each operation carries them
+ * itself — see the split / grab helpers in bookmark-model.ts.
  */
 
-import type { Axis, Shape, Split, SplitLine } from "./types";
+import type { Axis, NotebookBookmark, Shape, Split, SplitLine } from "./types";
+import { collapseBookmarks, landBookmarks, liftBookmarks, translateBookmarks } from "./bookmark-model";
 import type { DrawingState } from "./state";
 import { generateId, computePocketLayout } from "./utils";
 import {
@@ -45,6 +49,7 @@ export interface SplitDragState {
    *  drag stays absolute rather than accumulating rounding. */
   startSplits: Split[];
   startShapes: Shape[];
+  startBookmarks: NotebookBookmark[];
   moved: boolean;
 }
 
@@ -191,6 +196,7 @@ export function collapseSplit(state: DrawingState, splitId: string): void {
 
   let shapes = doomed.size ? state.shapes.filter((s) => !doomed.has(s.id)) : state.shapes;
   let splits = state.splits.filter((s) => s.id !== splitId);
+  const bookmarks = collapseBookmarks(state.bookmarks, orientation, a, b, split.createdAt);
   if (gap > 0) {
     const remaining = buildUnits(shapes, orientation, state.fontFamily, splittableSkipIds(state));
     shapes = translateShapes(shapes, idsAfter(remaining, b), orientation, -gap);
@@ -202,6 +208,7 @@ export function collapseSplit(state: DrawingState, splitId: string): void {
 
   state.shapes = shapes;
   state.splits = splits;
+  state.bookmarks = bookmarks;
   if (doomed.size) {
     state.selectedIds = new Set([...state.selectedIds].filter((id) => !doomed.has(id)));
     state.notify("selectedIds");
@@ -209,6 +216,7 @@ export function collapseSplit(state: DrawingState, splitId: string): void {
   state.recordHistory();
   state.notify("shapes");
   state.notify("splits");
+  state.notify("bookmarks");
 }
 
 // ───────────────────────── line dragging ─────────────────────────
@@ -226,6 +234,7 @@ export function beginSplitDrag(state: DrawingState, split: Split, line: SplitLin
     carried,
     startSplits: state.splits,
     startShapes: state.shapes,
+    startBookmarks: state.bookmarks,
     moved: false,
   };
   state.splitHover = null;
@@ -262,8 +271,12 @@ export function updateSplitDrag(state: DrawingState, world: { x: number; y: numb
     if (s.id !== drag.splitId) return s;
     return nearSide ? { ...s, a: start.a + d } : { ...s, b: start.b + d };
   });
+  state.bookmarks = translateBookmarks(
+    drag.startBookmarks, drag.orientation, d, (p) => (nearSide ? p < pivot : p > pivot),
+  );
   state.notify("shapes");
   state.notify("splits");
+  state.notify("bookmarks");
 }
 
 export function endSplitDrag(state: DrawingState): void {
@@ -316,7 +329,9 @@ export function endGrabBand(state: DrawingState): void {
  * rebased to the band's near edge, so the place stage can drop them
  * anywhere.
  */
-export function applyGrab(state: DrawingState, restoreOverride?: { shapes: Shape[]; splits: Split[] }): void {
+export function applyGrab(
+  state: DrawingState, restoreOverride?: { shapes: Shape[]; splits: Split[]; bookmarks?: NotebookBookmark[] },
+): void {
   const g = state.grab;
   if (!g || g.stage !== "band") return;
   const { orientation, a, b } = g;
@@ -325,7 +340,7 @@ export function applyGrab(state: DrawingState, restoreOverride?: { shapes: Shape
   // `restoreOverride` exists for "grab split", which removes the split
   // before applying — Cancel has to put that split back too, so the
   // snapshot has to predate the removal.
-  const restore = restoreOverride || { shapes: state.shapes, splits: state.splits };
+  const restore = restoreOverride || { shapes: state.shapes, splits: state.splits, bookmarks: state.bookmarks };
 
   let shapes = cutAt(state, state.shapes, orientation, a);
   shapes = cutAt(state, shapes, orientation, b);
@@ -351,6 +366,9 @@ export function applyGrab(state: DrawingState, restoreOverride?: { shapes: Shape
   const pulled = idsAfter(afterUnits, b);
   state.shapes = translateShapes(remaining, pulled, orientation, -height);
   state.splits = translateSplits(keptSplits, orientation, -height, (p) => p > b);
+  const liftedBms = liftBookmarks(state.bookmarks, orientation, a, b);
+  const bufferBookmarks = liftedBms.buffer;
+  state.bookmarks = liftedBms.kept;
   state.selectedIds = new Set();
 
   state.grab = {
@@ -360,11 +378,13 @@ export function applyGrab(state: DrawingState, restoreOverride?: { shapes: Shape
     b,
     buffer: rebase(buffer, orientation, -a),
     bufferSplits,
+    bufferBookmarks,
     restore,
   };
   state.recordHistory();
   state.notify("shapes");
   state.notify("splits");
+  state.notify("bookmarks");
   state.notify("selectedIds");
   state.notify("grab");
 }
@@ -392,6 +412,7 @@ export function placeGrab(state: DrawingState, pos: number): void {
     { id: generateId(), orientation, a: pos, b: pos + height, createdAt: Date.now() },
     ...g.bufferSplits.map((s) => ({ ...s, id: generateId(), a: s.a + pos, b: s.b + pos })),
   ];
+  state.bookmarks = landBookmarks(state.bookmarks, g.bufferBookmarks || [], orientation, pos, height);
   // A placed grab leaves nothing selected. Selecting what landed reads
   // as a live selection the user didn't make — on a proof it puts
   // handles around the page image that came along for the ride, and the
@@ -401,6 +422,7 @@ export function placeGrab(state: DrawingState, pos: number): void {
   state.recordHistory();
   state.notify("shapes");
   state.notify("splits");
+  state.notify("bookmarks");
   state.notify("selectedIds");
   state.notify("grab");
 }
@@ -416,6 +438,7 @@ export function cancelGrab(state: DrawingState): void {
   if (g.restore) {
     state.shapes = g.restore.shapes;
     state.splits = g.restore.splits;
+    if (g.restore.bookmarks) { state.bookmarks = g.restore.bookmarks; state.notify("bookmarks"); }
     state.selectedIds = new Set();
     state.recordHistory();
     state.notify("shapes");
@@ -432,7 +455,7 @@ export function grabSplit(state: DrawingState, splitId: string): void {
   // A split that was never opened has no gap and so nothing to grab —
   // leave it alone rather than handing the user an empty buffer.
   if (!split || split.b <= split.a) return;
-  const restore = { shapes: state.shapes, splits: state.splits };
+  const restore = { shapes: state.shapes, splits: state.splits, bookmarks: state.bookmarks };
   state.splits = state.splits.filter((s) => s.id !== splitId);
   state.grab = {
     stage: "band",

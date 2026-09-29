@@ -185,13 +185,15 @@ function makeId(prefix, i) {
  * don't have one pass nothing and get clean pages.
  *
  * `opts.bookmarks` is the source PDF's bookmark list. Each one on a
- * chosen page becomes a pin on the notes layer (notebook/pins.ts): a
+ * chosen page becomes a bookmark on the proof (notebook/bookmarks.ts): a
  * clip at its point, a whole-page bookmark at the page's top-left
- * corner — so the places marked while reading are linkable in the proof.
+ * corner — so the places marked while reading are there, and linkable,
+ * in the proof.
  */
 export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFileId, pageNumbers, opts = {}) {
   const { onProgress, annotations = [], bookmarks = [] } = opts;
-  const { makePin } = await import("../notebook/pins.ts");
+  const nbBookmarks = [];
+  let bmSeq = 0;
   const pdfjs = await getPdfjs();
   const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise;
   try {
@@ -245,9 +247,10 @@ export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFile
         const at = clip
           ? { x: bm.x * raster.width, y: y + bm.y * raster.height }
           : { x: 24, y: y + 24 };
-        shapes.push(makePin(at, {
-          name: bm.name || `Page ${pageNumber}`, color: bm.color, fontSize: 16, layerId: inkLayerId,
-        }));
+        nbBookmarks.push({
+          id: makeId("bookmark", bmSeq++), name: bm.name || `Page ${pageNumber}`,
+          color: bm.color || "#ef5350", x: at.x, y: at.y, createdAt,
+        });
       }
       y += raster.height + PAGE_GAP;
     }
@@ -267,6 +270,7 @@ export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFile
       // it doesn't touch the user's default for ordinary notebooks.
       background: { pattern: "blank" },
       proof: { sourcePdfFileId, sourceName, pageLayerId, pages },
+      bookmarks: nbBookmarks,
     });
   } finally {
     await doc.destroy();
