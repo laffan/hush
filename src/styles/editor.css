@@ -747,14 +747,16 @@ body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection
 }
 
 /* A link to a PDF or notebook bookmark carries the bookmark's ribbon, in
-   its colour (links/bookmark-colors.js), just ahead of the text. Sized
-   to the text so it scales with the style's font size. */
+   its colour (links/bookmark-colors.js), just ahead of the text. The svg
+   is cropped to the ribbon, so the ribbon is exactly one font size tall
+   (12 : 17.5 is its aspect) and sits over the same span a glyph box
+   does, descender to ascender. */
 .cm-link-bm-icon {
   display: inline-block;
-  width: 0.75em;
-  height: 0.75em;
-  margin-right: 0.22em;
-  vertical-align: -0.04em;
+  height: 1em;
+  width: calc(1em * 12 / 17.5);
+  margin-right: 0.25em;
+  vertical-align: -0.2em;
 }
 .cm-link-bm-icon svg {
   display: block;

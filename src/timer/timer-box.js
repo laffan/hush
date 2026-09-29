@@ -92,7 +92,7 @@ export function mountTimerBox(slot, state, panelOverlay) {
       <div class="sidebar-timer" role="timer" aria-live="off">
         <div class="sidebar-timer-task" title="Double-click to edit"></div>
         <div class="sidebar-timer-progress"><span></span></div>
-        <div class="sidebar-timer-progress sidebar-timer-break-bar" hidden><span></span></div>
+        <div class="sidebar-timer-progress sidebar-timer-break-bar"><span></span></div>
         <div class="sidebar-timer-line">
           <span class="sidebar-timer-countdown"></span>
           <span class="sidebar-timer-break"></span>
@@ -203,14 +203,15 @@ export function mountTimerBox(slot, state, panelOverlay) {
     els.ringFill.style.strokeDashoffset = String(100 - st.progress * 100);
     ring.classList.toggle("finished", st.finished);
     renderMarks(st.breakMarks);
-    // The break's own countdown: what's left of it, emptying as it runs.
+    // The break's own progress, filling the same way the session's does.
+    // The bar is always laid out — only transparent between breaks — so
+    // nothing below it moves when one starts or ends.
     const brk = st.finished ? null : st.onBreak;
-    els.breakBar.hidden = !brk;
+    els.breakBar.classList.toggle("active", !!brk);
     ring.classList.toggle("on-break", !!brk);
-    if (brk) {
-      els.breakBar.firstElementChild.style.width = `${(1 - brk.progress) * 100}%`;
-      els.ringBreak.style.strokeDashoffset = String(brk.progress * 100);
-    }
+    const brkProgress = brk ? brk.progress : 0;
+    els.breakBar.firstElementChild.style.width = `${brkProgress * 100}%`;
+    els.ringBreak.style.strokeDashoffset = String(100 - brkProgress * 100);
 
     // An alarm's last ten minutes: the minutes to go in red, and the ring
     // shows them without being hovered.

@@ -9,7 +9,13 @@ import { RangeSetBuilder } from "@codemirror/state";
 import { isIOS } from "../../settings/settings-ui.js";
 import { focusSentenceBounds } from "./focus-mode.js";
 import { bookmarkLinkInfo, BOOKMARK_COLORS_EVENT } from "../../links/bookmark-colors.js";
-import { bookmarkGlyph } from "../../ui/bookmark-ui.js";
+
+/** The ribbon cropped to its own bounds, so CSS can size it to the text
+ *  (styles/editor.css `.cm-link-bm-icon`). */
+function linkRibbon(color) {
+  const fill = /^(#[0-9a-fA-F]{3,8}|currentColor)$/.test(color) ? color : "currentColor";
+  return `<svg viewBox="6 3.5 12 17.5" aria-hidden="true"><path d="M6 3.5h12V21l-6-4.4L6 21z" fill="${fill}"/></svg>`;
+}
 
 // Matches [text](url) but not ![alt](img)
 const LINK_RE = /(?<!!)\[([^\]]+)\]\(([^)]+)\)/g;
@@ -41,7 +47,7 @@ class LinkWidget extends WidgetType {
       // opens the link like the text does.
       const icon = document.createElement("span");
       icon.className = "cm-link-bm-icon" + (this.bookmark.color ? "" : " unknown");
-      icon.innerHTML = bookmarkGlyph(this.bookmark.color || "currentColor", 12);
+      icon.innerHTML = linkRibbon(this.bookmark.color || "currentColor");
       span.appendChild(icon);
       span.appendChild(document.createTextNode(this.text));
     } else {

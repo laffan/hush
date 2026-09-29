@@ -402,13 +402,17 @@ html[data-theme="dark"] .sidebar-timer {
   pointer-events: none;
 }
 
-/* The break under way, counting down directly under the session's bar. */
+/* The break under way, filling left to right 1px under the session's bar
+   (its 6px top margin less 5). Always in the layout, transparent between
+   breaks, so the box never changes height. */
 .sidebar-timer-break-bar {
   height: 1px;
-  margin-top: -3px;
+  margin-top: -5px;
+  opacity: 0;
 }
-.sidebar-timer-break-bar[hidden] { display: none; }
+.sidebar-timer-break-bar.active { opacity: 1; }
 .sidebar-timer-break-bar span { transition: width 1s linear; }
+.sidebar-timer-break-bar:not(.active) span { transition: none; }
 
 /* To go / next break / finish: three columns, the break centred between
    the other two however wide the sidebar is. */
@@ -525,13 +529,13 @@ html[data-theme="dark"] .sidebar-timer {
   fill: none;
 }
 
-/* The break's countdown: a thin circle inside the ring, emptying as the
-   break runs. Only there while one is. */
+/* The break's progress: a thin circle inside the ring, filling as the
+   break runs, the way the ring itself does. Only there while one is. */
 .timer-ring circle.timer-ring-break {
   stroke: color-mix(in srgb, var(--fg) 45%, transparent);
   stroke-width: 1.5;
   stroke-dasharray: 100;
-  stroke-dashoffset: 0;
+  stroke-dashoffset: 100;
   display: none;
   transition: stroke-dashoffset 1s linear;
 }
