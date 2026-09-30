@@ -113,9 +113,12 @@ export function createPinnedOutlineEditor(o) {
   const modeContext = Object.create(appState);
   modeContext.typewriterMode = false;
 
+  // No line indicator either: it marks the line being written in the
+  // text, and the panel is the outline, not the text.
   const editor = createPaneEditor(o.parent, appState, null, {
     modeContext,
     fragment: true,
+    lineIndicator: false,
     extraExtensions: [
       hostComp.of(outlineHost.of({ hideDone: !!o.hideDone })),
       keepChecklist,

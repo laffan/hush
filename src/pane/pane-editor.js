@@ -52,6 +52,7 @@ export function createPaneEditor(container, appState, onChange, opts) {
       // A surface holding a slice of a document (the pinned outline's
       // panel) — see createBaseExtensions.
       fragment: !!opts?.fragment,
+      lineIndicator: opts?.lineIndicator,
     });
 
   const dryPlugin = createDryHighlightPlugin(modeRef);
@@ -68,7 +69,9 @@ export function createPaneEditor(container, appState, onChange, opts) {
     extensions: [...extensions, dryPlugin, typewriterUpdateListener, ...extraExts],
   });
   const view = new EditorView({ state: startState, parent: container });
-  const unbindLineIndicator = bindLineIndicatorToContainer(container, appState);
+  const unbindLineIndicator = opts?.lineIndicator === false
+    ? () => {}
+    : bindLineIndicatorToContainer(container, appState);
   // The settings this surface is themed from. Starts as the session's
   // and is replaced by `reconfigureTheme` once a locked style resolves,
   // so the cursor binding below repaints against the style the surface

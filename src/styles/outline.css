@@ -108,12 +108,19 @@
   border-color: color-mix(in srgb, var(--style-fg, var(--fg)) 30%, transparent);
 }
 
-/* The tick inside a circle needs a touch more inset than inside a
-   square, or its long arm runs into the curve. */
+/* The tick inside a circle, centred on it. The tick is the right and
+   bottom borders of a 0.24 × 0.42em box turned 45°, and its ink is not
+   the box: the turned box's top corner is empty, so the ink sits 0.039em
+   below the box's centre and spans ±0.233em either side of it. Centring
+   the ink on the circle — whose inside is 0.95em less its two 1px
+   borders, so its centre is 0.475em − 1px from the inside edge — puts
+   the box at 0.355em − 1px from the left and 0.226em − 1px from the top.
+   The old 0.26em / 0.08em left the tick about a pixel high at 14px, and
+   further off the more the footer's + grew the type. */
 .cm-outline-line .cm-task-checkbox.checked::after,
 .outline-row-box.checked::after {
-  left: 0.26em;
-  top: 0.08em;
+  left: calc(0.355em - 1px);
+  top: calc(0.226em - 1px);
   width: 0.24em;
   height: 0.42em;
 }

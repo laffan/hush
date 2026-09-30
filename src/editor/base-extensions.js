@@ -167,6 +167,9 @@ export function createStrikethroughFallback(state) {
  *   outside its text column for the line indicator's arrows / border
  *   stripes to hang in (a pane, a stack column), so they attach to the
  *   surface's own edges and the highlight runs edge to edge.
+ * @param {boolean} [opts.lineIndicator] `false` leaves the current-line
+ *   indicator off this surface. The indicator belongs to the text being
+ *   written; the pinned outline's panel opts out.
  * @param {function} [opts.getFileId] Which document this surface is
  *   showing, as a fileId. The word-count limit is per-document, and a
  *   surface can't work out which document it holds on its own — the
@@ -246,7 +249,9 @@ export function createBaseExtensions(state, onChange, opts) {
     createFootnotePlugin(state),
     createFlagHighlightPlugin(state),
     createYouAreHerePlugin(),
-    createLineIndicatorPlugin(state, { flush: !!opts?.flushLineIndicator }),
+    // A pinned outline's panel is not a place to write in, and has no
+    // current line to point at — see opts.lineIndicator.
+    opts?.lineIndicator === false ? [] : createLineIndicatorPlugin(state, { flush: !!opts?.flushLineIndicator }),
     createLinkDecoratorPlugin(state),
     createWikilinkPlugin(state),
     createCitationPlugin(state),
