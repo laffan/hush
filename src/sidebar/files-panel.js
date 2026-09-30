@@ -28,6 +28,10 @@ import {
 } from "./files-panel-actions.js";
 import { isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree, renderTabMarkerRow, openDocAtTab } from "./files-panel-tabs.js";
 import { isHeadingItem, augmentTreeWithHeadings, stripHeadingsFromTree, renderHeadingRow, openDocAtHeading } from "./files-panel-headings.js";
+import {
+  isCardItem, augmentTreeWithCards, stripCardsFromTree, renderCardRow, openCard,
+  dropCardOnRow, dropCardOutside, trackCardRowHover, onCardIndexChange,
+} from "./files-panel-cards.js";
 import { renderFlaggedSection } from "./files-panel-flagged.js";
 import { renderDeskYouAreHere } from "./files-panel-you-are-here.js";
 import { installRevealOnOpen, defaultCollapsedIds } from "./files-panel-reveal.js";
@@ -44,6 +48,9 @@ let localSyncRootEl = null;
 
 // Outline-number labels for rows inside a project with `showNumbers`.
 let numberLabels = new Map();
+
+// Ends the row outline a dragged card row draws (files-panel-cards.js).
+let stopCardHover = null;
 
 // Desk the sortable was seeded from — onChange commits into THIS desk
 // (commitRenderedChildren), never the currently-active one.
@@ -87,7 +94,7 @@ export function createFilesPanel(container, state, hidePanel) {
 
   reapplyGutterMarkers(state.fileTree);
   renderedDeskId = renderedDeskIdFor(state);
-  const sortedTree = augmentTreeWithHeadings(state, augmentTreeWithTabs(state, normalizeProjectChildren(visibleTopLevel(state))));
+  const sortedTree = augmentTreeWithCards(state, augmentTreeWithHeadings(state, augmentTreeWithTabs(state, normalizeProjectChildren(visibleTopLevel(state)))));
   numberLabels = computeNumberLabels(sortedTree, numberSkip, isInboxId);
 
   sortableInstance = new SortableList(listContainer, {
@@ -100,6 +107,9 @@ export function createFilesPanel(container, state, hidePanel) {
       // Tab markers and heading rows are synthetic — they can never be a
       // drop target and the dragged item can never be one (canDrag blocks them).
       if (isTabMarkerItem(targetItem) || isHeadingItem(targetItem)) return false;
+      // Card rows move between files, not around the tree: their drops
+      // are onDropExternal's and onDragOutside's (files-panel-cards.js).
+      if (isCardItem(draggedItem) || isCardItem(targetItem)) return false;
       // Images stay inside the Images folder; desks can't nest
       // (root-level drops only).
       if (draggedItem.type === "image") return !!targetItem && isImagesId(targetItem.id);
@@ -149,6 +159,7 @@ export function createFilesPanel(container, state, hidePanel) {
           if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
         });
       }
+      if (isCardItem(item)) return renderCardRow(item);
       if (isHeadingItem(item)) {
         return renderHeadingRow(item, (entry) => {
           if (state.selectedDocIds.length) state.clearSelectedDocs();
@@ -221,6 +232,12 @@ export function createFilesPanel(container, state, hidePanel) {
     },
 
     onClick: (item, event) => {
+      if (isCardItem(item)) {
+        if (state.selectedDocIds.length) state.clearSelectedDocs();
+        void openCard(state, item);
+        if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
+        return;
+      }
       // Docs / notebooks / pdfs / stacks participate in multi-select;
       // everything else falls through and clears any active selection.
       const isMultiSelectable = (item.type === "document" || item.type === "notebook" || item.type === "pdf" || item.type === "stack") && item.fileId;
@@ -258,7 +275,8 @@ export function createFilesPanel(container, state, hidePanel) {
       }
     },
 
-    onDropExternal: (item, ev) => onLocalDropExternal(state, item, ev), // drop onto a Local Sync folder → move to disk
+    onDropExternal: (item, ev) => (isCardItem(item) ? dropCardOnRow(state, item, ev) : onLocalDropExternal(state, item, ev)), // a card onto a file row; anything else onto a Local Sync folder → move to disk
+    onDragStart: (item) => { if (isCardItem(item)) stopCardHover = trackCardRowHover(); },
     onCollapseChange: (ids) => {
       state.updateSettings({ collapsedFolderIds: ids }); // persist folder open/closed state
       // The toggle re-rendered the tree — re-nest Local Folders after.
@@ -268,12 +286,13 @@ export function createFilesPanel(container, state, hidePanel) {
     // without an onChange, which would strand the sections that live
     // inside it (Local Folders, the desk YOU ARE HERE row) — re-place
     // them after.
-    onDragEnd: () => { queueMicrotask(() => positionNestedSections(state)); },
+    onDragEnd: () => { stopCardHover?.(); stopCardHover = null; queueMicrotask(() => positionNestedSections(state)); },
     // Images can always escape the panel (no Cmd required) so the drop
     // lands in whatever editor/notebook is under the pointer.
-    forceDragOutside: (item) => item && item.type === "image",
+    forceDragOutside: (item) => item && (item.type === "image" || isCardItem(item)),
 
     onDragOutside: (item, clientX, clientY, pointerEvent) => {
+      if (isCardItem(item)) { dropCardOutside(state, item, clientX, clientY); return; }
       if (item.type === "image" && item.fileId) {
         import("../pane/text-drag.js").then(({ dropSidebarImageAt }) => {
           dropSidebarImageAt(item.fileId, clientX, clientY);
@@ -299,7 +318,7 @@ export function createFilesPanel(container, state, hidePanel) {
     onChange: (newData) => {
       // Tab markers and heading rows are synthetic — strip them before any
       // tree write so the persisted tree never inherits one (re-added on render).
-      const cleaned = stripHeadingsFromTree(stripTabMarkersFromTree(newData));
+      const cleaned = stripCardsFromTree(stripHeadingsFromTree(stripTabMarkersFromTree(newData)));
       if (isAllDesksMode(state)) {
         // The top level *is* the desk list. Re-pin specials inside each
         // desk (a cross-desk move can land an item beside Inbox/Trash).
@@ -489,7 +508,7 @@ function refreshList(state) {
     // contents (project, PDFs, Inbox) into whichever desk the panel was
     // first built on. That is how content "moved desks" overnight.
     renderedDeskId = renderedDeskIdFor(state);
-    const sorted = augmentTreeWithHeadings(state, augmentTreeWithTabs(state, normalizeProjectChildren(visibleTopLevel(state))));
+    const sorted = augmentTreeWithCards(state, augmentTreeWithHeadings(state, augmentTreeWithTabs(state, normalizeProjectChildren(visibleTopLevel(state)))));
     numberLabels = computeNumberLabels(sorted, numberSkip, isInboxId);
     sortableInstance.setData(sorted);
   }
@@ -548,6 +567,8 @@ export function initFilesPanelTabSync(state) {
   if (_tabSyncWired) return;
   _tabSyncWired = true;
   state.on("doc-content-changed", () => scheduleTabRefresh(state));
+  // A notebook's card rows come from what its canvas publishes.
+  onCardIndexChange(() => scheduleTabRefresh(state));
 }
 
 async function openImagePreview(filename, name) {

@@ -36,6 +36,10 @@ export class SortableList {
         (options.onDragEnd || (() => {}))(moved, didDrop);
       },
       onDragOutside: options.onDragOutside || null,
+      // `(item) => boolean`: items that leave the panel on release without
+      // ⌘ held (sidebar images, card rows). Read by drag-drop.js#finishDrag;
+      // it was never copied in here, so those drags silently did nothing.
+      forceDragOutside: options.forceDragOutside || null,
       // Called on drop when the release point is over an element outside
       // this list (e.g. a Local Sync folder row). Return true to claim the
       // drop — the list then snaps the source back instead of reordering.

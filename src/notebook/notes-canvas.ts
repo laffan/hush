@@ -32,6 +32,7 @@ import { perf } from "./perf-hud";
 import { createDrawingToolPanel } from "./drawing/tool-panel";
 import { createBgSettingsFixedButton } from "./ui/bg-settings-fixed-button";
 import { createBookmarkLayer } from "./ui/bookmark-layer";
+import { createCardLayer } from "./ui/card-layer";
 import { BOOKMARK_STAMP_CURSOR } from "../ui/bookmark-ui.js";
 
 /** Read the user's flag-colour map from Hush settings. Notebook text
@@ -609,6 +610,8 @@ export class NotesCanvas {
     }));
     // Bookmark markers — DOM over the canvas (bookmarks.ts).
     container.appendChild(createBookmarkLayer(this.state));
+    // Cards — the Doc's card component, over the canvas (card-layer.ts).
+    container.appendChild(createCardLayer(this.state));
     container.appendChild(createTextEditor(this.state));
     container.appendChild(createBrainstormInput(this.state));
     container.appendChild(createGrabPopup(this.state));

@@ -3,6 +3,7 @@ import type { CanvasTheme } from "./themes";
 import type { FlowchartLayer } from "./flowchart";
 import { drawBackground } from "./renderer-background";
 import { drawDragArea, drawTextShape, drawImageShape, drawOutlineShape } from "./renderer";
+import { drawCardShape } from "./renderer-card";
 import { flowBackdropIds, drawTextBackdrop } from "./renderer-flow-backdrop";
 
 /** Paint shapes + (optional) background into an arbitrary ctx at an
@@ -100,7 +101,8 @@ export function renderForExport(
       // An outline exports as the framed block it is on the canvas. A
       // pinned one exports in its world position: an export has no frame
       // to pin to, and the alternative is leaving it out of the picture.
-      if (shape.type === "text" && shape.outline) drawOutlineShape(ctx, shape, theme, omitTextGlyphs, flagColors);
+      if (shape.type === "text" && shape.card) drawCardShape(ctx, shape, theme, omitTextGlyphs, flagColors);
+      else if (shape.type === "text" && shape.outline) drawOutlineShape(ctx, shape, theme, omitTextGlyphs, flagColors);
       else if (shape.type === "text") {
         if (backdropIds?.has(shape.id)) drawTextBackdrop(ctx, shape, fontFamily, backdropColor);
         drawTextShape(ctx, shape, theme, fontFamily, omitTextGlyphs, flagColors);

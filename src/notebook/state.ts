@@ -44,6 +44,7 @@ import {
 // PERF-HUD (temporary): tracer singleton — see perf-hud.ts.
 import { perf } from "./perf-hud";
 import { placeBookmark } from "./bookmarks";
+import { addCardShape } from "./card-shape";
 import { titledAreaFollowers } from "./drag-area-title";
 
 /**
@@ -151,6 +152,9 @@ export class DrawingState extends EventTarget {
   renamingBookmarkId: string | null = null;
   /** A bookmark just jumped to — its marker pulses once. Transient. */
   flashBookmarkId: string | null = null;
+  /** A card just made here (⌘-double-click) whose editor should take the
+   *  keyboard as soon as the card layer builds it. */
+  focusCardId: string | null = null;
   /** Per-shape text style a *new* text shape starts from, or null to
    *  follow the canvas. Set when a proofread notebook mounts (see
    *  `PROOF_TEXT_STYLE`); untouched everywhere else. */
@@ -1247,6 +1251,9 @@ export class DrawingState extends EventTarget {
    *  afterwards. Guarding here covers every caller. */
   startEditingExistingText(shape: TextShape): boolean {
     if (this._isShapeInert(shape)) return false;
+    // A card is edited in its own editor (ui/card-layer.ts), never in
+    // the inline textarea.
+    if (shape.card) return false;
     this.editingText = {
       shapeId: shape.id,
       // An outline's `position` is the top-left of its frame, not of its
@@ -1489,6 +1496,8 @@ export class DrawingState extends EventTarget {
       // Desktop file thumbnails aren't resizable — their size is the
       // thumbnail's natural size (drag / group still work as normal).
       if ((shape as ImageShape).fileRef) continue;
+      // A card resizes from its own corner grip (card-element.js).
+      if (shape.type === "text" && shape.card) continue;
       const b = getShapeBounds(shape, this.fontFamily);
       const pad = 6;
       const x1 = b.minX - pad, y1 = b.minY - pad;
@@ -1820,6 +1829,12 @@ export class DrawingState extends EventTarget {
     const rect = this.canvasEl.getBoundingClientRect();
     const screenPt: Point = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     const canvasPt = screenToCanvas(screenPt, this.camera);
+    // ⌘-double-click makes a card where the pointer is (card-shape.ts).
+    if (e.metaKey || e.ctrlKey || (window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld) {
+      if (this.isActiveLayerProtected() || this.desktopMode) return;
+      addCardShape(this, "", null, canvasPt, { focus: true });
+      return;
+    }
     const hit = findShapeAtPoint(canvasPt, this._interactableShapes(), this.fontFamily);
     if (hit && hit.type === "draw") {
       // Double-click on a stroke selects only that stroke. For a

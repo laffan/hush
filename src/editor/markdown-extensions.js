@@ -52,3 +52,27 @@ export const HighlightExtension = {
     after: "Emphasis"
   }]
 };
+
+// Card fences (cards/card-model.ts) claimed as blocks of their own, so
+// CommonMark never reads them as something else. A line that is exactly
+// `>>>` is three nested, empty blockquotes to it — which pulled the line
+// after a card into a quote (italic) and made Enter continue it — and
+// `<<<` would otherwise run on as part of the paragraph above it. Each
+// fence is one line; an unclosed `<<<` claims nothing past itself.
+function isCardFenceLine(_cx, line) {
+  return line.pos === 0 && (line.text === ">>>" || line.text === "<<<");
+}
+export const CardFenceExtension = {
+  defineNodes: [{ name: "CardFence", block: true }],
+  parseBlock: [{
+    name: "CardFence",
+    before: "Blockquote",
+    parse(cx, line) {
+      if (!isCardFenceLine(cx, line)) return false;
+      cx.addElement(cx.elt("CardFence", cx.lineStart, cx.lineStart + line.text.length));
+      cx.nextLine();
+      return true;
+    },
+    endLeaf(cx, line) { return isCardFenceLine(cx, line); },
+  }],
+};

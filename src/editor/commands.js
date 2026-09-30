@@ -39,6 +39,7 @@ import { openShuffleEditor } from "./shuffle-editor.js";
 import { toggleWordCount } from "./plugins/word-count.js";
 import { getActiveModeContext, toggleModeOnContext } from "../state/mode-context.js";
 import { setInstanceHighlightsEffect, findAllOccurrences } from "./select-instance-highlight.js";
+import { makeCardCommand } from "../cards/card-commands.js";
 
 /** Hunt for an editor surface whose active selection is non-empty and
  *  return a payload the Selection Focus overlay can mount a fresh
@@ -331,6 +332,9 @@ export function buildEditorCommands() {
     shortcutComment: (_state, view) => (view ? toggleComment(view) : false),
     shortcutStrikethrough: (_state, view) => (view ? toggleStrikethrough(view) : false),
     shortcutInsertFootnote: (_state, view) => (view ? insertFootnote(view) : false),
+    // A Doc's selection, or a canvas's selected text shapes — see
+    // cards/card-commands.js for why the focus test lives there.
+    shortcutMakeCard: (state, view) => makeCardCommand(state, view),
   };
 }
 

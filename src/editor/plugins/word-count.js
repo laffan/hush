@@ -38,6 +38,9 @@ export function countWords(text) {
   // Strip %% comments %% and inline image refs before counting — comments
   // are editorial notes, not prose, and image markdown isn't "words".
   cleaned = cleaned
+    // A card's fences are markup, not words (cards/card-model.ts; its
+    // metadata is a %% comment, stripped below). Its text still counts.
+    .replace(/^(?:<<<|>>>)$/gm, " ")
     .replace(/%%[\s\S]*?%%/g, " ")
     .replace(/!\[[^\]]*\]\(\s*(?:"[^"]+"|[^()\s"]+)(?:\s+"[^"]*")?\s*\)/g, " ")
     .replace(/---hush-separator---/g, " ");

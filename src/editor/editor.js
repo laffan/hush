@@ -20,6 +20,7 @@ import { createTabMarkerPlugin } from "./plugins/tab-marker.js";
 import { createCheckboxListPlugin } from "./plugins/checkbox-list.js";
 import { createOutlinePlugin } from "./plugins/outline-view.js";
 import { createTableRendererPlugin } from "./plugins/table-renderer.js";
+import { createCardPlugin } from "../cards/card-doc-plugin.js";
 import { createImageDecoratorPlugin } from "./plugins/image-decorator.js";
 import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke, getEncourageDecorations } from "./plugins/encourage-typing.js";
 import {
@@ -44,7 +45,7 @@ import { createSpellcheckPlugin, spellcheckClickHandler } from "./plugins/spellc
 import { getMarkdownHighlight, resolveHeaderColorOverride } from "./markdown-highlight.js";
 import {
   commentTag, commentMarkTag, highlightTag, highlightMarkTag,
-  CommentExtension, HighlightExtension,
+  CommentExtension, HighlightExtension, CardFenceExtension,
 } from "./markdown-extensions.js";
 import { createFlagHighlightPlugin, hexToRgba } from "./flag-highlight.js";
 import { createYouAreHerePlugin } from "./plugins/you-are-here.js";
@@ -273,7 +274,7 @@ export function createEditor(container, state) {
         const underline = _s?.underlineHeaders ?? state.settings.underlineHeaders ?? false;
         return getMarkdownHighlight(nh, nhc ? undefined : (headerOverride || getActiveTheme(state.settings)?.headingColor), hScale, { underline });
       })())),
-      markdown({ extensions: [Strikethrough, Table, CommentExtension, HighlightExtension] }),
+      markdown({ extensions: [Strikethrough, Table, CommentExtension, HighlightExtension, CardFenceExtension] }),
       history(),
       drawSelection(),
       wrapOnSelection,
@@ -340,6 +341,7 @@ export function createEditor(container, state) {
       createPropertiesPlugin(state),
       // Also in createBaseExtensions — see the note there.
       createOutlinePlugin(state),
+      createCardPlugin(state),
       projectViewField,
       separatorFilter,
       keymap.of([...defaultKeymap, ...historyKeymap]),

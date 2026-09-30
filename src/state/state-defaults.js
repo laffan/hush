@@ -240,6 +240,8 @@ export function createDefaultSettings() {
     // mirror image has somewhere to live.
     shortcutInsertBreakAfter: "Mod+Enter",
     shortcutInsertBreakBefore: "Mod+Shift+Enter",
+    // The selection becomes a card (cards/card-commands.js).
+    shortcutMakeCard: "Mod+Shift+,",
     shortcutJumpNextParagraph: "Mod+ArrowDown",
     shortcutJumpPrevParagraph: "Mod+ArrowUp",
     shortcutZotero: "Mod+Shift+I",

@@ -96,11 +96,16 @@ export async function readDocumentText(state, fileId) {
 }
 
 /**
- * Deliver `text`. `mode` is "sticky" or "append"; `scope` is the
+ * Deliver `text`. `mode` is "sticky", "append" or "card"; `scope` is the
  * sticky's document / desk / global; `location` is the chosen row (none
- * for a global sticky). Returns the label for the confirmation toast.
+ * for a global sticky or a card); `cardMeta` is the card's colour.
+ * Returns the label for the confirmation toast.
  */
-export async function deliver(state, { mode, scope, location }, text) {
+export async function deliver(state, { mode, scope, location, cardMeta }, text) {
+  if (mode === "card") {
+    const { sendCardToInbox } = await import("../cards/card-courier.js");
+    return `Card added to ${await sendCardToInbox(state, text, cardMeta)}`;
+  }
   if (mode === "append") {
     if (!location?.fileId) throw new Error("Choose a document");
     await appendToDocument(state, location.fileId, text);

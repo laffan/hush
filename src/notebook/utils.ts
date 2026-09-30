@@ -2,6 +2,7 @@ import { LINE_HEIGHT_RATIO, FONT_FAMILY, COLOR_PALETTE } from "./types";
 import type { Bounds, Camera, DragAreaShape, ImageShape, Point, Shape } from "./types";
 import { parseText } from "./markdown";
 import { outlineBounds } from "./outline-shape";
+import { cardBounds } from "./card-geometry";
 
 let nextId = 0;
 export function generateId(): string {
@@ -48,6 +49,8 @@ export function getShapeBounds(shape: Shape, fontFamily?: string): Bounds {
       // user drags, resizes, selects and points an arrow at, so every
       // caller of getShapeBounds has to see the frame.
       if (shape.outline) return outlineBounds(shape);
+      // A card is a fixed box (card-geometry.ts), not a run of glyphs.
+      if (shape.card) return cardBounds(shape);
       // A shape carrying its own face measures in that face, not the
       // canvas's — otherwise a proof note in Courier wraps against
       // Inter's metrics and its bounds miss the glyphs by a word.

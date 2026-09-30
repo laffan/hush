@@ -46,11 +46,30 @@ The wheel scrolls the canvas the way it scrolls a document, both ways; hold shif
 
 Notebooks export as `.hushnote` (lossless), PNG, JPG, or PDF.
 
+## Cards
+
+*Experimental.* A card is a short piece of markdown — a hundred words at most — that both Docs and notebooks show the same way: a small box, 300 × 100 by default, on the page's own background with a very light border, set in the app's font rather than the style's. Write one anywhere in a Doc by putting a line that is just `<<<` above the words and a line that is just `>>>` below them, or select some text and press **⌘⇧,**. On a canvas, **⌘-double-click** makes an empty card where you clicked, and ⌘⇧, turns the selected text shapes into cards.
+
+Once it is a card it is out of the text: the caret steps over it, and its words are edited in the card itself, with all the markdown a Doc supports. The header — a grip, a word count, and buttons for **colour**, **collapse**, **insert at cursor** and **delete** — shows when the pointer is on the card. Insert at cursor puts the card's words back into the text at your caret (in a canvas, the last document you were typing in) and the card goes. A card holds at most 100 words: at 100 nothing more goes in, and a card that arrives longer — pasted, or made from a longer selection — turns bright red and takes nothing more until it is shorter. Making a card of more than 50 words asks first.
+
+Drag a card by its header. On a canvas it moves like anything else there. In a Doc it lifts off and a line shows where it will go between the paragraphs; drop it in the **margin** instead and it floats there, beside the line you dropped it next to, while the text closes up behind it — it stays beside that line as you write above it, and drops back into the text if you drag it over the column again. And a card can go anywhere: carry it off a canvas onto a document open in a pane, out of a Doc onto a canvas, or onto a document's or notebook's row in the sidebar (it lands at the end of the document, or in the middle of the notebook's current view) — it leaves where it was.
+
+Every document and notebook lists its cards in the sidebar as sub-rows, named by the first three words of the card's first line. Click one to go to the card; drag one like a document, onto another file's row or out onto an editor or canvas. (A notebook's rows appear once it has been open on this device.)
+
+In the file a card is just its markdown. Anything a card needs to remember — its colour, its size, whether it's collapsed, where it floats — rides a Hush comment on its last line:
+
+```
+<<<
+Card ==content== here!
+%%card {"xPos":820,"yPos":12,"bgColor":"#42a5f5"}%%
+>>>
+```
+
 ## Courier
 
 Tap **Shift three times** — either Shift key, quickly, with nothing else pressed in between — and a sheet slides up from the bottom of the window, wherever you are: a document, a notebook, a PDF, Zen Focus. It leaves a quick note somewhere else without leaving what you're doing.
 
-The left side chooses what to make. **Sticky** adds a second row — **Document**, **Desk** or **Global** — and a search over your documents or desks, on any desk; **Append** searches documents and adds the note as a new paragraph at the end of the one you pick. The right side is the thing itself, written in place: a sticky, in its paper colour, that you type straight into — or the last lines of the document, with the cursor waiting after them, where the note is written with the same markdown as anywhere else in the document. Switch between the two and what you've typed comes with you.
+The left side chooses what to make. **Sticky** adds a second row — **Document**, **Desk** or **Global** — and a search over your documents or desks, on any desk; **Append** searches documents and adds the note as a new paragraph at the end of the one you pick; **Card** makes a card (see Cards) in a notebook called **CARDS** in the Inbox — made for you the first time — where successive cards line up in a grid. The right side is the thing itself, written in place: a sticky, in its paper colour, that you type straight into — or the last lines of the document, with the cursor waiting after them, where the note is written with the same markdown as anywhere else in the document — or the card itself. Switch between them and what you've typed comes with you.
 
 Courier reopens where your last note went, so a second one to the same place is three taps, a sentence and ⌘↩. Escape or Cancel puts it away with the caret back where it was. It's also in the command palette, for when there's no keyboard.
 

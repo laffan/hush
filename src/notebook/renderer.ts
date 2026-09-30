@@ -290,6 +290,9 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       // A pinned outline is chrome bolted to the frame, not content on
       // the canvas — it is drawn at 1:1 in the screen-space pass below.
       if (shape.type === "text" && shape.outline && shape.outlinePin) return;
+      // A card on screen is DOM — the card layer shows the same component
+      // a Doc does (ui/card-layer.ts). Exports paint it (renderer-card.ts).
+      if (shape.type === "text" && shape.card) return;
       if (shape.type === "text" && shape.outline) drawOutlineShape(ctx, shape, theme, false, state.flagColors);
       else if (shape.type === "text") {
         if (backdropIds?.has(shape.id)) drawTextBackdrop(ctx, shape, state.fontFamily, backdropColor);
@@ -425,6 +428,8 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       // where it is on screen, so a highlight drawn there would ring
       // empty canvas.
       if (shape.type === "text" && shape.outline && shape.outlinePin) continue;
+      // The card draws its own selection ring (`.hush-card.selected`).
+      if (shape.type === "text" && shape.card) continue;
       if (shape.id === state.croppingImageId && shape.type === "image") {
         drawCropOverlay(ctx, shape, camera.zoom);
       } else {

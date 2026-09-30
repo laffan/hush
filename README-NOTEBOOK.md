@@ -28,6 +28,9 @@ src/notebook/
   utils.ts                Geometry, hit testing, text measurement, alignment, grid layout
   flowchart.ts (+ flowchart-geometry.ts)  Portable flowchart layer (ported from Steiner)
   outline-shape.ts        Outline text shapes: layout, footer / checkbox hit zones, pinned origin
+  card-shape.ts           Card text shapes: the model (add / patch / remove / convert, grid slots)
+  card-geometry.ts        A card's box (bounds without an import cycle through utils.ts)
+  renderer-card.ts        Paints a card for exports and the pocket (on screen a card is DOM)
   notebook-content.ts     Persistence envelope encode/decode
   selection-raster.ts     Rasterize / Recognize-handwriting pipeline
   emoji-sticker.ts        Emoji-only text shapes → image stickers
@@ -36,7 +39,8 @@ src/notebook/
                           text editor, brainstorm input, bookmarks, status bar, icons, h(),
                           grab-popup (the grab's two-stage control bar),
                           proof-thumbnails + proof-rail-ink (proofread page rail),
-                          proof-scrollwheel (iPad-only virtual scroll wheel)
+                          proof-scrollwheel (iPad-only virtual scroll wheel),
+                          card-layer (the DOM cards over the canvas)
   drawing/                Drawing layer + stroke engine — see README-DRAWING.md
   pencil-bridge.js        iOS: pencil-only inking + Apple Pencil double-tap listener
 ```
@@ -233,6 +237,14 @@ With no chart under the selection the same command takes the other reading: a se
 `outline-shape.ts` owns the geometry — every coordinate relative to `shape.position`, which for an outline is the top-left of the **frame** rather than of the first glyph (hence the pad offset when the inline editor opens on one). It measures each item's wrapped lines so the renderer can strike a completed item across all of them, and publishes the footer's two button boxes and each row's checkbox zone for the hit test. Rendering delegates each item's text back to `drawTextShape` with a throwaway shape: the outline owns the box, the checkbox glyph, the strike, the heading colour on the next item and the footer, and nothing else — re-implementing the text half is how an outline would start rendering markdown differently from the shape beside it.
 
 Two flags ride the shape. `outlineHideDone` folds completed items away — they stay in the text, this only stops drawing them. `outlinePin` moves it out of world space entirely — see the screen-space note in README-TECHNICAL: it is drawn after the camera transform is restored, so it holds its size and its corner while the canvas moves under it, and every world-space pick has to exclude it.
+
+### Cards
+
+A card (README-TECHNICAL, **Cards**) is a `TextShape` with `card: true`: `text` is its markdown body, `position` its top-left corner, `cardMeta` its colour / size / collapsed flag in a Doc's metadata keys. The flag follows the outline's reasoning — bounds (`getShapeBounds` → `card-geometry.ts`, the card's box, or its header when collapsed), selection, marquee, layers, grouping, the pocket, the clipboard and both codecs all keep working — and the paths that must not treat it as text are taught by name: `startEditingExistingText` refuses it (a card has its own editor), `hitTestResizeHandles` skips it (it resizes from its own corner grip), and the live render pass and the selection-highlight pass skip it.
+
+**On screen a card is DOM, not paint.** `ui/card-layer.ts` lays the same card component a Doc shows (reached through `window.__hushCards` — this bundle doesn't import app modules) over the canvas at z 81, just under the bookmark markers, positioned by `canvasToScreen` and scaled / rotated with the camera, so it is an object on the page rather than a label over it. Only cards within `MARGIN` of the view are built (each holds an editor); the layer passes every pointer through except on the cards themselves, a canvas press takes the keyboard back from a card, and a wheel over a card goes to the card only while its text can scroll that way — otherwise it is forwarded to the canvas as a synthetic `WheelEvent`, so panning and zooming don't stop at a card's edge. Typing lands on the shape at once (`patchCardShape(…, false)`) and the pause after a run of it records one undo step. The layer publishes the canvas's cards for the sidebar (`publishNotebookCards`) whenever `shapes` changes. Exports, rasterize and the pocket paint cards through `renderer-card.ts`, which hands the text back to `drawTextShape` so inline markdown renders as in any text shape.
+
+⌘-double-click makes an empty card at the pointer (`handleDoubleClick`, refused on a protected layer and on Desktops), focused for typing via `DrawingState.focusCardId`.
 
 ### Dragging a selection
 

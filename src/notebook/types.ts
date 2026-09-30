@@ -182,6 +182,20 @@ export interface TextShape extends ShapeBase {
    *  instead of in world space, so it holds its place while the canvas
    *  pans and zooms under it. */
   outlinePin?: boolean;
+  /** Marks this text shape as a **card**: `text` is the card's markdown
+   *  body (what sits between `<<<` and `>>>` in a Doc), and it is shown
+   *  by the DOM card layer (`ui/card-layer.ts`) rather than painted —
+   *  the same card component a Doc shows, so the two surfaces render and
+   *  edit a card identically. A flag rather than a union member for the
+   *  outline's reasons: bounds, selection, layers, the pocket, the
+   *  clipboard and both codecs all keep working. Geometry and the model
+   *  live in `card-shape.ts`. */
+  card?: boolean;
+  /** Card only: everything a card carries besides its text and position
+   *  — colour, size, collapsed — in the Doc's metadata keys
+   *  (`cards/card-model.ts#CardMeta`), so moving a card between a Doc
+   *  and a canvas is a copy, not a translation. */
+  cardMeta?: Record<string, unknown>;
   /** Marks this text shape as a persisted gutter header label. Renders
    *  with the faded shadow-header style + horizontal rule above, is
    *  immune to selection / drag / edit, and gets its y position synced

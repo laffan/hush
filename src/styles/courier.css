@@ -347,3 +347,14 @@ html[data-theme="dark"] .courier-sheet {
     max-height: 45%;
   }
 }
+
+/* Card — the card component (styles/cards.css), at its default size,
+   centred like the sticky. */
+.courier-card-stage {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.courier-card-stage .courier-doc-name { align-self: center; }
+.courier-card-stage .hush-card { flex: 0 0 auto; max-width: 100%; }
+.courier-card-stage .hush-card-header { cursor: default; }

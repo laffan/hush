@@ -34,6 +34,20 @@ export async function openNotebookBookmarkUrl(url) {
   await state.openNotebook(parsed.fileId);
 }
 
+/** A card row in the sidebar (sidebar/files-panel-cards.js): the same
+ *  jump, to a card — centred and selected. */
+export async function openNotebookAtCard(state, fileId, cardId) {
+  const { getCanvasInstance, getCurrentNotebookFileId } = await import("./notebook-bridge.js");
+  const canvas = getCanvasInstance();
+  if (state.currentNotebookFileId === fileId && canvas && getCurrentNotebookFileId() === fileId) {
+    const { focusCardShape } = await import("./card-shape.ts");
+    focusCardShape(canvas.state, cardId);
+    return;
+  }
+  _pending = { fileId, cardId };
+  await state.openNotebook(fileId);
+}
+
 /** Called by the bridge once a mount has restored its camera: perform a
  *  jump requested for this file, if there is one. */
 export function applyPendingBookmarkJump(fileId, canvas) {
@@ -43,6 +57,10 @@ export function applyPendingBookmarkJump(fileId, canvas) {
   // A frame later, so the canvas has its size and the visible centre is
   // the real one.
   requestAnimationFrame(() => {
+    if (jump.cardId) {
+      import("./card-shape.ts").then(({ focusCardShape }) => focusCardShape(canvas.state, jump.cardId)).catch(() => {});
+      return;
+    }
     import("./bookmarks.ts").then(({ focusBookmark }) => focusBookmark(canvas.state, jump.bookmarkId)).catch(() => {});
   });
 }

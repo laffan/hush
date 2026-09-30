@@ -323,6 +323,10 @@ pub fn default_shortcut_insert_break_after() -> String {
 pub fn default_shortcut_insert_break_before() -> String {
     "Mod+Shift+Enter".to_string()
 }
+/// Turn the selection into a card (`<<<` … `>>>`, cards/card-commands.js).
+pub fn default_shortcut_make_card() -> String {
+    "Mod+Shift+,".to_string()
+}
 pub fn default_shortcut_jump_next_paragraph() -> String {
     "Mod+ArrowDown".to_string()
 }

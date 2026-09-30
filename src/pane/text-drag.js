@@ -30,6 +30,13 @@ export function registerNotebookDropTarget(canvasEl, state) {
   return () => { notebookTargets.delete(entry); };
 }
 
+/** Every live notebook canvas (main, panes, stack columns), as
+ *  `{ canvasEl, state }` — cards find the surface that owns a notebook
+ *  through this (cards/card-transfer.js). */
+export function liveNotebookCanvases() {
+  return [...notebookTargets];
+}
+
 /**
  * Start a custom text-drag session.
  *

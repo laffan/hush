@@ -417,6 +417,8 @@ pub struct AppSettings {
     pub shortcut_insert_break_after: String,
     #[serde(default = "default_shortcut_insert_break_before")]
     pub shortcut_insert_break_before: String,
+    #[serde(default = "default_shortcut_make_card")]
+    pub shortcut_make_card: String,
     #[serde(default = "default_shortcut_jump_next_paragraph")]
     pub shortcut_jump_next_paragraph: String,
     #[serde(default = "default_shortcut_jump_prev_paragraph")]
@@ -797,6 +799,7 @@ impl Default for AppSettings {
             shortcut_join_lines_up: default_shortcut_join_lines_up(),
             shortcut_insert_break_after: default_shortcut_insert_break_after(),
             shortcut_insert_break_before: default_shortcut_insert_break_before(),
+            shortcut_make_card: default_shortcut_make_card(),
             shortcut_jump_next_paragraph: default_shortcut_jump_next_paragraph(),
             shortcut_jump_prev_paragraph: default_shortcut_jump_prev_paragraph(),
             shortcut_style_default: default_shortcut_style_default(),

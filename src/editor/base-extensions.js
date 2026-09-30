@@ -30,7 +30,7 @@ import { createImagePasteExtension } from "./image-paste.js";
 import { caretFollowPlugin } from "./caret-follow.js";
 import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js";
 import { getMarkdownHighlight, resolveHeaderColorOverride } from "./markdown-highlight.js";
-import { CommentExtension, HighlightExtension } from "./markdown-extensions.js";
+import { CommentExtension, HighlightExtension, CardFenceExtension } from "./markdown-extensions.js";
 import { createFlagHighlightPlugin } from "./flag-highlight.js";
 import { createYouAreHerePlugin } from "./plugins/you-are-here.js";
 import { createLineIndicatorPlugin } from "./line-indicator.js";
@@ -41,6 +41,7 @@ import { createPropertiesPlugin } from "./plugins/properties.js";
 import { createTableRendererPlugin } from "./plugins/table-renderer.js";
 import { createRatchetExtensions } from "./ratchet.js";
 import { createWordLimitExtensions } from "./word-limit.js";
+import { createCardPlugin } from "../cards/card-doc-plugin.js";
 
 /**
  * Marks a transaction as app-driven rather than user-typed: file loads,
@@ -226,7 +227,7 @@ export function createBaseExtensions(state, onChange, opts) {
     _highlightComp.of(syntaxHighlighting(
       getMarkdownHighlight(nh, nhc ? undefined : (headerOverride || activeTheme?.headingColor), hScale, { underline: underlineHeaders })
     )),
-    markdown({ extensions: [Strikethrough, Table, CommentExtension, HighlightExtension] }),
+    markdown({ extensions: [Strikethrough, Table, CommentExtension, HighlightExtension, CardFenceExtension] }),
     history(),
     drawSelection(),
     wrapOnSelection,
@@ -262,6 +263,8 @@ export function createBaseExtensions(state, onChange, opts) {
     // wherever it is open, or the pane beside the editor shows a
     // different document than the editor does.
     createOutlinePlugin(state),
+    // Cards — also in editor.js's own list, for the outline's reason.
+    createCardPlugin(state),
     createTableRendererPlugin(),
     createImageDecoratorPlugin(state, getImageContext),
     // Outranks the rich-HTML paste handler explicitly rather than by

@@ -64,9 +64,12 @@ export function createPaneEditor(container, appState, onChange, opts) {
   });
 
   const extraExts = opts?.extraExtensions || [];
+  // Ahead of the shared list: a keymap here outranks its `Prec.highest`
+  // bindings on order (a card's ⌘↩ in Courier — cards/card-element.js).
+  const leadExts = opts?.leadingExtensions || [];
   const startState = EditorState.create({
     doc: "",
-    extensions: [...extensions, dryPlugin, typewriterUpdateListener, ...extraExts],
+    extensions: [...leadExts, ...extensions, dryPlugin, typewriterUpdateListener, ...extraExts],
   });
   const view = new EditorView({ state: startState, parent: container });
   const unbindLineIndicator = opts?.lineIndicator === false

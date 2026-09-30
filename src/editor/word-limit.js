@@ -240,3 +240,10 @@ export function createWordLimitExtensions(state, { getFileId } = {}) {
   if (typeof getFileId !== "function") return [];
   return [wordLimitFilter(() => getWordLimit(state, getFileId()))];
 }
+
+/** The same wall at a fixed number, for a surface whose cap is a
+ *  property of what it is rather than of a document: a card's editor
+ *  (cards/card-element.js) holds at most `CARD_MAX_WORDS`. */
+export function createFixedWordLimit(limit) {
+  return wordLimitFilter(() => limit);
+}

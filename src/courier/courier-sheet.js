@@ -4,13 +4,14 @@
  * screen, Zen Focus included; send a note and it slides away again with
  * the caret back where it was.
  *
- * Two columns. The left chooses: **Sticky** or **Append** across the
- * top; a sticky adds a second row — Document, Desk, Global — and then
- * the search over documents or desks (a global sticky needs none). The
- * right is the thing itself, written in place: a sticky note (the real
- * sticky markup and palette) whose text you type straight into, or the
- * end of the target document with a live editor after it
- * (courier-append-editor.js). What's typed carries across a switch
+ * Two columns. The left chooses: **Sticky**, **Append** or **Card**
+ * across the top; a sticky adds a second row — Document, Desk, Global —
+ * and then the search over documents or desks (a global sticky and a
+ * card need none). The right is the thing itself, written in place: a
+ * sticky note (the real sticky markup and palette) whose text you type
+ * straight into, the end of the target document with a live editor after
+ * it (courier-append-editor.js), or a card — the same card component
+ * Docs and notebooks show, bound for the Inbox's CARDS notebook. What's typed carries across a switch
  * between the two. Escape / Cancel dismiss; ⌘↩ / Ctrl↩ sends.
  *
  * The sheet lives in `document.body` at `--z-courier`, above the whole
@@ -89,15 +90,18 @@ export function openCourier(state) {
   let message = "";          // what's been written, carried across rebuilds
   let stickyText = null;     // the sticky's textarea while it's mounted
   let appendEditor = null;   // the append editor while it's mounted
+  let cardEl = null;         // the card (cards/card-element.js) while it's mounted
+  let cardMeta = {};         // its colour, kept across a mode switch
   let surfaceKey = null;     // what the mounted surface was built for
   const docText = new Map(); // fileId → text, for the append surface
 
   const selected = () => rows.find((r) => r.key === selectedKey) || null;
-  const needsLocation = () => !(mode === "sticky" && scope === "global");
+  const needsLocation = () => !(mode === "sticky" && scope === "global") && mode !== "card";
 
   function currentMessage() {
     if (stickyText) return stickyText.value;
     if (appendEditor) return appendEditor.getMessage();
+    if (cardEl) return cardEl.getBody();
     return message;
   }
 
@@ -109,6 +113,7 @@ export function openCourier(state) {
     message = currentMessage();
     stickyText = null;
     if (appendEditor) { appendEditor.destroy(); appendEditor = null; }
+    if (cardEl) { cardEl.destroy(); cardEl = null; }
     canvasEl.innerHTML = "";
     surfaceKey = null;
   }
@@ -132,6 +137,34 @@ export function openCourier(state) {
     stickyText.addEventListener("input", syncControls);
     stickyText.focus();
     stickyText.setSelectionRange(message.length, message.length);
+  }
+
+  /** Card — the card itself, the component every surface shows, written
+   *  in place. It lands in the Inbox's CARDS notebook. */
+  async function mountCard(seq) {
+    canvasEl.className = "courier-canvas courier-card-stage";
+    const { createCardElement } = await import("../cards/card-element.js");
+    if (seq !== surfaceSeq || !open) return;
+    canvasEl.innerHTML = `<div class="courier-doc-name">Inbox / CARDS</div>`;
+    cardEl = createCardElement({
+      appState: state,
+      body: message,
+      meta: cardMeta,
+      surface: "courier",
+      hideInsert: true,
+      hideDelete: true,
+      hideCollapse: true,
+      onEdit: syncControls,
+      onSubmit: () => void send(),
+      onAction: (act, _e, color) => {
+        if (act !== "color") return;
+        cardMeta = { ...cardMeta, bgColor: color || undefined };
+        cardEl?.setMeta(cardMeta);
+      },
+    });
+    canvasEl.appendChild(cardEl.el);
+    cardEl.focus();
+    syncControls();
   }
 
   async function mountAppend(loc, seq) {
@@ -164,6 +197,7 @@ export function openCourier(state) {
    *  editor mounts after an await and focuses itself when it lands. */
   function focusSurface() {
     if (stickyText) stickyText.focus();
+    else if (cardEl) cardEl.focus();
     else appendEditor?.focus();
   }
 
@@ -172,7 +206,7 @@ export function openCourier(state) {
    *  so the caret stays where it is. */
   function renderSurface() {
     const loc = selected();
-    const key = mode === "sticky" ? `sticky:${scope}` : `append:${loc?.fileId || ""}`;
+    const key = mode === "sticky" ? `sticky:${scope}` : mode === "card" ? "card" : `append:${loc?.fileId || ""}`;
     if (key === surfaceKey) {
       const where = canvasEl.querySelector(".courier-sticky-where");
       if (where) where.textContent = scope === "global" ? "Global" : (loc?.label || "");
@@ -183,6 +217,7 @@ export function openCourier(state) {
     unmountSurface();
     surfaceKey = key;
     if (mode === "sticky") mountSticky();
+    else if (mode === "card") void mountCard(seq);
     else void mountAppend(loc, seq);
     syncControls();
   }
@@ -258,7 +293,16 @@ export function openCourier(state) {
     syncControls();
     const location = selected();
     try {
-      const label = await deliver(state, { mode, scope, location }, text);
+      if (mode === "card") {
+        const { confirmLongCard } = await import("../cards/card-confirm.js");
+        if (!(await confirmLongCard(text, { above: true }))) {
+          sending = false;
+          syncControls();
+          focusSurface();
+          return;
+        }
+      }
+      const label = await deliver(state, { mode, scope, location, cardMeta }, text);
       rememberSend(state, mode, mode === "sticky" ? scope : null, location?.key || null);
       close();
       const { showImportToast } = await import("../editor/import-toast.js");
@@ -278,6 +322,8 @@ export function openCourier(state) {
     root.classList.remove("open");
     appendEditor?.destroy();
     appendEditor = null;
+    cardEl?.destroy();
+    cardEl = null;
     let done = false;
     const finish = () => { if (!done) { done = true; root.remove(); } };
     sheet.addEventListener("transitionend", finish, { once: true });

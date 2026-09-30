@@ -74,6 +74,7 @@ export const shortcutCategories = [
       { key: "shortcutComment", label: "Comment" },
       { key: "shortcutStrikethrough", label: "Strikethrough" },
       { key: "shortcutInsertFootnote", label: "Insert footnote" },
+      { key: "shortcutMakeCard", label: "Make a card from the selection" },
     ],
   },
   {
