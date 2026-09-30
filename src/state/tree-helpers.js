@@ -303,9 +303,18 @@ export function findParentOfNode(nodes, targetId) {
  *  the same type sharing a name (which would map to the same on-disk
  *  path). `excludeId` skips one child from the check — used by rename
  *  so a node doesn't see itself as a conflict. */
-export function uniqueChildName(parent, baseName, type, excludeId = null) {
+/** The name of a container's cards notebook (cards/card-courier.js):
+ *  reserved — anything else given it is renamed as if it were taken. */
+export const CARDS_HOME_NAME = "CARDS";
+
+/** Whether `node` is a container's cards notebook. */
+export function isCardsHome(node) {
+  return !!node && node.type === "notebook" && node.name === CARDS_HOME_NAME;
+}
+
+export function uniqueChildName(parent, baseName, type, excludeId = null, allowReserved = false) {
   const siblings = (parent?.children) || [];
-  const taken = new Set();
+  const taken = new Set(allowReserved ? [] : [CARDS_HOME_NAME]);
   for (const c of siblings) {
     if (!c || c.id === excludeId) continue;
     if (c.type !== type) continue;

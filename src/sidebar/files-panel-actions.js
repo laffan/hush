@@ -10,7 +10,7 @@
  * this module having to import the panel back (which would otherwise
  * create a circular dependency).
  */
-import { findNode } from "../state/tree-helpers.js";
+import { findNode, isCardsHome } from "../state/tree-helpers.js";
 import { showConfirmModal, showDeleteConfirmModal, showPromptModal } from "./files-panel-shared.js";
 
 /** Desk row-menu actions (all-desks view): set-active / rename / delete.
@@ -51,7 +51,8 @@ function escAttrValue(str) {
  *  menu dropdown). */
 export function handleRename(nodeId, triggerEl, state, refreshAfter) {
   const node = findNode(state.fileTree, nodeId);
-  if (!node) return;
+  // A container's cards notebook keeps its name (state-tree.js).
+  if (!node || isCardsHome(node)) return;
   let li = triggerEl?.closest(".sl-item") || null;
   if (!li) {
     const safe = (window.CSS && typeof window.CSS.escape === "function") ? window.CSS.escape(nodeId) : nodeId;

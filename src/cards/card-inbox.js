@@ -6,7 +6,7 @@
  *
  * "In front of the user" is the active pane's file if a pane has the
  * focus, else the main surface's. Hidden when that file has no cards, and
- * for the CARDS notebook itself.
+ * for a CARDS notebook itself.
  */
 
 import { Transaction } from "@codemirror/state";
@@ -16,7 +16,8 @@ import { cardField } from "./card-doc-plugin.js";
 import { cardEdit } from "./card-facet.js";
 import { cardRemovalRange, withoutPosition } from "./card-model.ts";
 import { notebookCards } from "./card-index.js";
-import { findCardsNotebook, sendCardToInbox } from "./card-courier.js";
+import { sendCardToInbox } from "./card-courier.js";
+import { findNodeByFileId, isCardsHome } from "../state/tree-helpers.js";
 import { liveNotebook } from "./card-transfer.js";
 
 /** `{ kind: "doc", view, fileId } | { kind: "nb", fileId } | null` */
@@ -40,7 +41,7 @@ function docCards(view) {
 /** Whether the palette entry shows. */
 export function hasCardsToSend(state) {
   const s = cardSurface(state);
-  if (!s || s.fileId === findCardsNotebook(state)?.fileId) return false;
+  if (!s || isCardsHome(findNodeByFileId(state.fileTree, s.fileId))) return false;
   return s.kind === "doc" ? docCards(s.view).length > 0 : notebookCards(s.fileId).length > 0;
 }
 

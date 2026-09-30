@@ -417,7 +417,8 @@ export async function createNotebook(state, name, parentId = null, opts = {}) {
   const openImmediately = opts.openImmediately !== false;
   if (openImmediately && state.dirty) await state.saveCurrentFile();
   const targetParent = parentId || state.getInboxId();
-  const finalName = uniqueChildName(findNode(state.fileTree, targetParent), name, "notebook");
+  // `cardsHome`: the one caller allowed the reserved CARDS name.
+  const finalName = uniqueChildName(findNode(state.fileTree, targetParent), name, "notebook", null, !!opts.cardsHome);
   if (IS_TAURI) {
     try {
       const result = await tauriInvoke("create_notebook", { name: finalName, parentId: targetParent });

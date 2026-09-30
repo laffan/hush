@@ -4,7 +4,7 @@
  */
 
 import { SortableList } from "./sortable-list/sortable-list.js";
-import { findNode, findNodeByFileId, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode, reapplyGutterMarkers } from "../state/tree-helpers.js";
+import { findNode, findNodeByFileId, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode, reapplyGutterMarkers, isCardsHome } from "../state/tree-helpers.js";
 import { createPane } from "../pane/pane-manager.js";
 import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
 import { escHtml, showPromptModal, googleLinkBadgeHtml, computeNumberLabels, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
@@ -29,7 +29,7 @@ import {
 import { isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree, renderTabMarkerRow, openDocAtTab } from "./files-panel-tabs.js";
 import { isHeadingItem, augmentTreeWithHeadings, stripHeadingsFromTree, renderHeadingRow, openDocAtHeading } from "./files-panel-headings.js";
 import {
-  isCardItem, augmentTreeWithCards, foldCardParents, noteCardFolds, stripCardsFromTree, renderCardRow, openCard,
+  isCardItem, augmentTreeWithCards, foldCardParents, noteCardFolds, stripCardsFromTree, renderCardRow, renderCardsHomeRow, openCard,
   dropCardOnRow, dropCardOutside, trackCardRowHover, onCardIndexChange,
 } from "./files-panel-cards.js";
 import { renderFlaggedSection } from "./files-panel-flagged.js";
@@ -180,6 +180,10 @@ export function createFilesPanel(container, state, hidePanel) {
       if (context?.li) {
         context.li.classList.toggle("multi-selected", !!isMultiSelected);
         if (item.fileId) context.li.dataset.fileId = item.fileId;
+      }
+      if (isCardsHome(item)) {
+        context?.li?.classList.add("cards-home");
+        return renderCardsHomeRow(item, isActive, actionButtons(item.id, item.type, inTrash, item, inProject));
       }
       const isDesk = item.type === "desk";
       const isActiveDesk = isDesk && item.id === state.settings?.activeDeskId;

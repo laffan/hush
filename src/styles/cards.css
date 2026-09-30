@@ -251,6 +251,28 @@
 .cm-card-pin-layer { z-index: 4; }
 .cm-card-float.dragging-source .hush-card { opacity: 0.3; }
 
+/* Where insert-at-cursor will put a card's words (card-element.js): a
+ * red arrow whose tip rests on the caret's spot. */
+.hush-card-insert-mark {
+  position: fixed;
+  left: -6px;
+  top: -15px;
+  width: 12px;
+  height: 14px;
+  color: #e53935;
+  pointer-events: none;
+  z-index: var(--z-drag-ghost);
+}
+.hush-card-insert-mark svg {
+  width: 12px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* Where a card being dragged over a Doc will land. */
 .hush-card-drop-line {
   position: fixed;
@@ -342,3 +364,29 @@
 }
 .sl-item[data-type="card"]:hover .tree-card-name { color: var(--fg); }
 .sl-item[data-type="card"]:hover .tree-card-icon { opacity: 0.85; }
+
+/* A container's CARDS notebook (files-panel-cards.js#renderCardsHomeRow).
+ * Folded: "Cards" and the card icon, like a file row but with no
+ * timestamp. Open: no row of its own — a bordered box of its cards, the
+ * fold arrow in its top corner. */
+.tree-cards-home-row { gap: 6px; }
+.tree-cards-home-row .tree-card-icon { margin-left: 2px; }
+.sl-item.cards-home.has-children:not(.collapsed) {
+  position: relative;
+  margin: 4px 0;
+  padding: 3px 0;
+  border: 1px solid color-mix(in srgb, var(--fg) 14%, transparent);
+  border-radius: 6px;
+}
+.sl-item.cards-home.has-children:not(.collapsed) > .sl-item-content {
+  position: absolute;
+  top: 3px;
+  left: 0;
+  z-index: 1;
+}
+.sl-item.cards-home.has-children:not(.collapsed) > .sl-item-content .sl-item-label { display: none; }
+/* Not dimmed in a project the way its other notebooks are
+ * (files-panel.css): it reads the same wherever it is. */
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item.cards-home[data-type="notebook"] > .sl-item-content .tree-item-row {
+  opacity: 1;
+}

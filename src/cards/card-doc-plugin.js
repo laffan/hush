@@ -158,6 +158,8 @@ function bindCard(view, host, span0, locate) {
       if (!scheduled) { scheduled = true; queueMicrotask(flush); }
     },
     getScale: () => view.scaleX || 1,
+    // Insert-at-cursor puts the words at this document's caret.
+    insertPoint: () => ({ view, pos: view.state.selection.main.head }),
     onEscape() {
       const span = locate();
       view.focus();

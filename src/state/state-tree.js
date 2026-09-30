@@ -3,7 +3,7 @@
  * Each function takes the AppState instance as the first argument.
  */
 
-import { findNode, findNodeByFileId, removeNode, insertNode, insertAfter, collectDocumentIds, enforceSpecialPositions, uniqueChildName, findParentOfNode } from "./tree-helpers.js";
+import { findNode, findNodeByFileId, removeNode, insertNode, insertAfter, collectDocumentIds, enforceSpecialPositions, uniqueChildName, findParentOfNode, isCardsHome } from "./tree-helpers.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -374,6 +374,9 @@ export async function renameTreeNode(state, nodeId, newName) {
   if (node.type === "desk") {
     return state.renameDesk(nodeId, newName);
   }
+  // A container's cards notebook keeps its (reserved) name — the name is
+  // what makes it the cards' home.
+  if (isCardsHome(node)) return;
   const oldName = node.name;
   if (node.type === "image" && node.fileId) {
     const { renameImageFile } = await import("./state-images.js");

@@ -24,6 +24,13 @@ export function rememberedHostView() {
   return view;
 }
 
+/** Where insert-at-cursor would put a canvas card's words: the
+ *  remembered view's caret, or null. */
+export function rememberedInsertPoint() {
+  const view = rememberedHostView();
+  return view ? { view, pos: view.state.selection.main.head } : null;
+}
+
 /** Insert `text` at the remembered caret. False when there is none. */
 export function insertAtRememberedCursor(text) {
   const view = rememberedHostView();

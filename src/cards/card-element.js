@@ -40,6 +40,7 @@ import { programmaticChange } from "../editor/base-extensions.js";
 import { createFixedWordLimit } from "../editor/word-limit.js";
 import { openBookmarkColorPalette } from "../ui/bookmark-ui.js";
 import { insideCard } from "./card-facet.js";
+import { rememberedInsertPoint } from "./card-cursor.js";
 import {
   CARD_MAX_WORDS, CARD_MIN_WIDTH,
   cardSize, cardTitle, cardWordCount, isFenceLine, parseMetaLine,
@@ -54,6 +55,7 @@ const ICONS = {
   grip: `<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="4" cy="3" r="1"/><circle cx="8" cy="3" r="1"/><circle cx="4" cy="6" r="1"/><circle cx="8" cy="6" r="1"/><circle cx="4" cy="9" r="1"/><circle cx="8" cy="9" r="1"/></svg>`,
   insert: `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5v5.5M3.8 4.8L6 7l2.2-2.2"/><path d="M4.5 10.5h3M6 8.8v3.2"/></svg>`,
   delete: `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 3.5l5 5M8.5 3.5l-5 5"/></svg>`,
+  mark: `<svg viewBox="0 0 12 14" aria-hidden="true"><path d="M6 1v10M2.5 7.5L6 11l3.5-3.5"/></svg>`,
   pin: `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.3 1.5h3.4M4.8 1.5v3L3.2 6.6h5.6L7.2 4.5v-3M6 6.6v3.9"/></svg>`,
 };
 
@@ -108,6 +110,10 @@ const overLimitGuard = EditorState.transactionFilter.of((tr) => {
  *   canvas's zoom), so the edge tracks the pointer.
  * @param {() => void} [o.onEscape]
  * @param {() => void} [o.onSubmit]  ⌘↩ in the body (Courier's send).
+ * @param {() => ({ view: import("@codemirror/view").EditorView, pos: number } | null)} [o.insertPoint]
+ *   Where insert-at-cursor would put the words, marked while the pointer
+ *   is on the button. Defaults to the remembered document caret
+ *   (card-cursor.js), where a canvas card's words go.
  * @param {boolean} [o.hideInsert]  No insert-at-cursor button (Courier).
  * @param {boolean} [o.hideDelete]
  */
@@ -130,6 +136,7 @@ export function createCardElement(o) {
   const bodyEl = el.querySelector(".hush-card-body");
   const grip = el.querySelector(".hush-card-resize");
   const pinBtn = el.querySelector(".hush-card-pin");
+  const insertBtn = el.querySelector('[data-act="insert"]');
 
   let meta = { ...(o.meta || {}) };
   let body = o.body || "";
@@ -220,6 +227,7 @@ export function createCardElement(o) {
         if (sheet && pop) pop.style.zIndex = "calc(var(--z-courier) + 2)";
         return;
       }
+      if (act === "insert") markInsertPoint(false);
       o.onAction?.(act, e);
       return;
     }
@@ -234,6 +242,25 @@ export function createCardElement(o) {
     e.stopPropagation();
     o.onAction?.("collapse", e);
   });
+
+  // ── Where insert-at-cursor will put the words ──────────────────
+  // A red arrow over the spot, while the pointer is on the button.
+  let mark = null;
+  function markInsertPoint(on) {
+    mark?.remove();
+    mark = null;
+    if (!on || destroyed) return;
+    const at = (o.insertPoint || rememberedInsertPoint)();
+    const c = at ? at.view.coordsAtPos(at.pos) : null;
+    if (!c) return;
+    mark = document.createElement("div");
+    mark.className = "hush-card-insert-mark";
+    mark.innerHTML = ICONS.mark;
+    mark.style.transform = `translate(${Math.round(c.left)}px, ${Math.round(c.top)}px)`;
+    document.body.appendChild(mark);
+  }
+  insertBtn?.addEventListener("pointerenter", () => markInsertPoint(true));
+  insertBtn?.addEventListener("pointerleave", () => markInsertPoint(false));
 
   // ── Width, from the right edge ─────────────────────────────────
   grip.addEventListener("pointerdown", (e) => {
@@ -292,6 +319,7 @@ export function createCardElement(o) {
     },
     destroy() {
       if (destroyed) return;
+      markInsertPoint(false);
       destroyed = true;
       o.appState.off?.("theme-changed", onTheme);
       o.appState.off?.("style-changed", onTheme);

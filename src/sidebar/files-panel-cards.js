@@ -10,8 +10,8 @@
  *
  *   - onto a document's or notebook's row: the card moves there — to the
  *     end of the document, or the middle of the notebook's view;
- *   - onto an Inbox's row: into that Inbox's CARDS notebook (made if it
- *     isn't there), the common home Courier's cards go to;
+ *   - onto an Inbox's or a project's row: into that container's CARDS
+ *     notebook (made if it isn't there), the cards' common home;
  *   - out of the panel onto an editor or a canvas: it lands under the
  *     pointer (the line boundary in a Doc, the point on a canvas).
  *
@@ -32,7 +32,6 @@ import { notebookCards, CARD_INDEX_EVENT } from "../cards/card-index.js";
 import { readDocContent, openDocAtTab } from "./files-panel-tabs.js";
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { panes } from "../pane/pane-state.js";
-import { isInboxId } from "./files-panel-rows.js";
 
 export function isCardItem(item) {
   return item?.type === "card";
@@ -169,6 +168,17 @@ export function renderCardRow(item) {
   return row;
 }
 
+/** A container's CARDS notebook (state/tree-helpers.js#isCardsHome):
+ *  "Cards" and the card icon — no timestamp, no number. Open, the row
+ *  gives way to a bordered box of its cards (styles/cards.css,
+ *  `.cards-home`). */
+export function renderCardsHomeRow(item, isActive, trailingHtml) {
+  const row = document.createElement("span");
+  row.className = "tree-item-row tree-cards-home-row" + (isActive ? " active" : "");
+  row.innerHTML = `<span class="tree-card-icon"></span><span class="tree-item-name">Cards</span>${trailingHtml}`;
+  return row;
+}
+
 /** Open the card's file with the card in view. */
 export async function openCard(state, item) {
   const ref = item.cardRef;
@@ -197,24 +207,25 @@ async function moveCard(state, ref, land) {
   await removeCardRef(state, ref);
 }
 
-/** The Inbox whose own row is under (x, y), if one is. */
-function inboxRowAt(x, y) {
+/** The Inbox or project whose own row is under (x, y), if one is. */
+function homeRowAt(x, y) {
   for (const el of document.elementsFromPoint(x, y)) {
     const li = el.closest?.("#panel-overlay .sl-item-content")?.parentElement;
-    if (li) return isInboxId(li.dataset.id) ? li : null;
+    if (li) return li.dataset.type === "project" ? li : null;
   }
   return null;
 }
 
-/** A card row released over a document, notebook or Inbox row. Returns
- *  true when the drop was the card's (SortableList's `onDropExternal`). */
+/** A card row released over a document, notebook, Inbox or project row.
+ *  Returns true when the drop was the card's (SortableList's
+ *  `onDropExternal`). */
 export function dropCardOnRow(state, item, ev) {
   if (!isCardItem(item)) return false;
-  const inbox = inboxRowAt(ev.clientX, ev.clientY);
-  if (inbox) {
+  const home = homeRowAt(ev.clientX, ev.clientY);
+  if (home) {
     void moveCard(state, item.cardRef, async (card) => {
-      const { sendCardToInbox } = await import("../cards/card-courier.js");
-      await toast(`Card moved to ${await sendCardToInbox(state, card.body, card.meta, inbox.dataset.id)}`);
+      const { sendCardToHome } = await import("../cards/card-courier.js");
+      await toast(`Card moved to ${await sendCardToHome(state, card.body, card.meta, home.dataset.id)}`);
     }).catch((e) => toast(e?.message || "The card couldn't be moved", "error"));
     return true;
   }
@@ -240,12 +251,12 @@ export function dropCardOutside(state, item, x, y) {
   }).catch((e) => toast(e?.message || "The card couldn't be moved", "error"));
 }
 
-/** While a card row is dragged, outline the document / notebook / Inbox
- *  row it would land in. Returns the stop function. */
+/** While a card row is dragged, outline the document / notebook / Inbox /
+ *  project row it would land in. Returns the stop function. */
 export function trackCardRowHover() {
   let hovered = null;
   const move = (e) => {
-    const row = inboxRowAt(e.clientX, e.clientY) || document.elementsFromPoint(e.clientX, e.clientY)
+    const row = homeRowAt(e.clientX, e.clientY) || document.elementsFromPoint(e.clientX, e.clientY)
       .map((el) => el.closest?.("#panel-overlay .sl-item[data-file-id]:not([data-type='card'])"))
       .find(Boolean) || null;
     if (row === hovered) return;

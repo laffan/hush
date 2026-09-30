@@ -15,7 +15,8 @@
  */
 
 import { Transaction } from "@codemirror/state";
-import { findNodeByFileId } from "../state/tree-helpers.js";
+import { findNodeByFileId, isCardsHome } from "../state/tree-helpers.js";
+import { getPanelWidthPx } from "../editor/modes.js";
 import { liveNotebookCanvases } from "../pane/text-drag.js";
 import { cardEdit } from "./card-facet.js";
 import { findCards, serializeCard, cardSize, withoutPosition, CARD_HEADER_HEIGHT, CARD_DEFAULT_HEIGHT } from "./card-model.ts";
@@ -162,6 +163,14 @@ function savedViewCentre(env) {
   return screenToWorld({ x: cam.x || 0, y: cam.y || 0, zoom: cam.zoom || 1, rotation: cam.rotation }, w / 2, h / 2);
 }
 
+/** Where a CARDS notebook's grid starts (card-courier.js): clear of the
+ *  canvas toolbar at the default view, and of the files sidebar, taken
+ *  to be open over the canvas's left edge — a card behind it would look
+ *  like it never arrived. */
+export function cardsGridOrigin() {
+  return { x: getPanelWidthPx() + 40, y: 90 };
+}
+
 /**
  * Add a card to notebook `fileId`. `place` is "centre" (the middle of the
  * view, the sidebar drop) or "grid" (the next free slot of a grid from
@@ -196,7 +205,10 @@ export async function deliverCardToFile(state, fileId, body, meta) {
   const node = findNodeByFileId(state.fileTree, fileId);
   if (!node) throw new Error("That file is gone");
   if (node.type === "document") await appendCardToDocument(state, fileId, body, meta);
-  else if (node.type === "notebook") await addCardToNotebook(state, fileId, body, meta, { place: "centre" });
+  // A CARDS notebook keeps its grid; any other lands in the middle.
+  else if (node.type === "notebook") {
+    await addCardToNotebook(state, fileId, body, meta, isCardsHome(node) ? { place: "grid", origin: cardsGridOrigin() } : { place: "centre" });
+  }
   else throw new Error("Cards go into documents and notebooks");
   return node.name;
 }

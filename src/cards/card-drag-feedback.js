@@ -65,7 +65,7 @@ export function createDragFeedback(cards, grab, sources) {
       // beside; over its margin the ghost already shows where.
       const place = target?.kind === "cm" ? docPlacement(target.view, x, y, grab, cards[0].meta) : null;
       setDropLine(place?.overText ? target.view : null, place);
-      setHoverRow(target?.kind === "row" || target?.kind === "inbox" ? target.el : null);
+      setHoverRow(target?.kind === "row" || target?.kind === "home" ? target.el : null);
     },
     clear() {
       ghosts?.forEach((g) => g.remove());
