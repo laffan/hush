@@ -10,6 +10,8 @@
  *
  *   - onto a document's or notebook's row: the card moves there — to the
  *     end of the document, or the middle of the notebook's view;
+ *   - onto an Inbox's row: into that Inbox's CARDS notebook (made if it
+ *     isn't there), the common home Courier's cards go to;
  *   - out of the panel onto an editor or a canvas: it lands under the
  *     pointer (the line boundary in a Doc, the point on a canvas).
  *
@@ -30,6 +32,7 @@ import { notebookCards, CARD_INDEX_EVENT } from "../cards/card-index.js";
 import { readDocContent, openDocAtTab } from "./files-panel-tabs.js";
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { panes } from "../pane/pane-state.js";
+import { isInboxId } from "./files-panel-rows.js";
 
 export function isCardItem(item) {
   return item?.type === "card";
@@ -194,10 +197,27 @@ async function moveCard(state, ref, land) {
   await removeCardRef(state, ref);
 }
 
-/** A card row released over a document or notebook row. Returns true
- *  when the drop was the card's (SortableList's `onDropExternal`). */
+/** The Inbox whose own row is under (x, y), if one is. */
+function inboxRowAt(x, y) {
+  for (const el of document.elementsFromPoint(x, y)) {
+    const li = el.closest?.("#panel-overlay .sl-item-content")?.parentElement;
+    if (li) return isInboxId(li.dataset.id) ? li : null;
+  }
+  return null;
+}
+
+/** A card row released over a document, notebook or Inbox row. Returns
+ *  true when the drop was the card's (SortableList's `onDropExternal`). */
 export function dropCardOnRow(state, item, ev) {
   if (!isCardItem(item)) return false;
+  const inbox = inboxRowAt(ev.clientX, ev.clientY);
+  if (inbox) {
+    void moveCard(state, item.cardRef, async (card) => {
+      const { sendCardToInbox } = await import("../cards/card-courier.js");
+      await toast(`Card moved to ${await sendCardToInbox(state, card.body, card.meta, inbox.dataset.id)}`);
+    }).catch((e) => toast(e?.message || "The card couldn't be moved", "error"));
+    return true;
+  }
   const row = document.elementsFromPoint(ev.clientX, ev.clientY)
     .map((el) => el.closest?.(".sl-item[data-file-id]"))
     .find(Boolean);
@@ -220,12 +240,12 @@ export function dropCardOutside(state, item, x, y) {
   }).catch((e) => toast(e?.message || "The card couldn't be moved", "error"));
 }
 
-/** While a card row is dragged, outline the document / notebook row it
- *  would land in. Returns the stop function. */
+/** While a card row is dragged, outline the document / notebook / Inbox
+ *  row it would land in. Returns the stop function. */
 export function trackCardRowHover() {
   let hovered = null;
   const move = (e) => {
-    const row = document.elementsFromPoint(e.clientX, e.clientY)
+    const row = inboxRowAt(e.clientX, e.clientY) || document.elementsFromPoint(e.clientX, e.clientY)
       .map((el) => el.closest?.("#panel-overlay .sl-item[data-file-id]:not([data-type='card'])"))
       .find(Boolean) || null;
     if (row === hovered) return;

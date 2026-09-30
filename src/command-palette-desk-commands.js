@@ -1,5 +1,5 @@
 /**
- * Desk-scoped (and cross-desk: Courier, the focus timer, the wall clock) command palette entries — split out of
+ * Desk-scoped (and cross-desk: Courier and the Inbox's cards, the focus timer, the wall clock) command palette entries — split out of
  * `command-palette-commands.js` to keep that file under the 700-line cap.
  *
  * `buildDeskCommands(ctx)` returns the same command descriptors
@@ -13,6 +13,7 @@ import { getDeskRatchet } from "./state/state-desks.js";
 import { toggleDeskRatchet } from "./state/state-modes.js";
 import { getTimer, isTimerRunning, deleteTimer } from "./timer/timer-store.js";
 import { toggleClock } from "./clock/clock-store.js";
+import { hasCardsToSend, sendSurfaceCardsToInbox } from "./cards/card-inbox.js";
 
 // Stopwatch — a round face with a crown and a single hand.
 const timerIcon = `<svg viewBox="0 0 24 24"><circle cx="12" cy="13.5" r="7.5"/><path d="M10 3 H14 M12 3 V6 M12 13.5 V9.5 M17.8 7.7 L19.3 6.2"/></svg>`;
@@ -144,6 +145,12 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
     { id: "courier", section: "Create", label: "Courier — send a quick note", icon: icons.sticky, shortcutKey: null, ctx: "shared",
       keywords: "send note sticky append triple shift",
       action: async (s) => (await import("./courier/courier-sheet.js")).openCourier(s) },
+    // Every card in the document or notebook in front of the user, to the
+    // CARDS notebook in the Inbox — where Courier's cards go.
+    { id: "send-cards-to-inbox", section: "Create", label: "Send Cards to Inbox", icon: icons.sticky, shortcutKey: null, ctx: "shared",
+      keywords: "cards CARDS notebook inbox collect move",
+      hiddenIf: (s) => !hasCardsToSend(s),
+      action: (s) => { void sendSurfaceCardsToInbox(s); } },
     // Focus timer — one at a time, shared by every desk, so `shared`
     // context. Start is hidden while one runs (Delete first); a finished
     // timer can simply be replaced. Delete sits with the turn-offs at the

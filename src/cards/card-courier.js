@@ -1,7 +1,9 @@
 /**
- * Courier's **Card**: the note becomes a card in a notebook named CARDS
- * in the active desk's Inbox — made on the spot, with the card already in
- * it, the first time one is sent. Successive cards form a grid: each
+ * The CARDS notebook: a common home for cards, in an Inbox — made on the
+ * spot, with the card already in it, the first time one is sent. Courier's
+ * **Card** sends there (the active desk's Inbox), and so does a card
+ * dropped on an Inbox row in the sidebar (that Inbox) and the palette's
+ * Send Cards to Inbox (card-inbox.js). Successive cards form a grid: each
  * lands in the first slot of a four-wide grid of default-sized cards
  * that nothing already covers (notebook/card-shape.ts#freeCardSlot), so
  * a card moved away frees its slot for the next.
@@ -19,14 +21,16 @@ export const CARDS_NOTEBOOK = "CARDS";
 /** Where the grid starts: clear of the canvas toolbar at the default view. */
 const GRID_ORIGIN = { x: 80, y: 90 };
 
-function findCardsNotebook(state) {
-  const inbox = findNode(state.fileTree, state.getInboxId());
+/** The CARDS notebook in Inbox `inboxId` (the active desk's by default). */
+export function findCardsNotebook(state, inboxId = state.getInboxId()) {
+  const inbox = findNode(state.fileTree, inboxId);
   return (inbox?.children || []).find((n) => n.type === "notebook" && n.name === CARDS_NOTEBOOK && n.fileId) || null;
 }
 
-/** Send a card to CARDS. Returns the notebook's name, for the toast. */
-export async function sendCardToInbox(state, body, meta) {
-  const existing = findCardsNotebook(state);
+/** Send a card to CARDS in Inbox `inboxId`. Returns the notebook's name,
+ *  for the toast. */
+export async function sendCardToInbox(state, body, meta, inboxId = state.getInboxId()) {
+  const existing = findCardsNotebook(state, inboxId);
   if (existing) {
     await addCardToNotebook(state, existing.fileId, body, meta, { place: "grid", origin: GRID_ORIGIN });
     return existing.name;
@@ -34,7 +38,7 @@ export async function sendCardToInbox(state, body, meta) {
   const { makeCardShape, cardIndexOf } = await import("../notebook/card-shape.ts");
   const shape = makeCardShape(body, meta, { ...GRID_ORIGIN });
   const envelope = { format: "hushnote", version: 1, shapes: [shape] };
-  const made = await state.createNotebook(CARDS_NOTEBOOK, state.getInboxId(), {
+  const made = await state.createNotebook(CARDS_NOTEBOOK, inboxId, {
     openImmediately: false,
     initialContent: JSON.stringify(envelope),
   });

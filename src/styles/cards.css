@@ -90,6 +90,9 @@
   opacity: 1;
 }
 .hush-card.collapsed .hush-card-header { flex-basis: 100%; }
+/* A pinned card says so without the pointer on it. */
+.hush-card.pinned .hush-card-header > .hush-card-pin { opacity: 1; color: var(--card-fg); }
+.hush-card.pinned .hush-card-pin svg { fill: currentColor; }
 
 .hush-card-grip {
   display: inline-flex;
@@ -243,6 +246,9 @@
 }
 /* Its width as fitted into the margin it floats in (card-doc-float.js). */
 .cm-card-float > .hush-card { width: var(--float-w) !important; }
+/* Pinned cards (card-doc-float.js): in the editor, outside its scroller,
+ * so the text scrolls under them. */
+.cm-card-pin-layer { z-index: 4; }
 .cm-card-float.dragging-source .hush-card { opacity: 0.3; }
 
 /* Where a card being dragged over a Doc will land. */

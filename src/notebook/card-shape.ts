@@ -13,19 +13,19 @@ import type { Point, Shape, TextShape } from "./types";
 import { generateId } from "./utils";
 import { cardBounds } from "./card-geometry";
 import {
-  cardSize, cardTitle, CARD_DEFAULT_HEIGHT, CARD_DEFAULT_WIDTH, CARD_HEADER_HEIGHT, type CardMeta,
+  cardSize, cardTitle, withoutPosition, CARD_DEFAULT_HEIGHT, CARD_DEFAULT_WIDTH, CARD_HEADER_HEIGHT, type CardMeta,
 } from "../cards/card-model";
 
 export function isCardShape(s: Shape | null | undefined): s is TextShape {
   return !!s && s.type === "text" && !!s.card;
 }
 
-/** The metadata a card keeps on a canvas: everything but its position,
- *  which the shape holds itself. */
+/** The metadata a card keeps on a canvas: everything but its place in a
+ *  Doc — its position here is the shape's own. */
 function storedMeta(meta: CardMeta | null | undefined): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(meta || {})) {
-    if (k === "xPos" || k === "yPos" || v === undefined || v === null) continue;
+  for (const [k, v] of Object.entries(withoutPosition(meta))) {
+    if (v === undefined || v === null) continue;
     out[k] = v;
   }
   return out;

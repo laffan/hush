@@ -281,6 +281,10 @@ export function updateColumnResizers(state) {
     if (scroller) {
       scroller.style.paddingLeft = leftPad + "px";
       scroller.style.paddingRight = rightPad + "px";
+      // How much of each edge the chrome above covers — a Doc's cards sit
+      // in the margins and must stay clear of it (cards/card-doc-float.js).
+      scroller.style.setProperty("--edge-cover-left", leftInsetOffset + "px");
+      scroller.style.setProperty("--edge-cover-right", rightInsetOffset + "px");
       // Vertical padding is split out — typewriter mode owns the
       // scroller's top/bottom pads when active, and short docs need
       // dynamic top padding so the last line can still reach the

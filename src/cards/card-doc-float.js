@@ -18,7 +18,16 @@
  * that width on its right for the cards (`cm-card-gutter` on the editor,
  * padding on `.cm-content`), and cards fit into it, narrowed as far as
  * they must be. A card is narrowed to fit its margin rather than let it
- * cover the words.
+ * cover the words. A margin is only what can be seen of it: the main
+ * editor's column layout says how much of each edge its chrome covers —
+ * an inset sidebar, the right-hand bars, docked panes (`--edge-cover-*`,
+ * editor/modes.js) — and cards stay out of that.
+ *
+ * **Pinned.** A pinned card (`pinned`, `pinY`) is held in view: it sits
+ * `pinY` below the top of the editor's visible area in a second layer,
+ * outside the scroller, so the text scrolls under it. Its markdown stays
+ * at its anchor, and unpinning re-anchors it beside the line it is level
+ * with by then (card-doc-plugin.js).
  */
 
 import { ViewPlugin, WidgetType } from "@codemirror/view";
@@ -47,12 +56,14 @@ function textEdges(view) {
   const content = view.contentDOM.getBoundingClientRect();
   const pad = parseFloat(getComputedStyle(view.contentDOM).paddingRight) || 0;
   const scroller = view.scrollDOM.getBoundingClientRect();
+  const sc = getComputedStyle(view.scrollDOM);
   return {
     content,
+    scroller,
     textLeft: content.left,
     textRight: content.right - pad,
-    visLeft: scroller.left,
-    visRight: scroller.left + view.scrollDOM.clientWidth,
+    visLeft: scroller.left + (parseFloat(sc.getPropertyValue("--edge-cover-left")) || 0),
+    visRight: scroller.left + view.scrollDOM.clientWidth - (parseFloat(sc.getPropertyValue("--edge-cover-right")) || 0),
     gutter: view.dom.classList.contains("cm-card-gutter"),
   };
 }
@@ -64,13 +75,16 @@ function textEdges(view) {
  * for it: where it was let go, beside the line at its top edge. (In a
  * gutter there is one place — the gutter — so only the height is kept.)
  *
+ * A pinned card stays pinned, held in view where it was let go.
+ *
  * Returns `{ pos, lineY, overText, meta }`: the card's markdown goes in
  * on a line of its own before `pos`, carrying `meta`.
  */
 export function docPlacement(view, x, y, grab, meta) {
-  const { textLeft, textRight, visLeft, visRight, gutter } = textEdges(view);
+  const { textLeft, textRight, visLeft, visRight, gutter, scroller } = textEdges(view);
   const docTop = view.documentTop;
   const plain = withoutPosition(meta);
+  if (meta?.pinned) Object.assign(plain, { pinned: true, pinY: Math.max(0, Math.round(y - grab.y - scroller.top)) });
   if (x >= textLeft && x <= textRight) {
     const block = view.lineBlockAtHeight(y - docTop);
     return { pos: block.from, lineY: docTop + block.top, overText: true, meta: plain };
@@ -103,6 +117,17 @@ export function createCardFloatLayer({ field, bind }) {
       this.layer = document.createElement("div");
       this.layer.className = "cm-card-float-layer";
       view.scrollDOM.appendChild(this.layer);
+      // Pinned cards: outside the scroller, so the text scrolls under them.
+      this.pinLayer = document.createElement("div");
+      this.pinLayer.className = "cm-card-float-layer cm-card-pin-layer";
+      view.dom.appendChild(this.pinLayer);
+      // Out of the scroller, a pinned card would stop the wheel: pass it on.
+      this.pinLayer.addEventListener("wheel", (e) => {
+        if (e.ctrlKey) return;
+        const unit = e.deltaMode === 1 ? 16 : 1;
+        view.scrollDOM.scrollBy(e.deltaX * unit, e.deltaY * unit);
+        e.preventDefault();
+      }, { passive: false });
       // A card that changes height (typed into, narrowed) restacks the
       // cards below it without any change to the document.
       this.resize = typeof ResizeObserver === "function" ? new ResizeObserver(() => this.measure()) : null;
@@ -132,13 +157,14 @@ export function createCardFloatLayer({ field, bind }) {
           const host = document.createElement("div");
           host.className = "cm-card-float";
           host.style.setProperty("--float-w", `${cardSize(span.meta).width}px`);
-          this.layer.appendChild(host);
           e = { from: span.from, host };
           const entry = e;
           e.binding = bind(this.view, host, span, () => this.spans(this.view.state).find((s) => s.from === entry.from) || null);
           this.resize?.observe(host);
         }
         e.meta = span.meta;
+        const parent = span.meta.pinned ? this.pinLayer : this.layer;
+        if (e.host.parentNode !== parent) parent.appendChild(e.host);
         next.push(e);
       }
       for (const e of left) { this.resize?.unobserve(e.host); e.binding.destroy(); e.host.remove(); }
@@ -161,9 +187,12 @@ export function createCardFloatLayer({ field, bind }) {
         key: this,
         read: (view) => {
           const edges = textEdges(view);
-          const scroller = view.scrollDOM.getBoundingClientRect();
+          const scroller = edges.scroller;
           const originX = scroller.left - view.scrollDOM.scrollLeft;
           const originY = scroller.top - view.scrollDOM.scrollTop;
+          // The pin layer's origin, and the height it holds pinned cards in.
+          const editor = view.dom.getBoundingClientRect();
+          const visH = view.scrollDOM.clientHeight;
           // Whether the text needs to make room is judged on the margin
           // it would have *without* the gutter, or the gutter would take
           // itself away again.
@@ -191,11 +220,18 @@ export function createCardFloatLayer({ field, bind }) {
             if (leftSide) left = Math.max(visLeft, Math.min(colLeft + e.meta.xPos, colLeft - GAP - width));
             else if (hasX && !gutter) left = Math.min(Math.max(colLeft + e.meta.xPos, colRight + GAP), visRight - width);
             else left = colRight + GAP;
-            const top = view.documentTop - originY + block.top + (typeof e.meta.yPos === "number" ? e.meta.yPos : 0);
             const height = e.host.firstElementChild?.offsetHeight || 0;
+            if (e.meta.pinned) {
+              // Held in view, in the pin layer's coordinates; kept on screen
+              // when the editor is shorter than where it was pinned.
+              const y = Math.max(0, Math.min(Number(e.meta.pinY) || 0, visH - height));
+              return { e, left: left + originX - editor.left, top: scroller.top - editor.top + y, width, height, side: "pin" };
+            }
+            const top = view.documentTop - originY + block.top + (typeof e.meta.yPos === "number" ? e.meta.yPos : 0);
             return { e, left, top, width, height, side: leftSide ? "l" : "r" };
           });
-          // Cards that would overlap in one margin stack downward.
+          // Cards that would overlap in one margin stack downward (pinned
+          // ones sit where they were put).
           for (const side of ["l", "r"]) {
             let bottom = -Infinity;
             for (const p of placed.filter((q) => q.side === side).sort((a, b) => a.top - b.top)) {
@@ -222,6 +258,7 @@ export function createCardFloatLayer({ field, bind }) {
       for (const e of this.entries) e.binding.destroy();
       this.entries = [];
       this.layer.remove();
+      this.pinLayer.remove();
       this.view.dom.classList.remove("cm-card-gutter");
     }
   });

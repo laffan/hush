@@ -3,7 +3,7 @@
  * in a Doc, on a canvas and in Courier looks and behaves the same.
  *
  *   ┌──────────────────────────────────────┐
- *   │ ⠿ title                    ●  ⤓  ×  │  header: drag handle + buttons
+ *   │ ⠿ title                 ●  ⊥  ⤓  ×  │  header: drag handle + buttons
  *   ├──────────────────────────────────────┤
  *   │ the card's markdown, in a real       │  body: a CodeMirror editor,
  *   │ CodeMirror editor                    ┃  as tall as its text and one
@@ -21,8 +21,8 @@
  *     card that arrived longer keeps its words and turns red;
  *   - a fence guard: a line that is exactly `<<<` or `>>>` would end the
  *     card in the text around it, so the editor refuses one, and the
- *     same for a trailing `----` / `{{…}}` pair that would read as
- *     metadata;
+ *     same for a last line that would read as the card's metadata
+ *     (`%%card …%%`);
  *   - `insideCard`, which keeps the card plugin itself off in here.
  *
  * The element knows nothing about where it lives. Each surface hands it
@@ -54,6 +54,7 @@ const ICONS = {
   grip: `<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="4" cy="3" r="1"/><circle cx="8" cy="3" r="1"/><circle cx="4" cy="6" r="1"/><circle cx="8" cy="6" r="1"/><circle cx="4" cy="9" r="1"/><circle cx="8" cy="9" r="1"/></svg>`,
   insert: `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5v5.5M3.8 4.8L6 7l2.2-2.2"/><path d="M4.5 10.5h3M6 8.8v3.2"/></svg>`,
   delete: `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 3.5l5 5M8.5 3.5l-5 5"/></svg>`,
+  pin: `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.3 1.5h3.4M4.8 1.5v3L3.2 6.6h5.6L7.2 4.5v-3M6 6.6v3.9"/></svg>`,
 };
 
 /** Refuse an edit that would leave a fence line in the card, or end the
@@ -98,7 +99,7 @@ const overLimitGuard = EditorState.transactionFilter.of((tr) => {
  *   A user edit in the body (never a `setBody`).
  * @param {(action: string, e?: Event, arg?: unknown) => void} [o.onAction]
  *   "color" (arg: the colour, or null to clear) | "collapse" (a double-
- *   click on the header) | "insert" | "delete"
+ *   click on the header) | "pin" (Docs only) | "insert" | "delete"
  * @param {(e: PointerEvent) => void} [o.onHeaderDown]  A press on the header
  *   outside its buttons — the start of a drag.
  * @param {(width: number) => void} [o.onResize]  End of a resize from the
@@ -118,6 +119,7 @@ export function createCardElement(o) {
       <span class="hush-card-grip">${ICONS.grip}</span>
       <span class="hush-card-title"></span>
       <button type="button" class="hush-card-btn hush-card-color" data-act="color" data-tooltip="Background colour" aria-label="Background colour"><span class="hush-card-swatch"></span></button>
+      ${o.surface === "doc" ? `<button type="button" class="hush-card-btn hush-card-pin" data-act="pin" data-tooltip="Pin in view" aria-label="Pin in view">${ICONS.pin}</button>` : ""}
       ${o.hideInsert ? "" : `<button type="button" class="hush-card-btn" data-act="insert" data-tooltip="Insert at cursor" aria-label="Insert at cursor">${ICONS.insert}</button>`}
       ${o.hideDelete ? "" : `<button type="button" class="hush-card-btn" data-act="delete" data-tooltip="Delete card" aria-label="Delete card">${ICONS.delete}</button>`}
     </div>
@@ -127,6 +129,7 @@ export function createCardElement(o) {
   const titleEl = el.querySelector(".hush-card-title");
   const bodyEl = el.querySelector(".hush-card-body");
   const grip = el.querySelector(".hush-card-resize");
+  const pinBtn = el.querySelector(".hush-card-pin");
 
   let meta = { ...(o.meta || {}) };
   let body = o.body || "";
@@ -145,6 +148,12 @@ export function createCardElement(o) {
     if (meta.bgColor) el.style.setProperty("--card-accent", meta.bgColor);
     else el.style.removeProperty("--card-accent");
     el.classList.toggle("has-color", !!meta.bgColor);
+    el.classList.toggle("pinned", !!meta.pinned);
+    if (pinBtn) {
+      const label = meta.pinned ? "Unpin" : "Pin in view";
+      pinBtn.dataset.tooltip = label;
+      pinBtn.setAttribute("aria-label", label);
+    }
   }
 
   // ── The body's editor ────────────────────────────────────────────

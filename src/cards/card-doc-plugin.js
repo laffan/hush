@@ -40,7 +40,7 @@ import { EditorView, Decoration, keymap } from "@codemirror/view";
 import { EditorState, StateField, Transaction, Text, Facet, Prec } from "@codemirror/state";
 import { insideCard, cardEdit } from "./card-facet.js";
 import { createCardElement } from "./card-element.js";
-import { startCardDrag } from "./card-drag.js";
+import { startCardDrag, relocateCard } from "./card-drag.js";
 import { noteHostView } from "./card-cursor.js";
 import { confirmLongCard } from "./card-confirm.js";
 import { CardAnchorWidget, createCardFloatLayer } from "./card-doc-float.js";
@@ -175,6 +175,7 @@ function bindCard(view, host, span0, locate) {
           annotations: [cardEdit.of(true), Transaction.userEvent.of("delete.card")],
         });
       } else if (action === "insert") insertCardAtCursor(view, span);
+      else if (action === "pin") togglePin(view, host, span);
     },
     onResize(width) {
       const span = locate();
@@ -207,6 +208,21 @@ function bindCard(view, host, span0, locate) {
       card.destroy();
     },
   };
+}
+
+/** Pin a card where it is on screen — it stops scrolling with the text —
+ *  or unpin it: it stays where it now sits, beside the line it is level
+ *  with, rather than going back to where it was pinned from. */
+function togglePin(view, host, span) {
+  const top = (host.firstElementChild || host).getBoundingClientRect().top;
+  if (!span.meta.pinned) {
+    const visTop = view.scrollDOM.getBoundingClientRect().top;
+    writeCardMeta(view, span, { ...span.meta, pinned: true, pinY: Math.max(0, Math.round(top - visTop)) });
+    return;
+  }
+  const h = Math.max(0, top - view.documentTop);
+  const block = view.lineBlockAtHeight(h);
+  relocateCard(view, span, block.from, { ...span.meta, pinned: undefined, pinY: undefined, yPos: Math.round(h - block.top) });
 }
 
 /** Insert-at-cursor from a card in a Doc: the card's words go in at the

@@ -177,23 +177,24 @@ function locateSource(source, body) {
 /** A card dropped elsewhere in its own Doc: its markdown moves to the
  *  line it now sits beside, carrying where it sits, in one transaction. */
 function moveWithinDoc(source, place, body) {
-  const view = source.view;
   const span = locateSource(source, body);
-  if (!span || !place) return;
+  if (span && place) relocateCard(source.view, span, place.pos, place.meta);
+}
+
+/** Move a card's markdown to sit beside the line at `pos`, carrying
+ *  `meta` — one transaction, one undo step. Beside its own line already,
+ *  only its metadata is rewritten. */
+export function relocateCard(view, span, pos, meta) {
   const doc = view.state.doc;
   const removal = cardRemovalRange(doc, span);
-  const text = serializeCard(span.body, place.meta);
+  const text = serializeCard(span.body, meta);
   const annotations = [cardEdit.of(true), Transaction.userEvent.of("move.card")];
-  const insertion = cardInsertion(doc, place.pos, text);
+  const insertion = cardInsertion(doc, pos, text);
   if (insertion.from >= removal.from && insertion.from <= removal.to) {
-    // The same anchor line: only where it sits beside it changes.
     if (text !== doc.sliceString(span.from, span.to)) {
       view.dispatch({ changes: { from: span.from, to: span.to, insert: text }, annotations });
     }
     return;
   }
-  view.dispatch({
-    changes: [insertion, { ...removal, insert: "" }],
-    annotations,
-  });
+  view.dispatch({ changes: [insertion, { ...removal, insert: "" }], annotations });
 }

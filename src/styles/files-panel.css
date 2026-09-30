@@ -134,6 +134,16 @@
   padding-bottom: 15px;
 }
 
+/* A row open on sub-rows of its own (cards, headings, tab markers): the
+   sub-rows start below its pane icons rather than under them, and the
+   space the rule above leaves for the icons moves up with them. */
+.sl-item:has(> .sl-item-content .tree-pane-indicators) > .sl-list {
+  padding-top: 15px;
+}
+.sl-item:has(> .sl-item-content .tree-pane-indicators):has(> .sl-list) {
+  padding-bottom: 0;
+}
+
 .tree-pane-indicators {
   position: absolute;
   top: 100%;

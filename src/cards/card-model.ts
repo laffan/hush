@@ -13,7 +13,8 @@
  * comment (`%%…%%`) opening with `card ` and holding a JSON object. That
  * is where a card keeps what the text has no way to say — its colour,
  * its width, whether it is collapsed, and, in a Doc, where it was put in
- * a margin (`xPos` / `yPos`: see card-doc-float.js). Being a comment is what keeps
+ * a margin and whether it is pinned in view (`xPos` / `yPos`, `pinned` /
+ * `pinY`: see card-doc-float.js). Being a comment is what keeps
  * it out of word counts and exports for free, and it is markdown nothing
  * else reads as a heading or a rule. Anything that doesn't parse is part
  * of the body.
@@ -52,8 +53,14 @@ export const CARD_HEADER_HEIGHT = 18;
  *  written when it differs from the default; keys this build doesn't
  *  know are kept as they are. */
 export interface CardMeta {
+  /** In a Doc: from the text column's left edge (card-doc-float.js). */
   xPos?: number;
+  /** In a Doc: from the top of the line the card sits beside. */
   yPos?: number;
+  /** In a Doc: held in view rather than scrolling with the text, `pinY`
+   *  below the top of the editor's visible area. */
+  pinned?: boolean;
+  pinY?: number;
   bgColor?: string;
   width?: number;
   height?: number;
@@ -182,8 +189,8 @@ export function cleanMeta(meta: CardMeta | null | undefined): CardMeta {
   if (!meta) return out;
   for (const [k, v] of Object.entries(meta)) {
     if (v === undefined || v === null || v === "") continue;
-    if (k === "collapsed" && v !== true) continue;
-    if (k === "xPos" || k === "yPos") { if (typeof v === "number" && isFinite(v)) out[k] = Math.round(v); continue; }
+    if ((k === "collapsed" || k === "pinned") && v !== true) continue;
+    if (k === "xPos" || k === "yPos" || k === "pinY") { if (typeof v === "number" && isFinite(v)) out[k] = Math.round(v); continue; }
     if (k === "width" && (typeof v !== "number" || Math.round(v) === CARD_DEFAULT_WIDTH)) continue;
     // Height follows the text; a stored one (from before it did) is dropped.
     if (k === "height") continue;
@@ -242,12 +249,17 @@ export function parseWholeCard(text: string): { body: string; meta: CardMeta } |
   return { body: c.body, meta: c.meta };
 }
 
-/** Drop a Doc card's margin offsets — a card dropped over a Doc's text
- *  (beside a line, in the default place), or onto a canvas, where its
- *  position is the shape's own. */
+/** The keys that say where a card sits in a Doc — beside which line, in
+ *  which margin, pinned in view — and mean nothing anywhere else. */
+export const DOC_PLACEMENT_KEYS = ["xPos", "yPos", "pinned", "pinY"];
+
+/** Drop a Doc card's placement — a card dropped over a Doc's text (beside
+ *  a line, in the default place), or onto a canvas, where its position is
+ *  the shape's own. */
 export function withoutPosition(meta: CardMeta | null | undefined): CardMeta {
-  const { xPos: _x, yPos: _y, ...rest } = meta || {};
-  return rest;
+  const out: CardMeta = { ...(meta || {}) };
+  for (const k of DOC_PLACEMENT_KEYS) delete out[k];
+  return out;
 }
 
 /**

@@ -8,7 +8,9 @@
  *     where it was let go (card-doc-float.js#docPlacement);
  *   - a canvas: the pointer, with the spot the card was held by under it;
  *   - a document or notebook row in the sidebar: the end of the document
- *     or the middle of the notebook's view (card-transfer.js).
+ *     or the middle of the notebook's view (card-transfer.js);
+ *   - an Inbox row in the sidebar: that Inbox's CARDS notebook, made if
+ *     it isn't there yet (card-courier.js).
  *
  * A card, and the editor inside one, is never a target itself — what it
  * sits on is.
@@ -21,12 +23,17 @@ import { liveNotebookCanvases } from "../pane/text-drag.js";
 import { cardEdit, insideCard } from "./card-facet.js";
 import { serializeCard, cardInsertion, withoutPosition } from "./card-model.ts";
 import { deliverCardToFile, screenToWorld } from "./card-transfer.js";
+import { sendCardToInbox } from "./card-courier.js";
+import { isInboxId } from "../sidebar/files-panel-rows.js";
 import { docPlacement } from "./card-doc-float.js";
 
 /** What is under the pointer that a card can land on, or null. */
 export function resolveCardTarget(appState, x, y) {
   for (const el of document.elementsFromPoint(x, y)) {
     if (!(el instanceof Element)) continue;
+    // An Inbox's own row (not the files inside it).
+    const inbox = el.closest("#panel-overlay .sl-item-content")?.parentElement;
+    if (inbox && isInboxId(inbox.dataset.id)) return { kind: "inbox", el: inbox, inboxId: inbox.dataset.id };
     const row = el.closest("#panel-overlay .sl-item[data-file-id]");
     if (row) {
       const node = findNodeByFileId(appState.fileTree, row.dataset.fileId);
@@ -85,9 +92,12 @@ export async function landCards(appState, target, cards, x, y, grab = { x: 16, y
     s.notify("selectedIds");
     return true;
   }
-  if (target.kind === "row") {
+  if (target.kind === "row" || target.kind === "inbox") {
     let name = "";
-    for (const c of cards) name = await deliverCardToFile(appState, target.fileId, c.body, c.meta);
+    for (const c of cards) {
+      name = target.kind === "row" ? await deliverCardToFile(appState, target.fileId, c.body, c.meta)
+        : await sendCardToInbox(appState, c.body, c.meta, target.inboxId);
+    }
     const { showImportToast } = await import("../editor/import-toast.js");
     showImportToast(cards.length > 1 ? `${cards.length} cards moved to ${name}` : `Card moved to ${name}`, "info");
     return true;
