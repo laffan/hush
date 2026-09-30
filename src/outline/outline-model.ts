@@ -261,9 +261,9 @@ export function outlineFromFlowchart(
  * `*em*`, `==highlight==`, `` `code` ``, `[label](url)` and
  * `[[Wikilink]]` all collapse to the words they carry.
  *
- * Only the pinned Doc panel uses this: it is chrome docked to the frame,
- * not the document, so it shows the item the way the user reads it
- * rather than the way it is stored. Everywhere the outline IS the
+ * Only Zen Focus's one-row strip uses this: it is chrome pinned to the
+ * top of the window, not the document, so it shows the item the way the
+ * user reads it rather than the way it is stored. Everywhere the outline IS the
  * document — the editor lines, the canvas shape — the real markdown
  * parser runs instead and the formatting renders.
  */

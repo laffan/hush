@@ -49,6 +49,9 @@ export function createPaneEditor(container, appState, onChange, opts) {
       getImageContext,
       flushLineIndicator: true,
       getFileId: opts?.getFileId,
+      // A surface holding a slice of a document (the pinned outline's
+      // panel) — see createBaseExtensions.
+      fragment: !!opts?.fragment,
     });
 
   const dryPlugin = createDryHighlightPlugin(modeRef);

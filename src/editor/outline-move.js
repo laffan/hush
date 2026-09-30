@@ -8,11 +8,10 @@
  * to the depth they land at — and both are one transaction, so ⌘Z puts
  * the whole move back.
  *
- * The drag half is surface-agnostic: `startOutlineDrag` knows nothing of
- * CodeMirror or of the pinned panel's rows. Each surface hands it the
- * items, a way to measure the ones on screen, and somewhere to draw the
- * drop marker; the in-flow outline (`outline-drag-plugin.js`) and the
- * pinned panel (`outline-dom.js`) are the two callers.
+ * The drag half, `startOutlineDrag`, knows nothing of CodeMirror: its
+ * caller (`outline-drag-plugin.js`, which runs in the document and in the
+ * pinned outline's own editor alike) hands it the items, a way to measure
+ * the ones on screen, and somewhere to draw the drop marker.
  */
 
 /** Last item index of the unit rooted at `i` — the item plus every
@@ -65,19 +64,44 @@ export function dropDepthRange(items, s, e, at) {
 }
 
 /**
- * The changes that move the unit rooted at `items[src]` to just before
- * `items[at]` (or to the end of the block when `at === items.length`),
- * at nesting `depth`. `items` carry 1-based document line numbers, as
- * the outline field's `scanBlocks` produces them.
+ * Where a unit `[s, e]` asked to land before `items[at]` at depth `want`
+ * actually lands — `{ at, depth }`.
  *
- * Returns `{ changes, lineOffset }` or null for a move that changes
- * nothing. `lineOffset` is how far the unit's first line ends up from
- * where it began, in lines — the caller uses it to follow the unit with
- * the caret or with the focus.
+ * Deeper than the item above allows is clamped. Shallower than the item
+ * below is not refused and does not adopt that item either: the unit
+ * slides on past everything indented deeper than the depth asked for
+ * and lands at the end of that branch. So an item dragged (or ⌘['d) out
+ * to the root from the middle of a list of children lands after its old
+ * parent's last child, and those children stay where they were.
  */
-export function outlineMoveChanges(doc, items, src, at, depth) {
+export function resolveDrop(items, s, e, at, want) {
+  const base = items.reduce((m, it) => Math.min(m, it.depth), Infinity);
+  const { max } = dropDepthRange(items, s, e, at);
+  const depth = Math.max(base, Math.min(max, want));
+  let a = at;
+  for (;;) {
+    const n = a >= s && a <= e ? e + 1 : a; // step over the lifted unit
+    if (n >= items.length || items[n].depth <= depth) return { at: n, depth };
+    a = n + 1;
+  }
+}
+
+/**
+ * The changes that move the unit rooted at `items[src]` — the item and
+ * everything indented under it, or through `items[end]` when given — to
+ * just before `items[at]` (or to the end of the block when
+ * `at === items.length`), at nesting `depth`. `items` carry 1-based
+ * document line numbers, as the outline field's `scanBlocks` produces
+ * them.
+ *
+ * Returns `{ changes, lineOffset, delta }` or null for a move that
+ * changes nothing. `lineOffset` is how far the unit's first line ends up
+ * from where it began, in lines, and `delta` the levels it was indented
+ * by — the caller uses them to follow the unit with the selection.
+ */
+export function outlineMoveChanges(doc, items, src, at, depth, end = unitEnd(items, src)) {
   const s = src;
-  const e = unitEnd(items, src);
+  const e = end;
   if (at > s && at <= e) return null; // inside itself
   const delta = depth - items[s].depth;
   const samePlace = at === s || at === e + 1;
@@ -93,7 +117,7 @@ export function outlineMoveChanges(doc, items, src, at, depth) {
 
   // Re-indent in place: one replacement over the unit's own lines.
   if (samePlace) {
-    return { changes: [{ from: first.from, to: last.to, insert: text }], lineOffset: 0 };
+    return { changes: [{ from: first.from, to: last.to, insert: text }], lineOffset: 0, delta };
   }
 
   // Lift the unit with the newline after it — or, when it ends the
@@ -118,7 +142,7 @@ export function outlineMoveChanges(doc, items, src, at, depth) {
   const lineOffset = landLine > items[e].line
     ? landLine - count - items[s].line
     : landLine - items[s].line;
-  return { changes: [del, ins], lineOffset };
+  return { changes: [del, ins], lineOffset, delta };
 }
 
 /**
@@ -193,31 +217,70 @@ export function moveOutlineUnit(view, blocks, dir) {
 }
 
 /**
- * Apply a drag's move to the document. When the selection sat inside the
- * moved unit it travels with it — mapped through the lift it would land
- * at the hole the unit left behind.
+ * Apply a move to the document in one transaction. A selection end that
+ * sat inside the moved lines travels with them, at the same place in
+ * its line's text (shifted by the indent the line gained or lost) —
+ * mapped through the lift instead, it would land in the hole the unit
+ * left behind.
  */
-export function applyOutlineMove(view, items, src, at, depth) {
-  const plan = outlineMoveChanges(view.state.doc, items, src, at, depth);
+export function applyOutlineMove(view, items, src, at, depth, end = unitEnd(items, src)) {
+  const plan = outlineMoveChanges(view.state.doc, items, src, at, depth, end);
   if (!plan) return null;
   const doc = view.state.doc;
-  const e = unitEnd(items, src);
-  const unitFrom = doc.line(items[src].line).from;
-  const unitTo = doc.line(items[e].line).to;
-  const sel = view.state.selection.main;
+  const firstLine = items[src].line;
+  const lastLine = items[end].line;
   const spec = { changes: plan.changes, userEvent: "move.outline" };
   const tr = view.state.update(spec);
-  if (sel.head >= unitFrom && sel.head <= unitTo) {
-    const newDoc = tr.state.doc;
-    const landing = items[src].line + plan.lineOffset;
-    if (landing >= 1 && landing <= newDoc.lines) {
-      const pos = newDoc.line(landing).to;
-      view.dispatch(view.state.update({ ...spec, selection: { anchor: pos } }));
-      return plan;
-    }
-  }
-  view.dispatch(tr);
+  const newDoc = tr.state.doc;
+  const follow = (pos) => {
+    const line = doc.lineAt(pos);
+    if (line.number < firstLine || line.number > lastLine) return tr.changes.mapPos(pos, 1);
+    const col = pos - line.from;
+    const moved = reindentLine(line.text, plan.delta);
+    const shifted = Math.max(0, Math.min(moved.length, col + moved.length - line.text.length));
+    const target = line.number + plan.lineOffset;
+    if (target < 1 || target > newDoc.lines) return tr.changes.mapPos(pos, 1);
+    return newDoc.line(target).from + shifted;
+  };
+  const sel = view.state.selection.main;
+  view.dispatch(view.state.update({
+    ...spec,
+    selection: { anchor: follow(sel.anchor), head: follow(sel.head) },
+  }));
   return plan;
+}
+
+/**
+ * ⌘] / ⌘[ on an outline: the item under the selection — with everything
+ * nested under it, and any following siblings the selection also covers
+ * — goes one level in or out.
+ *
+ * In takes it under the sibling above it, so it needs one: the first
+ * child of a parent has nowhere to go. Out follows the drag's landing
+ * rule (`resolveDrop`): the unit leaves its parent and lands after the
+ * parent's branch, so the siblings after it keep their parent rather
+ * than being adopted. Outside an outline nothing is claimed and
+ * CodeMirror's own line indent runs.
+ */
+export function indentOutlineUnit(view, blocks, dir) {
+  if (!blocks || !blocks.length) return false;
+  const found = selectedItems(view.state, blocks);
+  if (!found) return false;
+  const { items, a, b } = found;
+  const level = items[a].depth;
+  let end = unitEnd(items, a);
+  // Carry following siblings the selection reaches into, whole.
+  while (end < b && end + 1 < items.length && items[end + 1].depth >= level) end = unitEnd(items, end + 1);
+  if (dir > 0) {
+    if (a === 0 || items[a - 1].depth < level) return true;
+    applyOutlineMove(view, items, a, a, level + 1, end);
+    return true;
+  }
+  const base = items.reduce((m, it) => Math.min(m, it.depth), Infinity);
+  if (level <= base) return true;
+  const landing = resolveDrop(items, a, end, a, level - 1);
+  applyOutlineMove(view, items, a, landing.at, landing.depth, end);
+  return true;
 }
 
 /** The six-dot grip the handles draw. */
@@ -300,18 +363,27 @@ export function startOutlineDrag(e, o) {
     o.markerHost.appendChild(marker);
   };
 
+  /** The marker's height for a landing point: its own slot, or — when it
+   *  lands before an item that isn't drawn (a hidden completed one) — the
+   *  next slot down; the end of the list when there is none. */
+  const slotY = (at) => {
+    let hit = null;
+    for (const sl of slots) if (sl.at >= at && (!hit || sl.at < hit.at)) hit = sl;
+    if (at === unitE + 1 && !slots.some((sl) => sl.at === at)) hit = slots.find((sl) => sl.at === s) || hit;
+    return (hit || slots[slots.length - 1]).y;
+  };
+
   const update = (x, y) => {
     if (!slots || !slots.length) return;
     let best = slots[0];
     for (const sl of slots) if (Math.abs(sl.y - y) < Math.abs(best.y - y)) best = sl;
-    const range = dropDepthRange(items, s, unitE, best.at);
     const want = items[s].depth + Math.round((x - startX) / DEPTH_STEP_PX);
-    const depth = Math.max(range.min, Math.min(range.max, want));
-    target = { at: best.at, depth };
+    target = resolveDrop(items, s, unitE, best.at, want);
+    const depth = target.depth;
 
     const hostRect = o.markerHost.getBoundingClientRect();
     const left = o.srcLeft + (depth - items[s].depth) * o.indentPx;
-    marker.style.top = `${best.y - hostRect.top + o.markerHost.scrollTop}px`;
+    marker.style.top = `${slotY(target.at) - hostRect.top + o.markerHost.scrollTop}px`;
     marker.style.left = `${left - hostRect.left + 6}px`;
     marker.style.width = `${Math.max(24, o.markerRight - left - 6)}px`;
   };

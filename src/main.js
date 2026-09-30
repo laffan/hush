@@ -28,6 +28,14 @@ import { setupMultiWindow } from "./multi-window.js";
 import { bootAppState } from "./main-boot.js";
 import { phase, phaseSync, finishStartupTrace, installStartupTraceBridge } from "./startup-trace.js";
 import "./font-imports.js";
+import { setPinnedOutlineEditorFactory } from "./editor/plugins/outline-view.js";
+import { createPinnedOutlineEditor } from "./editor/outline-pinned-editor.js";
+
+// A pinned outline's panel holds a full doc surface built by the pane
+// editor factory; outline-view.js can't import that without closing an
+// import cycle through the shared extension list, so it is handed over
+// here, before the first editor exists.
+setPinnedOutlineEditorFactory(createPinnedOutlineEditor);
 
 async function init() {
   const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;

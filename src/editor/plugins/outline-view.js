@@ -35,12 +35,28 @@ import {
 } from "../outline-frontmatter.js";
 import { propertiesEdit } from "./properties.js";
 import {
-  buildOutlineFooter, buildOutlineRows, buildOutlineZenStrip, focusRowText,
+  buildOutlineFooter, buildOutlineZenStrip,
   applyOutlineFontStep, OUTLINE_FONT_STEP_MIN, OUTLINE_FONT_STEP_MAX,
 } from "../outline-dom.js";
-import { moveOutlineUnit } from "../outline-move.js";
+import { moveOutlineUnit, indentOutlineUnit } from "../outline-move.js";
 import { makeOutlineDragPlugin } from "../outline-drag-plugin.js";
-import { pinnedRowHandlers } from "../outline-pinned-edit.js";
+
+/**
+ * Set on the editor a pinned outline's panel holds
+ * (`outline-pinned-editor.js`): its whole document is the pinned block,
+ * so it is an outline with no frontmatter to say so, and it takes the
+ * host document's hide-completed switch as `{ hideDone }`. Its footer is
+ * the panel's, so it draws none of its own.
+ */
+export const outlineHost = Facet.define({
+  combine: (values) => values[0] || null,
+});
+
+/** Builds the pinned panel's editor. Registered from main.js — the editor
+ *  is a full doc surface (`createPaneEditor`), and importing that here
+ *  would close a cycle back through the shared extension list. */
+let pinnedEditorFactory = null;
+export function setPinnedOutlineEditorFactory(fn) { pinnedEditorFactory = fn; }
 
 /**
  * Every outline block in the document, as runs of consecutive checklist
@@ -83,23 +99,15 @@ function blockSignature(block, flags, pinned) {
     + "|" + block.items.map((i) => i.text).join("\u0000");
 }
 
-/** The rows' shape without their words — what the pinned panel has to
- *  rebuild for. Typing into a row changes only the words, and rebuilding
- *  then would tear the field being typed in out from under the caret. */
-function blockStructure(block, flags) {
-  return `${block.fromLine}:${flags.hideDone ? 1 : 0}:`
-    + block.items.map((i) => `${i.line}.${i.depth}.${i.checked ? 1 : 0}`).join(",");
-}
-
 /** The footer's − / +: one px of outline type per press, per device. */
-function stepOutlineFont(appState, view, delta) {
+function stepOutlineFont(appState, views, delta) {
   const cur = Number(appState?.settings?.outlineFontStep) || 0;
   const next = Math.max(OUTLINE_FONT_STEP_MIN, Math.min(OUTLINE_FONT_STEP_MAX, cur + delta));
   if (next === cur) return;
   applyOutlineFontStep(next);
   appState?.updateSettings?.({ outlineFontStep: next });
   // Every outline line just changed height; the heightmap has to hear it.
-  view.requestMeasure();
+  for (const v of views) v?.requestMeasure();
 }
 
 let fontStepInstalled = false;
@@ -162,7 +170,7 @@ class OutlineFooterWidget extends WidgetType {
       pinned: false,
       onToggleHideDone: () => patchFlags(view, { [HIDE_DONE_KEY]: this.flags.hideDone ? null : "true" }),
       onTogglePin: () => patchFlags(view, { [PIN_KEY]: String(this.blockIndex + 1) }),
-      onFontStep: (d) => stepOutlineFont(this.appState, view, d),
+      onFontStep: (d) => stepOutlineFont(this.appState, [view], d),
     }));
     return host;
   }
@@ -232,7 +240,10 @@ function selectionTouches(edState, from, to) {
  *  never the line decorations, whose zero-length ranges would make the
  *  caret skip lines that are perfectly visible. */
 function buildOutlineState(edState, appState) {
-  const flags = outlineFlagsOf(edState);
+  // The pinned panel's editor is all outline, with no frontmatter of its
+  // own: its host says so, and lends it the document's hide switch.
+  const host = edState.facet(outlineHost);
+  const flags = host ? { on: true, hideDone: !!host.hideDone, pin: 0 } : outlineFlagsOf(edState);
   const empty = { deco: Decoration.none, atomic: RangeSet.empty, hideDone: false, pin: 0, pinnedBlock: null, blocks: [] };
   if (!flags.on) return empty;
   const doc = edState.doc;
@@ -291,11 +302,13 @@ function buildOutlineState(edState, appState) {
       }
     });
 
-    ranges.push(Decoration.widget({
-      widget: new OutlineFooterWidget(sig, block.items, flags, bi, first, appState),
-      block: true,
-      side: 1,
-    }).range(block.items[block.items.length - 1].to));
+    if (!host) {
+      ranges.push(Decoration.widget({
+        widget: new OutlineFooterWidget(sig, block.items, flags, bi, first, appState),
+        block: true,
+        side: 1,
+      }).range(block.items[block.items.length - 1].to));
+    }
   });
 
   return {
@@ -328,7 +341,8 @@ function makeOutlineField(appState) {
       // that is the one decoration whose shape depends on where the
       // selection sits. Everywhere else, re-scanning the document on
       // every arrow key would be work for an identical answer.
-      if (tr.docChanged || (tr.selection && value.hideDone)) return buildOutlineState(tr.state, appState);
+      // A reconfigure can carry a new host switch (the pinned editor's).
+      if (tr.docChanged || tr.reconfigured || (tr.selection && value.hideDone)) return buildOutlineState(tr.state, appState);
       return value;
     },
     provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
@@ -353,21 +367,17 @@ function makePinnedPanel(field, appState) {
       this.view = view;
       this.el = null;
       this.sig = "";
-      this.structure = "";
       this.zen = false;
-      // Where the caret goes after the next rebuild — set by an edit made
-      // in the panel (Enter, Tab, …) just before it dispatches.
-      this.focusReq = null;
-      this.rows = pinnedRowHandlers(
-        view,
-        () => view.state.field(field, false)?.pinnedBlock || null,
-        (req) => { this.focusReq = req; },
-      );
+      this.sub = null;        // the panel's editor (outline-pinned-editor.js)
+      this.footerSig = "";
       this.render();
     }
 
     update(update) {
       if (update.docChanged || update.selectionSet) this.render();
+      // Whatever changed the document, the panel's editor reconciles
+      // after this update — it may not be dispatched to from inside it.
+      if (update.docChanged && this.sub) queueMicrotask(() => this.sub?.sync());
       // The text column is padding on the scroller, and the sidebar,
       // the right-hand bars and a docked pane all move it. Re-read it
       // whenever the geometry moves so the panel stays under the column
@@ -376,21 +386,18 @@ function makePinnedPanel(field, appState) {
     }
 
     destroy() {
+      this.sub?.destroy();
+      this.sub = null;
       if (this.el) this.el.remove();
       this.el = null;
       this.sig = "";
-      this.structure = "";
+      this.footerSig = "";
     }
 
-    /** A row's text lost the caret: redraw so it shows its words without
-     *  their markdown again — unless the caret only moved to another row,
-     *  or the rebuild that took it is already putting it back. */
-    onRowBlur() {
-      setTimeout(() => {
-        if (!this.el || this.el.contains(document.activeElement)) return;
-        this.sig = "";
-        this.render();
-      }, 0);
+    /** The pinned block's span in this document, as it stands now. */
+    blockRange() {
+      const b = this.view.state.field(field, false)?.pinnedBlock;
+      return b ? { from: b.items[0].from, to: b.items[b.items.length - 1].to } : null;
     }
 
     /** The height the user dragged the panel to, or null for "as tall
@@ -493,27 +500,15 @@ function makePinnedPanel(field, appState) {
       const flags = { hideDone: value.hideDone, pin: value.pin };
       const overlay = this.view.dom.closest(".zen-focus-overlay");
 
-      const sig = `${overlay ? "z" : "p"}|` + blockSignature(block, flags, true);
-      if (this.el && sig === this.sig && !this.focusReq) return;
-      // Typing into a row: its words changed and nothing else did. The
-      // field on screen already shows them — rebuilding would take it
-      // away from under the caret.
-      const structure = blockStructure(block, flags);
-      if (this.el && !overlay && !this.zen && !this.focusReq && structure === this.structure
-        && this.el.contains(document.activeElement)) {
-        this.sig = sig;
-        return;
-      }
-      this.structure = structure;
-      const wasZen = this.zen;
-      this.sig = sig;
-      this.zen = !!overlay;
-
       // A surface can't switch between the two forms in place — they
       // hang off different elements — so a changed form starts over.
-      if (this.el && wasZen !== this.zen) { this.el.remove(); this.el = null; }
+      if (this.el && this.zen !== !!overlay) this.destroy();
+      this.zen = !!overlay;
 
       if (this.zen) {
+        const sig = blockSignature(block, flags, true);
+        if (this.el && sig === this.sig) return;
+        this.sig = sig;
         const strip = buildOutlineZenStrip(block.items, (item) => toggleAt(this.view, item.line));
         if (!strip) { this.destroy(); return; }
         if (!this.el) {
@@ -529,34 +524,36 @@ function makePinnedPanel(field, appState) {
         this.el = document.createElement("div");
         this.el.className = "outline-pinned-panel";
         this.view.dom.appendChild(this.el);
+        this.applyStoredHeight();
+        this.el.appendChild(this.buildGrip());
+        const host = document.createElement("div");
+        host.className = "outline-pinned-editor";
+        this.el.appendChild(host);
+        this.sub = pinnedEditorFactory?.({
+          parent: host,
+          appState,
+          hostView: this.view,
+          getRange: () => this.blockRange(),
+          hideDone: flags.hideDone,
+        }) || null;
         this.syncColumn();
       }
-      this.applyStoredHeight();
-      const prevRows = this.el.querySelector(".outline-rows");
-      const scrollTop = prevRows ? prevRows.scrollTop : 0;
-      this.el.replaceChildren(this.buildGrip());
-      const rows = buildOutlineRows(block.items, flags.hideDone, {
-        onToggle: (item) => toggleAt(this.view, item.line),
-        onEdit: this.rows.onEdit,
-        onKey: this.rows.onKey,
-        onDragStart: this.rows.onDragStart,
-        onBlur: () => this.onRowBlur(),
-      });
-      this.el.appendChild(rows);
-      rows.scrollTop = scrollTop;
-      this.el.appendChild(buildOutlineFooter({
-        hideDone: flags.hideDone,
-        pinned: true,
-        onToggleHideDone: () => patchFlags(this.view, { [HIDE_DONE_KEY]: flags.hideDone ? null : "true" }),
-        onTogglePin: () => patchFlags(this.view, { [PIN_KEY]: null }),
-        onFontStep: (d) => stepOutlineFont(appState, this.view, d),
-      }));
 
-      const req = this.focusReq;
-      this.focusReq = null;
-      if (req) {
-        const item = block.items.find((it) => it.line === req.line);
-        if (item) focusRowText(rows, item.line, Math.min(req.offset, item.text.length), item.text);
+      // The footer is the panel's, outside the editor, so it stays put
+      // while a long outline scrolls. Rebuilt only when a switch moves.
+      const footerSig = flags.hideDone ? "h" : "-";
+      if (footerSig !== this.footerSig) {
+        const had = this.footerSig !== "";
+        this.footerSig = footerSig;
+        this.el.querySelector(":scope > .outline-footer")?.remove();
+        this.el.appendChild(buildOutlineFooter({
+          hideDone: flags.hideDone,
+          pinned: true,
+          onToggleHideDone: () => patchFlags(this.view, { [HIDE_DONE_KEY]: flags.hideDone ? null : "true" }),
+          onTogglePin: () => patchFlags(this.view, { [PIN_KEY]: null }),
+          onFontStep: (d) => stepOutlineFont(appState, [this.view, this.sub?.view], d),
+        }));
+        if (had) this.sub?.setHideDone(flags.hideDone);
       }
     }
   },
@@ -565,12 +562,16 @@ function makePinnedPanel(field, appState) {
 
 /** Alt-Arrow moves an item among its siblings with its children — see
  *  `outline-move.js#moveOutlineUnit`. Outside an outline nothing is
- *  claimed and CodeMirror's own line move runs. */
+ *  claimed and CodeMirror's own line move / indent runs. */
 function makeOutlineKeymap(field) {
   const blocks = (view) => view.state.field(field, false)?.blocks;
   return Prec.high(keymap.of([
     { key: "Alt-ArrowUp", run: (view) => moveOutlineUnit(view, blocks(view), -1) },
     { key: "Alt-ArrowDown", run: (view) => moveOutlineUnit(view, blocks(view), 1) },
+    // ⌘] / ⌘[ take an item's children with it, and an outdent lands after
+    // the parent's branch — `outline-move.js#indentOutlineUnit`.
+    { key: "Mod-]", run: (view) => indentOutlineUnit(view, blocks(view), 1) },
+    { key: "Mod-[", run: (view) => indentOutlineUnit(view, blocks(view), -1) },
   ]));
 }
 

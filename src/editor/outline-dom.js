@@ -1,17 +1,16 @@
 /**
- * Outline chrome for a Doc — the footer, and the rows the pinned panel
- * paints.
+ * Outline chrome for a Doc — the footer, and the one row Zen Focus shows.
  *
  * Shared by the two places an outline shows its footer: the block widget
  * that sits under an in-flow outline, and the panel a pinned outline
  * docks to the bottom of the editor. They are different surfaces (one is
  * a CodeMirror widget inside the document, the other is chrome outside
- * it) but the same two toggles, so the buttons are built once here.
+ * the pinned outline's own editor) but the same controls, so the
+ * buttons are built once here.
  */
 
 import { applyTooltip } from "../tooltips.js";
 import { firstOpenIndex, stripInlineMarkdown } from "../outline/outline-model.ts";
-import { GRIP_ICON } from "./outline-move.js";
 
 /** Bounds of the footer's − / + (`outlineFontStep`, px off the default). */
 export const OUTLINE_FONT_STEP_MIN = -6;
@@ -121,160 +120,6 @@ export function buildOutlineFooter(o) {
     o.pinned, o.onTogglePin,
   ));
   return footer;
-}
-
-/**
- * The pinned panel's body: one row per item, indented by depth, with a
- * live checkbox, a grip to drag it by and text that can be edited where
- * it stands.
- *
- * The rows are chrome, not document text — CodeMirror only renders the
- * lines near the scroll position, so an outline pinned to the frame has
- * to be drawn outside `.cm-content` or it would simply vanish the moment
- * the user scrolled away from it, which is the one thing a pinned
- * outline must not do. Every edit made here goes straight back into the
- * document through `h`, which is what keeps the two one outline.
- *
- * A row shows its item with the inline markdown taken off; the raw text
- * goes into the field while it is being edited, so what is typed is what
- * is stored.
- *
- * @param {import("../outline/outline-model.ts").OutlineItem[]} items
- * @param {boolean} hideDone
- * @param {object} h
- * @param {(item) => void} h.onToggle
- * @param {(item, text: string) => void} [h.onEdit]
- * @param {(item, e: KeyboardEvent, label: HTMLElement) => boolean} [h.onKey]
- *   A key in an item's text; true when it was handled.
- * @param {(index: number, e: PointerEvent, row: HTMLElement) => void} [h.onDragStart]
- * @param {() => void} [h.onBlur]
- */
-export function buildOutlineRows(items, hideDone, h) {
-  const list = document.createElement("div");
-  list.className = "outline-rows";
-  const nextIdx = firstOpenIndex(items);
-  const baseDepth = items.reduce((m, it) => Math.min(m, it.depth), Infinity) || 0;
-
-  items.forEach((item, i) => {
-    if (hideDone && item.checked) return;
-    const row = document.createElement("div");
-    row.className = "outline-row"
-      + (item.checked ? " outline-row-done" : "")
-      + (i === nextIdx ? " outline-row-next" : "");
-    row.dataset.index = String(i);
-    row.style.setProperty("--outline-depth", String(Math.max(0, item.depth - baseDepth)));
-
-    if (h.onDragStart) {
-      const grip = document.createElement("span");
-      grip.className = "outline-row-handle";
-      grip.innerHTML = GRIP_ICON;
-      grip.setAttribute("aria-hidden", "true");
-      grip.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); });
-      grip.addEventListener("pointerdown", (e) => {
-        if (e.button !== 0) return;
-        e.preventDefault();
-        e.stopPropagation();
-        h.onDragStart(i, e, row);
-      });
-      row.appendChild(grip);
-    }
-
-    const box = document.createElement("span");
-    box.className = "cm-task-checkbox outline-row-box" + (item.checked ? " checked" : "");
-    box.setAttribute("role", "checkbox");
-    box.setAttribute("aria-checked", item.checked ? "true" : "false");
-    box.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      h.onToggle(item);
-    });
-    row.appendChild(box);
-
-    const label = document.createElement("span");
-    label.className = "outline-row-text";
-    label.dataset.line = String(item.line);
-    label.textContent = stripInlineMarkdown(item.text);
-    if (h.onEdit) makeEditable(label, item, h);
-    row.appendChild(label);
-
-    list.appendChild(row);
-  });
-  return list;
-}
-
-/** Turn a row's label into a one-line text field over its item. */
-function makeEditable(label, item, h) {
-  label.contentEditable = "plaintext-only";
-  label.spellcheck = false;
-  label.addEventListener("focus", () => {
-    if (label.dataset.raw === "1") return;
-    label.dataset.raw = "1";
-    // The stored text only differs from what the row shows when it
-    // carries markdown; then the caret can't be mapped across the swap,
-    // so it goes to the end.
-    if (label.textContent !== item.text) {
-      label.textContent = item.text;
-      placeCaret(label, item.text.length);
-    }
-  });
-  label.addEventListener("input", () => {
-    h.onEdit(item, (label.textContent || "").replace(/[\r\n]+/g, " "));
-  });
-  label.addEventListener("keydown", (e) => {
-    // A key the row acts on stops here. Everything else goes on: the
-    // window-level fallback already leaves an editable target's keys
-    // alone, apart from the ones meant to work anywhere (⌘P, ⌘O, the
-    // panel toggles).
-    if (h.onKey && h.onKey(item, e, label)) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-  });
-  label.addEventListener("blur", () => { h.onBlur?.(); });
-}
-
-/** Caret offset inside a row's label (its one text node). */
-export function caretOffset(label) {
-  const sel = window.getSelection();
-  if (!sel || !sel.rangeCount || !label.contains(sel.anchorNode)) return (label.textContent || "").length;
-  const r = sel.getRangeAt(0).cloneRange();
-  r.selectNodeContents(label);
-  r.setEnd(sel.anchorNode, sel.anchorOffset);
-  return r.toString().length;
-}
-
-function placeCaret(label, offset) {
-  const sel = window.getSelection();
-  if (!sel) return;
-  const node = label.firstChild;
-  const range = document.createRange();
-  if (node && node.nodeType === 3) {
-    range.setStart(node, Math.max(0, Math.min(offset, node.length)));
-  } else {
-    range.setStart(label, 0);
-  }
-  range.collapse(true);
-  sel.removeAllRanges();
-  sel.addRange(range);
-}
-
-/** Put the caret back into the row for document line `line` after the
- *  rows were rebuilt, in raw-text form, at `offset`. */
-export function focusRowText(list, line, offset, rawText) {
-  const label = list.querySelector(`.outline-row-text[data-line="${line}"]`);
-  if (!label) return false;
-  label.dataset.raw = "1";
-  label.textContent = rawText;
-  label.focus({ preventScroll: true });
-  placeCaret(label, offset);
-  // Scroll the rows by hand: `scrollIntoView` also scrolls every
-  // `overflow: hidden` box above the panel — a stack column's among
-  // them (README-TECHNICAL, Platform gotchas).
-  const lr = list.getBoundingClientRect();
-  const r = label.getBoundingClientRect();
-  if (r.top < lr.top) list.scrollTop -= lr.top - r.top;
-  else if (r.bottom > lr.bottom) list.scrollTop += r.bottom - lr.bottom;
-  return true;
 }
 
 /**

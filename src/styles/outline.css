@@ -214,7 +214,7 @@
   box-sizing: border-box;
   border-radius: 8px;
   max-height: 45%;
-  /* A column so the rows take the scrolling and the footer stays put:
+  /* A column so the editor takes the scrolling and the footer stays put:
      the toggles are the way back out of a long pinned outline, and a
      footer that scrolls away with the items is no way out at all. */
   display: flex;
@@ -266,58 +266,74 @@
   background: color-mix(in srgb, var(--style-fg, var(--fg)) 50%, transparent);
 }
 
-.outline-pinned-panel .outline-rows {
+/* The panel's editor: a full doc surface (outline-pinned-editor.js)
+   holding the pinned block's lines, so it is worked on exactly as the
+   outline is in the text. It takes the scrolling, between the grip and
+   the footer.
+
+   It sits inside its host's `.cm-editor`, and the host's own rules reach
+   it — the main editor's 50vh typing runway and wide scroller padding, a
+   pane's padding and docked-column width. Each is put back here, with
+   `!important` because several of them carry an id. */
+.outline-pinned-editor {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
-
-.outline-rows {
-  position: relative;
-  padding: 2px 10px 2px 22px;
-  font-family: var(--ui-font-family);
-  font-size: var(--outline-font-size);
-  line-height: calc(var(--outline-line-height) + var(--outline-doc-lead));
-  color: var(--style-fg, var(--fg));
+.outline-pinned-editor > .cm-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto !important;
+  width: auto !important;
+  background: transparent;
 }
+.outline-pinned-editor .cm-scroller {
+  padding: 4px 10px 2px 0 !important;
+  overflow: auto !important;
+}
+.outline-pinned-editor .cm-content {
+  padding: 0 !important;
+  max-width: none !important;
+  margin: 0 !important;
+}
+/* The panel is the frame, so the lines drop theirs. */
+#editor-container .outline-pinned-editor .cm-line.cm-outline-line,
+.outline-pinned-editor .cm-line.cm-outline-line {
+  border: none;
+  border-radius: 0;
+}
+.outline-pinned-editor .cm-outline-top { padding-top: 0; }
 
+/* Zen Focus's one row. */
 .outline-row {
   position: relative;
   display: flex;
   align-items: baseline;
-  padding-left: calc(var(--outline-depth, 0) * 18px);
 }
 
 .outline-row-box { align-self: center; }
 
 .outline-row-text {
-  flex: 1 1 auto;
   min-width: 0;
   overflow-wrap: anywhere;
-  outline: none;
-}
-.outline-row-text[contenteditable] {
-  cursor: text;
-  /* An emptied item still needs something to click into. */
-  min-height: 1lh;
 }
 
-/* A row being dragged stays in place, faded, until it lands. In the
-   document the fade is colour, not opacity: the frame's sides ride the
-   same lines and would fade with them. */
-.outline-row.outline-dragging { opacity: 0.35; }
-.cm-outline-drag-src { color: color-mix(in srgb, var(--style-fg, var(--fg)) 35%, transparent) !important; }
-.cm-outline-drag-src .cm-task-checkbox { opacity: 0.35; }
+.outline-row-next .outline-row-text {
+  color: var(--heading-color, var(--style-fg, var(--fg)));
+  font-weight: 650;
+}
 
 /* === Dragging items ===================================================
 
-   A handle beside the checkbox on the item the pointer is over. In a
-   document it is one element floating over the editor (the lines are
-   CodeMirror's, and a widget in each one would be something the caret
-   walks through); in the pinned panel each row carries its own. */
-.cm-outline-handle,
-.outline-row-handle {
+   A grip beside the checkbox of the item the pointer is over — one
+   element floating over the editor rather than a widget in each line,
+   which would be something the caret walks through. The same plugin
+   runs in the pinned outline's editor. */
+.cm-outline-handle {
   position: absolute;
+  z-index: 5;
   width: 12px;
   height: 18px;
   display: flex;
@@ -330,27 +346,18 @@
   user-select: none;
 }
 .cm-outline-handle:hover,
-.cm-outline-handle.dragging,
-.outline-row-handle:hover {
+.cm-outline-handle.dragging {
   color: var(--style-fg, var(--fg));
   background: color-mix(in srgb, var(--style-fg, var(--fg)) 8%, transparent);
 }
-.cm-outline-handle svg,
-.outline-row-handle svg { width: 8px; height: 12px; display: block; }
-
-.cm-outline-handle { z-index: 5; }
+.cm-outline-handle svg { width: 8px; height: 12px; display: block; }
 .cm-outline-handle[hidden] { display: none; }
 
-/* The row's handle hangs in the rows' left padding, just before the box,
-   and only shows while the row is hovered. */
-.outline-row-handle {
-  left: calc(var(--outline-depth, 0) * 18px - 16px);
-  top: 50%;
-  transform: translateY(-50%);
-  opacity: 0;
-}
-.outline-row:hover .outline-row-handle,
-.outline-row-handle.dragging { opacity: 1; }
+/* The lines being dragged stay in place, faded, until they land. Colour,
+   not opacity: the frame's sides ride the same lines and would fade
+   with them. */
+.cm-outline-drag-src { color: color-mix(in srgb, var(--style-fg, var(--fg)) 35%, transparent) !important; }
+.cm-outline-drag-src .cm-task-checkbox { opacity: 0.35; }
 
 body.outline-drag-active,
 body.outline-drag-active * { cursor: grabbing !important; }
@@ -376,18 +383,6 @@ body.outline-drag-active * { cursor: grabbing !important; }
   border-radius: 50%;
   border: 1.5px solid var(--heading-color, var(--cursor, var(--fg)));
   background: var(--bg);
-}
-
-.outline-row-done .outline-row-text {
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
-  opacity: 0.45;
-}
-.outline-row-done .outline-row-box { opacity: 0.45; }
-
-.outline-row-next .outline-row-text {
-  color: var(--heading-color, var(--style-fg, var(--fg)));
-  font-weight: 650;
 }
 
 /* === Zen Focus ========================================================= */

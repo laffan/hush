@@ -9,11 +9,14 @@
  * node's whole subtree), and without this it was pulled out of its box,
  * leaving the box and everything else in it behind.
  *
- * The rule: a box's title is the child sitting highest in it (leftmost
- * on a tie). When a chart drag, a snap or a tidy moves a box's title as a
- * descendant, the box and everything inside it move with it by the same
- * amount. Only as a descendant — picking the title up by itself still
- * moves just the title, in or out of its box.
+ * The rule: a box's title is the node in its upper-left corner — of the
+ * text and image shapes inside it, the one whose top-left corner is
+ * nearest the box's own. (Strokes and nested boxes are never titles: a
+ * doodle in the corner isn't a heading.) When a chart drag, a snap or a
+ * tidy moves a box's title as a descendant, the box and everything
+ * inside it move with it by the same amount. Only as a descendant —
+ * picking the title up by itself still moves just the title, in or out
+ * of its box.
  *
  * Pure: shapes in, ids out. `DrawingState` applies it at each place that
  * moves a node's descendants.
@@ -59,15 +62,15 @@ export function titledAreaFollowers(
   const titles = new Map<string, string | null>();
   const titleOf = (areaId: string): string | null => {
     if (titles.has(areaId)) return titles.get(areaId)!;
+    const area = byId.get(areaId);
     let best: string | null = null;
-    let bestY = Infinity;
-    let bestX = Infinity;
-    for (const c of children.get(areaId) || []) {
-      const b = getShapeBounds(c, fontFamily);
-      if (b.minY < bestY || (b.minY === bestY && b.minX < bestX)) {
-        best = c.id;
-        bestY = b.minY;
-        bestX = b.minX;
+    let bestD = Infinity;
+    if (area && area.type === "drag-area") {
+      for (const c of children.get(areaId) || []) {
+        if (c.type !== "text" && c.type !== "image") continue;
+        const b = getShapeBounds(c, fontFamily);
+        const d = Math.hypot(b.minX - area.position.x, b.minY - area.position.y);
+        if (d < bestD) { best = c.id; bestD = d; }
       }
     }
     titles.set(areaId, best);
