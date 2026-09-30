@@ -6,7 +6,7 @@ import type { PocketEntry } from "./utils";
 import { parseText } from "./markdown";
 import {
   OUTLINE_FONT_FAMILY, OUTLINE_ICON, OUTLINE_PAD, OUTLINE_RADIUS,
-  outlineLayout, outlinePinnedOrigin,
+  outlineLayout, outlinePinnedOrigin, outlineHeight,
 } from "./outline-shape";
 import type { OutlineButton, OutlineLayout } from "./outline-shape";
 import { drawSelectionHighlight, drawGroupHighlight, drawSelectionBox, drawCropOverlay, drawEdgeDeleteButton, drawEdgeDeleteDot, drawReorderPreview, drawShadowHeaders } from "./renderer-selection";
@@ -114,6 +114,10 @@ export interface RenderState {
    *  Suppresses the per-edge delete dot / X — those edges mirror the
    *  project's document order and aren't the user's to remove. */
   flowEdgesLocked?: boolean;
+  /** Outlines are on screen as DOM — the Doc's own outline editor, laid
+   *  over the canvas by `ui/outline-layer.ts` — so the live pass paints
+   *  none (exports, rasters and the pocket still do). */
+  outlinesAsDom?: boolean;
   /** Flag-name → hex colour map mirrored from Hush's `flagColors`
    *  setting. Used by the highlight painter so `==MISSING==` etc. take
    *  on the user's configured colour instead of the default yellow. */
@@ -293,6 +297,8 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       // A card on screen is DOM — the card layer shows the same component
       // a Doc does (ui/card-layer.ts). Exports paint it (renderer-card.ts).
       if (shape.type === "text" && shape.card) return;
+      // So is an outline, wherever the outline layer is up.
+      if (shape.type === "text" && shape.outline && state.outlinesAsDom) return;
       if (shape.type === "text" && shape.outline) drawOutlineShape(ctx, shape, theme, false, state.flagColors);
       else if (shape.type === "text") {
         if (backdropIds?.has(shape.id)) drawTextBackdrop(ctx, shape, state.fontFamily, backdropColor);
@@ -503,7 +509,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   // place — and its size — through every pan and zoom underneath it.
   // The same origin feeds `DrawingState`'s screen-space hit test, so
   // what the user presses is what they see.
-  for (const shape of shapes) {
+  for (const shape of state.outlinesAsDom ? [] : shapes) {
     if (shape.type !== "text" || !shape.outline || !shape.outlinePin) continue;
     if (pocketedIds.has(shape.id) || shape.id === editingShapeId) continue;
     drawPinnedOutline(ctx, shape, theme, w, h, state);
@@ -525,7 +531,7 @@ export function pinnedOutlineOffset(
   insets: { left?: number; right?: number; bottom?: number } = {},
 ): { dx: number; dy: number; layout: OutlineLayout } {
   const layout = outlineLayout(shape);
-  const origin = outlinePinnedOrigin(layout, canvasW, canvasH, insets);
+  const origin = outlinePinnedOrigin({ width: layout.width, height: outlineHeight(shape, layout) }, canvasW, canvasH, insets);
   return { dx: origin.x - shape.position.x, dy: origin.y - shape.position.y, layout };
 }
 
@@ -799,6 +805,9 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
       x += LIST_MARKER_GUTTER;
     }
 
+    // A quote's words sit back at 80 %, as a Doc's do (`tags.quote`).
+    const lineAlpha = ctx.globalAlpha;
+    if (line.blockquote) ctx.globalAlpha = lineAlpha * 0.8;
     for (const run of line.runs) {
       const weight = run.bold ? "bold" : baseBold;
       const style = run.italic ? "italic" : "normal";
@@ -838,6 +847,7 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
       }
       x += runW;
     }
+    ctx.globalAlpha = lineAlpha;
 
     y += lineH;
   }

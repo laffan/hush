@@ -39,7 +39,7 @@ export function showImportToast(message, kind = "info", { sticky = false } = {})
       if (el.parentNode) el.remove();
       if (activeToast === el) activeToast = null;
     }, 220);
-  }, kind === "error" ? 4500 : 2200);
+  }, kind === "error" || kind === "break" ? 4500 : 2200);
   return el;
 }
 

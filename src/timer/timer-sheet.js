@@ -44,7 +44,7 @@ export function openTimerSheet(state) {
   root.innerHTML = `
     <div class="timer-backdrop"></div>
     <div class="timer-sheet" role="dialog" aria-modal="true" aria-label="Start timer">
-      <input class="timer-task" type="text" placeholder="What are you working on?" aria-label="Task"
+      <input class="timer-task" type="text" placeholder="What (specifically) are you working on?" aria-label="Task"
         autocomplete="off" spellcheck="false" />
       <div class="timer-seg timer-modes" role="group" aria-label="Timer or alarm">
         ${MODES.map((m) => `<button type="button" class="timer-mode" data-mode="${m.id}">${m.label}</button>`).join("")}

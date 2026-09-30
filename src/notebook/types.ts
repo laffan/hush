@@ -182,6 +182,12 @@ export interface TextShape extends ShapeBase {
    *  instead of in world space, so it holds its place while the canvas
    *  pans and zooms under it. */
   outlinePin?: boolean;
+  /** Outline only: the height the outline layer (`ui/outline-layer.ts`)
+   *  last measured it at. On screen an outline is the Doc's own editor,
+   *  as tall as its lines lay out, so bounds, selection and the pinned
+   *  frame read this rather than the canvas layout's estimate. Derived;
+   *  never an undo step. */
+  outlineHeight?: number;
   /** Marks this text shape as a **card**: `text` is the card's markdown
    *  body (what sits between `<<<` and `>>>` in a Doc), and it is shown
    *  by the DOM card layer (`ui/card-layer.ts`) rather than painted —

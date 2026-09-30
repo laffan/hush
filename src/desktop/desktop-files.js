@@ -35,7 +35,7 @@ export function findDesktopContainer(state, containerId) {
 }
 
 /** Collect the Desktop entries for a container node. Each entry:
- *  `{ key, kind, fileId, nodeId, name, hasGutter? }` — `key` is the
+ *  `{ key, kind, fileId, nodeId, name, hasGutter?, note? }` — `key` is the
  *  thumbnail cache key (fileId for files, node id for projects) and
  *  doubles as the identity the Desktop reconciles shapes against.
  *  Gutter notebooks (`node.gutter`) are attachments of their doc, not
@@ -72,6 +72,9 @@ export function collectDesktopFiles(state, containerId, opts = {}) {
       // through so the Desktop can tint the file's thumbnail to match.
       ...(node.bgColor ? { tint: node.bgColor } : {}),
       ...(kind === "doc" && gutteredDocFileIds.has(node.fileId) ? { hasGutter: true } : {}),
+      // A "Use as note" doc sits outside the project's text — no
+      // reading-order arrow reaches it (desktop-connections.js).
+      ...(kind === "doc" && node.useAsNote ? { note: true } : {}),
     });
   };
 

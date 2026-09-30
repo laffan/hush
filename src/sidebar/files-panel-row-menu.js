@@ -81,7 +81,7 @@ const MENU_ICONS = {
 // isn't lost behind a trash glyph.
 const ICON_ROW_LABELS = { flag: ["Flag", "Unflag"], rename: ["Rename"], delete: ["Delete"] };
 // temp/temp-icons/shelf-icon.svg, restroked to currentColor (2×2 grid).
-const SHELF_SVG = `<svg viewBox="0 0 24 24"><path d="M14 20.4V14.6C14 14.2686 14.2686 14 14.6 14H20.4C20.7314 14 21 14.2686 21 14.6V20.4C21 20.7314 20.7314 21 20.4 21H14.6C14.2686 21 14 20.7314 14 20.4Z"/><path d="M3 20.4V14.6C3 14.2686 3.26863 14 3.6 14H9.4C9.73137 14 10 14.2686 10 14.6V20.4C10 20.7314 9.73137 21 9.4 21H3.6C3.26863 21 3 20.7314 3 20.4Z"/><path d="M14 9.4V3.6C14 3.26863 14.2686 3 14.6 3H20.4C20.7314 3 21 3.26863 21 3.6V9.4C21 9.73137 20.7314 10 20.4 10H14.6C14.2686 10 14 9.73137 14 9.4Z"/><path d="M3 9.4V3.6C3 3.26863 3.26863 3 3.6 3H9.4C9.73137 3 10 3.26863 10 3.6V9.4C10 9.73137 9.73137 10 9.4 10H3.6C3.26863 10 3 9.73137 3 9.4Z"/></svg>`;
+export const SHELF_SVG = `<svg viewBox="0 0 24 24"><path d="M14 20.4V14.6C14 14.2686 14.2686 14 14.6 14H20.4C20.7314 14 21 14.2686 21 14.6V20.4C21 20.7314 20.7314 21 20.4 21H14.6C14.2686 21 14 20.7314 14 20.4Z"/><path d="M3 20.4V14.6C3 14.2686 3.26863 14 3.6 14H9.4C9.73137 14 10 14.2686 10 14.6V20.4C10 20.7314 9.73137 21 9.4 21H3.6C3.26863 21 3 20.7314 3 20.4Z"/><path d="M14 9.4V3.6C14 3.26863 14.2686 3 14.6 3H20.4C20.7314 3 21 3.26863 21 3.6V9.4C21 9.73137 20.7314 10 20.4 10H14.6C14.2686 10 14 9.73137 14 9.4Z"/><path d="M3 9.4V3.6C3 3.26863 3.26863 3 3.6 3H9.4C9.73137 3 10 3.26863 10 3.6V9.4C10 9.73137 9.73137 10 9.4 10H3.6C3.26863 10 3 9.73137 3 9.4Z"/></svg>`;
 
 /** Render the actions cell for a row — a single hamburger button when
  *  there's at least one entry, empty string otherwise. The button only
@@ -92,13 +92,7 @@ const SHELF_SVG = `<svg viewBox="0 0 24 24"><path d="M14 20.4V14.6C14 14.2686 14
 export function renderRowMenuButton(nodeId, nodeType, inTrash, item, inProject) {
   const entries = getMenuEntries(nodeId, nodeType, inTrash, item, inProject);
   const isShelfRow = !inTrash && (isPdfsId(nodeId) || item?.pdfFolder === true);
-  // Real projects carry a Desktop button in the same slot — the canvas
-  // overview of everything inside them. The specials are internally
-  // typed as projects but aren't Desktops. (Desk-wide Desktops were
-  // tried and shelved — Desktops are a project feature for now.)
-  const isDesktopRow = !inTrash
-    && nodeType === "project" && !isInboxId(nodeId) && !isImagesId(nodeId)
-    && !isArchiveId(nodeId) && !item?.pdfFolder && !item?.syncFolderId;
+  const isDesktopRow = hasDesktop(nodeId, nodeType, inTrash, item);
   const shelfBtn = isShelfRow
     ? `<button class="tree-action-shelf" data-tree-action="view-shelf" data-tooltip="View Shelf" aria-label="View Shelf">${SHELF_SVG}</button>`
     : isDesktopRow
@@ -113,12 +107,34 @@ export function renderRowMenuButton(nodeId, nodeType, inTrash, item, inProject) 
   </span>`;
 }
 
+/** Real projects carry a Desktop button in the shelf slot — the canvas
+ *  overview of everything inside them. The specials are internally
+ *  typed as projects but aren't Desktops. (Desk-wide Desktops were
+ *  tried and shelved — Desktops are a project feature for now.) */
+export function hasDesktop(nodeId, nodeType, inTrash, item) {
+  return !inTrash
+    && nodeType === "project" && !isInboxId(nodeId) && !isImagesId(nodeId)
+    && !isArchiveId(nodeId) && !item?.pdfFolder && !item?.syncFolderId;
+}
+
 /** Flagged-folder rows surface only the unflag action behind the same
  *  hamburger affordance for visual consistency. */
 export function renderFlagOnlyMenuButton(nodeId) {
   return `<span class="tree-actions" data-node-id="${nodeId}">
     <button class="tree-action-menu" data-tree-action="open-menu" data-menu-flag-only="1" data-tooltip="Menu" aria-label="Menu">${HAMBURGER_SVG}</button>
   </span>`;
+}
+
+// The PDF registry, for whether a PDF row is still waiting for its file.
+// Loaded lazily (the rows load it on first render too — files-panel-rows
+// .js); until it lands, no row is treated as waiting.
+let _pdfSync = null;
+function pdfAwaitingFile(fileId) {
+  if (!_pdfSync) {
+    import("../sync/pdf-sync.js").then((m) => { _pdfSync = m; }).catch(() => {});
+    return false;
+  }
+  return !!fileId && !_pdfSync.isPdfDownloaded(fileId);
 }
 
 /** Compute the list of menu entries that apply to a given tree row.
@@ -181,7 +197,10 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   }
 
   if (isPdf && !item?.pdfAlias) {
-    entries.push({ action: "proofread-pdf", label: "Create Proofread Notebook" });
+    // A PDF with no file behind it yet — its Zotero download pending, or
+    // failed offline — can take one from disk (pdf/pdf-manual-import.js).
+    if (pdfAwaitingFile(item?.fileId)) entries.push({ action: "import-pdf-file", label: "Import PDF File\u2026" });
+    else entries.push({ action: "proofread-pdf", label: "Create Proofread Notebook" });
   }
   if (!isSpecial && !isImage) {
     entries.push({ action: "flag", label: item?.flagged ? "Unflag" : "Flag" });

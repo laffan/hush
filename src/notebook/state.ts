@@ -156,6 +156,14 @@ export class DrawingState extends EventTarget {
   /** A card just made here (⌘-double-click) whose editor should take the
    *  keyboard as soon as the card layer builds it. */
   focusCardId: string | null = null;
+  /** The outline layer (ui/outline-layer.ts) is up: every outline on
+   *  screen is the Doc's own editor laid over the canvas, which owns its
+   *  checkboxes, footer and typing — the canvas neither paints outlines
+   *  nor hit-tests their chrome. */
+  outlinesAsDom = false;
+  /** An outline whose editor should take the keyboard: at a screen point
+   *  (a double-click's), or at its end. Read and cleared by the layer. */
+  focusOutline: { id: string; x?: number; y?: number } | null = null;
   /** Per-shape text style a *new* text shape starts from, or null to
    *  follow the canvas. Set when a proofread notebook mounts (see
    *  `PROOF_TEXT_STYLE`); untouched everywhere else. */
@@ -1255,6 +1263,13 @@ export class DrawingState extends EventTarget {
     // A card is edited in its own editor (ui/card-layer.ts), never in
     // the inline textarea.
     if (shape.card) return false;
+    // Nor is an outline, where the outline layer draws it: its editor
+    // takes the keyboard instead (the flowchart's ⌘-arrow walk lands here).
+    if (shape.outline && this.outlinesAsDom) {
+      this.focusOutline = { id: shape.id };
+      this.notify("interaction");
+      return true;
+    }
     this.editingText = {
       shapeId: shape.id,
       // An outline's `position` is the top-left of its frame, not of its
@@ -1855,6 +1870,13 @@ export class DrawingState extends EventTarget {
       // editor (the card layer takes the keyboard to it).
       if (canvasPt.y - hit.position.y < CARD_HEADER_HEIGHT) toggleCardCollapsed(this, hit.id);
       else { this.focusCardId = hit.id; this.notify("shapes"); }
+      return;
+    }
+    if (hit && hit.type === "text" && hit.outline && this.outlinesAsDom) {
+      // An outline is edited in place, rendered, as in a Doc: the layer
+      // opens its editor with the caret where the double-click landed.
+      this.focusOutline = { id: hit.id, x: e.clientX, y: e.clientY };
+      this.notify("interaction");
       return;
     }
     if (hit && hit.type === "text") {
@@ -3831,8 +3853,9 @@ export class DrawingState extends EventTarget {
    *  press was consumed. */
   private _handleOutlineChrome(screenPt: Point, canvasPt: Point, e: PointerEvent): boolean {
     // Modified presses are the canvas's: shift extends a selection, and
-    // ⌘ is the drag-to-a-doc gesture.
-    if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return false;
+    // ⌘ is the drag-to-a-doc gesture. Where the outline layer is up, the
+    // chrome is DOM and answers its own presses.
+    if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey || this.outlinesAsDom) return false;
     const hit = this._outlineUnderPoint(screenPt, canvasPt);
     if (!hit) return false;
     const button = hitTestOutlineButton(hit.local, hit.layout);

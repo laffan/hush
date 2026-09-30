@@ -59,7 +59,7 @@ import {
   foldCurrentSection, unfoldCurrentSection, foldSelection,
   foldAllSections, unfoldAllSections, foldAllAtLevel,
 } from "./editor/folding.js";
-import { insertDate, insertDateTime } from "./editor/insert-date.js";
+import { enterDateFormatPicker, insertDateTime } from "./editor/insert-date.js";
 import { currentWordLimit, setWordLimit, wordLimitTargetFileId } from "./editor/word-limit-store.js";
 import {
   canConvertDocToOutline, convertDocToOutline,
@@ -472,8 +472,8 @@ function buildCommands(state) {
       } },
     // Drop the current date / date-time at the cursor of whatever editing
     // surface is in focus (doc, pane, stack column, or notebook text shape).
-    { id: "insert-date", section: "Writing", label: "Insert Date", icon: icons.calendar, shortcutKey: null, ctx: "shared",
-      action: (s) => insertDate(s) },
+    { id: "insert-date", section: "Writing", label: "Insert Date", icon: icons.calendar, shortcutKey: null, ctx: "shared", keepOpen: true,
+      action: (s, palette) => enterDateFormatPicker(palette, s, icons.calendar) },
     { id: "insert-date-time", section: "Writing", label: "Insert Date/Time", icon: icons.calendar, shortcutKey: null, ctx: "shared",
       action: (s) => insertDateTime(s) },
 

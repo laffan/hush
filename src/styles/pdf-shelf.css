@@ -46,7 +46,11 @@ body.pdf-shelf-active #stack-container {
   box-sizing: border-box;
 }
 
+/* The header is chrome — scope name, search, sort, buttons — so it takes
+   the app's UI face; the cards below keep the style's writing face. Its
+   controls say `font: inherit`, so they follow this. */
 .pdf-shelf-header {
+  font-family: var(--ui-font-family);
   display: flex;
   align-items: center;
   justify-content: space-between;

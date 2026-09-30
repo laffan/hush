@@ -14,6 +14,11 @@
  *     isn't in Hush yet: registers a placeholder, downloads in the
  *     background (same pipeline as Zotero: Save PDF), and opens the
  *     PDF the moment the binary lands.
+ *   - "Import PDF File…" — the offline way in (pdf/pdf-manual-import.js):
+ *     a PDF picked from disk, linked to the reference from the library
+ *     cache on this device, or put behind a placeholder whose download is
+ *     pending or failed. Offered beside every download state, since a
+ *     download that can't reach Zotero only says so once it has failed.
  *
  * Notebook text shapes route here through `window.__hushOpenZoteroLink`
  * (registered by initZoteroLinkMenu) so the canvas module stays free of
@@ -22,6 +27,10 @@
 
 import { findNode, findNodeByFileId, nearestAncestorProjectId } from "../state/tree-helpers.js";
 import { addPdfAliasToProject } from "../state/state-pdf-aliases.js";
+// Static, not lazy: the file picker has to open inside the click that
+// asked for it, and an `await import()` in between can outlast WebKit's
+// user activation.
+import { importFileIntoPdf, importPdfFileForReference, referencePdfMeta } from "../pdf/pdf-manual-import.js";
 
 const OPEN_ICON = `<svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5H2v7.5h7.5V7"/><path d="M7 1.5h3.5V5"/><path d="M10.5 1.5 5.5 6.5"/></svg>`;
 
@@ -211,6 +220,19 @@ function makeSpinner() {
   return s;
 }
 
+/** The manual-import row. `run` resolves to the fileId the file went
+ *  behind, or null (cancelled, or it failed and said so); it must reach
+ *  the picker without awaiting anything first. */
+function makeImportRow(page, projectId, run) {
+  return makeRow("Import PDF File\u2026", async () => {
+    closeZoteroLinkMenu();
+    const fileId = await run();
+    if (!fileId) return;
+    await aliasPdfIntoProject(fileId, projectId);
+    void openPdfInHush(fileId, page);
+  });
+}
+
 /**
  * Open the tooltip menu for a `zotero://` link. Always offers "Open in
  * Zotero"; the Hush row fills in asynchronously once the link resolves
@@ -266,7 +288,10 @@ export async function openZoteroLinkMenu(url, anchor) {
     }
 
     if (entry) {
-      // Placeholder registered — a download is (or was) in flight.
+      // Placeholder registered — a download is (or was) in flight. Either
+      // way the file can come from disk instead.
+      const fillFromDisk = makeImportRow(parsed.page, projectId, async () =>
+        ((await importFileIntoPdf(_state, entry.fileId)) ? entry.fileId : null));
       const inFlight = pdfSync.getPdfDownloadProgress(entry.fileId) !== null;
       if (!inFlight) {
         slot.appendChild(makeRow("Download failed — retry", () => {
@@ -274,16 +299,22 @@ export async function openZoteroLinkMenu(url, anchor) {
           watchDownload(pdfSync, entry.fileId, parsed.page, el, renderHushRow, projectId);
           renderHushRow();
         }));
+        slot.appendChild(fillFromDisk);
         return;
       }
       const row = makeRow("Downloading…", null);
       row.prepend(makeSpinner());
       slot.appendChild(row);
+      slot.appendChild(fillFromDisk);
       watchDownload(pdfSync, entry.fileId, parsed.page, el, renderHushRow, projectId);
       return;
     }
 
-    if (ref && pdfAtt && _state.registerPdfPlaceholder) {
+    // Offline, a download can only fail: say so rather than start one.
+    const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+    if (ref && pdfAtt && _state.registerPdfPlaceholder && offline) {
+      slot.appendChild(makeRow("Download to Hush \u2014 offline", null));
+    } else if (ref && pdfAtt && _state.registerPdfPlaceholder) {
       slot.appendChild(makeRow("Download to Hush", async () => {
         try {
           const baseName = sanitizeFilename(ref.shortTitle || ref.title || "PDF");
@@ -310,6 +341,16 @@ export async function openZoteroLinkMenu(url, anchor) {
         }
         renderHushRow();
       }));
+    }
+
+    // A new linked entry from a file on disk, described by the cached
+    // reference — or, when the cache has never seen the item, by the key
+    // the link carries (an `open-pdf` link names the attachment).
+    if (_state.registerPdfPlaceholder) {
+      const meta = ref ? referencePdfMeta(ref, pdfAtt)
+        : parsed.kind === "open-pdf" ? { zoteroAttKey: parsed.key } : { zoteroItemKey: parsed.key };
+      slot.appendChild(makeImportRow(parsed.page, projectId, async () =>
+        (await importPdfFileForReference(_state, meta))?.fileId || null));
     }
   }
 

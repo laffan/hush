@@ -35,6 +35,7 @@ import {
   DOC_CONNECTION_HEAD, DOC_CONNECTION_CAP,
 } from "./desktop-connections.js";
 import { FlowchartLayer } from "../notebook/flowchart.ts";
+import { snapshotFlowchart } from "../notebook/flowchart-snapshot.ts";
 import { drawStickyBox } from "../notebook/renderer.ts";
 import {
   makeCanvas, encode, loadImage, baseRenderOpts, drawCard,
@@ -56,17 +57,22 @@ const DOC_FONT_SIZE = 8;
 const BASE_LONG_EDGE = 400;
 // Bump when thumbnail geometry / styling changes so cached renders
 // regenerate on the next Desktop open.
-const THUMB_STYLE_VERSION = 13;
+const THUMB_STYLE_VERSION = 14;
 // Doc outline column geometry + drawing live in ./desktop-outline.js.
 // Width of each constituent slice in a stack file's thumbnail.
 const STACK_SLICE_WIDTH = 80;
-// Doc length representation: one sheet per PAGE_WORDS words, drawn as a
-// faintly-bordered page-ground box offset down-right behind the page.
-// The offset has to survive the Desktop's fit-all zoom (~0.5×) to read,
-// so a 6 px step shows as ~3 px on screen — a legible stack.
+// Doc length representation: one sheet behind the page for every full
+// PAGE_WORDS words, drawn as a bordered page-ground box stepped down-right.
+// The step has to survive the Desktop's fit-all zoom, which is often 0.3×
+// or less: at the old 6 px a sheet moved under 2 screen px and a doc of
+// a thousand words showed no pile at all. 12 px reads as a layer each.
+// A long doc's pile closes up rather than growing without end — past
+// MAX_PILE_DEPTH / SHEET_OFFSET sheets the step shrinks so the pile holds
+// that depth, and every 500 words still adds a sheet (to MAX_SHEETS).
 const PAGE_WORDS = 500;
-const SHEET_OFFSET = 6;
-const MAX_SHEETS = 20;
+const SHEET_OFFSET = 12;
+const MAX_PILE_DEPTH = 192;
+const MAX_SHEETS = 60;
 // Sheet edge — a soft grey so the stepped pages read against the white
 // page without shouting. Thumbnails are always light, so this is fixed.
 const SHEET_BORDER = "rgba(60,60,60,0.28)";
@@ -149,9 +155,9 @@ export function entrySig(state, entry, themeSig) {
 
 
 /** A doc renders as a printed page sitting on a stack of paper: the
- *  rendered-markdown page on top, plus one faintly-bordered page-ground
- *  sheet per PAGE_WORDS words behind it, each offset 2 px down-right —
- *  so a long doc visibly reads as a thick pile. Borders are baked in
+ *  rendered-markdown page on top, plus one bordered page-ground sheet
+ *  behind it for every PAGE_WORDS words, each stepped down-right — so a
+ *  long doc visibly reads as a thick pile. Borders are baked in
  *  (the sheets make the bounding box non-rectangular), so the record is
  *  `frameless` and the canvas chrome skips its own border. */
 async function renderDocThumb(state, entry, themeCtx) {
@@ -161,14 +167,15 @@ async function renderDocThumb(state, entry, themeCtx) {
   const w = Math.round(DOC_W * scale);
   const h = Math.round(DOC_H * scale);
   const pad = Math.round(DOC_PAD * scale);
-  const off = Math.max(1, Math.round(SHEET_OFFSET * scale));
 
   const words = text.split(/\s+/).filter(Boolean).length;
-  const pages = Math.max(1, Math.ceil(words / PAGE_WORDS));
-  const sheets = Math.min(MAX_SHEETS, pages - 1);
+  const sheets = Math.min(MAX_SHEETS, Math.floor(words / PAGE_WORDS));
+  // World px per sheet, closing up once the pile reaches its depth.
+  const step = sheets ? Math.min(SHEET_OFFSET, MAX_PILE_DEPTH / sheets) * scale : 0;
+  const depth = Math.round(sheets * step);
 
-  const blockW = w + sheets * off;
-  const blockH = h + sheets * off;
+  const blockW = w + depth;
+  const blockH = h + depth;
 
   // Optional clickable outline column, attached to the **left** of the
   // page. Headings are parsed from the *original* content so their
@@ -191,10 +198,10 @@ async function renderDocThumb(state, entry, themeCtx) {
   // The paper pile, deepest sheet first — a white sheet with a soft
   // edge and a hair of shadow so each step reads as a physical page.
   for (let i = sheets; i >= 1; i--) {
-    const x = ox + i * off, y = i * off;
+    const x = ox + Math.round(i * step), y = Math.round(i * step);
     ctx.save();
-    ctx.shadowColor = "rgba(0,0,0,0.12)";
-    ctx.shadowBlur = 2;
+    ctx.shadowColor = "rgba(0,0,0,0.16)";
+    ctx.shadowBlur = 3;
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
     ctx.fillStyle = ground;
@@ -294,11 +301,15 @@ async function renderNotebookThumb(state, entry, themeCtx) {
   ctx.beginPath();
   ctx.rect(matte, matte, innerW, innerH);
   ctx.clip();
+  // The chart's arrows, thickened to read at thumbnail scale. The
+  // background is painted through the export (blank, clipped to the
+  // content box, the colour just filled) because that is what switches
+  // on the backdrops that fade an arrow out under the words it crosses.
   renderForExport(ctx, cssW, cssH, {
     ...baseRenderOpts(themeCtx),
     shapes, camera, imageCache,
     layers: decoded?.layers,
-    includeBackground: false,
+    flowchart: snapshotFlowchart(shapes, decoded?.flowEdges, themeCtx.fontFamily, zoom),
   });
   drawApproximateStrokes(ctx, shapes, camera, themeCtx.theme);
   ctx.restore();

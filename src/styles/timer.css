@@ -403,12 +403,14 @@ html[data-theme="dark"] .sidebar-timer {
 }
 
 /* The break under way, filling left to right 1px under the session's bar
-   (its 6px top margin less 5). Always in the layout, transparent between
-   breaks, so the box never changes height. Bright red and pulsing, so a
-   break reads as one at a glance; a faint red track shows what's left. */
+   (its 6px top margin less 5), and as thick as it. Always in the layout,
+   transparent between breaks, so the box never changes height. Pulsing,
+   so a break reads as one at a glance; a faint track shows what's left.
+   It is white on the break's red box (below). */
 .sidebar-timer-break-bar {
-  height: 1px;
+  height: 2px;
   margin-top: -5px;
+  margin-bottom: 5px;
   opacity: 0;
   background: color-mix(in srgb, var(--timer-break-red) 18%, transparent);
 }
@@ -479,6 +481,50 @@ html[data-theme="dark"] .sidebar-timer {
 .sidebar-timer.break-now .sidebar-timer-break { opacity: 1; }
 .sidebar-timer.finished .sidebar-timer-task { opacity: 0.55; }
 
+/* On a break the whole box turns red and its type white, bars included:
+   the break is the one thing on screen that should be impossible to
+   miss. The gaps cut for the break marks take the box's red. */
+.sidebar-timer {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+.sidebar-timer.break-now,
+html[data-theme="dark"] .sidebar-timer.break-now {
+  background: var(--timer-break-fill);
+  border-color: transparent;
+  color: #fff;
+}
+.sidebar-timer.break-now .sidebar-timer-progress { background: rgba(255, 255, 255, 0.3); }
+.sidebar-timer.break-now .sidebar-timer-progress span { background: rgba(255, 255, 255, 0.85); }
+.sidebar-timer.break-now .sidebar-timer-break-bar span { background: #fff; }
+.sidebar-timer.break-now .sidebar-timer-mark { background: var(--timer-break-fill); }
+.sidebar-timer.break-now .sidebar-timer-end { opacity: 0.8; }
+.sidebar-timer.break-now .w-togo { opacity: 0.8; }
+.sidebar-timer.break-now.alarm-soon .sidebar-timer-countdown { color: #fff; }
+
+/* A finished timer's "Done" is the way to put it away: a small outlined
+   button that deletes it. */
+.sidebar-timer-done {
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  padding: 1px 8px;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent);
+  border-radius: 4px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+/* The column clips overflowing text; the button's border must not be. */
+.sidebar-timer.finished .sidebar-timer-countdown { overflow: visible; }
+.sidebar-timer-done:hover,
+.sidebar-timer-done:focus-visible {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  border-color: color-mix(in srgb, var(--fg) 45%, transparent);
+  outline: none;
+}
+
 /* ---- Ring (sidebar closed) ----
    30 px across, a 3 px stroke: a faint full circle with the elapsed
    share drawn over it from twelve o'clock. The middle is empty until
@@ -540,22 +586,6 @@ html[data-theme="dark"] .sidebar-timer {
   fill: none;
 }
 
-/* The break's progress: a thin circle inside the ring, filling as the
-   break runs, the way the ring itself does. Only there while one is. */
-.timer-ring circle.timer-ring-break {
-  stroke: var(--timer-break-red);
-  stroke-width: 1.5;
-  stroke-dasharray: 100;
-  stroke-dashoffset: 100;
-  display: none;
-  transition: stroke-dashoffset 1s linear;
-}
-.timer-ring.on-break circle.timer-ring-break {
-  display: inline;
-  animation: timer-break-pulse 1.4s ease-in-out infinite;
-}
-/* The minutes figure would sit on top of the inner circle. */
-.timer-ring.on-break .timer-ring-label { font-size: 8px; }
 
 .timer-ring-fill {
   stroke: color-mix(in srgb, var(--fg) 45%, transparent);
@@ -577,6 +607,27 @@ html[data-theme="dark"] .sidebar-timer {
 .timer-ring:hover .timer-ring-label,
 .timer-ring:focus-visible .timer-ring-label { opacity: 1; }
 
+/* On a break the ring is a red disc: its bars white, the break marks cut
+   in its red, and the seconds of break left in the middle, shown
+   without a hover. */
+.timer-ring.on-break {
+  opacity: 1;
+  color: #fff;
+  background: var(--timer-break-fill);
+  /* The disc runs 2px past the ring's stroke, so the white bars sit
+     inside the red rather than on its edge against the page. */
+  box-shadow: 0 0 0 2px var(--timer-break-fill);
+}
+.timer-ring.on-break .timer-ring-track { stroke: rgba(255, 255, 255, 0.35); }
+.timer-ring.on-break .timer-ring-fill { stroke: #fff; }
+.timer-ring.on-break .timer-ring-mark { stroke: var(--timer-break-fill); }
+.timer-ring.on-break .timer-ring-label,
+.timer-ring.on-break.alarm-soon .timer-ring-label {
+  opacity: 1;
+  color: #fff;
+  font-weight: 600;
+}
+
 /* An alarm's last ten minutes: the minutes to go turn red, in the box
    and in the ring, where they show without a hover. */
 .sidebar-timer.alarm-soon .sidebar-timer-countdown { color: var(--timer-alarm-red); }
@@ -586,10 +637,27 @@ html[data-theme="dark"] .sidebar-timer {
   color: var(--timer-alarm-red);
 }
 
+/* --timer-break-fill is the break red for surfaces carrying white type
+   (the box, the ring's disc, the break toast): a shade deeper than the
+   bright bar red, so small white figures on it stay legible. */
 .sidebar-timer,
-.timer-ring {
+.timer-ring,
+.import-toast-break {
   --timer-alarm-red: #d2453b;
   --timer-break-red: #ff2a1f;
+  --timer-break-fill: #d92b20;
+}
+
+/* "Time for a break": in the middle of the screen and in the break's red,
+   not the corner-of-the-eye banner the other toasts are. */
+.import-toast.import-toast-break {
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 14px 26px;
+  font-size: 16px;
+  font-weight: 600;
+  background: var(--timer-break-fill);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
 }
 
 /* Let the last rows scroll out from under the box. */

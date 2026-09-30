@@ -10,6 +10,8 @@ import { icon } from "./icons";
 import { makeColorsMenu } from "./selection-colors-menu";
 // PERF-HUD (temporary): tracer singleton — see ../perf-hud.ts.
 import { perf } from "../perf-hud";
+import { dragAreaMarkdown } from "../drag-area-markdown";
+import { writeClipboardText } from "../canvas-paste";
 
 /** Accessors the toolbar needs from the owning NotesCanvas for the
  *  raster-backed actions (Rasterize group, Recognize handwriting).
@@ -284,6 +286,18 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
     }
   }
 
+  // The drag area whose Copy just ran: its button shows a tick for a
+  // moment. Held here because every change event rebuilds the toolbar.
+  let copiedAreaId: string | null = null;
+  let copiedTimer: ReturnType<typeof setTimeout> | null = null;
+  function copyDragArea(areaId: string) {
+    void writeClipboardText(dragAreaMarkdown(state.shapes, areaId, state.fontFamily));
+    copiedAreaId = areaId;
+    if (copiedTimer) clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => { copiedAreaId = null; copiedTimer = null; update(); }, 1200);
+    update();
+  }
+
   function togglePopup(type: PopupType, wrapper: HTMLElement, create: () => HTMLElement) {
     if (activePopup === type) { closePopup(); return; }
     closePopup();
@@ -479,6 +493,12 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
       }));
       container.appendChild(arrangeWrapper);
       if (savedPopup === "arrange") togglePopup("arrange", arrangeWrapper, () => makeArrangeMenu(dragArea));
+
+      // Copy: everything written in the box, as markdown in reading
+      // order (drag-area-markdown.ts).
+      const copied = copiedAreaId === dragArea.id;
+      container.appendChild(makeIconBtn(copied ? "copied" : "copy",
+        copied ? "Copied" : "Copy contents as markdown", () => copyDragArea(dragArea.id)));
     }
 
     // Rasterize: bake the whole selection (groups, drag-areas with

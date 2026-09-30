@@ -39,7 +39,9 @@ const edgeId = (fromKey, toKey) => `docorder:${fromKey}>${toKey}`;
 /** Kinds that participate in a project's reading order. Nested projects
  *  are part of the flow — a project inside a project is a chapter, not
  *  an attachment — so they chain alongside the docs. Notebooks, PDFs and
- *  stacks are reference material and sit outside the chain. */
+ *  stacks are reference material and sit outside the chain, and so does
+ *  a doc marked "Use as note" (`entry.note`): the project's buffer leaves
+ *  it out, so its reading order does too. */
 const FLOW_KINDS = new Set(["doc", "project"]);
 
 /**
@@ -55,7 +57,7 @@ export function docOrderEdges(entries, shapes) {
   }
   const chain = [];
   for (const entry of entries || []) {
-    if (!FLOW_KINDS.has(entry.kind)) continue;
+    if (!FLOW_KINDS.has(entry.kind) || entry.note) continue;
     const id = idByKey.get(entry.key);
     if (id) chain.push({ key: entry.key, id });
   }

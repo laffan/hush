@@ -105,6 +105,10 @@ export function parseLine(line: string): ParsedLine {
   }
 
   const runs = parseInlineFormatting(workingLine, sizeScale);
+  // A Doc sets a quote in italic (markdown-highlight.js, `tags.quote`),
+  // and the canvas follows it. Set on the runs rather than at paint so
+  // wrapping and bounds measure the italic face that is drawn.
+  if (blockquote) for (const run of runs) run.italic = true;
   const out: ParsedLine = { runs, sizeScale };
   if (blockquote) out.blockquote = true;
   if (task) { out.task = true; out.taskChecked = taskChecked; }

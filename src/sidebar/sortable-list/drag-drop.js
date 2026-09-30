@@ -4,6 +4,7 @@
 
 import { parsePath, pathsEqual, isAncestorPath, getChildrenAtPath, getItemAtPath, removeItemById } from "./utils.js";
 import { updateDragAutoScroll, stopDragAutoScroll } from "../drag-autoscroll.js";
+import { armSpring, disarmSpring, closeSpringsOutside, renderDuringDrag } from "./spring-load.js";
 
 export function initDragHandlers(instance) {
   instance._onPointerDown = onPointerDown.bind(instance);
@@ -163,6 +164,10 @@ function startDrag(target, event, options = {}) {
     originElement: target, originPath, originParentPath, originIndex,
     offsetX, offsetY, ghost, dropTarget: null, draggedItem,
     lastDropUpdateX: event.clientX, lastDropUpdateY: event.clientY,
+    lastPointerX: event.clientX, lastPointerY: event.clientY,
+    // Spring-loaded folders (spring-load.js): the folder a hover is
+    // counting down on, and the folders this drag has sprung open.
+    springId: null, springTimer: null,
     autoExpandedIds: new Set(), highlightedParent: null,
   };
 
@@ -180,6 +185,8 @@ function onPointerMove(event) {
   event.preventDefault();
   const { offsetX, offsetY, ghost } = this.dragSession;
   ghost.style.transform = `translate3d(${event.clientX - offsetX}px, ${event.clientY - offsetY}px, 0)`;
+  this.dragSession.lastPointerX = event.clientX;
+  this.dragSession.lastPointerY = event.clientY;
   updateDropTarget.call(this, event.clientX, event.clientY);
   // Near the panel's top/bottom edge → scroll the file list so a drag
   // that started deep in a long tree can reach targets above the fold.
@@ -194,14 +201,50 @@ function onPointerUp(event) {
 }
 
 function updateDropTarget(clientX, clientY) {
-  if (!this.dragSession) return;
+  const s = this.dragSession;
+  if (!s) return;
 
-  const dx = clientX - this.dragSession.lastDropUpdateX;
-  const dy = clientY - this.dragSession.lastDropUpdateY;
-  if (this.dragSession.dropTarget && Math.sqrt(dx * dx + dy * dy) < this.config.hysteresisThreshold) {
+  const dx = clientX - s.lastDropUpdateX;
+  const dy = clientY - s.lastDropUpdateY;
+  if (s.dropTarget && Math.sqrt(dx * dx + dy * dy) < this.config.hysteresisThreshold) {
     return;
   }
 
+  s.springWanted = null;
+  s.hoverPath = null;
+  placeDropTarget.call(this, clientX, clientY);
+  if (this.dragSession !== s) return;
+
+  // A closed folder under the pointer counts down to springing open;
+  // anything else cancels the count.
+  if (s.springWanted != null) armSpring.call(this, s.springWanted, (id) => springOpen.call(this, id));
+  else disarmSpring.call(this);
+
+  // Moving onto a row outside a sprung folder closes it again. The rows
+  // below it move up, so the target is worked out afresh.
+  if (s.hoverPath && closeSpringsOutside.call(this, s.hoverPath)) {
+    clearDropTarget.call(this);
+    renderDuringDrag.call(this);
+    s.lastDropUpdateX = NaN; // past the hysteresis
+    updateDropTarget.call(this, clientX, clientY);
+  }
+}
+
+/** The spring timer ran out with the pointer still on the folder: open
+ *  it and re-target, so the drop can land anywhere among its rows. */
+function springOpen(itemId) {
+  const s = this.dragSession;
+  if (!s || !this.state.collapsedIds.has(itemId)) return;
+  s.springId = null;
+  this.state.collapsedIds.delete(itemId);
+  s.autoExpandedIds.add(itemId);
+  clearDropTarget.call(this);
+  renderDuringDrag.call(this);
+  s.lastDropUpdateX = NaN;
+  updateDropTarget.call(this, s.lastPointerX, s.lastPointerY);
+}
+
+function placeDropTarget(clientX, clientY) {
   const stack = document.elementsFromPoint(clientX, clientY);
   const hoveredItem = stack.find(
     (n) => n instanceof HTMLElement && n.classList.contains("sl-item") && !n.classList.contains("dragging")
@@ -237,6 +280,7 @@ function updateDropTarget(clientX, clientY) {
 
   if (hoveredItem) {
     const itemPath = parsePath(hoveredItem.dataset.path ?? "");
+    this.dragSession.hoverPath = itemPath;
     const rect = hoveredItem.getBoundingClientRect();
     const offsetY = clientY - rect.top;
     const cs = getComputedStyle(hoveredItem);
@@ -267,14 +311,19 @@ function updateDropTarget(clientX, clientY) {
         clearDropTarget.call(this); return;
       }
 
-      const item = this._getItemAtPath(itemPath);
-      if (item) {
-        const itemId = this.config.getId(item);
-        if (this.state.collapsedIds.has(itemId)) {
-          this.state.collapsedIds.delete(itemId);
-          this.dragSession.autoExpandedIds.add(itemId);
-          this.render();
-        }
+      // A closed folder takes the drop as it is — first in its list, where
+      // a drop on an open folder's own row lands — and stays closed unless
+      // the pointer holds still on it (spring-load.js).
+      const itemId = targetItem ? this.config.getId(targetItem) : null;
+      if (itemId != null && this.state.collapsedIds.has(itemId)
+          && (this.config.getChildren(targetItem)?.length ?? 0) > 0) {
+        clearDropTarget.call(this);
+        this.dragSession.dropTarget = { parentPath: itemPath, index: 0 };
+        updateParentHighlight.call(this, itemPath);
+        this.dragSession.springWanted = itemId;
+        this.dragSession.lastDropUpdateX = clientX;
+        this.dragSession.lastDropUpdateY = clientY;
+        return;
       }
 
       const childList = ensureChildList(hoveredItem, itemPath);
@@ -428,6 +477,7 @@ function ensureChildList(item, itemPath) {
 
 function finishDrag(pointerEvent) {
   if (!this.dragSession) return;
+  disarmSpring.call(this);
   window.removeEventListener("pointermove", this._onPointerMove);
   stopDragAutoScroll();
 
@@ -507,6 +557,10 @@ function finishDrag(pointerEvent) {
   }
 
   const { getChildren, setChildren, getId } = this.config;
+
+  // Folders sprung open on the way stay open only if the drop landed in
+  // them; the rows are still the ones the drag measured.
+  closeSpringsOutside.call(this, dropTarget.parentPath);
 
   // Resolve destination BEFORE any splicing — path indices are only valid now
   const sourceParent = getChildrenAtPath(this.state.items, originParentPath, getChildren, setChildren);

@@ -29,6 +29,8 @@ import { isIOS } from "../../settings/settings-ui.js";
 import { openCitationPopup } from "../../links/citation-popup.js";
 import { focusSentenceBounds } from "./focus-mode.js";
 import { attachCitationOpen, createCitationClickHandler } from "./citation-click.js";
+// Static: the file picker has to open inside the click that asked for it.
+import { importFileIntoPdf, importPdfFileForReference, referencePdfMeta } from "../../pdf/pdf-manual-import.js";
 
 // Keep in sync with CITE_RE in doc-export-modal.js and is_citekey_char
 // in src-tauri/src/typst_export/markdown.rs.
@@ -193,15 +195,22 @@ function mountPdfSlot(actions, citekey, ref, appState, pdfSync) {
     }
 
     if (existing) {
-      const inFlight = pdfSync.getPdfDownloadProgress(existing.fileId) !== undefined;
-      if (!inFlight && initiated) {
-        // The download we started died — offer a retry against the
-        // placeholder that's already registered.
+      // `null`, not `undefined`, is "no download running" — compared
+      // against undefined the retry below could never show.
+      const inFlight = pdfSync.getPdfDownloadProgress(existing.fileId) !== null;
+      if (!inFlight) {
+        // The download died (or never could run — offline): retry it
+        // against the placeholder, or fill that from a file on disk.
         slot.appendChild(makeBtn("Save failed — retry", (e) => {
           e.preventDefault();
           pdfSync.triggerBackgroundDownload(existing.fileId, appState);
           renderSlot();
         }));
+        slot.appendChild(makeBtn("Import file\u2026", (e) => {
+          e.preventDefault();
+          void importFileIntoPdf(appState, existing.fileId).then((ok) => { if (ok) renderSlot(); });
+        }));
+        startWatch();
         return;
       }
       const btn = makeBtn("Saving PDF…", null);
@@ -236,6 +245,15 @@ function mountPdfSlot(actions, citekey, ref, appState, pdfSync) {
         renderSlot(); // placeholder is registered + in flight → spinner
       });
       slot.appendChild(btn);
+    }
+    // Offline, or a PDF that's on disk already: link one from a file,
+    // described by the cached reference (pdf/pdf-manual-import.js).
+    if (ref && appState?.registerPdfPlaceholder) {
+      slot.appendChild(makeBtn("Import file\u2026", (e) => {
+        e.preventDefault();
+        initiated = true;
+        void importPdfFileForReference(appState, referencePdfMeta(ref, pdfAtt)).then((r) => { if (r) renderSlot(); });
+      }));
     }
   }
 

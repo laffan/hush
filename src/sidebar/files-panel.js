@@ -32,6 +32,8 @@ import {
   isCardItem, augmentTreeWithCards, foldCardParents, noteCardFolds, stripCardsFromTree, renderCardRow, renderCardsHomeRow, cardsHomeIsEmpty, openCard,
   dropCardOnRow, dropCardOutside, trackCardRowHover, onCardIndexChange,
 } from "./files-panel-cards.js";
+import { desktopBadgeHtml, onDesktopContentChange } from "./files-panel-desktop-badge.js";
+import { importFileIntoPdf } from "../pdf/pdf-manual-import.js"; // static: its picker must open inside the click
 import { renderFlaggedSection } from "./files-panel-flagged.js";
 import { renderDeskYouAreHere } from "./files-panel-you-are-here.js";
 import { installRevealOnOpen, defaultCollapsedIds } from "./files-panel-reveal.js";
@@ -216,7 +218,9 @@ export function createFilesPanel(container, state, hidePanel) {
           const label = `${numPrefix}${escHtml(displayName)}`;
           const nameHtml = (isInboxItem(state.fileTree, item) && inboxNameHtml(state, item, label))
             || `<span class="tree-item-name">${label}</span>`;
-          row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}${nameHtml}${trailing}`;
+          const desktopBadge = desktopBadgeHtml(state, item, inTrash); // a Desktop with content in it
+          if (desktopBadge) row.classList.add("has-desktop-badge");
+          row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}${nameHtml}${desktopBadge}${trailing}`;
         }
       }
       if (item.type === "image" && item.fileId) attachImageTooltipToRow(row, item.fileId, item.name);
@@ -442,6 +446,9 @@ function dispatchRowAction(action, nodeId, opts) {
       refresh();
     }
     return;
+  } else if (action === "import-pdf-file") {
+    const fileId = findNode(storedState.fileTree, nodeId)?.fileId;
+    if (fileId) void importFileIntoPdf(storedState, fileId);
   } else if (action === "proofread-pdf") {
     const node = findNode(storedState.fileTree, nodeId);
     if (node?.fileId) {
@@ -485,7 +492,7 @@ function onActionClick(e) {
 
   const action = actionBtn.dataset.treeAction;
   const actionsEl = actionBtn.closest(".tree-actions");
-  const nodeId = actionsEl?.dataset.nodeId;
+  const nodeId = actionsEl?.dataset.nodeId || actionBtn.dataset.nodeId;
   if (!nodeId || !storedState) return;
 
   if (action === "open-menu") {
@@ -578,6 +585,7 @@ export function initFilesPanelTabSync(state) {
   state.on("doc-content-changed", () => scheduleTabRefresh(state));
   // A notebook's card rows come from what its canvas publishes.
   onCardIndexChange(() => scheduleTabRefresh(state));
+  onDesktopContentChange(() => scheduleTabRefresh(state));
 }
 
 async function openImagePreview(filename, name) {

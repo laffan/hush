@@ -313,6 +313,95 @@
 }
 .outline-pinned-editor .cm-outline-top { padding-top: 0; }
 
+/* === On a canvas (notebook/ui/outline-layer.ts) ========================
+
+   The Doc's outline editor and footer, laid over a notebook canvas and
+   scaled with its zoom (outline/outline-canvas-element.js). The element
+   is the frame, as the pinned panel is, so its lines drop theirs; its
+   type is the shape's size less 2px plus the footer's step, on the
+   canvas's rhythm (no `--outline-doc-lead`) — the size and rhythm the
+   canvas painted an outline at before it drew this.
+
+   An outline on a canvas is also a text object: presses fall through to
+   the canvas (select, drag, resize) except on its checkboxes and footer,
+   until a double-click opens it for editing. A pinned one is a panel at
+   1:1 and takes the pointer always. */
+.nb-outline {
+  --outline-font-size: calc(var(--nb-outline-size, 16px) - 2px + var(--outline-font-step, 0px));
+  --outline-doc-lead: 0;
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0 0 10px;
+  border: 1px solid var(--outline-border);
+  border-radius: 6px;
+  /* Near-opaque, as the painted outline was: a grid showing through the
+     items reads as noise on them. */
+  background: color-mix(in srgb, var(--nb-outline-bg, var(--theme-bg, var(--bg))) 92%, transparent);
+  font-family: var(--ui-font-family);
+  text-align: left;
+  pointer-events: none;
+}
+.nb-outline .cm-task-checkbox,
+.nb-outline .outline-footer-btn { pointer-events: auto; }
+.nb-outline.editing,
+.nb-outline.pinned { pointer-events: auto; }
+.nb-outline.inert,
+.nb-outline.inert * { pointer-events: none !important; }
+
+.nb-outline .outline-pin-grip { display: none; }
+.nb-outline.pinned {
+  padding-top: 0;
+  max-height: 45%;
+  border-radius: 8px;
+  background: var(--nb-outline-bg, var(--theme-bg, var(--bg)));
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}
+.nb-outline.pinned .outline-pin-grip { display: flex; }
+
+.nb-outline-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.nb-outline-editor > .cm-editor,
+.nb-outline-editor > .cm-editor.cm-focused {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto !important;
+  width: auto !important;
+  background: transparent !important;
+  outline: none !important;
+}
+.nb-outline .cm-scroller {
+  padding: 0 10px 2px 0 !important;
+  overflow: visible !important;
+  font-family: var(--ui-font-family) !important;
+  font-size: var(--outline-font-size) !important;
+  line-height: var(--outline-line-height) !important;
+}
+.nb-outline.pinned .cm-scroller { overflow: auto !important; }
+.nb-outline .cm-content {
+  padding: 0 !important;
+  margin: 0 !important;
+  max-width: none !important;
+  min-height: 0 !important;
+}
+.nb-outline .cm-line.cm-outline-line {
+  border: none;
+  border-radius: 0;
+}
+.nb-outline .cm-outline-top { padding-top: 0; }
+.nb-outline .outline-footer { flex: none; padding-left: 0; }
+/* No caret on an outline nobody is typing in. */
+.nb-outline .cm-editor:not(.cm-focused) .cm-cursorLayer { visibility: hidden !important; }
+
 /* Zen Focus's one row. */
 .outline-row {
   position: relative;

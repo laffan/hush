@@ -99,8 +99,9 @@ function blockSignature(block, flags, pinned) {
     + "|" + block.items.map((i) => i.text).join("\u0000");
 }
 
-/** The footer's − / +: one px of outline type per press, per device. */
-function stepOutlineFont(appState, views, delta) {
+/** The footer's − / +: one px of outline type per press, per device.
+ *  Shared with the canvas outline (outline/outline-canvas-element.js). */
+export function stepOutlineFont(appState, views, delta) {
   const cur = Number(appState?.settings?.outlineFontStep) || 0;
   const next = Math.max(OUTLINE_FONT_STEP_MIN, Math.min(OUTLINE_FONT_STEP_MAX, cur + delta));
   if (next === cur) return;
@@ -273,17 +274,29 @@ function buildOutlineState(edState, appState) {
 
     const nextIdx = firstOpenIndex(block.items);
     let first = true;
+    // Hidden items collapse a run at a time. Collapsed one by one, two
+    // neighbours each took the newline between them, the replacements
+    // overlapped, and a blank line was left where they had been — at the
+    // head of every outline whose first items were done, which on a
+    // canvas or in a pinned panel is every outline.
+    let run = null;
+    const flushRun = () => {
+      if (!run) return;
+      const span = collapseSpan(doc, run.from, run.to);
+      run = null;
+      if (!span) return;
+      const deco = Decoration.replace({});
+      ranges.push(deco.range(span.from, span.to));
+      atomics.push(deco.range(span.from, span.to));
+    };
     block.items.forEach((item, i) => {
       const hide = flags.hideDone && item.checked && !selectionTouches(edState, item.from, item.to);
       if (hide) {
-        const span = collapseSpan(doc, item.from, item.to);
-        if (span) {
-          const deco = Decoration.replace({});
-          ranges.push(deco.range(span.from, span.to));
-          atomics.push(deco.range(span.from, span.to));
-        }
+        if (run) run.to = item.to;
+        else run = { from: item.from, to: item.to };
         return;
       }
+      flushRun();
       let cls = "cm-outline-line";
       if (first) { cls += " cm-outline-top"; first = false; }
       if (item.checked) cls += " cm-outline-done";
@@ -301,6 +314,7 @@ function buildOutlineState(edState, appState) {
         if (span) ranges.push(doneTextDeco.range(span.from, span.to));
       }
     });
+    flushRun();
 
     if (!host) {
       ranges.push(Decoration.widget({

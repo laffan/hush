@@ -206,6 +206,12 @@ export function outlineLayout(shape: TextShape): OutlineLayout {
   return { fontSize, boxSize, width, height, footerY, rows, buttons };
 }
 
+/** How tall the outline is: what the outline layer measured its editor
+ *  at, when it has, else the canvas layout's own figure. */
+export function outlineHeight(shape: TextShape, layout: OutlineLayout = outlineLayout(shape)): number {
+  return shape.outlineHeight && shape.outlineHeight > 0 ? shape.outlineHeight : layout.height;
+}
+
 /** The outline's bounding box in world (or, for a pinned outline, frame)
  *  coordinates. Feeds `getShapeBounds`, so selection chrome, resize
  *  handles, marquee selection and the flowchart's anchoring all see the
@@ -216,7 +222,7 @@ export function outlineBounds(shape: TextShape) {
     minX: shape.position.x,
     minY: shape.position.y,
     maxX: shape.position.x + layout.width,
-    maxY: shape.position.y + layout.height,
+    maxY: shape.position.y + outlineHeight(shape, layout),
   };
 }
 
@@ -245,15 +251,16 @@ export function hitTestOutlineCheckbox(local: Point, layout: OutlineLayout): num
 }
 
 /**
- * Where a pinned outline draws, in the canvas element's own pixels: the
- * bottom-left of the frame, clear of the left inset the sidebar / dock
- * claims. It is drawn at 1:1 whatever the zoom — it is chrome bolted to
- * the frame, not content on the canvas — and it is deliberately the
- * corner nothing else parks in (the shelf, the pocket tray and the page
- * rail all hold the right edge).
+ * Where a pinned outline draws, in the canvas element's own pixels: at
+ * the bottom of the frame, centred across the part of it the sidebar /
+ * dock on the left and the shelf on the right leave clear — as a Doc's
+ * pinned outline sits under its text column. It is drawn at 1:1 whatever
+ * the zoom: it is chrome bolted to the frame, not content on the canvas.
+ * `height` is the one the frame shows (the measured editor's, when there
+ * is one).
  */
 export function outlinePinnedOrigin(
-  layout: OutlineLayout,
+  layout: { width: number; height: number },
   canvasW: number,
   canvasH: number,
   insets: { left?: number; right?: number; bottom?: number } = {},
@@ -261,9 +268,9 @@ export function outlinePinnedOrigin(
   const left = insets.left || 0;
   const right = insets.right || 0;
   const bottom = insets.bottom || 0;
-  const maxX = Math.max(left + OUTLINE_PIN_MARGIN, canvasW - right - OUTLINE_PIN_MARGIN - layout.width);
+  const centred = left + (canvasW - left - right - layout.width) / 2;
   return {
-    x: Math.min(left + OUTLINE_PIN_MARGIN, maxX),
+    x: Math.max(left + OUTLINE_PIN_MARGIN, centred),
     y: Math.max(OUTLINE_PIN_MARGIN, canvasH - bottom - OUTLINE_PIN_MARGIN - layout.height),
   };
 }

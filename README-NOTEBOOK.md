@@ -28,6 +28,9 @@ src/notebook/
   utils.ts                Geometry, hit testing, text measurement, alignment, grid layout
   flowchart.ts (+ flowchart-geometry.ts)  Portable flowchart layer (ported from Steiner)
   outline-shape.ts        Outline text shapes: layout, footer / checkbox hit zones, pinned origin
+  outline-edit.ts         The outline layer's writes: text from its editor, measured heights
+  flowchart-snapshot.ts   A FlowchartLayer for a saved envelope (Desktop thumbnails, Versions)
+  drag-area-markdown.ts   A drag area's contents as markdown, in reading order (its Copy button)
   card-shape.ts           Card text shapes: the model (add / patch / remove / convert, grid slots)
   card-geometry.ts        A card's box (bounds without an import cycle through utils.ts)
   renderer-card.ts        Paints a card for exports and the pocket (on screen a card is DOM)
@@ -40,7 +43,8 @@ src/notebook/
                           grab-popup (the grab's two-stage control bar),
                           proof-thumbnails + proof-rail-ink (proofread page rail),
                           proof-scrollwheel (iPad-only virtual scroll wheel),
-                          card-layer (the DOM cards over the canvas)
+                          card-layer (the DOM cards over the canvas),
+                          outline-layer (the Doc's outline editor over the canvas)
   drawing/                Drawing layer + stroke engine — see README-DRAWING.md
   pencil-bridge.js        iOS: pencil-only inking + Apple Pencil double-tap listener
 ```
@@ -236,7 +240,9 @@ With no chart under the selection the same command takes the other reading: a se
 
 `outline-shape.ts` owns the geometry — every coordinate relative to `shape.position`, which for an outline is the top-left of the **frame** rather than of the first glyph (hence the pad offset when the inline editor opens on one). It measures each item's wrapped lines so the renderer can strike a completed item across all of them, and publishes the footer's two button boxes and each row's checkbox zone for the hit test. Rendering delegates each item's text back to `drawTextShape` with a throwaway shape: the outline owns the box, the checkbox glyph, the strike, the heading colour on the next item and the footer, and nothing else — re-implementing the text half is how an outline would start rendering markdown differently from the shape beside it.
 
-Two flags ride the shape. `outlineHideDone` folds completed items away — they stay in the text, this only stops drawing them. `outlinePin` moves it out of world space entirely — see the screen-space note in README-TECHNICAL: it is drawn after the camera transform is restored, so it holds its size and its corner while the canvas moves under it, and every world-space pick has to exclude it.
+Two flags ride the shape. `outlineHideDone` folds completed items away — they stay in the text, this only stops drawing them. `outlinePin` moves it out of world space entirely — see the screen-space note in README-TECHNICAL: it sits at 1:1 at the bottom of the frame, centred, so it holds its size and its place while the canvas moves under it, and every world-space pick has to exclude it.
+
+**On screen an outline is DOM** (`ui/outline-layer.ts`, z 80, under the cards). The layer lays the Doc's own outline editor and footer over each outline near the view (README-TECHNICAL, **Outlines**), so an outline on a canvas is typed into, dragged by its grips and worked from the keyboard exactly as in a Doc. The model is the card layer's: the element is positioned by `canvasToScreen` and scaled with the camera; presses fall through to the canvas except on the checkboxes and footer; a double-click (`handleDoubleClick`, or any route into `startEditingExistingText`) sets `focusOutline` and the layer opens the editor with the caret at the click; each edit lands on the shape at once (`setOutlineText`) and the pause after a run of typing records one undo step; a canvas undo reaches the editor as a programmatic diff. The layer measures each outline and records `outlineHeight` (`setOutlineHeights`, no undo step), which `outlineBounds` reads before the canvas layout's own estimate. `DrawingState.outlinesAsDom` tells the renderer to skip outlines in the live pass and `_handleOutlineChrome` to stand down; `drawOutlineShape` still paints them for exports, rasters, the pocket and the reorder ghost — which is why its geometry (16 px indent, the canvas footer) remains, and differs a little from the Doc-styled DOM.
 
 ### Cards
 
@@ -294,6 +300,7 @@ pushes the stroke subset back down for the bbox — see README-DRAWING.md.
 
 - **Colors menu**: text / background / border swatch rows (first two swatches are theme-tracking "auto" and "heading" sentinels) plus saved `{color, backgroundColor, fontSize}` style chips, stored app-wide in `AppSettings.notebookTextStyles`.
 - **Rasterize / Recognize** (`selection-raster.ts`): both render the selection at 2× via `renderForExport` + `DrawingLayer.renderStrokesTo` (per-stroke render, from `drawing/stroke-paint.ts` — a done-canvas blit would leak overlapping unselected strokes). Rasterize bakes to an ImageShape sized to the original bounds; theme-tracking selections bake **twice** (light + dark) into an appearance-aware image. Recognize routes strokes → ML Kit Digital Ink (iPad only, real point timings from engine delta #21, dynamic ObjC lookup so the binary builds without the pod) and images → Apple Vision (adaptive-scale raster, dark themes inverted); both land results as a TextShape below the source. Entry points live in `src/recognition/` so Docs can adopt them later.
+- **Copy** (drag areas only, `drag-area-markdown.ts`): the box's text shapes as markdown, in reading order — cut into rows by vertical overlap (half the shorter height), each row left to right — with a nested box's contents in its place. Images and ink are left out; blocks are separated by a blank line. The button shows a tick for a moment after a copy.
 - **Emoji stickers**: a text shape whose content is only emoji (grapheme-cluster test in `emoji-sticker.ts`) rasterizes to a 100 px ImageShape on commit.
 
 ### Toolbar satellites

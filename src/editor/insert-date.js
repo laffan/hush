@@ -3,7 +3,8 @@
  * at the cursor of whatever editing surface is in focus.
  *
  * Formats (matching the user's examples):
- *   Date       → "September 27, 1983"
+ *   Date       → "September 27, 1983", or any of DATE_FORMATS, picked
+ *                from a sub-list the palette swaps in
  *   Date-Time  → "4:30pm Sept 27, 1983"
  *
  * Routing mirrors the touch-mode Paste helper: a focused input/textarea
@@ -31,6 +32,15 @@ const MONTHS_ABBR = [
 export function formatDate(d) {
   return `${MONTHS_FULL[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
+
+/** The shapes Insert Date offers, in the order the picker lists them.
+ *  Month and day are never zero-padded ("2026-9-29", not "2026-09-29"). */
+export const DATE_FORMATS = [
+  { id: "long", format: formatDate },
+  { id: "ymd", format: (d) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}` },
+  { id: "month-day", format: (d) => `${MONTHS_ABBR[d.getMonth()]} ${d.getDate()}` },
+  { id: "yy-m-d", format: (d) => `${String(d.getFullYear() % 100).padStart(2, "0")}-${d.getMonth() + 1}-${d.getDate()}` },
+];
 
 /** "4:30pm Sept 27, 1983" — 12-hour clock, minutes zero-padded, am/pm
  *  lowercase and flush against the time. */
@@ -99,6 +109,23 @@ export function insertTextIntoCurrentContext(state, text) {
 
 export function insertDate(state) {
   insertTextIntoCurrentContext(state, formatDate(new Date()));
+}
+
+/** Swap the palette's list for one row per DATE_FORMATS entry, each
+ *  labelled with today's date in that shape, so the row is its own
+ *  preview. Picking one closes the palette and inserts it like
+ *  `insertDate` does; the long form stays first, so Enter twice is the
+ *  command's old behaviour. */
+export function enterDateFormatPicker(palette, state, icon) {
+  const now = new Date();
+  const items = DATE_FORMATS.map((f) => {
+    const text = f.format(now);
+    return {
+      id: "insert-date-" + f.id, label: text, icon, shortcutKey: null,
+      action: () => insertTextIntoCurrentContext(state, text),
+    };
+  });
+  palette.setItems(items, "Insert date as…");
 }
 
 export function insertDateTime(state) {

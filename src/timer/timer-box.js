@@ -17,28 +17,29 @@
  * finish, once the breaks are used up) on hover. Clicking it opens the
  * sidebar — the way in on a screen with no hover.
  *
- * Breaks show as hash marks along both, and while one runs (BREAK_MS) a
- * second, thinner countdown appears: a bar under the sidebar's, a circle
- * inside the ring's. The ring can be dragged anywhere; it keeps the spot
- * (`settings.timer.ring`) and starts out equally far from the left and
- * bottom edges.
+ * Breaks show as hash marks along both. While one runs (BREAK_MS) the
+ * box turns red with white type and a second countdown bar, as thick as
+ * the session's, fills under it; the ring turns into a red disc, its
+ * bars white, with the seconds of break left in the middle. The ring
+ * can be dragged anywhere; it keeps the spot (`settings.timer.ring`) and
+ * starts out equally far from the left and bottom edges.
  *
  * When a break or the finish passes while the app is open, a toast says
- * so; ones that passed while it was closed stay quiet.
+ * so — a break's in red, in the middle of the screen; ones that passed
+ * while it was closed stay quiet. A finished timer's "Done" is a button
+ * that deletes it.
  */
 
 import {
-  getTimer, timerStatus, formatMinutes, minutesLeft, formatClock, renameTimer, ALARM_WARNING_MS,
+  getTimer, timerStatus, formatMinutes, minutesLeft, formatClock, renameTimer, deleteTimer, ALARM_WARNING_MS,
 } from "./timer-store.js";
 import { installRingDrag } from "./timer-ring-drag.js";
 
 /** Ring geometry: 30 px across with a 3 px stroke, so the stroke's centre
- *  line runs at radius 13.5. The break countdown is a thinner circle
- *  inside it. */
+ *  line runs at radius 13.5. */
 const RING_SIZE = 30;
 const RING_STROKE = 3;
 const RING_R = (RING_SIZE - RING_STROKE) / 2;
-const BREAK_R = 8;
 const C = RING_SIZE / 2;
 
 /** A hash mark across the ring's stroke at `frac` of the way round. The
@@ -110,6 +111,11 @@ export function mountTimerBox(slot, state, panelOverlay) {
       breakBar: box.querySelector(".sidebar-timer-break-bar"),
     };
     els.task.addEventListener("dblclick", startEditing);
+    // A finished timer's "Done" deletes it. Delegated: the countdown's
+    // contents are rewritten on every render.
+    box.addEventListener("click", (e) => {
+      if (e.target.closest(".sidebar-timer-done")) void deleteTimer(state);
+    });
 
     ring = document.createElement("button");
     ring.type = "button";
@@ -119,7 +125,6 @@ export function mountTimerBox(slot, state, panelOverlay) {
         <circle class="timer-ring-track" cx="${RING_SIZE / 2}" cy="${RING_SIZE / 2}" r="${RING_R}" />
         <circle class="timer-ring-fill" cx="${RING_SIZE / 2}" cy="${RING_SIZE / 2}" r="${RING_R}" pathLength="100" />
         <g class="timer-ring-marks"></g>
-        <circle class="timer-ring-break" cx="${C}" cy="${C}" r="${BREAK_R}" pathLength="100" />
       </svg>
       <span class="timer-ring-label"></span>`;
     // A press that travels is a drag; one that doesn't opens the sidebar.
@@ -128,7 +133,6 @@ export function mountTimerBox(slot, state, panelOverlay) {
     els.ringFill = ring.querySelector(".timer-ring-fill");
     els.ringLabel = ring.querySelector(".timer-ring-label");
     els.ringMarks = ring.querySelector(".timer-ring-marks");
-    els.ringBreak = ring.querySelector(".timer-ring-break");
     marksKey = null;
     syncRing();
   }
@@ -188,9 +192,9 @@ export function mountTimerBox(slot, state, panelOverlay) {
     input.addEventListener("blur", () => finish(true));
   }
 
-  async function toast(message) {
+  async function toast(message, kind = "info") {
     const { showImportToast } = await import("../editor/import-toast.js");
-    showImportToast(message, "info");
+    showImportToast(message, kind);
   }
 
   function render() {
@@ -209,9 +213,7 @@ export function mountTimerBox(slot, state, panelOverlay) {
     const brk = st.finished ? null : st.onBreak;
     els.breakBar.classList.toggle("active", !!brk);
     ring.classList.toggle("on-break", !!brk);
-    const brkProgress = brk ? brk.progress : 0;
-    els.breakBar.firstElementChild.style.width = `${brkProgress * 100}%`;
-    els.ringBreak.style.strokeDashoffset = String(100 - brkProgress * 100);
+    els.breakBar.firstElementChild.style.width = `${(brk ? brk.progress : 0) * 100}%`;
 
     // An alarm's last ten minutes: the minutes to go in red, and the ring
     // shows them without being hovered.
@@ -221,7 +223,9 @@ export function mountTimerBox(slot, state, panelOverlay) {
 
     if (st.finished) {
       box.classList.remove("break-now");
-      els.countdown.textContent = "Done";
+      if (!els.countdown.querySelector(".sidebar-timer-done")) {
+        els.countdown.innerHTML = `<button type="button" class="sidebar-timer-done" title="Delete timer" aria-label="Done — delete timer">Done</button>`;
+      }
       els.brk.textContent = "";
       els.end.innerHTML = `<span class="w-ends">ended </span>${clockHtml(st.end)}`;
       els.ringLabel.textContent = "✓";
@@ -233,13 +237,19 @@ export function mountTimerBox(slot, state, panelOverlay) {
         : st.untilBreak != null ? `break<span class="w-in"> in</span> ${formatMinutes(st.untilBreak)}` : "";
       els.end.innerHTML = `<span class="w-ends">ends </span>${clockHtml(st.end)}`;
       // Minutes to the next break, or to the finish once none are left.
-      // On a break, the minutes left of it.
-      const toNext = alarmSoon ? st.remaining : brk ? brk.remaining : (st.untilBreak ?? st.remaining);
-      const mins = minutesLeft(toNext);
-      els.ringLabel.textContent = mins > 99 ? `${Math.floor(mins / 60)}h` : String(mins);
-      ring.setAttribute("aria-label", alarmSoon ? `${mins} min to go`
-        : brk ? `${mins} min of break left`
-        : st.untilBreak != null ? `${mins} min to the next break` : `${mins} min to go`);
+      // On a break, the seconds left of it — the break is what's happening
+      // now, even in an alarm's last ten minutes.
+      if (brk) {
+        const secs = Math.max(0, Math.ceil(brk.remaining / 1000));
+        els.ringLabel.textContent = String(secs);
+        ring.setAttribute("aria-label", `${secs} s of break left`);
+      } else {
+        const toNext = alarmSoon ? st.remaining : (st.untilBreak ?? st.remaining);
+        const mins = minutesLeft(toNext);
+        els.ringLabel.textContent = mins > 99 ? `${Math.floor(mins / 60)}h` : String(mins);
+        ring.setAttribute("aria-label", alarmSoon ? `${mins} min to go`
+          : st.untilBreak != null ? `${mins} min to the next break` : `${mins} min to go`);
+      }
     }
     ring.title = ring.getAttribute("aria-label");
 
@@ -247,7 +257,7 @@ export function mountTimerBox(slot, state, panelOverlay) {
       if (st.finished && !seen.finished) {
         void toast(`${timer.mode === "alarm" ? "Alarm" : "Timer done"}${timer.task ? ` — ${timer.task}` : ""}`);
       }
-      else if (st.breaksPassed > seen.breaksPassed) void toast("Time for a break");
+      else if (st.breaksPassed > seen.breaksPassed) void toast("Time for a break", "break");
     }
     seen = { breaksPassed: st.breaksPassed, finished: st.finished };
     if (st.finished && tick) { clearInterval(tick); tick = null; }

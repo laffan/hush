@@ -41,8 +41,9 @@ import { parseOutlineLine } from "../outline/outline-model.ts";
 import { outlineHost } from "./plugins/outline-view.js";
 
 /** Refuse an edit that would leave any line of the panel not a checklist
- *  item. Only the lines a change touched are checked. */
-const keepChecklist = EditorState.transactionFilter.of((tr) => {
+ *  item. Only the lines a change touched are checked. A canvas outline's
+ *  editor holds the same rule (outline/outline-canvas-element.js). */
+export const keepChecklist = EditorState.transactionFilter.of((tr) => {
   if (!tr.docChanged || tr.annotation(programmaticChange)) return tr;
   const doc = tr.newDoc;
   let ok = true;

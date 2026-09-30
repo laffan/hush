@@ -224,6 +224,39 @@
   min-width: 0;
 }
 
+/* A project whose Desktop holds content keeps the Desktop icon right
+   after its name (files-panel-desktop-badge.js): the name shrinks to its
+   text so the icon follows it rather than the row's far edge, and the
+   hover actions drop their own copy of the button. */
+.tree-item-row.has-desktop-badge .tree-item-name { flex: 0 1 auto; }
+.tree-desktop-badge {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-left: -2px; /* 4px from the name, inside the row's 6px gap */
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  color: var(--fg);
+  opacity: 0.5;
+  cursor: pointer;
+}
+.tree-desktop-badge:hover { opacity: 1; }
+.tree-desktop-badge svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tree-item-row.has-desktop-badge .tree-actions [data-tree-action="view-desktop"] { display: none; }
+
 /* Outline number prefix on project child rows (Show numbers). */
 .tree-item-number {
   opacity: 0.55;

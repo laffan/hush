@@ -14,6 +14,7 @@
 import { decodeNotebookContent } from "../notebook/notebook-content.ts";
 import { renderForExport } from "../notebook/renderer-export.ts";
 import { getShapeBounds } from "../notebook/utils.ts";
+import { snapshotFlowchart } from "../notebook/flowchart-snapshot.ts";
 
 const PADDING = 32;
 
@@ -72,7 +73,7 @@ export function renderShapesPreview(targetCanvas, payload, liveCanvas, camera) {
     layers,
     includeBackground: true,
     canvasBackgroundOverride: liveCanvas?.state?.canvasBackgroundOverride || "",
-    flowchart: undefined,
+    flowchart: snapshotFlowchart(shapes, payload?.flowEdges, fontFamily, cam.zoom),
     omitTextGlyphs: false,
   });
 
@@ -134,7 +135,7 @@ export function renderNotebookSnapshotThumbnail(targetCanvas, content, liveCanva
     layers,
     includeBackground: true,
     canvasBackgroundOverride: liveCanvas?.state?.canvasBackgroundOverride || "",
-    flowchart: undefined,
+    flowchart: snapshotFlowchart(shapes, decoded.flowEdges, fontFamily, camera.zoom),
     omitTextGlyphs: false,
   });
 

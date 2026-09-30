@@ -16,6 +16,8 @@
  * quota on a large library.
  */
 
+import { recordDesktopContent } from "./desktop-content-index.js";
+
 const DB_NAME = "hush-desktop";
 const DB_VERSION = 1;
 
@@ -72,9 +74,28 @@ export function loadDesktopEnvelope(containerId) {
   return idbGet("envelopes", containerId);
 }
 
-/** Persist the (stripped) desktop envelope for a container. */
+/** Persist the (stripped) desktop envelope for a container. Every save
+ *  also tells the sidebar whether the Desktop now holds content of the
+ *  user's own (desktop-content-index.js). */
 export function saveDesktopEnvelope(containerId, envelope) {
+  recordDesktopContent(containerId, envelope?.shapes);
   return idbPut("envelopes", containerId, envelope);
+}
+
+/** Visit every saved envelope as `fn(containerId, envelope)`. */
+export function forEachDesktopEnvelope(fn) {
+  return openDb().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction("envelopes", "readonly");
+    const req = tx.objectStore("envelopes").openCursor();
+    req.onsuccess = () => {
+      const cur = req.result;
+      if (!cur) return;
+      try { fn(String(cur.key), cur.value); } catch { /* one bad record */ }
+      cur.continue();
+    };
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  })).catch(() => false);
 }
 
 export function deleteDesktopEnvelope(containerId) {

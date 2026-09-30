@@ -33,6 +33,7 @@ import { createDrawingToolPanel } from "./drawing/tool-panel";
 import { createBgSettingsFixedButton } from "./ui/bg-settings-fixed-button";
 import { createBookmarkLayer } from "./ui/bookmark-layer";
 import { createCardLayer } from "./ui/card-layer";
+import { createOutlineLayer } from "./ui/outline-layer";
 import { BOOKMARK_STAMP_CURSOR } from "../ui/bookmark-ui.js";
 
 /** Read the user's flag-colour map from Hush settings. Notebook text
@@ -610,6 +611,8 @@ export class NotesCanvas {
     }));
     // Bookmark markers — DOM over the canvas (bookmarks.ts).
     container.appendChild(createBookmarkLayer(this.state));
+    // Outlines — the Doc's outline editor, over the canvas (outline-layer.ts).
+    container.appendChild(createOutlineLayer(this.state));
     // Cards — the Doc's card component, over the canvas (card-layer.ts).
     container.appendChild(createCardLayer(this.state));
     container.appendChild(createTextEditor(this.state));
@@ -1210,6 +1213,7 @@ export class NotesCanvas {
         reorderDragAreaId: this.state.reorderDragAreaId,
         reorderPreview: this.state.reorderPreview,
         flagColors: getFlagColorsFromHush(),
+        outlinesAsDom: this.state.outlinesAsDom,
         touchMode: getTouchModeFromHush(),
         desktopOutlineHover: this.state.desktopOutlineHover,
         fileStickies: getFileStickiesFromHush,
