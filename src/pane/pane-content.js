@@ -328,6 +328,9 @@ async function loadNotebookPane(pane) {
   const onPaneBgChange = (e) => {
     const d = e.detail || {};
     if (d.state !== pane.notebook.state) return;
+    // Kept so a theme re-sync (`pane-theme-sync.js`) can lay it back
+    // over the global defaults it re-applies.
+    pane._notebookBackground = { pattern: d.pattern, spacing: d.spacing, opacity: d.opacity, rotationEnabled: d.rotationEnabled };
     pane.dirty = true;
   };
   document.addEventListener("notebook-bg-changed", onPaneBgChange);

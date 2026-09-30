@@ -43,15 +43,17 @@ function activeContextIdFor(s) {
 
 /** Ask the user for a name before spawning a notebook. Shared between
  *  every "new notebook" entry point. Lazy-imports the modal helper so
- *  the bundle splits cleanly. */
-export function promptNewNotebookName(onConfirm) {
+ *  the bundle splits cleanly. `asPane` says so in the title and on the
+ *  button — the notebook opens in a floating pane, not the main view,
+ *  and the prompt is the only moment to tell the user before it does. */
+export function promptNewNotebookName(onConfirm, { asPane = false } = {}) {
   import("./sidebar/files-panel-shared.js").then(({ showPromptModal }) => {
     showPromptModal({
-      title: "New notebook",
+      title: asPane ? "New Notebook as Pane" : "New notebook",
       label: "Name",
       placeholder: "New Notebook",
       initialValue: "New Notebook",
-      confirmLabel: "Create",
+      confirmLabel: asPane ? "Create Pane" : "Create",
       onConfirm,
     });
   });

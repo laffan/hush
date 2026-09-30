@@ -44,6 +44,7 @@ import {
 // PERF-HUD (temporary): tracer singleton — see perf-hud.ts.
 import { perf } from "./perf-hud";
 import { placeBookmark } from "./bookmarks";
+import { titledAreaFollowers } from "./drag-area-title";
 
 /**
  * A pinned outline is drawn against the frame, not the canvas, so its
@@ -1297,6 +1298,19 @@ export class DrawingState extends EventTarget {
     return { minX, minY, maxX, maxY };
   }
 
+  /** Add to `ids` every shape a moving drag-area title carries with it —
+   *  the box and its contents (see drag-area-title.ts) — leaving out
+   *  anything on a hidden or locked layer, which a chart move never
+   *  touches. */
+  private _addTitledAreaFollowers(ids: Set<string>, inert: Set<string>): void {
+    if (ids.size === 0) return;
+    const followers = titledAreaFollowers(this.shapes, ids, this.fontFamily);
+    if (followers.size === 0) return;
+    for (const sh of this.shapes) {
+      if (followers.has(sh.id) && !this._isShapeInert(sh, inert)) ids.add(sh.id);
+    }
+  }
+
   /** Re-layout the flowchart subtree rooted at `rootId` via FlowchartLayer.tidy.
    * Root stays anchored; descendants move so siblings don't overlap. */
   tidySubtree(rootId: string): void {
@@ -1315,6 +1329,13 @@ export class DrawingState extends EventTarget {
       if (dx !== 0 || dy !== 0) deltas.set(id, { dx, dy });
     }
     if (deltas.size === 0) return;
+    // A moved node standing as a drag area's title takes its box along,
+    // by the node's own delta (drag-area-title.ts).
+    for (const [id, leader] of titledAreaFollowers(this.shapes, new Set(deltas.keys()), this.fontFamily)) {
+      const sh = this.shapes.find((x) => x.id === id);
+      const d = deltas.get(leader);
+      if (sh && d && !this._isShapeInert(sh, inert)) deltas.set(id, d);
+    }
     // Group-mates of moved flowchart nodes follow along, mirroring the drag
     // behavior — otherwise tidy tears groups apart by leaving non-flowchart
     // members behind.
@@ -1998,6 +2019,9 @@ export class DrawingState extends EventTarget {
               }
             }
           }
+          // A descendant standing as a drag area's title brings the box
+          // and its contents along (drag-area-title.ts).
+          this._addTitledAreaFollowers(flowDescendants, inert);
         }
         // If a flowchart descendant is part of a group, the rest of that group
         // tags along — otherwise dragging the parent would tear the group
@@ -2401,6 +2425,7 @@ export class DrawingState extends EventTarget {
                 if (sh && this._isShapeInert(sh, snapInert)) continue;
                 desc.add(id);
               }
+              this._addTitledAreaFollowers(desc, snapInert);
               if (desc.size > 0) {
                 const groups = new Set<string>();
                 for (const id of desc) {
@@ -3193,9 +3218,12 @@ export class DrawingState extends EventTarget {
       if (s.parentId && selectedDragAreaIds.has(s.parentId)) ids.add(s.id);
     }
     if (this.flowDragDescendants) {
+      const desc = new Set<string>();
       for (const id of this.selectedIds) {
-        for (const d of this.flowchart.descendantsOf(id)) ids.add(d);
+        for (const d of this.flowchart.descendantsOf(id)) desc.add(d);
       }
+      this._addTitledAreaFollowers(desc, this._inertLayerIds());
+      for (const d of desc) ids.add(d);
     }
     const followingGroups = new Set<string>();
     for (const id of ids) {

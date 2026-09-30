@@ -134,6 +134,11 @@ pub struct AppSettings {
     // number here.
     #[serde(default)]
     pub outline_pinned_height: Option<u32>,
+    // A Doc outline's type size, as a step in px off its default (two
+    // under the document's own size). Set by the − / + in the outline's
+    // footer; per device, like the pinned panel's height.
+    #[serde(default)]
+    pub outline_font_step: i32,
     // Sidebar session state — which panel was open ("files" / "styles"
     // / "versions") and whether it was pinned when the app last quit.
     // Per-window in the JS sense, but the Tauri side stores them
@@ -687,6 +692,7 @@ impl Default for AppSettings {
             overview_panel_width: default_overview_panel_width(),
             comments_panel_width: default_comments_panel_width(),
             outline_pinned_height: None,
+            outline_font_step: 0,
             sidebar_open_panel: None,
             sidebar_pinned: false,
             shortcut_open_editor: default_shortcut_open(),

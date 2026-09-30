@@ -321,6 +321,17 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
         bookmarks: snapshot.bookmarks,
       });
       canvas.state.flowchart.deserialize(snapshot.flowEdges);
+      // The per-notebook background is content too — a proof's blank
+      // page most of all. A column that ignored it showed the global
+      // pattern, and its autosave then wrote the file without one.
+      const bg = snapshot.background;
+      if (bg) {
+        if (bg.pattern) canvas.state.backgroundPattern = bg.pattern;
+        if (typeof bg.spacing === "number") canvas.state.gridSpacing = bg.spacing;
+        if (typeof bg.opacity === "number") canvas.state.gridOpacity = bg.opacity;
+        if (typeof bg.rotationEnabled === "boolean") canvas.state.setCanvasRotationEnabled(bg.rotationEnabled);
+        canvas.state.notify("theme");
+      }
     }
 
     // Restore camera or center on content
@@ -342,6 +353,10 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
     // Autosave on changes
     let dirty = false;
     wrapper.addEventListener("notebook-change", () => { dirty = true; });
+    // A background pick is saved content too; the popup reports it on
+    // document, tagged with the canvas it belongs to.
+    const onBgChange = (e) => { if (e.detail?.state === canvas.state) dirty = true; };
+    document.addEventListener("notebook-bg-changed", onBgChange);
 
     // Same single-writer shape as mountDocContent — teardown flushes.
     const flush = async () => {
@@ -355,6 +370,12 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
         camera: canvas.state.camera,
         splits: canvas.state.splits,
         proof: canvas.state.proof ?? undefined,
+        background: {
+          pattern: canvas.state.backgroundPattern,
+          spacing: canvas.state.gridSpacing,
+          opacity: canvas.state.gridOpacity,
+          rotationEnabled: canvas.state.canvasRotationEnabled,
+        },
       });
       if (IS_TAURI) {
         try { await tauriInvoke("save_file", { id: item.fileId, content }); }
@@ -414,6 +435,7 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
     };
     liveData.cleanup = () => {
       clearInterval(saveInterval);
+      document.removeEventListener("notebook-bg-changed", onBgChange);
       void flush();
       if (unregDrop) unregDrop();
       if (unregTxtDrag) unregTxtDrag();

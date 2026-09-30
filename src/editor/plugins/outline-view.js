@@ -34,7 +34,13 @@ import {
   HIDE_DONE_KEY, PIN_KEY, outlineFlagsOf, frontmatterPatchChanges,
 } from "../outline-frontmatter.js";
 import { propertiesEdit } from "./properties.js";
-import { buildOutlineFooter, buildOutlineRows, buildOutlineZenStrip } from "../outline-dom.js";
+import {
+  buildOutlineFooter, buildOutlineRows, buildOutlineZenStrip, focusRowText,
+  applyOutlineFontStep, OUTLINE_FONT_STEP_MIN, OUTLINE_FONT_STEP_MAX,
+} from "../outline-dom.js";
+import { moveOutlineUnit } from "../outline-move.js";
+import { makeOutlineDragPlugin } from "../outline-drag-plugin.js";
+import { pinnedRowHandlers } from "../outline-pinned-edit.js";
 
 /**
  * Every outline block in the document, as runs of consecutive checklist
@@ -77,6 +83,38 @@ function blockSignature(block, flags, pinned) {
     + "|" + block.items.map((i) => i.text).join("\u0000");
 }
 
+/** The rows' shape without their words — what the pinned panel has to
+ *  rebuild for. Typing into a row changes only the words, and rebuilding
+ *  then would tear the field being typed in out from under the caret. */
+function blockStructure(block, flags) {
+  return `${block.fromLine}:${flags.hideDone ? 1 : 0}:`
+    + block.items.map((i) => `${i.line}.${i.depth}.${i.checked ? 1 : 0}`).join(",");
+}
+
+/** The footer's − / +: one px of outline type per press, per device. */
+function stepOutlineFont(appState, view, delta) {
+  const cur = Number(appState?.settings?.outlineFontStep) || 0;
+  const next = Math.max(OUTLINE_FONT_STEP_MIN, Math.min(OUTLINE_FONT_STEP_MAX, cur + delta));
+  if (next === cur) return;
+  applyOutlineFontStep(next);
+  appState?.updateSettings?.({ outlineFontStep: next });
+  // Every outline line just changed height; the heightmap has to hear it.
+  view.requestMeasure();
+}
+
+let fontStepInstalled = false;
+
+/** Publish the stored step, and keep it current when a sibling window
+ *  (or Settings) changes it. Once per window — the value is global. */
+function installOutlineFontStep(appState) {
+  const apply = () => applyOutlineFontStep(appState?.settings?.outlineFontStep);
+  apply();
+  if (fontStepInstalled || typeof appState?.on !== "function") return;
+  fontStepInstalled = true;
+  appState.on("settings-changed", apply);
+  appState.on("remote-settings-merged", apply);
+}
+
 /** Write one of the footer's flags into the frontmatter. */
 function patchFlags(view, patch) {
   const changes = frontmatterPatchChanges(view.state, patch);
@@ -102,12 +140,13 @@ function toggleAt(view, lineNumber) {
 }
 
 class OutlineFooterWidget extends WidgetType {
-  constructor(sig, items, flags, blockIndex, capped) {
+  constructor(sig, items, flags, blockIndex, capped, appState) {
     super();
     this.sig = sig;
     this.items = items;
     this.flags = flags;
     this.blockIndex = blockIndex;
+    this.appState = appState;
     // Every item hidden: the footer is the whole outline, so it closes
     // the box on all four sides rather than three.
     this.capped = capped;
@@ -123,6 +162,7 @@ class OutlineFooterWidget extends WidgetType {
       pinned: false,
       onToggleHideDone: () => patchFlags(view, { [HIDE_DONE_KEY]: this.flags.hideDone ? null : "true" }),
       onTogglePin: () => patchFlags(view, { [PIN_KEY]: String(this.blockIndex + 1) }),
+      onFontStep: (d) => stepOutlineFont(this.appState, view, d),
     }));
     return host;
   }
@@ -191,7 +231,7 @@ function selectionTouches(edState, from, to) {
  *  One pass produces both: the atomic set is exactly the replacements,
  *  never the line decorations, whose zero-length ranges would make the
  *  caret skip lines that are perfectly visible. */
-function buildOutlineState(edState) {
+function buildOutlineState(edState, appState) {
   const flags = outlineFlagsOf(edState);
   const empty = { deco: Decoration.none, atomic: RangeSet.empty, hideDone: false, pin: 0, pinnedBlock: null, blocks: [] };
   if (!flags.on) return empty;
@@ -252,7 +292,7 @@ function buildOutlineState(edState) {
     });
 
     ranges.push(Decoration.widget({
-      widget: new OutlineFooterWidget(sig, block.items, flags, bi, first),
+      widget: new OutlineFooterWidget(sig, block.items, flags, bi, first, appState),
       block: true,
       side: 1,
     }).range(block.items[block.items.length - 1].to));
@@ -280,15 +320,15 @@ const MIN_PIN_HEIGHT = 84;
  *  over this surface's own field. No surface gets both extension lists
  *  (`editor.js` assembles its own; everything else comes from
  *  `createBaseExtensions`), so there is nothing to share. */
-function makeOutlineField() {
+function makeOutlineField(appState) {
   return StateField.define({
-    create: buildOutlineState,
+    create: (edState) => buildOutlineState(edState, appState),
     update(value, tr) {
       // A cursor move only matters while completed items are hidden:
       // that is the one decoration whose shape depends on where the
       // selection sits. Everywhere else, re-scanning the document on
       // every arrow key would be work for an identical answer.
-      if (tr.docChanged || (tr.selection && value.hideDone)) return buildOutlineState(tr.state);
+      if (tr.docChanged || (tr.selection && value.hideDone)) return buildOutlineState(tr.state, appState);
       return value;
     },
     provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
@@ -313,7 +353,16 @@ function makePinnedPanel(field, appState) {
       this.view = view;
       this.el = null;
       this.sig = "";
+      this.structure = "";
       this.zen = false;
+      // Where the caret goes after the next rebuild — set by an edit made
+      // in the panel (Enter, Tab, …) just before it dispatches.
+      this.focusReq = null;
+      this.rows = pinnedRowHandlers(
+        view,
+        () => view.state.field(field, false)?.pinnedBlock || null,
+        (req) => { this.focusReq = req; },
+      );
       this.render();
     }
 
@@ -330,6 +379,18 @@ function makePinnedPanel(field, appState) {
       if (this.el) this.el.remove();
       this.el = null;
       this.sig = "";
+      this.structure = "";
+    }
+
+    /** A row's text lost the caret: redraw so it shows its words without
+     *  their markdown again — unless the caret only moved to another row,
+     *  or the rebuild that took it is already putting it back. */
+    onRowBlur() {
+      setTimeout(() => {
+        if (!this.el || this.el.contains(document.activeElement)) return;
+        this.sig = "";
+        this.render();
+      }, 0);
     }
 
     /** The height the user dragged the panel to, or null for "as tall
@@ -433,7 +494,17 @@ function makePinnedPanel(field, appState) {
       const overlay = this.view.dom.closest(".zen-focus-overlay");
 
       const sig = `${overlay ? "z" : "p"}|` + blockSignature(block, flags, true);
-      if (this.el && sig === this.sig) return;
+      if (this.el && sig === this.sig && !this.focusReq) return;
+      // Typing into a row: its words changed and nothing else did. The
+      // field on screen already shows them — rebuilding would take it
+      // away from under the caret.
+      const structure = blockStructure(block, flags);
+      if (this.el && !overlay && !this.zen && !this.focusReq && structure === this.structure
+        && this.el.contains(document.activeElement)) {
+        this.sig = sig;
+        return;
+      }
+      this.structure = structure;
       const wasZen = this.zen;
       this.sig = sig;
       this.zen = !!overlay;
@@ -461,115 +532,45 @@ function makePinnedPanel(field, appState) {
         this.syncColumn();
       }
       this.applyStoredHeight();
+      const prevRows = this.el.querySelector(".outline-rows");
+      const scrollTop = prevRows ? prevRows.scrollTop : 0;
       this.el.replaceChildren(this.buildGrip());
-      this.el.appendChild(buildOutlineRows(
-        block.items, flags.hideDone,
-        (item) => toggleAt(this.view, item.line),
-      ));
+      const rows = buildOutlineRows(block.items, flags.hideDone, {
+        onToggle: (item) => toggleAt(this.view, item.line),
+        onEdit: this.rows.onEdit,
+        onKey: this.rows.onKey,
+        onDragStart: this.rows.onDragStart,
+        onBlur: () => this.onRowBlur(),
+      });
+      this.el.appendChild(rows);
+      rows.scrollTop = scrollTop;
       this.el.appendChild(buildOutlineFooter({
         hideDone: flags.hideDone,
         pinned: true,
         onToggleHideDone: () => patchFlags(this.view, { [HIDE_DONE_KEY]: flags.hideDone ? null : "true" }),
         onTogglePin: () => patchFlags(this.view, { [PIN_KEY]: null }),
+        onFontStep: (d) => stepOutlineFont(appState, this.view, d),
       }));
+
+      const req = this.focusReq;
+      this.focusReq = null;
+      if (req) {
+        const item = block.items.find((it) => it.line === req.line);
+        if (item) focusRowText(rows, item.line, Math.min(req.offset, item.text.length), item.text);
+      }
     }
   },
   );
 }
 
-/**
- * Outline-aware line moving (Alt-Arrow, CodeMirror's `moveLineUp` /
- * `moveLineDown`).
- *
- * The default commands move one raw line, which on an outline tears a
- * parent away from the items nested under it. Inside an outline an item
- * moves **among its siblings and takes its children with it**, and it
- * never leaves its parent: there is no sibling above the first child or
- * below the last, so the key does nothing there rather than flattening
- * the tree to make room. Outside an outline nothing is claimed and the
- * default runs.
- */
-
-/** Last item index of the unit rooted at `i` — the item plus every
- *  following item indented deeper than it. */
-function unitEnd(items, i) {
-  let end = i;
-  while (end + 1 < items.length && items[end + 1].depth > items[i].depth) end += 1;
-  return end;
-}
-
-/** The block the whole selection sits in, plus the item indices its
- *  ends land on. Null when the selection isn't inside one outline. */
-function selectedItems(edState, blocks) {
-  const sel = edState.selection.main;
-  const fromLine = edState.doc.lineAt(sel.from).number;
-  const toLine = edState.doc.lineAt(sel.to).number;
-  for (const block of blocks) {
-    if (block.fromLine > fromLine || block.toLine < toLine) continue;
-    const a = block.items.findIndex((it) => it.line === fromLine);
-    const b = block.items.findIndex((it) => it.line === toLine);
-    if (a < 0 || b < 0) return null;
-    return { items: block.items, a, b };
-  }
-  return null;
-}
-
-function moveOutlineUnit(view, field, dir) {
-  const value = view.state.field(field, false);
-  if (!value || !value.blocks.length) return false;
-  const found = selectedItems(view.state, value.blocks);
-  if (!found) return false;
-  const { items, a, b } = found;
-
-  // Whole units only: a selection that stops halfway through a subtree
-  // still moves the subtree.
-  const start = a;
-  const end = unitEnd(items, Math.max(unitEnd(items, a), b));
-  const level = items[start].depth;
-
-  let tStart;
-  let tEnd;
-  if (dir > 0) {
-    const next = end + 1;
-    // Past the last sibling, or past the end of the parent's children.
-    if (next >= items.length || items[next].depth !== level) return true;
-    tStart = next;
-    tEnd = unitEnd(items, next);
-  } else {
-    let p = start - 1;
-    while (p >= 0 && items[p].depth > level) p -= 1;
-    if (p < 0 || items[p].depth !== level) return true;
-    tStart = p;
-    tEnd = start - 1;
-  }
-
-  const doc = view.state.doc;
-  const movedFrom = doc.line(items[start].line).from;
-  const movedTo = doc.line(items[end].line).to;
-  const targetFrom = doc.line(items[tStart].line).from;
-  const targetTo = doc.line(items[tEnd].line).to;
-  const moved = doc.sliceString(movedFrom, movedTo);
-  const target = doc.sliceString(targetFrom, targetTo);
-
-  const sel = view.state.selection.main;
-  const from = dir > 0 ? movedFrom : targetFrom;
-  const to = dir > 0 ? targetTo : movedTo;
-  const insert = dir > 0 ? `${target}\n${moved}` : `${moved}\n${target}`;
-  const delta = dir > 0 ? target.length + 1 : -(target.length + 1);
-
-  view.dispatch({
-    changes: { from, to, insert },
-    selection: { anchor: sel.anchor + delta, head: sel.head + delta },
-    scrollIntoView: true,
-    userEvent: "move.outline",
-  });
-  return true;
-}
-
+/** Alt-Arrow moves an item among its siblings with its children — see
+ *  `outline-move.js#moveOutlineUnit`. Outside an outline nothing is
+ *  claimed and CodeMirror's own line move runs. */
 function makeOutlineKeymap(field) {
+  const blocks = (view) => view.state.field(field, false)?.blocks;
   return Prec.high(keymap.of([
-    { key: "Alt-ArrowUp", run: (view) => moveOutlineUnit(view, field, -1) },
-    { key: "Alt-ArrowDown", run: (view) => moveOutlineUnit(view, field, 1) },
+    { key: "Alt-ArrowUp", run: (view) => moveOutlineUnit(view, blocks(view), -1) },
+    { key: "Alt-ArrowDown", run: (view) => moveOutlineUnit(view, blocks(view), 1) },
   ]));
 }
 
@@ -580,9 +581,13 @@ function makeOutlineKeymap(field) {
  * feature being broken rather than absent.
  */
 export function createOutlinePlugin(appState) {
-  const field = makeOutlineField();
+  installOutlineFontStep(appState);
+  const field = makeOutlineField(appState);
   const atomic = EditorView.atomicRanges.of(
     (view) => view.state.field(field, false)?.atomic || RangeSet.empty,
   );
-  return [field, atomic, makeOutlineKeymap(field), makePinnedPanel(field, appState)];
+  return [
+    field, atomic, makeOutlineKeymap(field),
+    makePinnedPanel(field, appState), makeOutlineDragPlugin(field),
+  ];
 }

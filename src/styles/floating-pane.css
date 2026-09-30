@@ -563,8 +563,16 @@ body.text-drag-active .floating-pane:not(.active) .floating-pane-content {
 .floating-pane.docked.docked-left { border-right: 1px solid var(--panel-border, rgba(128,128,128,0.2)); }
 .floating-pane.docked.docked-right { border-left: 1px solid var(--panel-border, rgba(128,128,128,0.2)); }
 
-/* Hide every resize handle except the one on the edge opposite the dock. */
-.floating-pane.docked .fp-resize { display: none; }
+/* Hide every resize handle except the one on the edge opposite the dock.
+   That one is the pane's only way to be resized, and the pane's
+   `overflow: hidden` clips its outer half, so what's left sits over the
+   pane's own content — where a docked pane's right-hand bar lives: its
+   Overview (z 2), a notebook's shelf (87), a PDF's annotation shelf.
+   Docked left, that bar covered the handle and swallowed every press
+   meant for it. Lift the handle, and the hover outline that lights it,
+   over whatever the content carries along that edge. */
+.floating-pane.docked .fp-resize { display: none; z-index: 100; }
+.floating-pane.docked::after { z-index: 101; }
 .floating-pane.docked.docked-top    .fp-resize.fp-resize-s { display: block; }
 .floating-pane.docked.docked-bottom .fp-resize.fp-resize-n { display: block; }
 .floating-pane.docked.docked-left   .fp-resize.fp-resize-e { display: block; }

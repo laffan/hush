@@ -231,7 +231,7 @@ function buildCommands(state) {
           const { x, y } = paneAnchorClickPoint(s);
           createPane(created.fileId, created.name, "notebook", x, y);
         }
-      }) },
+      }, { asPane: true }) },
     { id: "open-file", section: "Open", label: "Open document, notebook, or project", icon: icons.files, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: (s, p) => enterFilePicker(p, s, "Open file…", (f) => {

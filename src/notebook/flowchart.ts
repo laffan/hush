@@ -541,6 +541,29 @@ export class FlowchartLayer<S extends FlowNode> {
   }
 
   /**
+   * Every edge's path as a polyline in canvas space — the curve sampled
+   * `samples` times, then the arrowhead's tip — keyed by edge. For a host
+   * that needs to know what an arrow passes over without drawing it (the
+   * notebook lays a backdrop under text an arrow crosses).
+   */
+  edgePolylines(shapes: S[], samples = 16): { edge: FlowEdge; points: Pt[] }[] {
+    if (this.edges.length === 0) return [];
+    const byId = new Map<string, S>();
+    for (const s of shapes) byId.set(s.id, s);
+    const offsets = this.edgeOffsets(byId);
+    const out: { edge: FlowEdge; points: Pt[] }[] = [];
+    for (const e of this.edges) {
+      const g = this.placedGeometry(e, byId, offsets);
+      if (!g) continue;
+      const points: Pt[] = [];
+      for (let i = 0; i <= samples; i++) points.push(bezier(g, i / samples));
+      points.push({ x: g.tip.x, y: g.tip.y });
+      out.push({ edge: e, points });
+    }
+    return out;
+  }
+
+  /**
    * Draw all edges as cubic-bezier arrows from the right edge of the parent
    * to the left edge of the child. Call after the camera transform is
    * applied (canvas space).

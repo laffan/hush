@@ -15,6 +15,7 @@ import type { BackgroundImageConfig } from "./renderer-background";
 import { drawSplitChrome } from "./renderer-splits";
 import type { SplitRenderState } from "./renderer-splits";
 import type { FlowchartLayer } from "./flowchart";
+import { flowBackdropIds, drawTextBackdrop } from "./renderer-flow-backdrop";
 
 export interface RenderState {
   shapes: Shape[];
@@ -232,6 +233,14 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     ctx.restore();
   }
 
+  // Text an arrow runs under gets a translucent backdrop in the canvas
+  // colour, so the line fades out beneath the words instead of crossing
+  // them — see renderer-flow-backdrop.ts.
+  const backdropIds = state.flowchart
+    ? flowBackdropIds(state.flowchart, shapes.filter((s) => !pocketedIds.has(s.id)), state.fontFamily)
+    : null;
+  const backdropColor = canvasBackgroundOverride || theme.canvasBackground;
+
   // File thumbnails that temporarily float above their neighbours: the
   // selected ones (so a picked-up thumbnail is never buried mid-drag)
   // and any doc showing its outline column (the column reaches past the
@@ -270,14 +279,22 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     };
     const paintShapeInner = (shape: Shape) => {
       if (shape.type === "drag-area") return;
-      if (shape.id === editingShapeId) return;
       if (pocketedIds.has(shape.id)) return;
+      if (shape.id === editingShapeId) {
+        // The inline editor draws the words; the backdrop still belongs
+        // under them, or an arrow runs through the text being typed.
+        if (shape.type === "text" && backdropIds?.has(shape.id)) drawTextBackdrop(ctx, shape, state.fontFamily, backdropColor);
+        return;
+      }
       if (shape.type === "draw") return; // drawing layer owns strokes
       // A pinned outline is chrome bolted to the frame, not content on
       // the canvas — it is drawn at 1:1 in the screen-space pass below.
       if (shape.type === "text" && shape.outline && shape.outlinePin) return;
       if (shape.type === "text" && shape.outline) drawOutlineShape(ctx, shape, theme, false, state.flagColors);
-      else if (shape.type === "text") drawTextShape(ctx, shape, theme, state.fontFamily, false, state.flagColors);
+      else if (shape.type === "text") {
+        if (backdropIds?.has(shape.id)) drawTextBackdrop(ctx, shape, state.fontFamily, backdropColor);
+        drawTextShape(ctx, shape, theme, state.fontFamily, false, state.flagColors);
+      }
       // Every file thumbnail casts the same subtle drop shadow, so a
       // Desktop reads as cards laid on a surface (stacked piles get it
       // for free — each member is a thumbnail).
@@ -921,7 +938,8 @@ export function drawOutlineShape(
   // rather than an object.
   ctx.fillStyle = outlineTint(theme.background, 0.92);
   ctx.fill();
-  ctx.strokeStyle = outlineTint(fg, 0.2);
+  // Matches the Doc's `--outline-border` (styles/base.css).
+  ctx.strokeStyle = outlineTint(fg, 0.09);
   ctx.lineWidth = 1;
   ctx.stroke();
 
@@ -995,7 +1013,7 @@ export function drawOutlineShape(
   // through, and a second reading of the same fact is noise here.
   const fy = y + L.footerY;
   ctx.save();
-  ctx.strokeStyle = outlineTint(fg, 0.14);
+  ctx.strokeStyle = outlineTint(fg, 0.07);
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x + OUTLINE_PAD * 0.5, Math.round(fy) + 0.5);

@@ -404,15 +404,26 @@ html[data-theme="dark"] .sidebar-timer {
 
 /* The break under way, filling left to right 1px under the session's bar
    (its 6px top margin less 5). Always in the layout, transparent between
-   breaks, so the box never changes height. */
+   breaks, so the box never changes height. Bright red and pulsing, so a
+   break reads as one at a glance; a faint red track shows what's left. */
 .sidebar-timer-break-bar {
   height: 1px;
   margin-top: -5px;
   opacity: 0;
+  background: color-mix(in srgb, var(--timer-break-red) 18%, transparent);
 }
 .sidebar-timer-break-bar.active { opacity: 1; }
-.sidebar-timer-break-bar span { transition: width 1s linear; }
+.sidebar-timer-break-bar span {
+  background: var(--timer-break-red);
+  transition: width 1s linear;
+}
+.sidebar-timer-break-bar.active span { animation: timer-break-pulse 1.4s ease-in-out infinite; }
 .sidebar-timer-break-bar:not(.active) span { transition: none; }
+
+@keyframes timer-break-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
 
 /* To go / next break / finish: three columns, the break centred between
    the other two however wide the sidebar is. */
@@ -532,14 +543,17 @@ html[data-theme="dark"] .sidebar-timer {
 /* The break's progress: a thin circle inside the ring, filling as the
    break runs, the way the ring itself does. Only there while one is. */
 .timer-ring circle.timer-ring-break {
-  stroke: color-mix(in srgb, var(--fg) 45%, transparent);
+  stroke: var(--timer-break-red);
   stroke-width: 1.5;
   stroke-dasharray: 100;
   stroke-dashoffset: 100;
   display: none;
   transition: stroke-dashoffset 1s linear;
 }
-.timer-ring.on-break circle.timer-ring-break { display: inline; }
+.timer-ring.on-break circle.timer-ring-break {
+  display: inline;
+  animation: timer-break-pulse 1.4s ease-in-out infinite;
+}
 /* The minutes figure would sit on top of the inner circle. */
 .timer-ring.on-break .timer-ring-label { font-size: 8px; }
 
@@ -573,7 +587,10 @@ html[data-theme="dark"] .sidebar-timer {
 }
 
 .sidebar-timer,
-.timer-ring { --timer-alarm-red: #d2453b; }
+.timer-ring {
+  --timer-alarm-red: #d2453b;
+  --timer-break-red: #ff2a1f;
+}
 
 /* Let the last rows scroll out from under the box. */
 #panel-overlay.has-timer .panel-overlay-body:has(+ .sidebar-timer-slot) { padding-bottom: 84px; }

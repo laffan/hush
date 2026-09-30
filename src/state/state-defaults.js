@@ -69,6 +69,8 @@ export function createDefaultSettings() {
     overviewPanelWidth: 200,
     commentsPanelWidth: 240,
     outlinePinnedHeight: null,
+    // Doc outline type size, in px off its default (the footer's − / +).
+    outlineFontStep: 0,
     notebookShelfWidth: 280,
     notebookProofRailWidth: 92,
     // Page rail on a proofread notebook — the live minimap down the

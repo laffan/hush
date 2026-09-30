@@ -240,14 +240,15 @@ export function buildEditorCommands() {
     shortcutNewNotebookPane: (state) => {
       // "New notebook as pane" — same name prompt as shortcutNewNotebook,
       // then the created notebook opens as a floating pane instead of
-      // taking over the main view.
+      // taking over the main view. The title and button say so; see
+      // promptNewNotebookName's `asPane`.
       import("../sidebar/files-panel-shared.js").then(({ showPromptModal }) => {
         showPromptModal({
-          title: "New notebook",
+          title: "New Notebook as Pane",
           label: "Name",
           placeholder: "New Notebook",
           initialValue: "New Notebook",
-          confirmLabel: "Create",
+          confirmLabel: "Create Pane",
           onConfirm: async (name) => {
             const [pickers, paneManager] = await Promise.all([
               import("../command-palette-pickers.js"),

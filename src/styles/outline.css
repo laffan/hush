@@ -28,15 +28,26 @@
   --outline-doc-lead: 0.15;
 }
 
-.cm-outline-line {
-  font-family: var(--ui-font-family);
-  /* "A few pixels smaller than normal text", expressed against the
-     style's own size so it tracks a reader who scales the document. */
-  font-size: calc(var(--font-size) - 2px);
+/* The outline's type size: "a few pixels smaller than normal text",
+   expressed against the style's own size so it tracks a reader who
+   scales the document, plus the step the footer's − / + set
+   (`--outline-font-step`, published on <html> from the
+   `outlineFontStep` setting by plugins/outline-view.js). */
+:root { --outline-font-size: calc(var(--font-size) - 2px + var(--outline-font-step, 0px)); }
+
+/* The main editor sets every line's face with `#editor-container
+   .cm-line { font-family: … !important }`, which outranked the plain
+   `.cm-outline-line` rule — so an outline in the main editor came out in
+   the style's writing face and line height, and only a pane or stack
+   column showed the app font. The id in the selector is what lets this
+   one win there too. */
+.cm-outline-line,
+#editor-container .cm-line.cm-outline-line {
+  font-family: var(--ui-font-family) !important;
+  font-size: var(--outline-font-size);
   line-height: calc(var(--outline-line-height) + var(--outline-doc-lead));
   border-left: 1px solid var(--outline-border);
   border-right: 1px solid var(--outline-border);
-  background: var(--outline-bg);
 }
 
 .cm-outline-line.cm-outline-top {
@@ -115,7 +126,6 @@
   border-bottom: 1px solid var(--outline-border);
   border-bottom-left-radius: 6px;
   border-bottom-right-radius: 6px;
-  background: var(--outline-bg);
 }
 
 .cm-outline-footer-capped {
@@ -136,6 +146,15 @@
 }
 
 .outline-footer-spacer { flex: 1 1 auto; }
+
+/* Type size: a bare − and +, no popup. */
+.outline-footer-size {
+  font-family: var(--ui-font-family);
+  font-size: 14px;
+  line-height: 1;
+  font-weight: 500;
+}
+.outline-footer-size:disabled { opacity: 0.2; cursor: default; }
 
 .outline-footer-btn {
   display: inline-flex;
@@ -201,9 +220,11 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--outline-border);
-  background: var(--panel-bg, var(--bg));
-  backdrop-filter: blur(6px);
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.12);
+  /* The document's own background, not a panel colour: the pinned
+     outline is the same object as the in-flow one, which has no fill. It
+     still has to be opaque — it floats over the text. */
+  background: var(--bg);
+  box-shadow: 0 -1px 6px rgba(0, 0, 0, 0.06);
 }
 
 /* The main editor's frame has no resize grips to keep clear of, so the
@@ -252,14 +273,16 @@
 }
 
 .outline-rows {
-  padding: 2px 10px;
+  position: relative;
+  padding: 2px 10px 2px 22px;
   font-family: var(--ui-font-family);
-  font-size: calc(var(--font-size) - 2px);
+  font-size: var(--outline-font-size);
   line-height: calc(var(--outline-line-height) + var(--outline-doc-lead));
   color: var(--style-fg, var(--fg));
 }
 
 .outline-row {
+  position: relative;
   display: flex;
   align-items: baseline;
   padding-left: calc(var(--outline-depth, 0) * 18px);
@@ -267,13 +290,100 @@
 
 .outline-row-box { align-self: center; }
 
-.outline-row-text { min-width: 0; overflow-wrap: anywhere; }
+.outline-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  outline: none;
+}
+.outline-row-text[contenteditable] {
+  cursor: text;
+  /* An emptied item still needs something to click into. */
+  min-height: 1lh;
+}
+
+/* A row being dragged stays in place, faded, until it lands. In the
+   document the fade is colour, not opacity: the frame's sides ride the
+   same lines and would fade with them. */
+.outline-row.outline-dragging { opacity: 0.35; }
+.cm-outline-drag-src { color: color-mix(in srgb, var(--style-fg, var(--fg)) 35%, transparent) !important; }
+.cm-outline-drag-src .cm-task-checkbox { opacity: 0.35; }
+
+/* === Dragging items ===================================================
+
+   A handle beside the checkbox on the item the pointer is over. In a
+   document it is one element floating over the editor (the lines are
+   CodeMirror's, and a widget in each one would be something the caret
+   walks through); in the pinned panel each row carries its own. */
+.cm-outline-handle,
+.outline-row-handle {
+  position: absolute;
+  width: 12px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  color: color-mix(in srgb, var(--style-fg, var(--fg)) 45%, transparent);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.cm-outline-handle:hover,
+.cm-outline-handle.dragging,
+.outline-row-handle:hover {
+  color: var(--style-fg, var(--fg));
+  background: color-mix(in srgb, var(--style-fg, var(--fg)) 8%, transparent);
+}
+.cm-outline-handle svg,
+.outline-row-handle svg { width: 8px; height: 12px; display: block; }
+
+.cm-outline-handle { z-index: 5; }
+.cm-outline-handle[hidden] { display: none; }
+
+/* The row's handle hangs in the rows' left padding, just before the box,
+   and only shows while the row is hovered. */
+.outline-row-handle {
+  left: calc(var(--outline-depth, 0) * 18px - 16px);
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+}
+.outline-row:hover .outline-row-handle,
+.outline-row-handle.dragging { opacity: 1; }
+
+body.outline-drag-active,
+body.outline-drag-active * { cursor: grabbing !important; }
+
+/* Where the dragged item will land: a line at the depth it will take,
+   with a ring at its head. */
+.outline-drop-marker {
+  position: absolute;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--heading-color, var(--cursor, var(--fg)));
+  pointer-events: none;
+  z-index: 7;
+}
+.outline-drop-marker::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1.5px solid var(--heading-color, var(--cursor, var(--fg)));
+  background: var(--bg);
+}
 
 .outline-row-done .outline-row-text {
   text-decoration: line-through;
   text-decoration-thickness: 1px;
   opacity: 0.45;
 }
+.outline-row-done .outline-row-box { opacity: 0.45; }
 
 .outline-row-next .outline-row-text {
   color: var(--heading-color, var(--style-fg, var(--fg)));

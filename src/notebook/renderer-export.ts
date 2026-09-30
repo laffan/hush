@@ -3,6 +3,7 @@ import type { CanvasTheme } from "./themes";
 import type { FlowchartLayer } from "./flowchart";
 import { drawBackground } from "./renderer-background";
 import { drawDragArea, drawTextShape, drawImageShape, drawOutlineShape } from "./renderer";
+import { flowBackdropIds, drawTextBackdrop } from "./renderer-flow-backdrop";
 
 /** Paint shapes + (optional) background into an arbitrary ctx at an
  *  arbitrary camera. Skips every piece of editor chrome — selection
@@ -80,6 +81,14 @@ export function renderForExport(
     flowchart.setArrowColor(theme.foreground);
     flowchart.draw(ctx, shapes.filter((s) => !s.pocketed));
   }
+  // The live canvas's backdrop under text an arrow runs beneath — only
+  // over a painted background: on a transparent export (a raster that
+  // has to work in both appearances) a box in one theme's colour would
+  // be a patch in the other.
+  const backdropIds = includeBackground && flowchart
+    ? flowBackdropIds(flowchart, shapes.filter((s) => !s.pocketed), fontFamily)
+    : null;
+  const backdropColor = canvasBackgroundOverride || theme.canvasBackground;
 
   for (const layer of layerOrder) {
     if (layer.hidden) continue;
@@ -92,7 +101,10 @@ export function renderForExport(
       // pinned one exports in its world position: an export has no frame
       // to pin to, and the alternative is leaving it out of the picture.
       if (shape.type === "text" && shape.outline) drawOutlineShape(ctx, shape, theme, omitTextGlyphs, flagColors);
-      else if (shape.type === "text") drawTextShape(ctx, shape, theme, fontFamily, omitTextGlyphs, flagColors);
+      else if (shape.type === "text") {
+        if (backdropIds?.has(shape.id)) drawTextBackdrop(ctx, shape, fontFamily, backdropColor);
+        drawTextShape(ctx, shape, theme, fontFamily, omitTextGlyphs, flagColors);
+      }
       else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, false, theme);
     }
   }

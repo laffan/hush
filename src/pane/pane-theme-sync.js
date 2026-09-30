@@ -45,6 +45,7 @@ export async function previewPaneStyle(styleObj) {
       pane.notebook.applySettings(
         bridge.computeNotebookSettings({ ...appState, settings: synthSettings }, null),
       );
+      restoreNotebookPaneBackground(pane);
       if (pane.fileType === "desktop") await restoreDesktopPaneBackground(pane);
     }
   }
@@ -62,6 +63,7 @@ export async function syncPaneThemes() {
     if (pane.notebook) {
       if (!bridge) bridge = await getNotebookBridge();
       pane.notebook.applySettings(bridge.computeNotebookSettings(appState, lockedStyleId));
+      restoreNotebookPaneBackground(pane);
       if (pane.fileType === "desktop") await restoreDesktopPaneBackground(pane);
     }
     // Track tree-side renames — covers manual renames and the auto-
@@ -75,6 +77,22 @@ export async function syncPaneThemes() {
       }
     }
   }
+}
+
+/** `applySettings` writes the global background defaults, so a notebook
+ *  with its own pattern (a proof's blank page, a pick from the canvas's
+ *  background menu) has it laid back on top — the way the main canvas's
+ *  `applyNotebookSettings` does. Without this a theme change put the dot
+ *  grid back under a proof in a pane, and the pane's next save wrote the
+ *  grid into the file. */
+function restoreNotebookPaneBackground(pane) {
+  const bg = pane._notebookBackground;
+  const s = pane.notebook?.state;
+  if (!bg || !s) return;
+  if (bg.pattern) s.backgroundPattern = bg.pattern;
+  if (typeof bg.spacing === "number") s.gridSpacing = bg.spacing;
+  if (typeof bg.opacity === "number") s.gridOpacity = bg.opacity;
+  s.notify("theme");
 }
 
 /** A Desktop pane's canvas carries the project's own background, which

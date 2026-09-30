@@ -213,9 +213,16 @@ export function decodeNotebookContent(content: string | null | undefined): Noteb
     // Point bookmarks only — the old camera bookmarks are dropped.
     const bookmarks = [...normalizeBookmarks(obj.bookmarks), ...fromPins];
     const camera = isCamera(obj.camera) ? (obj.camera as Camera) : undefined;
-    const background = parseBackground(obj.background);
     const splits = Array.isArray(obj.splits) ? (obj.splits as Split[]).filter(isSplit) : undefined;
     const proof = parseProof(obj.proof);
+    // A proof's default is a blank page, whatever the user's default for
+    // ordinary notebooks is. The proof builder writes `blank` into the
+    // envelope, but a save path that dropped the background (stack
+    // columns used to) left the proof inheriting the global dot grid —
+    // so a proof with no stored pattern reads as blank here, once, for
+    // every load path at the same time.
+    let background = parseBackground(obj.background);
+    if (proof && !background?.pattern) background = { ...background, pattern: "blank" };
     return { shapes, layers, flowEdges, bookmarks, camera, background, splits, proof };
   }
   return null;
