@@ -44,7 +44,8 @@ import {
 // PERF-HUD (temporary): tracer singleton — see perf-hud.ts.
 import { perf } from "./perf-hud";
 import { placeBookmark } from "./bookmarks";
-import { addCardShape } from "./card-shape";
+import { addCardShape, toggleCardCollapsed } from "./card-shape";
+import { CARD_HEADER_HEIGHT } from "../cards/card-model";
 import { titledAreaFollowers } from "./drag-area-title";
 
 /**
@@ -1496,8 +1497,7 @@ export class DrawingState extends EventTarget {
       // Desktop file thumbnails aren't resizable — their size is the
       // thumbnail's natural size (drag / group still work as normal).
       if ((shape as ImageShape).fileRef) continue;
-      // A card resizes from its own corner grip (card-element.js).
-      if (shape.type === "text" && shape.card) continue;
+      const isCard = shape.type === "text" && !!shape.card;
       const b = getShapeBounds(shape, this.fontFamily);
       const pad = 6;
       const x1 = b.minX - pad, y1 = b.minY - pad;
@@ -1508,6 +1508,8 @@ export class DrawingState extends EventTarget {
         [mx, y1, "n"], [mx, y2, "s"], [x1, my, "w"], [x2, my, "e"],
       ];
       for (const [hx, hy, handle] of corners) {
+        // A card's height is its words': it takes only its side handles.
+        if (isCard && handle !== "e" && handle !== "w") continue;
         const dx = canvasPt.x - hx, dy = canvasPt.y - hy;
         if (Math.sqrt(dx * dx + dy * dy) < handleRadius) return { shapeId: shape.id, handle };
       }
@@ -1846,6 +1848,13 @@ export class DrawingState extends EventTarget {
       // single member out of a group.)
       this.selectedIds = new Set([hit.id]);
       this.notify("selectedIds");
+      return;
+    }
+    if (hit && hit.type === "text" && hit.card) {
+      // A card: its header strip folds it, anywhere else opens its
+      // editor (the card layer takes the keyboard to it).
+      if (canvasPt.y - hit.position.y < CARD_HEADER_HEIGHT) toggleCardCollapsed(this, hit.id);
+      else { this.focusCardId = hit.id; this.notify("shapes"); }
       return;
     }
     if (hit && hit.type === "text") {

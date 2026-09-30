@@ -59,6 +59,7 @@ import { FONT_FAMILY, LINE_HEIGHT_RATIO } from "./types";
 import { computePocketLayout, getMeasureCtx, hitTestShape, pointInBounds } from "./utils";
 import { parseLine, parseText } from "./markdown";
 import type { ResizeHandle } from "./state";
+import { resizedCard } from "./card-geometry";
 
 export function findShapeAtPoint(pt: Point, shapes: Shape[], fontFamily?: string): Shape | null {
   for (let i = shapes.length - 1; i >= 0; i--) {
@@ -238,7 +239,9 @@ export function applyResize(origShape: Shape, handle: ResizeHandle, orig: { minX
   if (maxY - minY < MIN) { if (handle.includes("n")) minY = maxY - MIN; else maxY = minY + MIN; }
   const newW = maxX - minX, newH = maxY - minY;
   switch (origShape.type) {
-    case "text": return { ...origShape, position: { x: minX, y: minY }, width: Math.max(MIN, newW), manualWidth: true };
+    case "text":
+      if (origShape.card) return resizedCard(origShape, handle.includes("w"), orig, newW);
+      return { ...origShape, position: { x: minX, y: minY }, width: Math.max(MIN, newW), manualWidth: true };
     case "image": {
       const origW = orig.maxX - orig.minX;
       const origH = orig.maxY - orig.minY;

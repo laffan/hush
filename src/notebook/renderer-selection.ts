@@ -101,7 +101,8 @@ export function drawSelectionHighlight(ctx: CanvasRenderingContext2D, shape: Sha
   const handleSize = 7 / zoom;
   const half = handleSize / 2;
   const mx = x1 + w / 2, my = y1 + h / 2;
-  const handles: [number, number][] = [
+  // A card is as tall as its words: only its sides resize it.
+  const handles: [number, number][] = shape.type === "text" && shape.card ? [[x1, my], [x1 + w, my]] : [
     [x1, y1], [x1 + w, y1], [x1, y1 + h], [x1 + w, y1 + h],
     [mx, y1], [mx, y1 + h], [x1, my], [x1 + w, my],
   ];

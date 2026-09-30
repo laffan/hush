@@ -6,25 +6,32 @@
  * scaled with the zoom, so a card is a thing on the page rather than a
  * label over it.
  *
- *  - the header is the handle: a press there selects the card and drags
- *    it (and the rest of the selection) like any other object; carried
- *    off the canvas, it becomes a card on whatever it is dropped on
- *    (`cards/card-drag.js`)
- *  - the body is the card's editor; each edit lands on the shape at
- *    once, and the pause after a run of typing records one undo step
- *  - the header's buttons: colour, collapse, insert-at-cursor, delete
+ * A card here is a text object. The layer lets every press through to
+ * the canvas, which selects, drags, groups and resizes cards the way it
+ * does any shape (width only: a card is as tall as its words — the
+ * layer measures each card and records the height on the shape so the
+ * canvas frames it true). What the layer adds:
  *
- * Only cards near the view are built (an editor per card is not free),
- * and the layer passes every pointer through except on the cards. It
- * sits over the canvas and the ink, under the bookmark markers (82), the
- * toolbar and shelf band and floating panes.
+ *  - a double-click opens the card's editor (`editing`: the card takes
+ *    the pointer until the keyboard leaves it); each edit lands on the
+ *    shape at once, and the pause after a run of typing records one
+ *    undo step. A double-click on the header strip folds it instead.
+ *  - the header's buttons (colour, insert-at-cursor, delete) answer
+ *    while the card is selected
+ *  - a drag of cards carried off the canvas lands them on whatever it
+ *    is let go over (`cards/card-canvas-drag.js`); while editing, the
+ *    header is the handle for the same thing (`cards/card-drag.js`)
+ *
+ * Only cards near the view are built (an editor per card is not free).
+ * The layer sits over the canvas and the ink, under the bookmark markers
+ * (82), the toolbar and shelf band and floating panes.
  */
 
 import type { DrawingState } from "../state";
 import type { TextShape } from "../types";
 import { canvasToScreen } from "../utils";
 import {
-  cardIndexOf, cardMetaOf, isCardShape, patchCardShape, removeCardShape, uncardShape,
+  cardIndexOf, cardMetaOf, isCardShape, patchCardShape, removeCardShape, setCardHeights, uncardShape,
 } from "../card-shape";
 import { cardBox } from "../card-geometry";
 import type { CardMeta } from "../../cards/card-model";
@@ -43,6 +50,7 @@ interface CardHandle {
 interface CardsBridge {
   createCardElement(o: Record<string, unknown>): CardHandle;
   startCardDrag(o: Record<string, unknown>): void;
+  watchCanvasCardDrag?(o: Record<string, unknown>): void;
   insertAtRememberedCursor(text: string): boolean;
   publishNotebookCards(fileId: string, cards: { id: string; title: string; bgColor?: string }[]): void;
 }
@@ -69,6 +77,25 @@ export function createCardLayer(state: DrawingState): HTMLElement {
   } as Partial<CSSStyleDeclaration>);
 
   const entries = new Map<string, Entry>();
+
+  // Each card's height, as its words lay out, onto its shape — batched
+  // to one change per frame.
+  const measured = new Map<string, number>();
+  let measureFrame = 0;
+  const heights = typeof ResizeObserver === "function" ? new ResizeObserver((list) => {
+    for (const r of list) {
+      const el = r.target as HTMLElement;
+      const id = el.dataset.shapeId;
+      if (id && !el.classList.contains("collapsed")) measured.set(id, Math.round(el.offsetHeight));
+    }
+    if (measureFrame || !measured.size) return;
+    measureFrame = requestAnimationFrame(() => {
+      measureFrame = 0;
+      const batch = new Map(measured);
+      measured.clear();
+      setCardHeights(state, batch);
+    });
+  }) : null;
 
   const current = (id: string): TextShape | null => {
     const s = state.shapes.find((x) => x.id === id);
@@ -115,9 +142,9 @@ export function createCardLayer(state: DrawingState): HTMLElement {
           else uncardShape(state, id);
         }
       },
-      onResize: (width: number, height: number) => {
+      onResize: (width: number) => {
         const s = current(id);
-        if (s) patchCardShape(state, id, { cardMeta: { ...(s.cardMeta || {}), width, height } as CardMeta });
+        if (s) patchCardShape(state, id, { cardMeta: { ...(s.cardMeta || {}), width } as CardMeta });
       },
       onHeaderDown: (e: PointerEvent) => {
         const s = current(id);
@@ -132,7 +159,13 @@ export function createCardLayer(state: DrawingState): HTMLElement {
         });
       },
     });
+    handle.el.dataset.shapeId = id;
     handle.el.addEventListener("wheel", (e) => forwardWheel(e, handle.el), { passive: false });
+    // Editing ends when the keyboard leaves the card.
+    handle.el.addEventListener("focusout", (e) => {
+      if (!handle.el.contains(e.relatedTarget as Node | null)) handle.el.classList.remove("editing");
+    });
+    heights?.observe(handle.el);
     layer.appendChild(handle.el);
     entry = { handle, shape, metaKey: JSON.stringify(shape.cardMeta || {}), recordTimer: null };
     return entry;
@@ -194,7 +227,13 @@ export function createCardLayer(state: DrawingState): HTMLElement {
   }
 
   let lastShapes: unknown = null;
+  let watching = false;
   const sync = () => {
+    if (!watching && state.canvasEl) {
+      const b = bridge();
+      const app = appState();
+      if (b?.watchCanvasCardDrag && app) { b.watchCanvasCardDrag({ appState: app, state }); watching = true; }
+    }
     const t = state.theme;
     layer.style.setProperty("--card-base", t.background);
     layer.style.setProperty("--card-fg", t.foreground);
@@ -224,13 +263,17 @@ export function createCardLayer(state: DrawingState): HTMLElement {
     for (const [id, e] of entries) {
       if (seen.has(id)) continue;
       if (e.recordTimer) flushHistory(e);
+      heights?.unobserve(e.handle.el);
       e.handle.destroy();
       entries.delete(id);
     }
     if (state.focusCardId) {
       const e = entries.get(state.focusCardId);
       state.focusCardId = null;
-      if (e) requestAnimationFrame(() => e.handle.focus());
+      if (e) {
+        e.handle.el.classList.add("editing");
+        requestAnimationFrame(() => e.handle.focus());
+      }
     }
     if (state.shapes !== lastShapes) { lastShapes = state.shapes; publishIndex(); }
   };

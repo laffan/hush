@@ -73,8 +73,8 @@ export function addCardShape(
 
 /** Add a card centred on a world point. */
 export function addCardShapeCentred(state: DrawingState, body: string, meta: CardMeta | null | undefined, center: Point): TextShape {
-  const { width, height } = cardSize(meta);
-  const h = meta?.collapsed ? CARD_HEADER_HEIGHT : height;
+  const { width } = cardSize(meta);
+  const h = meta?.collapsed ? CARD_HEADER_HEIGHT : CARD_DEFAULT_HEIGHT;
   return addCardShape(state, body, meta, { x: center.x - width / 2, y: center.y - h / 2 });
 }
 
@@ -112,6 +112,43 @@ export function removeCardShape(state: DrawingState, id: string): boolean {
   state.recordHistory();
   state.notify("shapes");
   return true;
+}
+
+/** Take several cards off the canvas as one undo step (a selection of
+ *  cards carried off to another surface). */
+export function removeCardShapes(state: DrawingState, ids: string[]): void {
+  const gone = new Set(ids);
+  if (!state.shapes.some((s) => gone.has(s.id))) return;
+  state.shapes = state.shapes.filter((s) => !gone.has(s.id));
+  const next = new Set([...state.selectedIds].filter((id) => !gone.has(id)));
+  if (next.size !== state.selectedIds.size) { state.selectedIds = next; state.notify("selectedIds"); }
+  state.recordHistory();
+  state.notify("shapes");
+}
+
+/** Fold a card to its header, or unfold it (a double-click on its
+ *  header strip). */
+export function toggleCardCollapsed(state: DrawingState, id: string): void {
+  const s = state.shapes.find((x) => x.id === id);
+  if (!isCardShape(s)) return;
+  const meta = { ...(s.cardMeta || {}) } as CardMeta;
+  patchCardShape(state, id, { cardMeta: { ...meta, collapsed: !meta.collapsed } });
+}
+
+/** Record the heights the card layer measured its cards' words at, so
+ *  the canvas selects, frames and groups each card by the box it shows.
+ *  Not an undo step: nothing the user did changed. */
+export function setCardHeights(state: DrawingState, heights: Map<string, number>): void {
+  let changed = false;
+  const next = state.shapes.map((s) => {
+    const h = heights.get(s.id);
+    if (h === undefined || !isCardShape(s) || s.cardHeight === h) return s;
+    changed = true;
+    return { ...s, cardHeight: h };
+  });
+  if (!changed) return;
+  state.shapes = next;
+  state.notify("shapes");
 }
 
 /** The selected text shapes that can become cards (not already cards,

@@ -2,23 +2,21 @@
  * Cards in a Doc.
  *
  * Once a `<<<` … `>>>` chunk is recognised it leaves the editing of the
- * text: the whole span is replaced by a block widget holding the card
- * (card-element.js), registered atomic so the caret steps over it the
- * way it steps over any widget. The only ways back into the text are
- * copying the card's words out, or its insert-at-cursor button. A card
- * pulled into the margin leaves only a zero-height anchor in the text and
- * is drawn by the float layer instead (card-doc-float.js); both kinds are
- * wired to the document by the same `bindCard`.
+ * text: the whole span is replaced by a zero-height block widget,
+ * registered atomic so the caret steps over it the way it steps over any
+ * widget, and the card itself is drawn beside the text by the float
+ * layer (card-doc-float.js) — it never pushes the words apart. The only
+ * ways back into the text are copying the card's words out, or its
+ * insert-at-cursor button.
  *
  * The card's body is edited in the card's own editor, and the two stay
  * one document the way the pinned outline and its panel do: each edit
  * is replayed onto the host at the body's offset (outside the host's
  * undo history — the card keeps its own), and whenever the host's copy
  * changes under the card (undo in the host, a sync pull, a refused
- * edit), the card takes it back as a programmatic diff. Which card a
- * widget is comes from where its DOM sits (`posAtDOM`), re-read at every
- * use, so nothing holds an offset that can go stale; a floating card's
- * entry follows its offset through every change instead.
+ * edit), the card takes it back as a programmatic diff. The float
+ * layer's entry for a card follows the card's first offset through
+ * every change, so nothing holds an offset that can go stale.
  *
  * Three things protect the fences from the text around them:
  *
@@ -38,7 +36,7 @@
  * wrote back out, and the words stay as plain text.
  */
 
-import { EditorView, Decoration, WidgetType, keymap } from "@codemirror/view";
+import { EditorView, Decoration, keymap } from "@codemirror/view";
 import { EditorState, StateField, Transaction, Text, Facet, Prec } from "@codemirror/state";
 import { insideCard, cardEdit } from "./card-facet.js";
 import { createCardElement } from "./card-element.js";
@@ -46,12 +44,9 @@ import { startCardDrag } from "./card-drag.js";
 import { noteHostView } from "./card-cursor.js";
 import { confirmLongCard } from "./card-confirm.js";
 import { CardAnchorWidget, createCardFloatLayer } from "./card-doc-float.js";
-import {
-  findCardsInDoc, serializeCard, cardSize, cardWordCount, isFloating,
-  CARD_HEADER_HEIGHT, CARD_CONFIRM_WORDS,
-} from "./card-model.ts";
+import { findCardsInDoc, serializeCard, cardWordCount, cardRemovalRange, cardTitle, CARD_CONFIRM_WORDS } from "./card-model.ts";
+import { announceCardsChanged } from "./card-index.js";
 import { programmaticChange } from "../editor/base-extensions.js";
-
 
 /** The app state, for widgets built inside the view. */
 const cardAppState = Facet.define({ combine: (v) => v[0] || null });
@@ -62,12 +57,10 @@ function buildCards(state) {
   if (state.facet(insideCard)) return EMPTY;
   const cards = findCardsInDoc(state.doc);
   if (!cards.length) return EMPTY;
-  // A card in the text is a block holding it; one floating in the margin
-  // leaves only a zero-height anchor (card-doc-float.js draws it).
-  const deco = Decoration.set(cards.map((c) => Decoration.replace({
-    widget: isFloating(c.meta) ? new CardAnchorWidget() : new CardWidget(c),
-    block: true,
-  }).range(c.from, c.to)));
+  // In the text a card is only a zero-height anchor; the float layer
+  // draws it beside the words.
+  const anchor = new CardAnchorWidget();
+  const deco = Decoration.set(cards.map((c) => Decoration.replace({ widget: anchor, block: true }).range(c.from, c.to)));
   return { cards, deco };
 }
 
@@ -111,23 +104,7 @@ export const cardField = StateField.define({
   ],
 });
 
-/** The card a widget's DOM stands for, as the document holds it now. */
-function locateCard(view, dom) {
-  let pos;
-  try { pos = view.posAtDOM(dom); } catch (_) { return null; }
-  const cards = view.state.field(cardField, false)?.cards || [];
-  return cards.find((c) => pos >= c.from && pos <= c.to) || null;
-}
-
-/** The span a card's removal takes: its lines plus one newline, so no
- *  blank line is left where it was. */
-export function cardRemovalRange(doc, span) {
-  if (span.to < doc.length) return { from: span.from, to: span.to + 1 };
-  if (span.from > 0) return { from: span.from - 1, to: span.to };
-  return { from: span.from, to: span.to };
-}
-
-/** Rewrite a card's metadata (colour, collapse, size). */
+/** Rewrite a card's metadata (colour, collapse, width, place). */
 export function writeCardMeta(view, span, meta) {
   view.dispatch({
     changes: { from: span.from, to: span.to, insert: serializeCard(span.body, meta) },
@@ -135,47 +112,12 @@ export function writeCardMeta(view, span, meta) {
   });
 }
 
-class CardWidget extends WidgetType {
-  constructor(span) {
-    super();
-    this.body = span.body;
-    this.meta = span.meta;
-    this.metaKey = span.metaText || "";
-  }
-
-  eq(other) { return other.body === this.body && other.metaKey === this.metaKey; }
-
-  get estimatedHeight() {
-    return (this.meta.collapsed ? CARD_HEADER_HEIGHT : cardSize(this.meta).height) + 12;
-  }
-
-  toDOM(view) {
-    const wrap = document.createElement("div");
-    wrap.className = "cm-card-block";
-    wrap._cardBinding = bindCard(view, wrap, this, () => locateCard(view, wrap));
-    return wrap;
-  }
-
-  updateDOM(dom) {
-    const b = dom._cardBinding;
-    if (!b) return false;
-    b.take(this);
-    return true;
-  }
-
-  destroy(dom) { dom._cardBinding?.destroy(); }
-
-  // The card holds its own editor: every event inside it is its own.
-  ignoreEvent() { return true; }
-}
-
 /**
- * Wire one card element to the host editor. `host` is the element the
- * card goes in — the block widget's, or a floating card's in the float
- * layer — and `locate` finds the card's span in the document as it
- * stands now.
+ * Wire one card element to the host editor. `host` is the card's element
+ * in the float layer, and `locate` finds the card's span in the document
+ * as it stands now.
  */
-function bindCard(view, host, widget, locate) {
+function bindCard(view, host, span0, locate) {
   const appState = view.state.facet(cardAppState);
   let pending = null;
   let scheduled = false;
@@ -208,8 +150,8 @@ function bindCard(view, host, widget, locate) {
 
   const card = createCardElement({
     appState,
-    body: widget.body,
-    meta: widget.meta,
+    body: span0.body,
+    meta: span0.meta,
     surface: "doc",
     onEdit(update) {
       pending = pending ? pending.compose(update.changes) : update.changes;
@@ -234,9 +176,9 @@ function bindCard(view, host, widget, locate) {
         });
       } else if (action === "insert") insertCardAtCursor(view, span);
     },
-    onResize(width, height) {
+    onResize(width) {
       const span = locate();
-      if (span) writeCardMeta(view, span, { ...span.meta, width, height });
+      if (span) writeCardMeta(view, span, { ...span.meta, width });
     },
     onHeaderDown(e) {
       if (pending) flush();
@@ -254,11 +196,11 @@ function bindCard(view, host, widget, locate) {
   wrap.appendChild(card.el);
 
   return {
-    take(w) {
+    take(span) {
       // Edits still on their way to the host are newer than the host's
       // copy; the replay brings the two back together.
-      if (!pending) card.setBody(w.body);
-      card.setMeta(w.meta);
+      if (!pending) card.setBody(span.body);
+      card.setMeta(span.meta);
     },
     destroy() {
       if (pending) flush();
@@ -382,6 +324,21 @@ function unmakeCard(view, body, fence) {
   view.dispatch({ changes: { ...range, insert: "" }, annotations: [cardEdit.of(true), Transaction.userEvent.of("delete.card")] });
 }
 
+/** What the sidebar shows of a surface's cards: their names and colours. */
+function rowsKey(value) {
+  return (value?.cards || []).map((c) => `${cardTitle(c.body)}\u0000${c.meta.bgColor || ""}`).join("\n");
+}
+
+/** The sidebar lists a Doc's cards (sidebar/files-panel-cards.js), read
+ *  from whichever surface shows the Doc: tell it when what it would show
+ *  changes — a card made, moved away, renamed by its first line. */
+const cardRowsWatcher = EditorView.updateListener.of((u) => {
+  if (!u.docChanged || u.state.facet(insideCard)) return;
+  const a = u.startState.field(cardField, false);
+  const b = u.state.field(cardField, false);
+  if (a !== b && rowsKey(a) !== rowsKey(b)) announceCardsChanged();
+});
+
 /**
  * The card extension for a doc surface. Rides both `editor.js`'s list and
  * `createBaseExtensions`, so a card is a card in the main editor, a pane,
@@ -396,6 +353,7 @@ export function createCardPlugin(appState) {
     cardFloatLayer,
     boundaryGuard,
     creationPrompt,
+    cardRowsWatcher,
     noteHostView,
     Prec.highest(keymap.of([{ key: "Enter", run: enterBesideCard }])),
   ];

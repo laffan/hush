@@ -4,9 +4,8 @@
  * (sidebar/files-panel-cards.js).
  *
  *   - a Doc (any editor surface — main, pane, stack column, Zen): over
- *     the text, the boundary between lines nearest the pointer; over the
- *     margin, floating there beside the line it sits by
- *     (card-doc-float.js#docPlacement);
+ *     the text, beside the line under the pointer; over the margin,
+ *     where it was let go (card-doc-float.js#docPlacement);
  *   - a canvas: the pointer, with the spot the card was held by under it;
  *   - a document or notebook row in the sidebar: the end of the document
  *     or the middle of the notebook's view (card-transfer.js).
@@ -20,7 +19,7 @@ import { Transaction } from "@codemirror/state";
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { liveNotebookCanvases } from "../pane/text-drag.js";
 import { cardEdit, insideCard } from "./card-facet.js";
-import { serializeCard } from "./card-model.ts";
+import { serializeCard, cardInsertion, withoutPosition } from "./card-model.ts";
 import { deliverCardToFile, screenToWorld } from "./card-transfer.js";
 import { docPlacement } from "./card-doc-float.js";
 
@@ -56,34 +55,49 @@ export function canvasWorld(nbState, canvasEl, x, y) {
 }
 
 /**
- * Land `card` ({ body, meta }) on `target` at screen point (x, y).
- * `grab` is where on the card it was held, in the card's own pixels.
- * Resolves true once it has landed.
+ * Land `cards` ({ body, meta, dx?, dy? }, the first the one held, the
+ * rest placed from it) on `target` at screen point (x, y). `grab` is
+ * where on the held card the pointer is, in card pixels. Resolves true
+ * once they have landed.
  */
-export async function landCard(appState, target, card, x, y, grab = { x: 16, y: 12 }) {
-  if (!target) return false;
+export async function landCards(appState, target, cards, x, y, grab = { x: 16, y: 12 }) {
+  if (!target || !cards.length) return false;
   if (target.kind === "cm") {
-    const place = docPlacement(target.view, x, y, grab, card.meta);
-    const text = serializeCard(card.body, place.meta);
+    // All beside the one line, where the held card goes; the float layer
+    // stacks them.
+    const place = docPlacement(target.view, x, y, grab, cards[0].meta);
+    const at = { xPos: place.meta.xPos, yPos: place.meta.yPos };
+    const text = cards.map((c) => serializeCard(c.body, { ...withoutPosition(c.meta), ...at })).join("\n");
     target.view.dispatch({
-      changes: { from: place.pos, insert: place.before ? `${text}\n` : `\n${text}` },
+      changes: cardInsertion(target.view.state.doc, place.pos, text),
       annotations: [cardEdit.of(true), Transaction.userEvent.of("move.card")],
     });
     return true;
   }
   if (target.kind === "nb") {
     const { addCardShape } = await import("../notebook/card-shape.ts");
-    const w = canvasWorld(target.state, target.canvasEl, x, y);
-    addCardShape(target.state, card.body, card.meta, { x: w.x - grab.x, y: w.y - grab.y });
+    const s = target.state;
+    const w = canvasWorld(s, target.canvasEl, x, y);
+    const ids = cards.map((c) => addCardShape(s, c.body, c.meta, {
+      x: w.x - grab.x + (c.dx || 0), y: w.y - grab.y + (c.dy || 0),
+    }, { select: false }).id);
+    s.selectedIds = new Set(ids);
+    s.notify("selectedIds");
     return true;
   }
   if (target.kind === "row") {
-    const name = await deliverCardToFile(appState, target.fileId, card.body, card.meta);
+    let name = "";
+    for (const c of cards) name = await deliverCardToFile(appState, target.fileId, c.body, c.meta);
     const { showImportToast } = await import("../editor/import-toast.js");
-    showImportToast(`Card moved to ${name}`, "info");
+    showImportToast(cards.length > 1 ? `${cards.length} cards moved to ${name}` : `Card moved to ${name}`, "info");
     return true;
   }
   return false;
+}
+
+/** Land one card ({ body, meta }); see `landCards`. */
+export function landCard(appState, target, card, x, y, grab) {
+  return landCards(appState, target, [card], x, y, grab);
 }
 
 /** Resolve and land in one — a card row let go outside the sidebar. */

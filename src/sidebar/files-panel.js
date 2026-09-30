@@ -29,7 +29,7 @@ import {
 import { isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree, renderTabMarkerRow, openDocAtTab } from "./files-panel-tabs.js";
 import { isHeadingItem, augmentTreeWithHeadings, stripHeadingsFromTree, renderHeadingRow, openDocAtHeading } from "./files-panel-headings.js";
 import {
-  isCardItem, augmentTreeWithCards, stripCardsFromTree, renderCardRow, openCard,
+  isCardItem, augmentTreeWithCards, foldCardParents, noteCardFolds, stripCardsFromTree, renderCardRow, openCard,
   dropCardOnRow, dropCardOutside, trackCardRowHover, onCardIndexChange,
 } from "./files-panel-cards.js";
 import { renderFlaggedSection } from "./files-panel-flagged.js";
@@ -278,7 +278,7 @@ export function createFilesPanel(container, state, hidePanel) {
     onDropExternal: (item, ev) => (isCardItem(item) ? dropCardOnRow(state, item, ev) : onLocalDropExternal(state, item, ev)), // a card onto a file row; anything else onto a Local Sync folder → move to disk
     onDragStart: (item) => { if (isCardItem(item)) stopCardHover = trackCardRowHover(); },
     onCollapseChange: (ids) => {
-      state.updateSettings({ collapsedFolderIds: ids }); // persist folder open/closed state
+      state.updateSettings({ collapsedFolderIds: noteCardFolds(ids) }); // persist folder open/closed state (rows holding cards: files-panel-cards.js)
       // The toggle re-rendered the tree — re-nest Local Folders after.
       queueMicrotask(() => positionNestedSections(state));
     },
@@ -364,6 +364,7 @@ export function createFilesPanel(container, state, hidePanel) {
   const persistedCollapsed = state.settings?.collapsedFolderIds;
   const initialCollapsed = Array.isArray(persistedCollapsed) ? persistedCollapsed : defaultCollapsedIds(state);
   for (const id of initialCollapsed) sortableInstance.state.collapsedIds.add(id);
+  foldCardParents(sortedTree, sortableInstance.state.collapsedIds);
   sortableInstance.render();
   positionNestedSections(state);
 
@@ -510,6 +511,7 @@ function refreshList(state) {
     renderedDeskId = renderedDeskIdFor(state);
     const sorted = augmentTreeWithCards(state, augmentTreeWithHeadings(state, augmentTreeWithTabs(state, normalizeProjectChildren(visibleTopLevel(state)))));
     numberLabels = computeNumberLabels(sorted, numberSkip, isInboxId);
+    foldCardParents(sorted, sortableInstance.state.collapsedIds);
     sortableInstance.setData(sorted);
   }
   positionNestedSections(state);

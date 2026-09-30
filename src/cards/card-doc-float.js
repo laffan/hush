@@ -1,26 +1,30 @@
 /**
- * Cards pulled out of a Doc's text into its margin.
+ * Cards beside a Doc's text. A card never moves the text: its markdown
+ * stays in the document at its *anchor* — the line it belongs beside —
+ * but in the text it is only a zero-height block widget over its lines
+ * (so the caret steps over it and nothing can type into it), and the
+ * card itself is drawn by `cardFloatLayer`, a layer inside the editor's
+ * scroller positioned from the anchor line's height-map entry, so it
+ * scrolls with the words it belongs to.
  *
- * A card in a Doc sits in the text by default (a block between two
- * lines). Dragged into the margin, it floats there instead: its markdown
- * stays in the document — moved to the line it now sits beside, its
- * *anchor* — but it takes no room in the text, which closes up behind
- * it. Where it floats is kept in its metadata as `xPos` (from the left
- * edge of the text column; negative is the left margin) and `yPos` (from
- * the top of the anchor line), so it scrolls with the words it belongs
- * to and comes back in the same place next time. Dropped back over the
- * text column, it goes back into the flow and loses both keys.
+ * **Where it sits.** By default in the right margin, level with its
+ * anchor line. Dragged somewhere in a margin it stays where it was put:
+ * `xPos` (from the text column's left edge; negative is the left margin)
+ * and `yPos` (from the anchor line's top) in its metadata. Cards that
+ * would overlap stack downward instead.
  *
- * In the text a floating card is a zero-height block widget over its
- * lines (so the caret still steps over it and nothing can type into it);
- * the card itself is drawn by `cardFloatLayer`, a layer inside the
- * editor's scroller positioned from the anchor line's height-map entry.
+ * **Making room.** Where the right margin is narrower than
+ * `MIN_MARGIN` — a narrow window, a pane — the text gives up a gutter of
+ * that width on its right for the cards (`cm-card-gutter` on the editor,
+ * padding on `.cm-content`), and cards fit into it, narrowed as far as
+ * they must be. A card is narrowed to fit its margin rather than let it
+ * cover the words.
  */
 
 import { ViewPlugin, WidgetType } from "@codemirror/view";
-import { cardSize, isFloating, withoutPosition, CARD_MIN_WIDTH } from "./card-model.ts";
+import { cardSize, withoutPosition, CARD_MIN_WIDTH } from "./card-model.ts";
 
-/** What a floating card leaves in the text: nothing you can see. */
+/** What a card leaves in the text: nothing you can see. */
 export class CardAnchorWidget extends WidgetType {
   eq() { return true; }
   toDOM() {
@@ -32,53 +36,60 @@ export class CardAnchorWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
-const GAP = 12;   // between a floating card and the text column
-const EDGE = 8;   // between a floating card and the surface's edge
+/** A margin narrower than this gets a gutter carved out of the text. */
+export const MIN_MARGIN = 100;
+const GAP = 10;        // between a card and the text
+const EDGE = 6;        // between a card and the surface's edge
+const STACK_GAP = 8;   // between two cards stacked in one margin
+const NARROWEST = 60;  // a card in a gutter, at its narrowest
 
-/**
- * Where a card let go at (x, y) over `view` goes. Over the text column:
- * into the flow at the nearest line boundary. Over a margin: floating in
- * that margin, beside the line at its top edge — fitted into the margin
- * (narrowed, down to the minimum width, if the margin is narrow), since
- * pulling a card into the margin is the point.
- *
- * `grab` is where on the card it is held, in the card's own pixels.
- * Returns `{ pos, before, lineY, float, meta }`: insert the card at `pos`
- * (on a line of its own before / after), carrying `meta`.
- */
-export function docPlacement(view, x, y, grab, meta) {
+function textEdges(view) {
   const content = view.contentDOM.getBoundingClientRect();
-  const docTop = view.documentTop;
-  if (x >= content.left && x <= content.right) {
-    const block = view.lineBlockAtHeight(y - docTop);
-    const before = y < docTop + (block.top + block.bottom) / 2;
-    return {
-      pos: before ? block.from : block.to,
-      before,
-      lineY: docTop + (before ? block.top : block.bottom),
-      float: false,
-      meta: withoutPosition(meta),
-    };
-  }
+  const pad = parseFloat(getComputedStyle(view.contentDOM).paddingRight) || 0;
   const scroller = view.scrollDOM.getBoundingClientRect();
-  const visibleRight = scroller.left + view.scrollDOM.clientWidth;
-  const right = x > content.right;
-  const lo = right ? content.right + GAP : scroller.left + EDGE;
-  const hi = right ? visibleRight - EDGE : content.left - GAP;
-  const size = cardSize(meta);
-  const width = Math.min(size.width, Math.max(CARD_MIN_WIDTH, hi - lo));
-  const left = Math.max(lo, Math.min(hi - width, x - Math.min(grab.x, width - 12)));
-  const top = y - grab.y;
-  const block = view.lineBlockAtHeight(Math.max(0, top - docTop));
-  const next = { ...meta, xPos: left - content.left, yPos: top - (docTop + block.top) };
-  if (width !== size.width) next.width = width;
-  return { pos: block.from, before: true, lineY: docTop + block.top, float: true, meta: next };
+  return {
+    content,
+    textLeft: content.left,
+    textRight: content.right - pad,
+    visLeft: scroller.left,
+    visRight: scroller.left + view.scrollDOM.clientWidth,
+    gutter: view.dom.classList.contains("cm-card-gutter"),
+  };
 }
 
 /**
- * The layer that draws a Doc's floating cards. Each card keeps its
- * element across edits: entries follow their card's first offset through
- * every change, so typing above a card, or in it, never rebuilds it.
+ * Where a card let go at (x, y) over `view` goes. `grab` is where on the
+ * card it is held, in the card's own pixels. Over the text: beside the
+ * line under the pointer, in the default place. Over a margin with room
+ * for it: where it was let go, beside the line at its top edge. (In a
+ * gutter there is one place — the gutter — so only the height is kept.)
+ *
+ * Returns `{ pos, lineY, overText, meta }`: the card's markdown goes in
+ * on a line of its own before `pos`, carrying `meta`.
+ */
+export function docPlacement(view, x, y, grab, meta) {
+  const { textLeft, textRight, visLeft, visRight, gutter } = textEdges(view);
+  const docTop = view.documentTop;
+  const plain = withoutPosition(meta);
+  if (x >= textLeft && x <= textRight) {
+    const block = view.lineBlockAtHeight(y - docTop);
+    return { pos: block.from, lineY: docTop + block.top, overText: true, meta: plain };
+  }
+  const top = y - grab.y;
+  const block = view.lineBlockAtHeight(Math.max(0, top - docTop));
+  const yPos = Math.max(0, Math.round(top - (docTop + block.top)));
+  const right = x > textRight;
+  const room = right ? visRight - textRight : textLeft - visLeft;
+  const next = gutter || room < MIN_MARGIN
+    ? { ...plain, yPos }
+    : { ...plain, xPos: Math.round(x - grab.x - textLeft), yPos };
+  return { pos: block.from, lineY: docTop + block.top, overText: false, meta: next };
+}
+
+/**
+ * The layer that draws a Doc's cards. Each card keeps its element across
+ * edits: entries follow their card's first offset through every change,
+ * so typing above a card, or in it, never rebuilds it.
  *
  * @param {object} o
  * @param {import("@codemirror/state").StateField} o.field  The card field.
@@ -92,6 +103,9 @@ export function createCardFloatLayer({ field, bind }) {
       this.layer = document.createElement("div");
       this.layer.className = "cm-card-float-layer";
       view.scrollDOM.appendChild(this.layer);
+      // A card that changes height (typed into, narrowed) restacks the
+      // cards below it without any change to the document.
+      this.resize = typeof ResizeObserver === "function" ? new ResizeObserver(() => this.measure()) : null;
       this.sync(view.state);
       this.measure();
     }
@@ -103,7 +117,7 @@ export function createCardFloatLayer({ field, bind }) {
     }
 
     spans(state) {
-      return (state.field(field, false)?.cards || []).filter((c) => isFloating(c.meta));
+      return state.field(field, false)?.cards || [];
     }
 
     sync(state) {
@@ -119,15 +133,26 @@ export function createCardFloatLayer({ field, bind }) {
           host.className = "cm-card-float";
           host.style.setProperty("--float-w", `${cardSize(span.meta).width}px`);
           this.layer.appendChild(host);
-          e = { from: span.from, host, width: 0 };
+          e = { from: span.from, host };
           const entry = e;
           e.binding = bind(this.view, host, span, () => this.spans(this.view.state).find((s) => s.from === entry.from) || null);
+          this.resize?.observe(host);
         }
         e.meta = span.meta;
         next.push(e);
       }
-      for (const e of left) { e.binding.destroy(); e.host.remove(); }
+      for (const e of left) { this.resize?.unobserve(e.host); e.binding.destroy(); e.host.remove(); }
       this.entries = next;
+      if (!next.length) this.setGutter(false);
+    }
+
+    setGutter(on) {
+      const dom = this.view.dom;
+      if (dom.classList.contains("cm-card-gutter") === on) return;
+      dom.classList.toggle("cm-card-gutter", on);
+      dom.style.setProperty("--card-gutter", `${MIN_MARGIN}px`);
+      // The text rewraps in the new width: have CodeMirror re-measure it.
+      requestAnimationFrame(() => this.view.requestMeasure());
     }
 
     measure() {
@@ -135,47 +160,69 @@ export function createCardFloatLayer({ field, bind }) {
       this.view.requestMeasure({
         key: this,
         read: (view) => {
+          const edges = textEdges(view);
           const scroller = view.scrollDOM.getBoundingClientRect();
-          const content = view.contentDOM.getBoundingClientRect();
           const originX = scroller.left - view.scrollDOM.scrollLeft;
           const originY = scroller.top - view.scrollDOM.scrollTop;
-          const colLeft = content.left - originX;
-          const colRight = colLeft + content.width;
-          const visLeft = view.scrollDOM.scrollLeft + EDGE;
-          const visRight = view.scrollDOM.scrollLeft + view.scrollDOM.clientWidth - EDGE;
-          return this.entries.map((e) => {
+          // Whether the text needs to make room is judged on the margin
+          // it would have *without* the gutter, or the gutter would take
+          // itself away again.
+          const ownPad = edges.gutter ? MIN_MARGIN : 0;
+          const naturalRight = edges.visRight - edges.textRight - ownPad;
+          const gutter = naturalRight < MIN_MARGIN;
+          const textRight = edges.textRight + ownPad - (gutter ? MIN_MARGIN : 0);
+          const colLeft = edges.textLeft - originX;
+          const colRight = textRight - originX;
+          const visLeft = edges.visLeft - originX + EDGE;
+          const visRight = edges.visRight - originX - EDGE;
+          const leftRoom = colLeft - GAP - visLeft;
+          const rightRoom = visRight - colRight - GAP;
+          const placed = this.entries.map((e) => {
             const block = view.lineBlockAt(Math.min(e.from, view.state.doc.length));
-            // Fitted into its margin as the surface is now — a window
-            // narrowed since the card was placed (or a pane, with less
-            // margin to give) narrows the card before it lets it cover
-            // the text.
-            let width = cardSize(e.meta).width;
-            let left = colLeft + e.meta.xPos;
-            if (e.meta.xPos + width / 2 >= content.width / 2) {
-              width = Math.min(width, Math.max(CARD_MIN_WIDTH, visRight - colRight - GAP));
-              left = Math.min(Math.max(left, colRight + GAP), visRight - width);
-            } else {
-              width = Math.min(width, Math.max(CARD_MIN_WIDTH, colLeft - GAP - visLeft));
-              left = Math.max(Math.min(left, colLeft - GAP - width), visLeft);
-            }
-            const top = view.documentTop - originY + block.top + e.meta.yPos;
-            return { e, left, top, width };
+            const want = cardSize(e.meta).width;
+            const hasX = typeof e.meta.xPos === "number";
+            // Left only where the card was put there and the left margin
+            // can hold one; everything else is the right margin's.
+            const leftSide = !gutter && hasX && e.meta.xPos + want / 2 < colRight - colLeft - want / 2
+              && e.meta.xPos < 0 && leftRoom >= MIN_MARGIN - GAP;
+            const room = leftSide ? leftRoom : rightRoom;
+            const width = Math.max(NARROWEST, Math.min(want, room));
+            let left;
+            if (leftSide) left = Math.max(visLeft, Math.min(colLeft + e.meta.xPos, colLeft - GAP - width));
+            else if (hasX && !gutter) left = Math.min(Math.max(colLeft + e.meta.xPos, colRight + GAP), visRight - width);
+            else left = colRight + GAP;
+            const top = view.documentTop - originY + block.top + (typeof e.meta.yPos === "number" ? e.meta.yPos : 0);
+            const height = e.host.firstElementChild?.offsetHeight || 0;
+            return { e, left, top, width, height, side: leftSide ? "l" : "r" };
           });
+          // Cards that would overlap in one margin stack downward.
+          for (const side of ["l", "r"]) {
+            let bottom = -Infinity;
+            for (const p of placed.filter((q) => q.side === side).sort((a, b) => a.top - b.top)) {
+              if (p.top < bottom + STACK_GAP) p.top = bottom + STACK_GAP;
+              bottom = p.top + p.height;
+            }
+          }
+          return { gutter, placed };
         },
-        write: (pos) => {
-          for (const { e, left, top, width } of pos) {
+        write: ({ gutter, placed }) => {
+          this.setGutter(gutter);
+          for (const { e, left, top, width } of placed) {
             if (!e.host.isConnected) continue;
             e.host.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
             e.host.style.setProperty("--float-w", `${Math.round(width)}px`);
+            e.host.firstElementChild?.classList.toggle("narrow", width < CARD_MIN_WIDTH);
           }
         },
       });
     }
 
     destroy() {
+      this.resize?.disconnect();
       for (const e of this.entries) e.binding.destroy();
       this.entries = [];
       this.layer.remove();
+      this.view.dom.classList.remove("cm-card-gutter");
     }
   });
 }

@@ -18,7 +18,7 @@ import { Transaction } from "@codemirror/state";
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { liveNotebookCanvases } from "../pane/text-drag.js";
 import { cardEdit } from "./card-facet.js";
-import { findCards, serializeCard, cardSize, withoutPosition, CARD_HEADER_HEIGHT } from "./card-model.ts";
+import { findCards, serializeCard, cardSize, withoutPosition, CARD_HEADER_HEIGHT, CARD_DEFAULT_HEIGHT } from "./card-model.ts";
 import { publishNotebookCards } from "./card-index.js";
 
 // Read at call time: the module loads with the editor, before a test
@@ -182,8 +182,8 @@ export async function addCardToNotebook(state, fileId, body, meta, { place = "ce
     if (place === "grid") at = cs.freeCardSlot(env.shapes, origin);
     else {
       const c = savedViewCentre(env);
-      const { width, height } = cardSize(meta);
-      at = { x: c.x - width / 2, y: c.y - (meta?.collapsed ? CARD_HEADER_HEIGHT : height) / 2 };
+      const { width } = cardSize(meta);
+      at = { x: c.x - width / 2, y: c.y - (meta?.collapsed ? CARD_HEADER_HEIGHT : CARD_DEFAULT_HEIGHT) / 2 };
     }
     env.shapes.push(cs.makeCardShape(body, meta, at, layerId));
   });

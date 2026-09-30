@@ -10,10 +10,11 @@
 import { createPaneEditor } from "../pane/pane-editor.js";
 import { setCardEditorFactory, createCardElement } from "./card-element.js";
 import { startCardDrag } from "./card-drag.js";
+import { watchCanvasCardDrag } from "./card-canvas-drag.js";
 import { insertAtRememberedCursor } from "./card-cursor.js";
 import { publishNotebookCards } from "./card-index.js";
 
 export function initCards() {
   setCardEditorFactory(createPaneEditor);
-  window.__hushCards = { createCardElement, startCardDrag, insertAtRememberedCursor, publishNotebookCards };
+  window.__hushCards = { createCardElement, startCardDrag, watchCanvasCardDrag, insertAtRememberedCursor, publishNotebookCards };
 }

@@ -428,8 +428,6 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       // where it is on screen, so a highlight drawn there would ring
       // empty canvas.
       if (shape.type === "text" && shape.outline && shape.outlinePin) continue;
-      // The card draws its own selection ring (`.hush-card.selected`).
-      if (shape.type === "text" && shape.card) continue;
       if (shape.id === state.croppingImageId && shape.type === "image") {
         drawCropOverlay(ctx, shape, camera.zoom);
       } else {

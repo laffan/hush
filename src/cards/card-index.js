@@ -40,6 +40,12 @@ function announce() {
   });
 }
 
+/** A Doc's cards changed where it is open (cards/card-doc-plugin.js):
+ *  the sidebar re-reads them from its text. */
+export function announceCardsChanged() {
+  announce();
+}
+
 export function publishNotebookCards(fileId, cards) {
   if (!fileId) return;
   const next = (cards || []).map((c) => ({ id: c.id, title: c.title, ...(c.bgColor ? { bgColor: c.bgColor } : {}) }));

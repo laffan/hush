@@ -3,11 +3,12 @@
  * in a Doc, on a canvas and in Courier looks and behaves the same.
  *
  *   ┌──────────────────────────────────────┐
- *   │ ⠿ title        12/100  ●  ▾  ⤓  ×   │  header: drag handle + buttons
+ *   │ ⠿ title                    ●  ⤓  ×  │  header: drag handle + buttons
  *   ├──────────────────────────────────────┤
- *   │ the card's markdown, in a real       │  body: a CodeMirror editor
- *   │ CodeMirror editor                    │
- *   └──────────────────────────────────────┘◢ resize grip
+ *   │ the card's markdown, in a real       │  body: a CodeMirror editor,
+ *   │ CodeMirror editor                    ┃  as tall as its text and one
+ *   │                                      ┃  line more; the right edge
+ *   └──────────────────────────────────────┘  resizes the width
  *
  * The body is an editor built by the pane editor factory from the same
  * extension list every doc surface uses — that is what makes "cards
@@ -40,7 +41,7 @@ import { createFixedWordLimit } from "../editor/word-limit.js";
 import { openBookmarkColorPalette } from "../ui/bookmark-ui.js";
 import { insideCard } from "./card-facet.js";
 import {
-  CARD_MAX_WORDS, CARD_HEADER_HEIGHT, CARD_MIN_WIDTH, CARD_MIN_HEIGHT,
+  CARD_MAX_WORDS, CARD_MIN_WIDTH,
   cardSize, cardTitle, cardWordCount, isFenceLine, parseMetaLine,
 } from "./card-model.ts";
 
@@ -51,7 +52,6 @@ export function setCardEditorFactory(fn) { editorFactory = fn; }
 
 const ICONS = {
   grip: `<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="4" cy="3" r="1"/><circle cx="8" cy="3" r="1"/><circle cx="4" cy="6" r="1"/><circle cx="8" cy="6" r="1"/><circle cx="4" cy="9" r="1"/><circle cx="8" cy="9" r="1"/></svg>`,
-  collapse: `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg>`,
   insert: `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5v5.5M3.8 4.8L6 7l2.2-2.2"/><path d="M4.5 10.5h3M6 8.8v3.2"/></svg>`,
   delete: `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 3.5l5 5M8.5 3.5l-5 5"/></svg>`,
 };
@@ -97,18 +97,18 @@ const overLimitGuard = EditorState.transactionFilter.of((tr) => {
  * @param {(update: import("@codemirror/view").ViewUpdate) => void} [o.onEdit]
  *   A user edit in the body (never a `setBody`).
  * @param {(action: string, e?: Event, arg?: unknown) => void} [o.onAction]
- *   "color" (arg: the colour, or null to clear) | "collapse" | "insert" | "delete"
+ *   "color" (arg: the colour, or null to clear) | "collapse" (a double-
+ *   click on the header) | "insert" | "delete"
  * @param {(e: PointerEvent) => void} [o.onHeaderDown]  A press on the header
  *   outside its buttons — the start of a drag.
- * @param {(width: number, height: number) => void} [o.onResize]  End of a
- *   resize from the corner grip.
+ * @param {(width: number) => void} [o.onResize]  End of a resize from the
+ *   right edge. A card's height is its text's (and one line more).
  * @param {() => number} [o.getScale]  CSS scale the card is drawn at (a
- *   canvas's zoom), so the grip tracks the pointer.
+ *   canvas's zoom), so the edge tracks the pointer.
  * @param {() => void} [o.onEscape]
  * @param {() => void} [o.onSubmit]  ⌘↩ in the body (Courier's send).
  * @param {boolean} [o.hideInsert]  No insert-at-cursor button (Courier).
  * @param {boolean} [o.hideDelete]
- * @param {boolean} [o.hideCollapse]
  */
 export function createCardElement(o) {
   const el = document.createElement("div");
@@ -117,9 +117,7 @@ export function createCardElement(o) {
     <div class="hush-card-header">
       <span class="hush-card-grip">${ICONS.grip}</span>
       <span class="hush-card-title"></span>
-      <span class="hush-card-count"></span>
       <button type="button" class="hush-card-btn hush-card-color" data-act="color" data-tooltip="Background colour" aria-label="Background colour"><span class="hush-card-swatch"></span></button>
-      ${o.hideCollapse ? "" : `<button type="button" class="hush-card-btn hush-card-collapse" data-act="collapse" data-tooltip="Collapse" aria-label="Collapse">${ICONS.collapse}</button>`}
       ${o.hideInsert ? "" : `<button type="button" class="hush-card-btn" data-act="insert" data-tooltip="Insert at cursor" aria-label="Insert at cursor">${ICONS.insert}</button>`}
       ${o.hideDelete ? "" : `<button type="button" class="hush-card-btn" data-act="delete" data-tooltip="Delete card" aria-label="Delete card">${ICONS.delete}</button>`}
     </div>
@@ -127,7 +125,6 @@ export function createCardElement(o) {
     <div class="hush-card-resize" aria-hidden="true"></div>`;
   const header = el.querySelector(".hush-card-header");
   const titleEl = el.querySelector(".hush-card-title");
-  const countEl = el.querySelector(".hush-card-count");
   const bodyEl = el.querySelector(".hush-card-body");
   const grip = el.querySelector(".hush-card-resize");
 
@@ -137,26 +134,17 @@ export function createCardElement(o) {
 
   function paintCount(text) {
     const n = cardWordCount(text);
-    countEl.textContent = `${n}/${CARD_MAX_WORDS}`;
     el.classList.toggle("over-limit", n > CARD_MAX_WORDS);
     el.classList.toggle("at-limit", n >= CARD_MAX_WORDS);
     titleEl.textContent = cardTitle(text);
   }
 
   function paintMeta() {
-    const { width, height } = cardSize(meta);
-    el.style.width = `${width}px`;
-    el.style.height = meta.collapsed ? `${CARD_HEADER_HEIGHT}px` : `${height}px`;
+    el.style.width = `${cardSize(meta).width}px`;
     el.classList.toggle("collapsed", !!meta.collapsed);
     if (meta.bgColor) el.style.setProperty("--card-accent", meta.bgColor);
     else el.style.removeProperty("--card-accent");
     el.classList.toggle("has-color", !!meta.bgColor);
-    const btn = el.querySelector(".hush-card-collapse");
-    const label = meta.collapsed ? "Expand" : "Collapse";
-    if (btn) {
-      btn.dataset.tooltip = label;
-      btn.setAttribute("aria-label", label);
-    }
   }
 
   // ── The body's editor ────────────────────────────────────────────
@@ -215,6 +203,12 @@ export function createCardElement(o) {
           onPick: (c) => o.onAction?.("color", e, c),
           actions: meta.bgColor ? [{ label: "No colour", run: () => o.onAction?.("color", e, null) }] : [],
         });
+        // The palette mounts on <body> in the popover band; a card in a
+        // sheet above that band (Courier, at --z-courier) needs it over
+        // the sheet, not behind it.
+        const sheet = el.closest(".courier-root");
+        const pop = document.querySelector(".bm-palette");
+        if (sheet && pop) pop.style.zIndex = "calc(var(--z-courier) + 2)";
         return;
       }
       o.onAction?.(act, e);
@@ -232,29 +226,29 @@ export function createCardElement(o) {
     o.onAction?.("collapse", e);
   });
 
-  // ── Resize grip ──────────────────────────────────────────────────
+  // ── Width, from the right edge ─────────────────────────────────
   grip.addEventListener("pointerdown", (e) => {
     if (e.button !== 0 || meta.collapsed) return;
     e.stopPropagation();
     e.preventDefault();
     const scale = o.getScale?.() || 1;
-    const start = { x: e.clientX, y: e.clientY, ...cardSize(meta) };
-    let w = start.width, h = start.height;
+    const startX = e.clientX;
+    const startW = el.getBoundingClientRect().width / scale;
+    let w = Math.round(startW);
     try { grip.setPointerCapture(e.pointerId); } catch (_) { /* detached */ }
     const move = (me) => {
-      w = Math.max(CARD_MIN_WIDTH, Math.round(start.width + (me.clientX - start.x) / scale));
-      h = Math.max(CARD_MIN_HEIGHT, Math.round(start.height + (me.clientY - start.y) / scale));
-      // Important: a floating card's width is otherwise its margin's call
+      w = Math.max(CARD_MIN_WIDTH, Math.round(startW + (me.clientX - startX) / scale));
+      // Important: a Doc card's width is otherwise its margin's call
       // (styles/cards.css, `.cm-card-float`).
       el.style.setProperty("width", `${w}px`, "important");
-      el.style.height = `${h}px`;
     };
     const up = () => {
       el.style.width = `${w}px`;
       grip.removeEventListener("pointermove", move);
       grip.removeEventListener("pointerup", up);
       grip.removeEventListener("pointercancel", up);
-      if (w !== start.width || h !== start.height) o.onResize?.(w, h);
+      if (Math.abs(w - startW) >= 1) o.onResize?.(w);
+      else paintMeta();
     };
     grip.addEventListener("pointermove", move);
     grip.addEventListener("pointerup", up);
@@ -303,9 +297,7 @@ export function createCardElement(o) {
 export function cardGhost(body, meta) {
   const el = document.createElement("div");
   el.className = "hush-card hush-card-ghost";
-  const { width, height } = cardSize(meta);
-  el.style.width = `${width}px`;
-  el.style.height = meta?.collapsed ? `${CARD_HEADER_HEIGHT}px` : `${height}px`;
+  el.style.width = `${cardSize(meta).width}px`;
   if (meta?.bgColor) { el.style.setProperty("--card-accent", meta.bgColor); el.classList.add("has-color"); }
   if (meta?.collapsed) el.classList.add("collapsed");
   if (cardWordCount(body) > CARD_MAX_WORDS) el.classList.add("over-limit");

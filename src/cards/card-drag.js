@@ -7,31 +7,34 @@
  * external-move API, one undo step for the drag.
  *
  * **In a Doc** the text can't be seen to move, so the UI masks it: the
- * card lifts off as a ghost; over the text a line shows the boundary it
- * will land on in the flow, and over the margin the ghost is where it
- * will float (card-doc-float.js#docPlacement). The release moves the
- * card's markdown to its new place — or its new anchor line — in one
- * transaction (one undo step).
+ * card lifts off as a ghost; over the text a line marks the line it will
+ * sit beside, and over the margin the ghost is where it will sit
+ * (card-doc-float.js#docPlacement). The release moves the card's
+ * markdown to its new anchor line in one transaction (one undo step).
  *
  * **Across surfaces** the hand-off is seamless in both directions, the
  * way a ⌘-drag of selected text is: the moment the pointer leaves the
  * canvas a card came from (or the Doc), the ghost takes over; back over
  * its own canvas it is the card again. Released over another Doc, a
  * canvas, or a document / notebook row in the sidebar, the card lands
- * there and leaves where it was — a Doc takes it in the flow or in its
- * margin as above, a canvas at the pointer, a sidebar row at the end of
+ * there and leaves where it was — a Doc takes it beside a line as above, a canvas at the pointer, a sidebar row at the end of
  * the document or the middle of the notebook's view. Escape cancels.
  */
 
 import { Transaction } from "@codemirror/state";
-import { cardGhost } from "./card-element.js";
 import { cardEdit } from "./card-facet.js";
-import { serializeCard } from "./card-model.ts";
+import { serializeCard, findCardsInDoc, cardInsertion, cardRemovalRange } from "./card-model.ts";
 import { resolveCardTarget, canvasWorld, landCard } from "./card-drop.js";
 import { docPlacement } from "./card-doc-float.js";
+import { createDragFeedback } from "./card-drag-feedback.js";
 
-const MOVE_THRESHOLD = 4;
+export const MOVE_THRESHOLD = 4;
 let active = null;
+
+/** Whether a card drag (either kind) is under way. */
+export function cardDragActive() {
+  return !!active;
+}
 
 /**
  * @param {object} o
@@ -56,42 +59,10 @@ export function startCardDrag({ appState, body, meta, initialEvent, source }) {
   const startWorld = src && srcCanvas ? canvasWorld(src, srcCanvas, start.x, start.y) : null;
 
   let moved = false;
-  let ghost = null;
-  let dropLine = null;
-  let hoverRow = null;
   let target = null;
   let liveMoving = false;
   const sourceBox = source.kind === "doc" ? source.wrap : cardEl;
-
-  function setGhost(on, x, y) {
-    if (on && !ghost) {
-      ghost = cardGhost(body, meta);
-      document.documentElement.appendChild(ghost);
-    }
-    if (ghost) {
-      ghost.style.display = on ? "" : "none";
-      if (on) ghost.style.transform = `translate(${x - grab.x}px, ${y - grab.y}px)`;
-    }
-    sourceBox.classList.toggle("dragging-source", on);
-  }
-
-  function setDropLine(view, point) {
-    if (!view) { dropLine?.remove(); dropLine = null; return; }
-    if (!dropLine) {
-      dropLine = document.createElement("div");
-      dropLine.className = "hush-card-drop-line";
-      document.body.appendChild(dropLine);
-    }
-    const r = view.contentDOM.getBoundingClientRect();
-    Object.assign(dropLine.style, { left: `${r.left}px`, width: `${r.width}px`, top: `${point.lineY - 1}px` });
-  }
-
-  function setHoverRow(row) {
-    if (row === hoverRow) return;
-    hoverRow?.classList.remove("sl-drop-target-item");
-    hoverRow = row;
-    hoverRow?.classList.add("sl-drop-target-item");
-  }
+  const feedback = createDragFeedback([{ body, meta }], grab, [sourceBox]);
 
   function track(x, y) {
     target = resolveCardTarget(appState, x, y);
@@ -105,12 +76,7 @@ export function startCardDrag({ appState, body, meta, initialEvent, source }) {
         src.updateExternalMove(0, 0);
       }
     }
-    setGhost(!overOwnCanvas, x, y);
-    // Over a Doc's text the line shows where the card goes into the flow;
-    // over its margin the ghost already shows where it will float.
-    const place = target?.kind === "cm" ? docPlacement(target.view, x, y, grab, meta) : null;
-    setDropLine(place && !place.float ? target.view : null, place);
-    setHoverRow(target?.kind === "row" ? target.el : null);
+    feedback.show(target, x, y, !overOwnCanvas);
   }
 
   function begin() {
@@ -141,10 +107,7 @@ export function startCardDrag({ appState, body, meta, initialEvent, source }) {
     window.removeEventListener("pointerup", onUp, true);
     window.removeEventListener("pointercancel", onCancel, true);
     window.removeEventListener("keydown", onKey, true);
-    ghost?.remove();
-    setDropLine(null);
-    setHoverRow(null);
-    sourceBox.classList.remove("dragging-source");
+    feedback.clear();
     document.body.classList.remove("text-drag-active");
     active = null;
   }
@@ -167,13 +130,12 @@ export function startCardDrag({ appState, body, meta, initialEvent, source }) {
     if (!moved) { cleanup(); return; }
     track(e.clientX, e.clientY);
     const t = target;
-    const place = t?.kind === "cm" ? docPlacement(t.view, e.clientX, e.clientY, grab, meta) : null;
     const overOwnCanvas = !!src && t?.kind === "nb" && t.state === src;
     if (liveMoving) src.endExternalMove(!overOwnCanvas);
     cleanup();
     if (!t || overOwnCanvas) return;
     if (source.kind === "doc" && t.kind === "cm" && t.view === source.view) {
-      moveWithinDoc(source, place);
+      moveWithinDoc(source, docPlacement(t.view, e.clientX, e.clientY, grab, meta), body);
       return;
     }
     void landCard(appState, t, { body, meta }, e.clientX, e.clientY, grab).then((ok) => { if (ok) removeFromSource(); }).catch(async (err) => {
@@ -188,13 +150,10 @@ export function startCardDrag({ appState, body, meta, initialEvent, source }) {
       void import("../notebook/card-shape.ts").then(({ removeCardShape }) => removeCardShape(source.state, source.shapeId));
       return;
     }
-    const span = source.locate();
+    const span = locateSource(source, body);
     if (!span) return;
-    const doc = source.view.state.doc;
-    const range = span.to < doc.length ? { from: span.from, to: span.to + 1 }
-      : { from: Math.max(0, span.from - 1), to: span.to };
     source.view.dispatch({
-      changes: { ...range, insert: "" },
+      changes: { ...cardRemovalRange(source.view.state.doc, span), insert: "" },
       annotations: [cardEdit.of(true), Transaction.userEvent.of("delete.card")],
     });
   }
@@ -206,28 +165,35 @@ export function startCardDrag({ appState, body, meta, initialEvent, source }) {
   active = { cancel };
 }
 
-/** A card dropped elsewhere in its own Doc: its markdown moves to the
- *  new place — in the flow, or anchored beside the line it now floats by
- *  — in one transaction. */
-function moveWithinDoc(source, place) {
-  const view = source.view;
+/** The card a Doc drag started from, as the document holds it now: the
+ *  float layer's entry for it, or — should that have gone (the editor
+ *  rebuilt under the drag) — the card with the same words. */
+function locateSource(source, body) {
   const span = source.locate();
+  if (span) return span;
+  return findCardsInDoc(source.view.state.doc).find((c) => c.body === body) || null;
+}
+
+/** A card dropped elsewhere in its own Doc: its markdown moves to the
+ *  line it now sits beside, carrying where it sits, in one transaction. */
+function moveWithinDoc(source, place, body) {
+  const view = source.view;
+  const span = locateSource(source, body);
   if (!span || !place) return;
   const doc = view.state.doc;
-  const removal = span.to < doc.length ? { from: span.from, to: span.to + 1 }
-    : { from: Math.max(0, span.from - 1), to: span.to };
+  const removal = cardRemovalRange(doc, span);
   const text = serializeCard(span.body, place.meta);
   const annotations = [cardEdit.of(true), Transaction.userEvent.of("move.card")];
-  if (place.pos >= removal.from && place.pos <= removal.to) {
-    // Same anchor: only how it sits changes (a new offset, or in / out of
-    // the flow).
+  const insertion = cardInsertion(doc, place.pos, text);
+  if (insertion.from >= removal.from && insertion.from <= removal.to) {
+    // The same anchor line: only where it sits beside it changes.
     if (text !== doc.sliceString(span.from, span.to)) {
       view.dispatch({ changes: { from: span.from, to: span.to, insert: text }, annotations });
     }
     return;
   }
   view.dispatch({
-    changes: [{ from: place.pos, insert: place.before ? `${text}\n` : `\n${text}` }, { ...removal, insert: "" }],
+    changes: [insertion, { ...removal, insert: "" }],
     annotations,
   });
 }

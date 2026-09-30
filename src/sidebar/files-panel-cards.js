@@ -17,8 +17,10 @@
  * the reading and writing, live surface first, disk last). A click opens
  * the file at the card.
  *
- * A document's cards are read from its text, like its tab markers. A
- * notebook's come from the per-device index its canvases publish
+ * A document's cards are read from its text as the surface showing it
+ * holds it (main editor, then a pane — the library's copy only when
+ * neither does, since a pane's saves don't refresh it). A notebook's
+ * come from the per-device index its canvases publish
  * (cards/card-index.js), so they appear once the notebook has been open
  * on this device.
  */
@@ -27,14 +29,26 @@ import { findCards, cardTitle } from "../cards/card-model.ts";
 import { notebookCards, CARD_INDEX_EVENT } from "../cards/card-index.js";
 import { readDocContent, openDocAtTab } from "./files-panel-tabs.js";
 import { findNodeByFileId } from "../state/tree-helpers.js";
+import { panes } from "../pane/pane-state.js";
 
 export function isCardItem(item) {
   return item?.type === "card";
 }
 
+/** A document's text as it stands now. */
+function docText(state, fileId) {
+  if (state?.currentFileId !== fileId) {
+    for (const [, p] of panes) {
+      if (p?.fileId !== fileId || p.fileType !== "document" || p.localSync) continue;
+      if (p.editor?.view) return p.editor.view.state.doc.toString();
+    }
+  }
+  return readDocContent(state, fileId);
+}
+
 function cardRowsFor(state, node) {
   if (node.type === "document" && node.fileId && !node.gutter) {
-    return findCards(readDocContent(state, node.fileId)).map((c) => ({
+    return findCards(docText(state, node.fileId)).map((c) => ({
       id: `card:${node.id}:${c.index}`,
       type: "card",
       name: cardTitle(c.body),
@@ -75,6 +89,58 @@ function augmentNode(state, node) {
   return children !== node.children ? { ...node, children } : node;
 }
 
+// ── Folded by default ─────────────────────────────────────────────
+// A row's cards show once its twirl-down has been opened; which rows
+// were opened is remembered per device, and kept out of the persisted
+// folder state so a row that gains its first card starts folded too.
+
+const OPEN_KEY = "hush-card-rows-open";
+let openParents = loadOpen();
+/** Rows holding cards in the last render. */
+let cardParents = new Set();
+
+function loadOpen() {
+  try {
+    const v = JSON.parse(localStorage.getItem(OPEN_KEY) || "[]");
+    return new Set(Array.isArray(v) ? v : []);
+  } catch { return new Set(); }
+}
+
+function saveOpen() {
+  try { localStorage.setItem(OPEN_KEY, JSON.stringify([...openParents])); } catch { /* storage unavailable */ }
+}
+
+/** Fold every row holding cards that this device hasn't opened. Call
+ *  with the augmented tree before it renders. */
+export function foldCardParents(tree, collapsedIds) {
+  cardParents = new Set();
+  const walk = (nodes) => {
+    for (const n of nodes || []) {
+      if (!Array.isArray(n?.children) || !n.children.length) continue;
+      if (n.children.some(isCardItem)) cardParents.add(n.id);
+      walk(n.children);
+    }
+  };
+  walk(tree);
+  for (const id of cardParents) if (!openParents.has(id)) collapsedIds.add(id);
+}
+
+/** Note which rows holding cards are open after a toggle; returns the
+ *  collapsed ids that are the folders' own to persist. */
+export function noteCardFolds(ids) {
+  const collapsed = new Set(ids);
+  let changed = false;
+  for (const id of cardParents) {
+    const open = !collapsed.has(id);
+    if (open !== openParents.has(id)) {
+      if (open) openParents.add(id); else openParents.delete(id);
+      changed = true;
+    }
+  }
+  if (changed) saveOpen();
+  return ids.filter((id) => !cardParents.has(id));
+}
+
 export function stripCardsFromTree(tree) {
   if (!Array.isArray(tree)) return tree;
   const out = [];
@@ -104,7 +170,7 @@ export function renderCardRow(item) {
 export async function openCard(state, item) {
   const ref = item.cardRef;
   if (ref.kind === "doc") {
-    const cards = findCards(readDocContent(state, ref.fileId));
+    const cards = findCards(docText(state, ref.fileId));
     const c = cards[ref.index]?.body === ref.body ? cards[ref.index] : cards.find((x) => x.body === ref.body);
     await openDocAtTab(state, ref.fileId, c ? c.from : 0);
     return;

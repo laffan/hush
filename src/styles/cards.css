@@ -13,8 +13,7 @@
 
 /* Minimal by default: the page's own background, a border meant to be
  * felt rather than read, no shadow, no header fill. The header's buttons
- * and the word count only show while the pointer is on the card (or the
- * keyboard is in it). */
+ * only show while the pointer is on the card (or the keyboard is in it). */
 .hush-card {
   --card-base: var(--theme-bg, var(--bg));
   --card-fg: var(--style-fg, var(--fg));
@@ -79,15 +78,15 @@
   font-size: 11px;
   line-height: 18px;
 }
-/* The header's furniture waits for the pointer. A collapsed card is only
- * its header, so its title always shows. */
+/* The header's furniture waits for the pointer (on a canvas, for the card
+ * to be selected — see below). A collapsed card is only its header, so
+ * its title always shows. */
 .hush-card-header > :not(.hush-card-title) {
   opacity: 0;
   transition: opacity 0.12s;
 }
 .hush-card:hover .hush-card-header > :not(.hush-card-title),
-.hush-card:focus-within .hush-card-header > :not(.hush-card-title),
-.hush-card.at-limit .hush-card-header > .hush-card-count {
+.hush-card:focus-within .hush-card-header > :not(.hush-card-title) {
   opacity: 1;
 }
 .hush-card.collapsed .hush-card-header { flex-basis: 100%; }
@@ -98,8 +97,7 @@
   height: 12px;
   flex: none;
 }
-.hush-card-grip svg { opacity: 0.35; }
-.hush-card-grip svg { width: 12px; height: 12px; fill: currentColor; }
+.hush-card-grip svg { width: 12px; height: 12px; fill: currentColor; opacity: 0.35; }
 
 .hush-card-title {
   flex: 1 1 auto;
@@ -111,15 +109,6 @@
   opacity: 0.8;
 }
 .hush-card:not(.collapsed) .hush-card-title { visibility: hidden; }
-
-.hush-card-count {
-  flex: none;
-  color: color-mix(in srgb, var(--card-fg) 40%, transparent);
-  font-variant-numeric: tabular-nums;
-  margin-right: 3px;
-}
-.hush-card.at-limit .hush-card-count { color: #ff2d2d; font-weight: 600; }
-.hush-card.over-limit .hush-card-count { color: #fff; }
 
 .hush-card-btn {
   flex: none;
@@ -145,7 +134,6 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.hush-card.collapsed .hush-card-collapse svg { transform: rotate(-90deg); }
 
 .hush-card-swatch {
   width: 10px;
@@ -155,33 +143,39 @@
   background: var(--card-accent, transparent);
 }
 
+/* As tall as the text, and one line more. */
 .hush-card-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  padding: 0 10px 8px;
+  flex: 0 0 auto;
+  padding: 0 10px 1.45em;
   cursor: text;
 }
 .hush-card.collapsed .hush-card-body,
-.hush-card.collapsed /* The host's focus rules reach into the card's editor with descendant
+.hush-card.collapsed .hush-card-resize { display: none; }
+
+/* A card too narrow for the usual type (a Doc's card gutter). */
+.hush-card.narrow { font-size: 12px; }
+.hush-card.narrow .hush-card-body { padding: 0 6px 1.45em; }
+.hush-card.narrow .cm-editor .cm-scroller { font-size: 12px !important; }
+.hush-card.narrow .hush-card-btn { width: 15px; }
+
+/* The host's focus rules reach into the card's editor with descendant
    selectors; a card the keyboard isn't in shows no caret. */
 .hush-card .cm-editor:not(.cm-focused) .cm-cursorLayer,
 .hush-card .cm-editor:not(.cm-focused) .cm-cursor {
   visibility: hidden !important;
 }
 
-.hush-card-resize { display: none; }
-
 /* The body's editor, whatever surface the card is sitting in. */
 .hush-card .cm-editor,
 .hush-card .cm-editor.cm-focused {
-  height: 100% !important;
+  height: auto !important;
   width: 100% !important;
   background: transparent !important;
   outline: none !important;
 }
 .hush-card .cm-editor .cm-scroller {
   padding: 0 !important;
-  overflow: auto !important;
+  overflow: visible !important;
   font-family: var(--ui-font-family) !important;
   font-size: 14px !important;
   line-height: 1.45 !important;
@@ -200,32 +194,38 @@
   padding: 0 !important;
 }
 
+/* The width handle: the card's right edge. */
 .hush-card-resize {
   position: absolute;
+  top: 0;
   right: 0;
-  bottom: 0;
-  width: 12px;
-  height: 12px;
-  cursor: nwse-resize;
-  background: linear-gradient(135deg, transparent 55%, color-mix(in srgb, var(--card-fg) 30%, transparent) 55%);
-  opacity: 0;
-  transition: opacity 0.12s;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
   touch-action: none;
 }
-.hush-card:hover .hush-card-resize { opacity: 1; }
+.hush-card-resize::after {
+  content: "";
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  right: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--card-fg) 25%, transparent);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.hush-card:hover .hush-card-resize::after { opacity: 1; }
 
 /* ── In a Doc ───────────────────────────────────────────────────────
- * The block widget: padding rather than margin (a vertical margin on a
- * CM block breaks its height map — README-TECHNICAL). */
-.cm-card-block {
-  padding: 6px 0;
-}
-.cm-card-block.dragging-source .hush-card { opacity: 0.3; }
-
-/* A card pulled into the margin (cards/card-doc-float.js): nothing in
-   the text but a zero-height anchor, and the card itself in a layer
-   inside the scroller, so it scrolls with the line it belongs to. */
+ * A card never moves the text (cards/card-doc-float.js): nothing of it
+ * in the text but a zero-height anchor, and the card itself in a layer
+ * inside the scroller, beside the line it belongs to, so it scrolls with
+ * it. Where the right margin is too narrow for cards, the text gives up
+ * a gutter for them (`cm-card-gutter`, set by the float layer). */
 .cm-card-anchor { height: 0; }
+.cm-editor.cm-card-gutter > .cm-scroller > .cm-content { padding-right: var(--card-gutter, 100px) !important; }
 .cm-card-float-layer {
   position: absolute;
   top: 0;
@@ -255,14 +255,25 @@
   z-index: var(--z-drag-ghost);
 }
 
-/* ── On a canvas (notebook/ui/card-layer.ts) ─────────────────────── */
+/* ── On a canvas (notebook/ui/card-layer.ts) ───────────────────────
+ * A card on a canvas is a text object: the canvas under it takes every
+ * press (select, drag, group, resize handles), so the card lets them
+ * through — except while it is being edited (a double-click), and its
+ * header's buttons while it is selected. The canvas draws the selection
+ * frame, so the card doesn't draw its own ring. */
 .nb-card-layer .hush-card {
   position: absolute;
   left: 0;
   top: 0;
   transform-origin: 0 0;
-  pointer-events: auto;
+  pointer-events: none;
 }
+.nb-card-layer .hush-card.editing { pointer-events: auto; }
+.nb-card-layer .hush-card.selected { box-shadow: none; }
+.nb-card-layer .hush-card.selected .hush-card-header > :not(.hush-card-title) { opacity: 1; }
+.nb-card-layer .hush-card.selected .hush-card-btn { pointer-events: auto; }
+.nb-card-layer .hush-card:not(.editing) .hush-card-header { cursor: inherit; }
+.nb-card-layer .hush-card-resize { display: none; }
 .nb-card-layer .hush-card.dragging-source { opacity: 0.3; }
 
 /* ── The drag ghost ──────────────────────────────────────────────── */
@@ -286,15 +297,18 @@
 /* ── Sidebar rows (sidebar/files-panel-cards.js) ─────────────────
  * One per card inside a document or notebook, styled like the other
  * synthetic sub-rows (tab markers, headings) but draggable. */
+/* Half the spacing of a file row. */
 .sl-item[data-type="card"] {
-  margin-left: 4px;
+  margin: 0 0 0 4px;
+  padding-top: 1px;
+  padding-bottom: 1px;
 }
 .sl-item[data-type="card"] > .sl-item-content .sl-fold-arrow {
   visibility: hidden;
   width: 6px;
 }
 .tree-card-row {
-  padding: 1px 0;
+  padding: 0;
   cursor: pointer;
   display: flex;
   align-items: center;

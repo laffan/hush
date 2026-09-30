@@ -196,6 +196,10 @@ export interface TextShape extends ShapeBase {
    *  (`cards/card-model.ts#CardMeta`), so moving a card between a Doc
    *  and a canvas is a copy, not a translation. */
   cardMeta?: Record<string, unknown>;
+  /** Card only: the height the card layer last measured it at — a card
+   *  is as tall as its text, so this is derived, kept only so bounds,
+   *  selection and exports know it without a DOM (card-geometry.ts). */
+  cardHeight?: number;
   /** Marks this text shape as a persisted gutter header label. Renders
    *  with the faded shadow-header style + horizontal rule above, is
    *  immune to selection / drag / edit, and gets its y position synced

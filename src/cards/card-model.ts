@@ -12,8 +12,8 @@
  * The line before the closing fence may hold the card's metadata: a Hush
  * comment (`%%…%%`) opening with `card ` and holding a JSON object. That
  * is where a card keeps what the text has no way to say — its colour,
- * its size, whether it is collapsed, and, in a Doc, where it floats
- * (`xPos` / `yPos`: see card-doc-float.js). Being a comment is what keeps
+ * its width, whether it is collapsed, and, in a Doc, where it was put in
+ * a margin (`xPos` / `yPos`: see card-doc-float.js). Being a comment is what keeps
  * it out of word counts and exports for free, and it is markdown nothing
  * else reads as a heading or a rule. Anything that doesn't parse is part
  * of the body.
@@ -39,9 +39,10 @@ export const CARD_MAX_WORDS = 100;
 /** Making a card longer than this asks first. */
 export const CARD_CONFIRM_WORDS = 50;
 export const CARD_DEFAULT_WIDTH = 300;
+/** A card is as tall as its text and one line more; this is only the
+ *  estimate used before one has been measured (and the grid pitch). */
 export const CARD_DEFAULT_HEIGHT = 100;
 export const CARD_MIN_WIDTH = 160;
-export const CARD_MIN_HEIGHT = 60;
 /** Height of the header strip (drag handle + buttons), in CSS px. Shared
  *  by the DOM card and the canvas painter so a collapsed card is the
  *  same size on both surfaces. */
@@ -184,7 +185,8 @@ export function cleanMeta(meta: CardMeta | null | undefined): CardMeta {
     if (k === "collapsed" && v !== true) continue;
     if (k === "xPos" || k === "yPos") { if (typeof v === "number" && isFinite(v)) out[k] = Math.round(v); continue; }
     if (k === "width" && (typeof v !== "number" || Math.round(v) === CARD_DEFAULT_WIDTH)) continue;
-    if (k === "height" && (typeof v !== "number" || Math.round(v) === CARD_DEFAULT_HEIGHT)) continue;
+    // Height follows the text; a stored one (from before it did) is dropped.
+    if (k === "height") continue;
     out[k] = typeof v === "number" ? Math.round(v) : v;
   }
   return out;
@@ -198,13 +200,9 @@ export function serializeCard(body: string, meta?: CardMeta | null): string {
   return `${CARD_OPEN}\n${body}\n${tail}${CARD_CLOSE}`;
 }
 
-export function cardSize(meta: CardMeta | null | undefined): { width: number; height: number } {
+export function cardSize(meta: CardMeta | null | undefined): { width: number } {
   const w = typeof meta?.width === "number" ? meta.width : CARD_DEFAULT_WIDTH;
-  const h = typeof meta?.height === "number" ? meta.height : CARD_DEFAULT_HEIGHT;
-  return {
-    width: Math.max(CARD_MIN_WIDTH, Math.round(w)),
-    height: Math.max(CARD_MIN_HEIGHT, Math.round(h)),
-  };
+  return { width: Math.max(CARD_MIN_WIDTH, Math.round(w)) };
 }
 
 export function cardWordCount(body: string): number {
@@ -244,17 +242,59 @@ export function parseWholeCard(text: string): { body: string; meta: CardMeta } |
   return { body: c.body, meta: c.meta };
 }
 
-/** Drop the Doc float offsets — a card going into the flow, or onto a
- *  canvas, where its position is the shape's own. */
+/** Drop a Doc card's margin offsets — a card dropped over a Doc's text
+ *  (beside a line, in the default place), or onto a canvas, where its
+ *  position is the shape's own. */
 export function withoutPosition(meta: CardMeta | null | undefined): CardMeta {
   const { xPos: _x, yPos: _y, ...rest } = meta || {};
   return rest;
 }
 
-/** Whether a Doc card floats beside its anchor rather than sitting in the
- *  text (card-doc-float.js). */
-export function isFloating(meta: CardMeta | null | undefined): boolean {
-  return typeof meta?.xPos === "number" && typeof meta?.yPos === "number";
+/**
+ * Where a card placed beside the line starting at `pos` can go: that
+ * line, unless it is inside frontmatter or a ``` block — where the fences
+ * wouldn't count and the card would be text — and then the line after
+ * that block.
+ */
+type DocLike = { lines: number; length: number; line(n: number): LineInfo; lineAt(pos: number): LineInfo & { number: number } };
+
+export function cardAnchorPos(doc: DocLike, pos: number): number {
+  const target = doc.lineAt(pos).number;
+  let blockEnd = 0;
+  let n = 1;
+  if (doc.lines >= 1 && doc.line(1).text === "---") {
+    for (let k = 2; k <= doc.lines; k++) {
+      if (doc.line(k).text === "---") { blockEnd = k; break; }
+    }
+    if (blockEnd && target <= blockEnd) return blockEnd < doc.lines ? doc.line(blockEnd + 1).from : doc.length;
+    n = blockEnd + 1;
+  }
+  let open = 0;
+  for (; n <= doc.lines; n++) {
+    if (!FENCE_RE.test(doc.line(n).text)) continue;
+    if (!open) { open = n; continue; }
+    if (target > open && target <= n) return n < doc.lines ? doc.line(n + 1).from : doc.length;
+    open = 0;
+    if (n >= target) break;
+  }
+  if (open && target > open) return doc.length;
+  return pos;
+}
+
+/** The change that puts card markdown `text` on lines of its own
+ *  before the line at `pos` (see `cardAnchorPos`). */
+export function cardInsertion(doc: DocLike, pos: number, text: string): { from: number; insert: string } {
+  const at = cardAnchorPos(doc, pos);
+  if (doc.lineAt(at).from === at) return { from: at, insert: `${text}\n` };
+  return { from: at, insert: `\n${text}\n` };
+}
+
+/** The span a card's removal takes: its lines plus one newline, so no
+ *  blank line is left where it was. */
+export function cardRemovalRange(doc: { length: number }, span: { from: number; to: number }): { from: number; to: number } {
+  if (span.to < doc.length) return { from: span.from, to: span.to + 1 };
+  if (span.from > 0) return { from: span.from - 1, to: span.to };
+  return { from: span.from, to: span.to };
 }
 
 /** A line the card editor must never produce: it would end the card (or
