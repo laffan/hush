@@ -29,7 +29,7 @@ import {
 import { isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree, renderTabMarkerRow, openDocAtTab } from "./files-panel-tabs.js";
 import { isHeadingItem, augmentTreeWithHeadings, stripHeadingsFromTree, renderHeadingRow, openDocAtHeading } from "./files-panel-headings.js";
 import {
-  isCardItem, augmentTreeWithCards, foldCardParents, noteCardFolds, stripCardsFromTree, renderCardRow, renderCardsHomeRow, openCard,
+  isCardItem, augmentTreeWithCards, foldCardParents, noteCardFolds, stripCardsFromTree, renderCardRow, renderCardsHomeRow, cardsHomeIsEmpty, openCard,
   dropCardOnRow, dropCardOutside, trackCardRowHover, onCardIndexChange,
 } from "./files-panel-cards.js";
 import { renderFlaggedSection } from "./files-panel-flagged.js";
@@ -135,6 +135,8 @@ export function createFilesPanel(container, state, hidePanel) {
     },
     canDrag: (item) => {
       if (isTabMarkerItem(item) || isHeadingItem(item)) return false;
+      // A container's cards notebook is pinned to its top (tree-helpers.js).
+      if (isCardsHome(item)) return false;
       // In the all-desks view, desk rows are reorderable; everywhere else
       // the desk container itself stays put.
       if (item.type === "desk") return isAllDesksMode(state);
@@ -183,6 +185,7 @@ export function createFilesPanel(container, state, hidePanel) {
       }
       if (isCardsHome(item)) {
         context?.li?.classList.add("cards-home");
+        context?.li?.classList.toggle("cards-home-empty", cardsHomeIsEmpty(item));
         return renderCardsHomeRow(item, isActive, actionButtons(item.id, item.type, inTrash, item, inProject));
       }
       const isDesk = item.type === "desk";

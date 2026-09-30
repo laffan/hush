@@ -57,6 +57,12 @@ export function publishNotebookCards(fileId, cards) {
   announce();
 }
 
+/** Whether this device knows what cards notebook `fileId` holds (its
+ *  canvas has published, or a write here recorded them). */
+export function notebookCardsKnown(fileId) {
+  return Object.prototype.hasOwnProperty.call(index, fileId);
+}
+
 export function notebookCards(fileId) {
   return index[fileId] || [];
 }

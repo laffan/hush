@@ -200,6 +200,11 @@ export function normalizeProjectChildren(nodes) {
   if (!Array.isArray(nodes)) return nodes;
   for (const n of nodes) {
     if (!n || !Array.isArray(n.children)) continue;
+    // A container's cards notebook is pinned to the top of it — the
+    // Inbox's above whatever lands there newest-first, a project's above
+    // its flow docs (a notebook feeds no buffer, so the join is intact).
+    const home = n.children.findIndex(isCardsHome);
+    if (home > 0) n.children.unshift(...n.children.splice(home, 1));
     if (isRealProjectNode(n)) {
       // Flow docs hoist to the top so the joined buffer reads contiguously,
       // and each doc's gutter notebook sits *directly under that doc*. Other
@@ -212,6 +217,7 @@ export function normalizeProjectChildren(nodes) {
       const top = [], below = [];
       for (const c of n.children) {
         if (c.type === "notebook" && c.gutter) continue; // placed with its doc below
+        if (isCardsHome(c)) { top.push(c); continue; } // pinned first, above
         // The project's own PDFs folder (pdf aliases) is supplementary
         // material like notebooks/stacks — it never feeds the buffer.
         if (isProjectSupplementary(c)) {

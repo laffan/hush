@@ -370,6 +370,8 @@
  * timestamp. Open: no row of its own — a bordered box of its cards, the
  * fold arrow in its top corner. */
 .tree-cards-home-row { gap: 6px; }
+/* With no cards in it, there's no entry (files-panel-cards.js). */
+.sl-item.cards-home.cards-home-empty { display: none; }
 .tree-cards-home-row .tree-card-icon { margin-left: 2px; }
 .sl-item.cards-home.has-children:not(.collapsed) {
   position: relative;

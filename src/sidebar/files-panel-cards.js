@@ -28,7 +28,7 @@
  */
 
 import { findCards, cardTitle } from "../cards/card-model.ts";
-import { notebookCards, CARD_INDEX_EVENT } from "../cards/card-index.js";
+import { notebookCards, notebookCardsKnown, CARD_INDEX_EVENT } from "../cards/card-index.js";
 import { readDocContent, openDocAtTab } from "./files-panel-tabs.js";
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { panes } from "../pane/pane-state.js";
@@ -177,6 +177,13 @@ export function renderCardsHomeRow(item, isActive, trailingHtml) {
   row.className = "tree-item-row tree-cards-home-row" + (isActive ? " active" : "");
   row.innerHTML = `<span class="tree-card-icon"></span><span class="tree-item-name">Cards</span>${trailingHtml}`;
   return row;
+}
+
+/** A cards notebook known to hold no cards has no entry to show (it
+ *  stays in the tree — hidden, not removed — so the next card sent there
+ *  finds it). One this device knows nothing about yet still shows. */
+export function cardsHomeIsEmpty(item) {
+  return !item.children?.some(isCardItem) && notebookCardsKnown(item.fileId);
 }
 
 /** Open the card's file with the card in view. */
