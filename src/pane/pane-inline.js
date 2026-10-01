@@ -138,6 +138,90 @@ class InlinePaneWidget extends WidgetType {
   }
 }
 
+// ── Widen ────────────────────────────────────────────────────────────
+// The title bar's widen toggle (`pane.inline.wide`) lets a peek fill the
+// width the editor has to give rather than the text column's: the
+// scroller's box, less whatever chrome covers its edges (an inset
+// sidebar, the right-hand bars, a docked pane — `applyColumnLayout`
+// publishes those as `--edge-cover-left/right`), less a margin. It
+// follows that width live: the host is observed, and anything that moves
+// the column or resizes the window resizes the host.
+const WIDE_MARGIN = 24;
+
+function applyNarrowGeometry(pane) {
+  const el = pane.el;
+  el.style.left = "50%";
+  el.style.transform = "translateX(-50%)";
+  el.style.width = pane.width + "px";
+}
+
+/** Where a widened pane goes: `{ left, width }` against its host, or
+ *  null when it isn't widened or isn't on screen. Reads layout only. */
+function measureWide(pane) {
+  const host = pane?._inlineHost;
+  if (!pane?.el || !pane.inline?.wide || !host?.isConnected) return null;
+  const scroller = host.closest(".cm-scroller");
+  if (!scroller) return null;
+  const cs = getComputedStyle(scroller);
+  const coverL = parseFloat(cs.getPropertyValue("--edge-cover-left")) || 0;
+  const coverR = parseFloat(cs.getPropertyValue("--edge-cover-right")) || 0;
+  const sr = scroller.getBoundingClientRect();
+  const hr = host.getBoundingClientRect();
+  return {
+    left: Math.round(sr.left + coverL + WIDE_MARGIN - hr.left),
+    width: Math.round(Math.max(240, scroller.clientWidth - coverL - coverR - 2 * WIDE_MARGIN)),
+  };
+}
+
+/** Write a pane's geometry for its mode (`geo` from `measureWide`). */
+function applyInlineGeometry(pane, geo) {
+  const el = pane?.el;
+  if (!el || !pane.inline) return;
+  el.classList.toggle("inline-wide", !!pane.inline.wide);
+  if (!geo) { applyNarrowGeometry(pane); return; }
+  el.style.transform = "";
+  el.style.left = geo.left + "px";
+  el.style.width = geo.width + "px";
+}
+
+/** Lay an inline pane out for its current mode. Reads layout, so call it
+ *  from a frame callback or an observer, never from a CM update. */
+export function layoutInlinePane(pane) {
+  applyInlineGeometry(pane, measureWide(pane));
+}
+
+function watchInlineHost(pane) {
+  const host = pane._inlineHost;
+  if (!host || pane._inlineObserved === host) return;
+  pane._inlineObserver?.disconnect();
+  pane._inlineObserved = host;
+  pane._inlineScroller = null;
+  if (typeof ResizeObserver === "undefined") return;
+  // The host is observed from the start; its scroller joins once the
+  // host is in the document — a window resize can change the scroller
+  // without changing a fixed-width column.
+  pane._inlineObserver = new ResizeObserver(() => {
+    const scroller = host.isConnected ? host.closest(".cm-scroller") : null;
+    if (scroller && pane._inlineScroller !== scroller) {
+      pane._inlineScroller = scroller;
+      pane._inlineObserver.observe(scroller);
+    }
+    if (pane.inline?.wide) layoutInlinePane(pane);
+  });
+  pane._inlineObserver.observe(host);
+  if (pane.inline?.wide) requestAnimationFrame(() => layoutInlinePane(pane));
+}
+
+/** Flip a pane between the text column's width and the editor's. */
+export function toggleInlineWide(pane) {
+  if (!pane?.inline) return;
+  pane.inline.wide = !pane.inline.wide;
+  layoutInlinePane(pane);
+  // The content inside (a PDF's fit-to-width, a canvas) follows its own
+  // box; a resize event is what those listen for.
+  requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+}
+
 /** Effect dispatched whenever an external event (panes-changed,
  *  files-changed, file-opened) requires the inline-pane decoration set
  *  to be rebuilt. CodeMirror block decorations can only be provided
@@ -214,11 +298,14 @@ function buildInlineDecorations(doc, appState) {
     if (pane.el) {
       pane.el.style.position = "absolute";
       pane.el.style.top = "0";
-      pane.el.style.left = "50%";
-      pane.el.style.transform = "translateX(-50%)";
       pane.el.style.margin = "";
-      pane.el.style.width = pane.width + "px";
       pane.el.style.height = pane.height + "px";
+      // A widened pane is measured against the scroller, which can't be
+      // read from inside a StateField update — the centred narrow frame
+      // stands in until the next frame (and the host's observer) lays
+      // it out.
+      if (!pane.inline.wide) applyNarrowGeometry(pane);
+      watchInlineHost(pane);
     }
     builder.add(pos, pos, Decoration.widget({
       widget: new InlinePaneWidget(pane.id, host),
@@ -251,6 +338,20 @@ export function createInlinePanePlugin(appState) {
   });
 
   const listener = ViewPlugin.fromClass(class {
+    // A column that moves without resizing (the sidebar sliding it over,
+    // a docked pane) resizes nothing an observer can see, but it does
+    // arrive here — `applyColumnLayout` follows its padding writes with
+    // an empty transaction. Widened panes re-measure in CM's own cycle.
+    update(update) {
+      const wide = [];
+      for (const [, p] of panes) if (p.inline?.wide && p._inlineHost) wide.push(p);
+      if (!wide.length) return;
+      update.view.requestMeasure({
+        key: "hushInlineWide",
+        read: () => wide.map((p) => measureWide(p)),
+        write: (geos) => wide.forEach((p, i) => applyInlineGeometry(p, geos[i])),
+      });
+    }
     constructor(view) {
       this.view = view;
       this._onChange = () => {
@@ -303,7 +404,8 @@ export function syncInlinePaneSize(pane, view) {
   if (!pane || !pane.inline) return;
   if (pane.el) {
     pane.el.style.height = pane.height + "px";
-    pane.el.style.width = pane.width + "px";
+    // A widened pane's width is the editor's, not the handle's.
+    if (!pane.inline.wide) pane.el.style.width = pane.width + "px";
   }
   if (pane._inlineHost) {
     pane._inlineHost.style.height = pane.height + "px";
@@ -320,6 +422,10 @@ export function detachInlinePane(pane, containerEl, screenX, screenY) {
   if (!pane || !pane.inline) return;
   pane.inline = null;
   pane._inlineHost = null;
+  pane._inlineObserver?.disconnect();
+  pane._inlineObserver = null;
+  pane._inlineObserved = null;
+  pane._inlineScroller = null;
   if (pane.el) {
     pane.el.style.position = "absolute";
     // Clear the centered-in-host transform — once we're a normal
@@ -334,7 +440,7 @@ export function detachInlinePane(pane, containerEl, screenX, screenY) {
     pane.el.style.height = pane.height + "px";
     // Strip the inline-pane class so the toolbar's normal chrome
     // (attach / pin / gutter) reveals through CSS.
-    pane.el.classList.remove("inline-pane");
+    pane.el.classList.remove("inline-pane", "inline-wide");
     if (containerEl && pane.el.parentNode !== containerEl) {
       containerEl.appendChild(pane.el);
     }

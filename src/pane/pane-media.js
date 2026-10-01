@@ -89,18 +89,13 @@ export async function loadPdfPane(pane) {
     });
   }
 
-  if (zoteroAttKey) {
-    const userId = appState.settings?.zoteroUserId;
-    const apiKey = appState.settings?.zoteroApiKey;
-    if (userId && apiKey) {
-      try {
-        const { getAnnotations } = await import("../zotero-annotations.js");
-        const { annotations } = await getAnnotations(zoteroAttKey, userId, apiKey);
-        viewer.setAnnotations(annotations);
-      } catch (e) {
-        console.error("Failed to load PDF pane annotations:", e);
-      }
-    }
+  // Zotero's annotations and any extracted from the file, merged.
+  try {
+    const { loadPdfAnnotationList } = await import("../zotero-annotations.js");
+    const annotations = await loadPdfAnnotationList(pane.fileId, zoteroAttKey, appState.settings);
+    if (annotations.length) viewer.setAnnotations(annotations);
+  } catch (e) {
+    console.error("Failed to load PDF pane annotations:", e);
   }
 }
 

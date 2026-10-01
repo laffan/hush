@@ -377,7 +377,9 @@ export function setupPaneResize(pane, deps) {
         // we update pane.el's size and ask the main editor to re-measure
         // so the text below shifts in lockstep.
         if (pane.inline) {
-          if (pane.inline) pane.inline.height = h;
+          pane.inline.height = h;
+          // Widened, the width is the editor's; the handle sets height.
+          if (pane.inline.wide) pane.width = startW;
           const mainView = appState?.editor?.view;
           syncInlinePaneSize(pane, mainView);
           deps.notifyPaneDragMove?.();

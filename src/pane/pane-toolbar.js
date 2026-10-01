@@ -18,6 +18,7 @@ import {
   DEFAULT_WIDTH, DEFAULT_HEIGHT, TITLEBAR_HEIGHT,
 } from "./pane-state.js";
 import { setupPaneDrag, setupPaneResize } from "./pane-drag.js";
+import { toggleInlineWide } from "./pane-inline.js";
 import { togglePaneSizePopover } from "./pane-size-popover.js";
 import {
   screenToCanvas, startCanvasSync, startScrollSync, startPdfScrollSync, stopAttachSync, anchorPaneToPdf,
@@ -41,6 +42,8 @@ const ICON_POP_IN = `<svg viewBox="0 0 24 24" width="10" height="10" fill="none"
 const ICON_GUTTER = `<svg viewBox="0 0 10 10"><rect x="1" y="1" width="1.5" height="8" fill="currentColor" stroke="none"/><line x1="4.5" y1="2.5" x2="9" y2="2.5"/><line x1="4.5" y1="5" x2="9" y2="5"/><line x1="4.5" y1="7.5" x2="9" y2="7.5"/></svg>`;
 // Double-headed horizontal arrow — toggles which edge a gutter docks against
 // (left <-> right). Only shown while the pane is acting as a gutter.
+// Widen: two arrows pushing outward to the edges (inline peeks only).
+const ICON_WIDEN = `<svg viewBox="0 0 10 10"><line x1="0.8" y1="1.5" x2="0.8" y2="8.5"/><line x1="9.2" y1="1.5" x2="9.2" y2="8.5"/><line x1="2.5" y1="5" x2="7.5" y2="5"/><polyline points="4,3.5 2.5,5 4,6.5"/><polyline points="6,3.5 7.5,5 6,6.5"/></svg>`;
 const ICON_GUTTER_SIDE = `<svg viewBox="0 0 10 10"><line x1="1.5" y1="5" x2="8.5" y2="5"/><polyline points="3.5,3 1.5,5 3.5,7"/><polyline points="6.5,3 8.5,5 6.5,7"/></svg>`;
 
 function makeBtn(name, svg, ariaLabel) {
@@ -172,6 +175,19 @@ export function buildPaneDOM(pane, deps) {
   // gutter"), which pairs the gutter notebook to its doc inside a project.
   // A gutter pane can't be pinned, attached, or dragged — those affordances
   // are hidden via the .floating-pane.gutter CSS rules in floating-pane.css.
+
+  // Widen — an inline peek fills the editor's width instead of the text
+  // column's (pane-inline.js). Created for every pane like attach / pin,
+  // shown only while inline (wikilinks.css).
+  const widenBtn = makeBtn("widen", ICON_WIDEN, "Widen to fill the editor");
+  widenBtn.classList.toggle("active", !!pane.inline?.wide);
+  widenBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleInlineWide(pane);
+    widenBtn.classList.toggle("active", !!pane.inline?.wide);
+    schedulePersist();
+  });
+  buttons.appendChild(widenBtn);
 
   // Collapse button (iOS only — desktop's title-bar double-click is the
   // equivalent gesture).

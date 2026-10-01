@@ -209,6 +209,9 @@ async function loadNotebookPane(pane) {
   // not mirror global dock footprints or window safe-area insets.
   canvas.state.paneHosted = true;
   canvas.state.hostFileId = pane.fileId; // bookmark links are built from it
+  // A wikilink peek is for reading, and the full bar takes a large share
+  // of a 500 px frame — it opens folded to its grip, a click away.
+  if (pane.inline) canvas.state.setDrawingToolbarMinimized(true);
   pane.notebook = canvas;
   // A pane that was already docked when this canvas mounted (restore at
   // boot, or a file swapped into a docked pane) needs its chrome inset

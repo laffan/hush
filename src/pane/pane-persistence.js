@@ -115,6 +115,7 @@ export function serializePanes() {
             anchorTitle: p.inline.anchorTitle,
             occurrence: p.inline.occurrence | 0,
             height: p.height,
+            wide: !!p.inline.wide,
           }
         : null,
     });
@@ -212,6 +213,7 @@ export async function restorePanes(deps, listOverride) {
             anchorTitle: s.inline.anchorTitle,
             occurrence: s.inline.occurrence | 0,
             height: s.inline.height || 500,
+            wide: !!s.inline.wide,
           }
         : null,
     };

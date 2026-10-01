@@ -404,6 +404,7 @@ export function closePane(id) {
   }
   // Inline-pane host gets dropped on the next `panes-changed` build.
   if (pane._inlineHost) pane._inlineHost = null;
+  pane._inlineObserver?.disconnect();
   pane.el.remove();
   panes.delete(id);
   if (activePaneId === id) setActivePaneId(null);

@@ -68,6 +68,19 @@
 .floating-pane.inline-pane .fp-btn-pop-in {
   display: none;
 }
+/* Widen is the one control that belongs to an inline pane alone. */
+.floating-pane:not(.inline-pane) .fp-btn-widen {
+  display: none;
+}
+.floating-pane.inline-pane .fp-btn-widen.active {
+  opacity: 0.85;
+  color: var(--cursor, #ffd700);
+}
+/* Widened, the width is the editor's — only height is the user's. */
+.floating-pane.inline-wide .fp-resize-e,
+.floating-pane.inline-wide .fp-resize-w {
+  display: none;
+}
 .cm-wikilink-rendered:hover {
   text-decoration-color: currentColor;
 }
