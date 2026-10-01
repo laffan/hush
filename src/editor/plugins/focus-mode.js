@@ -35,7 +35,7 @@ function findSentenceStart(doc, pos) {
     if (/\s/.test(content.charAt(ch - 1))) {
       let lb = ch - 1;
       while (lb > 0 && /\s/.test(content.charAt(lb - 1))) lb--;
-      while (lb > 0 && /["')\]}*_`]/.test(content.charAt(lb - 1))) lb--;
+      while (lb > 0 && /["')\]}*_`=~]/.test(content.charAt(lb - 1))) lb--;
       if (lb > 0 && /[.!?]/.test(content.charAt(lb - 1))) {
         while (ch < content.length && /\s/.test(content.charAt(ch))) ch++;
         return { line, ch };
@@ -54,7 +54,7 @@ function findSentenceEnd(doc, pos) {
   while (ch < content.length) {
     if (/[.!?]/.test(content.charAt(ch))) {
       ch++;
-      while (ch < content.length && /["')\]}*_`]/.test(content.charAt(ch))) ch++;
+      while (ch < content.length && /["')\]}*_`=~]/.test(content.charAt(ch))) ch++;
       while (ch < content.length && /[ \t]/.test(content.charAt(ch))) ch++;
       return { line, ch };
     }

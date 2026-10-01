@@ -79,7 +79,7 @@ function sentenceAround(doc, paren) {
   const ln = line.number - 1;
   const text = line.text;
   let probe = pair.close;
-  while (probe > pair.open + 1 && /["')\]}*_`]/.test(text.charAt(probe - 1))) probe--;
+  while (probe > pair.open + 1 && /["')\]}*_`=~]/.test(text.charAt(probe - 1))) probe--;
   const endFrom = /[.!?]/.test(text.charAt(probe - 1)) ? probe - 1 : pair.close;
   return {
     from: posToOffset(doc, findSentenceStart(doc, { line: ln, ch: pair.open })),

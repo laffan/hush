@@ -287,7 +287,7 @@ export function moveSentenceBack(view) {
 
   // Skip closing delimiters and punctuation to land inside prev sentence
   const lc2 = getLine(doc, sp.line);
-  while (sp.ch > 0 && /["')\]}*_`]/.test(lc2.charAt(sp.ch - 1))) sp = { line: sp.line, ch: sp.ch - 1 };
+  while (sp.ch > 0 && /["')\]}*_`=~]/.test(lc2.charAt(sp.ch - 1))) sp = { line: sp.line, ch: sp.ch - 1 };
   if (sp.ch > 0 && /[.!?]/.test(lc2.charAt(sp.ch - 1))) sp = { line: sp.line, ch: sp.ch - 1 };
   if (sp.ch > 0) sp = { line: sp.line, ch: sp.ch - 1 };
 
@@ -338,7 +338,7 @@ export function jumpToPrevSentence(view) {
     const lineText = getLine(doc, start.line);
     let backCh = start.ch;
     while (backCh > 0 && /\s/.test(lineText.charAt(backCh - 1))) backCh--;
-    while (backCh > 0 && /["')\]}*_`]/.test(lineText.charAt(backCh - 1))) backCh--;
+    while (backCh > 0 && /["')\]}*_`=~]/.test(lineText.charAt(backCh - 1))) backCh--;
     while (backCh > 0 && /[.!?]/.test(lineText.charAt(backCh - 1))) backCh--;
 
     if (backCh > 0) {
@@ -369,7 +369,7 @@ export function deleteToSentenceEnd(view) {
   const lineEnd = { line: pos.line, ch: getLine(doc, pos.line).length };
   const rest = getLine(doc, pos.line).substring(pos.ch);
 
-  const m = rest.match(/[.!?]["')\]}*_`]*(?=\s|$)/);
+  const m = rest.match(/[.!?]["')\]}*_`=~]*(?=\s|$)/);
   let endOff;
   if (m && m.index !== undefined) {
     endOff = sel.head + m.index + m[0].length;
@@ -642,7 +642,7 @@ function prevSentenceProbe(doc, pos) {
     }
   }
   const lc = getLine(doc, sp.line);
-  while (sp.ch > 0 && /["')\]}*_`]/.test(lc.charAt(sp.ch - 1))) sp = { line: sp.line, ch: sp.ch - 1 };
+  while (sp.ch > 0 && /["')\]}*_`=~]/.test(lc.charAt(sp.ch - 1))) sp = { line: sp.line, ch: sp.ch - 1 };
   if (sp.ch > 0 && /[.!?]/.test(lc.charAt(sp.ch - 1)) && sp.ch > 1) sp = { line: sp.line, ch: sp.ch - 2 };
   return sp;
 }

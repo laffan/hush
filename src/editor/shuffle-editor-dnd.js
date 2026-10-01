@@ -35,7 +35,7 @@ function lowerFirst(str) {
  *  goes, the quote stays) rather than losing its closing quote. */
 function stripTrailingPunct(str) {
   let s = String(str || "").trimEnd();
-  const closers = (s.match(/[")'’”»\]}*_`]+$/) || [""])[0];
+  const closers = (s.match(/[")'’”»\]}*_`=~]+$/) || [""])[0];
   let core = closers ? s.slice(0, s.length - closers.length) : s;
   core = core.replace(/[.!?]+$/, "");
   return (core + closers).trimEnd();
