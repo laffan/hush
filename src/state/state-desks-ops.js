@@ -13,38 +13,41 @@
  *
  * Both operations update `settings.desks` and the file tree.
  *
- * `convertFolderToDesk` only supports direct desk-children for now —
- * nested-folder converts would need multi-segment path rewrites we
- * haven't generalized yet.
+ * `convertFolderToDesk` takes a folder or project at any depth (the
+ * sidebar's row menu offers it on every one; the palette picker lists
+ * direct desk-children).
  */
 
+import { findNode, removeNode } from "./tree-helpers.js";
 import { specialNodeId, isSpecialNodeId, parseSpecialNodeId, ensureDeskSpecials, seedNewArchivesCollapsed } from "./state-desks.js";
 
 function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
-/** Promote a folder/project (direct child of a desk) into its own
+/** Promote a folder/project (anywhere inside a desk) into its own
  *  top-level desk. The folder's children come along; inner Inbox /
  *  Trash / Images subfolders (matched by name) become per-desk
  *  specials. */
 export async function convertFolderToDesk(state, folderId) {
   const tree = state.fileTree || [];
 
-  // Locate parent desk + the folder under it. Direct-children only.
-  let parentDesk = null;
+  // Locate the folder, at any depth inside a desk. The tree save
+  // recomputes every file's path from the tree (README-SYNC, save_forest),
+  // so a nested folder needs nothing more than a direct child does —
+  // the same holds for Send to desk, which moves subtrees from anywhere.
   let folder = null;
   for (const top of tree) {
     if (top.type !== "desk") continue;
-    const idx = (top.children || []).findIndex((c) => c?.id === folderId);
-    if (idx >= 0) { parentDesk = top; folder = top.children[idx]; break; }
+    folder = findNode(top.children || [], folderId);
+    if (folder) break;
   }
-  if (!folder) throw new Error("folder must be a direct child of a desk");
+  if (!folder) throw new Error("folder not found inside a desk");
   if (folder.type !== "folder" && folder.type !== "project") throw new Error("only folders or projects can convert");
   if (isSpecialNodeId(folder.id)) throw new Error("specials cannot convert");
 
-  // Detach from parent desk.
-  parentDesk.children = (parentDesk.children || []).filter((c) => c?.id !== folderId);
+  // Detach from wherever it sits.
+  removeNode(tree, folderId);
 
   // Reshape into a desk.
   const deskId = uid();

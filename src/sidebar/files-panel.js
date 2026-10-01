@@ -434,6 +434,13 @@ function dispatchRowAction(action, nodeId, opts) {
     handleOpenAsStack(nodeId, storedState, refresh);
   } else if (action === "open-in-new-window") {
     handleOpenInNewWindow(nodeId, storedState);
+  } else if (action === "convert-to-desk") {
+    import("../state/state-desks-ops.js")
+      .then((m) => m.convertFolderToDesk(storedState, nodeId))
+      .then(refresh)
+      .catch((e) => console.error("convert to desk failed:", e));
+  } else if (action === "move-to-desk") {
+    import("./send-to-desk-modal.js").then((m) => m.openSendToDeskModal(storedState, nodeId, "send"));
   } else if (action === "convert-project-to-doc") {
     handleConvertProjectToDoc(nodeId, storedState, refresh);
   } else if (action === "toggle-numbering") {
@@ -452,9 +459,10 @@ function dispatchRowAction(action, nodeId, opts) {
       refresh();
     }
     return;
-  } else if (action === "import-pdf-file") {
+  } else if (action === "import-pdf-file" || action === "import-pdf-clipboard") {
     const fileId = findNode(storedState.fileTree, nodeId)?.fileId;
-    if (fileId) void importFileIntoPdf(storedState, fileId);
+    const source = action === "import-pdf-clipboard" ? "clipboard" : "file";
+    if (fileId) void importFileIntoPdf(storedState, fileId, { source });
   } else if (action === "proofread-pdf") {
     const node = findNode(storedState.fileTree, nodeId);
     if (node?.fileId) {

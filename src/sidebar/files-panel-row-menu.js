@@ -199,8 +199,10 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   if (isPdf && !item?.pdfAlias) {
     // A PDF with no file behind it yet — its Zotero download pending, or
     // failed offline — can take one from disk (pdf/pdf-manual-import.js).
-    if (pdfAwaitingFile(item?.fileId)) entries.push({ action: "import-pdf-file", label: "Import PDF File\u2026" });
-    else entries.push({ action: "proofread-pdf", label: "Create Proofread Notebook" });
+    if (pdfAwaitingFile(item?.fileId)) {
+      entries.push({ action: "import-pdf-file", label: "Import PDF File\u2026" });
+      entries.push({ action: "import-pdf-clipboard", label: "Paste PDF from Clipboard" });
+    } else entries.push({ action: "proofread-pdf", label: "Create Proofread Notebook" });
   }
   if (!isSpecial && !isImage) {
     entries.push({ action: "flag", label: item?.flagged ? "Unflag" : "Flag" });
@@ -214,6 +216,14 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   if (!isSpecial && isContainer && !item?.syncFolderId) {
     const target = nodeType === "folder" ? "project" : "folder";
     entries.push({ action: "convert-container", label: `Convert to ${target}`, targetType: target });
+  }
+  // A folder or project can become a desk of its own, or move whole to
+  // another desk (state-desks-ops.js / send-to-desk-modal.js). Move needs
+  // somewhere to go, which only `openRowMenu` can see, so it drops the
+  // entry again while there is one desk.
+  if (!isSpecial && isContainer && !item?.syncFolderId && !item?.pdfFolder) {
+    entries.push({ action: "convert-to-desk", label: "Convert to Desk" });
+    entries.push({ action: "move-to-desk", label: "Move to Desk\u2026" });
   }
   if (nodeType === "project" && !isSpecial) {
     entries.push({ action: "convert-project-to-doc", label: "Convert to Doc" });
@@ -282,6 +292,7 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
     const inProject = !!parent && parent.type === "project"
       && parent.id !== "__inbox__" && !parent.id?.startsWith("__inbox__:");
     entries = getMenuEntries(nodeId, node.type, inTrash, node, inProject);
+    if ((state.settings?.desks || []).length < 2) entries = entries.filter((e) => e.action !== "move-to-desk");
     // Local-desk actions need runtime state (the roots map), so they
     // join here rather than in the static entry builder.
     if (node.type === "desk" && typeof window !== "undefined" && window.__TAURI_INTERNALS__) {
