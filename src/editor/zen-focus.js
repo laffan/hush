@@ -21,6 +21,7 @@ import { EditorState, EditorSelection } from "@codemirror/state";
 import { createBaseExtensions } from "./base-extensions.js";
 import { propertiesEdit } from "./plugins/properties.js";
 import { outlineZenSurface } from "./plugins/outline-view.js";
+import { cardsHidden } from "../cards/card-facet.js";
 import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createProjectViewField, createSeparatorFilter } from "./plugins/project-view.js";
 import { applyBlockCursor } from "./block-cursor.js";
@@ -402,6 +403,8 @@ export function enterZenFocus(state) {
       // single current item the outline plugin docks to the top of the
       // window; an unpinned one is simply not here.
       outlineZenSurface.of(true),
+      // Cards stay out of Zen, folded away like the rest of their markdown.
+      cardsHidden.of(true),
       recentre,
     ],
   });

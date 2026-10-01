@@ -33,6 +33,7 @@
 
 import { ViewPlugin, WidgetType } from "@codemirror/view";
 import { cardSize, withoutPosition, CARD_MIN_WIDTH } from "./card-model.ts";
+import { cardsHidden } from "./card-facet.js";
 
 /** What a card leaves in the text: nothing you can see. */
 export class CardAnchorWidget extends WidgetType {
@@ -165,6 +166,7 @@ export function createCardFloatLayer({ field, bind }) {
     }
 
     spans(state) {
+      if (state.facet(cardsHidden)) return [];
       return state.field(field, false)?.cards || [];
     }
 

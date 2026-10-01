@@ -536,37 +536,35 @@
    consecutive doc icons to signal the joined-document context; notebook
    rows in a project paint at 50 % opacity so the supplementary block
    reads as visually subordinate without an extra rule between them. */
-.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"] {
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"]:not([data-use-as-note="true"]):has(+ .sl-item[data-type="document"]:not([data-use-as-note="true"])) {
   position: relative;
 }
-.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"]::before {
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"]:not([data-use-as-note="true"]):has(+ .sl-item[data-type="document"]:not([data-use-as-note="true"]))::after {
   /* I-beam connector linking two consecutive doc icons: a 1 px central
      stem with 5 px horizontal feet flush against the bottom edge of the
      upper icon and the top edge of the lower one. The shape is painted
-     via three layered linear-gradients on a single pseudo so it doesn't
-     burn the ::after slot. With the default row height (~18 px) the
-     gap is 15 px, so top:-8/h:15 sits flush on either side. */
+     via three layered linear-gradients on a single pseudo.
+     It hangs from the upper doc, not the lower: everything a doc can
+     list under its own row — its cards, headings, tab markers, its pane
+     icons — makes that item taller below its icon, and only the upper
+     item knows how much. So it runs from 1 px under the upper icon
+     (row padding 4 + the 20 px row, icon centred: 21) to 8 px past the
+     upper item's foot — the 1 px between items plus the lower item's 4
+     px padding and the 4 px above its icon, less 1. Its column (30px)
+     is clear of the sub-rows, whose icons start under the name. */
   content: "";
   position: absolute;
   left: 30px;
   transform: translateX(-50%);
-  top: -8px;
+  top: 21px;
+  bottom: -8px;
   width: 5px;
-  height: 15px;
   background:
     linear-gradient(currentColor, currentColor) top    / 100% 1px no-repeat,
     linear-gradient(currentColor, currentColor) bottom / 100% 1px no-repeat,
     linear-gradient(currentColor, currentColor) center / 1px 100% no-repeat;
   opacity: 0.5;
   pointer-events: none;
-}
-/* When the upper doc carries a pane-indicator strip its padding-bottom grows
-   from 4px to 15px (room for the absolutely-positioned squares), which would
-   otherwise push this connector down off the upper icon. Stretch it up by the
-   same 11px so the joined-doc line still meets both icons. */
-.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"]:has(.tree-pane-indicators) + .sl-item[data-type="document"]::before {
-  top: -19px;
-  height: 26px;
 }
 
 .sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"] > .sl-item-content .tree-item-row,
@@ -599,9 +597,25 @@
 /* Because the gutter sits between two joined docs (or under the last one),
    the doc-connector I-beam can't span across it. Carry the connector through
    the gutter row as a vertical stem at the same x (30px) so the joined-doc
-   column reads continuously alongside the indented gutter: up into the gap to
-   the doc above (always present), and — only when a doc follows — down into
-   the gap below. */
+   column reads continuously alongside the indented gutter: the doc above
+   hangs a plain stem from its icon to its own foot (however tall its
+   sub-rows make it), the gutter carries it on from its top, and — only when
+   a doc follows — down into the gap below. */
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"]:has(+ .sl-item[data-type="notebook"][data-gutter="true"]) {
+  position: relative;
+}
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"]:has(+ .sl-item[data-type="notebook"][data-gutter="true"])::after {
+  content: "";
+  position: absolute;
+  left: 30px;
+  transform: translateX(-50%);
+  top: 21px;
+  bottom: -1px; /* through the 1 px between the two items */
+  width: 1px;
+  background: currentColor;
+  opacity: 0.5;
+  pointer-events: none;
+}
 .sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"][data-gutter="true"] {
   position: relative;
 }
@@ -610,7 +624,7 @@
   position: absolute;
   left: 30px;
   transform: translateX(-50%);
-  top: -8px;
+  top: 0;
   bottom: 0;
   width: 1px;
   background: linear-gradient(currentColor, currentColor) center / 1px 100% no-repeat;
@@ -638,14 +652,9 @@
 }
 
 /* "Use as Note" docs sort with notebooks under the joined buffer, so
-   the doc-doc connector should NOT render across the boundary into a
-   note (or between two consecutive notes). */
-.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"][data-use-as-note="true"]::before {
-  display: none;
-}
-.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"][data-use-as-note="true"] + .sl-item[data-type="document"]::before {
-  display: none;
-}
+   the doc-doc connector doesn't render across the boundary into a note
+   (or between two consecutive notes): the connector's selector above
+   leaves notes out on both sides. */
 
 /* "Empty" text button on Trash hover */
 .tree-action-text {

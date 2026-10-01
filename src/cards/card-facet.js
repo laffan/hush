@@ -12,6 +12,12 @@ import { Annotation, Facet } from "@codemirror/state";
 
 export const insideCard = Facet.define({ combine: (v) => v.some(Boolean) });
 
+/** Marks an editor that keeps its cards but shows none of them: Zen
+ *  Focus, whose overlay is one line of prose at a time (a pinned card
+ *  sat over its top curtain). The markdown stays folded away as an
+ *  anchor; only the float layer draws nothing. */
+export const cardsHidden = Facet.define({ combine: (v) => v.some(Boolean) });
+
 /** Marks a dispatch that is the card machinery's own: a body replay, a
  *  metadata write, a move, a delivery. The Doc plugin's boundary guard
  *  and its creation prompt both stand aside for it. */
