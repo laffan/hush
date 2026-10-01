@@ -496,17 +496,12 @@ async function mountPdfContent(contentEl, item, state, liveData) {
       } catch (_) {}
     });
 
-    if (zoteroAttKey) {
-      const userId = state.settings?.zoteroUserId;
-      const apiKey = state.settings?.zoteroApiKey;
-      if (userId && apiKey) {
-        try {
-          const { getAnnotations } = await import("../zotero-annotations.js");
-          const { annotations } = await getAnnotations(zoteroAttKey, userId, apiKey);
-          viewer.setAnnotations(annotations);
-        } catch (_) {}
-      }
-    }
+    // Zotero's annotations and any extracted from the file, merged.
+    try {
+      const { loadPdfAnnotationList } = await import("../zotero-annotations.js");
+      const annotations = await loadPdfAnnotationList(item.fileId, zoteroAttKey, state.settings);
+      if (annotations.length) viewer.setAnnotations(annotations);
+    } catch (_) {}
 
     liveData.pdfViewer = viewer;
     liveData.cleanup = () => { if (viewer.destroy) viewer.destroy(); };

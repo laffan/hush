@@ -354,7 +354,25 @@ html.ios:not(.phone) .floating-pane.docked.docked-bottom .pdf-zoom-toolbar::afte
   border-left: 1px solid var(--panel-border);
   position: relative;
 }
-.pdf-annot-shelf.open { width: 280px; }
+.pdf-annot-shelf.open { width: var(--pdf-annot-shelf-width, 280px); }
+.pdf-annot-shelf.resizing { transition: none; }
+
+/* Left-edge resize strip — over the grip's outer few px, live only while
+   the shelf is open (a closed shelf is all grip). */
+.pdf-annot-shelf-resize {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 6px;
+  z-index: 11;
+  cursor: ew-resize;
+  display: none;
+  transition: background 120ms ease;
+}
+.pdf-annot-shelf.open .pdf-annot-shelf-resize { display: block; }
+.pdf-annot-shelf-resize:hover,
+.pdf-annot-shelf.resizing .pdf-annot-shelf-resize {
+  background: rgba(127, 127, 127, 0.28);
+}
 
 .pdf-annot-shelf-grip {
   width: 24px;
@@ -385,11 +403,65 @@ html.ios:not(.phone) .floating-pane.docked.docked-bottom .pdf-zoom-toolbar::afte
 .pdf-annot-shelf.open .pdf-annot-shelf-content { display: flex; }
 
 .pdf-annot-shelf-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 8px;
   color: var(--fg);
   font-family: system-ui, -apple-system, sans-serif;
+}
+.pdf-annot-shelf-extract {
+  margin-left: auto;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  background: transparent;
+  color: var(--fg);
+  font: 500 11px system-ui, -apple-system, sans-serif;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.pdf-annot-shelf-extract:hover:not(:disabled) { background: rgba(128, 128, 128, 0.12); }
+.pdf-annot-shelf-extract:disabled { opacity: 0.6; cursor: default; }
+.pdf-annot-shelf-note {
+  font-size: 12px;
+  margin-bottom: 8px;
+  color: var(--sidebar-fg, var(--fg));
+  font-family: system-ui, -apple-system, sans-serif;
+  opacity: 0.85;
+}
+
+/* Colour filter — the highlight browser's swatches (zotero.css, .zh-*),
+   in a row under the search box. */
+.pdf-annot-shelf-colors {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 10px 2px;
+}
+.pdf-annot-swatch {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  padding: 0;
+  background-color: #ccc;
+  opacity: 0.55;
+  transition: opacity 0.15s, transform 0.1s;
+}
+.pdf-annot-swatch:hover { opacity: 0.85; }
+.pdf-annot-swatch.active {
+  opacity: 1;
+  transform: scale(1.1);
+  box-shadow: 0 0 0 2px var(--fg);
+}
+.pdf-annot-swatch-all {
+  background-color: transparent;
+  border-color: color-mix(in srgb, var(--fg) 45%, transparent);
 }
 .pdf-annot-shelf-search {
   width: 100%;
@@ -516,6 +588,10 @@ html.ios:not(.phone) .floating-pane.docked.docked-bottom .pdf-zoom-toolbar::afte
   opacity: 0.6;
   font-family: system-ui, -apple-system, sans-serif;
   pointer-events: none;
+}
+/* First in the toolbar row, with a little air before the rest. */
+.pdf-zoom-toolbar > .pdf-thumbnail-btn {
+  margin-right: 8px;
 }
 .pdf-thumbnail-btn.active {
   background: rgba(128, 128, 128, 0.22);

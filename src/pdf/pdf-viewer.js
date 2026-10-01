@@ -59,6 +59,8 @@ export function createPdfViewer(container, opts = {}) {
     getLayoutMode: () => layoutMode,
     goToPage: (n) => goToPage(n),
     scrollToFold: (annot) => (folded ? foldLayer.scrollToAnnotation(annot) : false),
+    getPdfDoc: () => pdfDoc,
+    extractAnnotations: () => extractEmbeddedAnnotations(),
   };
   const annotLayer = createAnnotationLayer(scrollArea, body, viewerState);
 
@@ -108,10 +110,11 @@ export function createPdfViewer(container, opts = {}) {
     foldBtn, foldFilterBtn,
     pageIndicator, zoteroLink, thumbnailBtn, toolbarInfo,
   } = buildPdfToolbar();
-  // Bookmarks lead the toolbar; hidden for viewers with no fileId.
+  // Thumbnails lead the toolbar, set off from the rest by a gap; the
+  // bookmarks follow (hidden for viewers with no fileId).
   const bookmarksBtn = createToolbarBookmarkButton({ getFileId: () => _fileId, goToPage: (n) => goToPage(n) });
   if (!_fileId) bookmarksBtn.style.display = "none";
-  toolbar.prepend(bookmarksBtn);
+  toolbar.prepend(thumbnailBtn, bookmarksBtn);
   root.appendChild(toolbar);
   container.appendChild(root);
   foldLayer.attachFilterUI(foldFilterBtn, root);
@@ -139,6 +142,24 @@ export function createPdfViewer(container, opts = {}) {
       window.open(url, "_blank");
     }
   });
+
+  // ── Extract Annotations (the shelf's button) ─────────────────────
+  // Reads the annotations written into the file, caches them per fileId,
+  // and folds them into the list beside whatever Zotero's API supplied
+  // (an earlier extraction's entries are replaced, not doubled).
+  async function extractEmbeddedAnnotations() {
+    if (!pdfDoc) return 0;
+    const { extractPdfAnnotations } = await import("./pdf-annotation-extract.js");
+    const z = await import("../zotero-annotations.js");
+    const raw = await extractPdfAnnotations(pdfDoc, { parentKey: _zoteroAttKey || "" });
+    if (_fileId) await z.saveExtractedAnnotations(_fileId, raw);
+    const fromApi = annotLayer.getAnnotations()
+      .filter((a) => !a._raw?.data?.hushEmbedded)
+      .map((a) => ({ ...a, embedded: false }));
+    annotLayer.setAnnotations(z.mergeAnnotationLists(fromApi, z.normalizeAnnotations(raw)));
+    foldLayer.onAnnotationsChanged();
+    return raw.length;
+  }
 
   // ── Thumbnail manager ─────────────────────────────────────────────
   const thumbs = createThumbnailManager(root, {

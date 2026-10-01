@@ -13,6 +13,9 @@
  * @param {function}    viewer.getLayoutMode     () => string
  * @param {function}    viewer.goToPage          (n: number) => void
  * @param {function}    [viewer.scrollToFold]    (annot) => boolean — folded-view delegate
+ * @param {function}    [viewer.getPdfDoc]       () => PDFDocumentProxy — shows Extract Annotations
+ * @param {function}    [viewer.extractAnnotations] () => Promise<number> — reads the file's own
+ *                                                annotations into the list; resolves to how many
  */
 
 /** Parse (and cache) the Zotero annotationPosition payload. Shared with
@@ -48,6 +51,8 @@ export function pdfPointToViewport(viewport, x, y) {
  *  Shared between the page overlays and the folded view. */
 export function paintAnnotationsInto(layer, pageAnnots, viewport, scaleX, scaleY) {
   for (const annot of pageAnnots) {
+    // The file's own annotations are already in the page's raster.
+    if (annot.embedded) continue;
     const pos = parseAnnotationPosition(annot);
     if (!pos) continue;
 
@@ -102,10 +107,23 @@ function paintInkAnnotation(layer, annot, pos, scaleX, scaleY, viewport) {
   layer.appendChild(svg);
 }
 
+// Shelf width — dragged by its left edge, persisted app-wide as
+// `pdfAnnotShelfWidth` (read through `window.__hushState__`, as the
+// notebook shelf does, since the viewer is built without the app state).
+const SHELF_WIDTH_DEFAULT = 280;
+const SHELF_WIDTH_MIN = 200;
+const SHELF_WIDTH_MAX_FRAC = 0.6;
+
+function storedShelfWidth() {
+  const w = Number(window.__hushState__?.settings?.pdfAnnotShelfWidth);
+  return Number.isFinite(w) && w > 0 ? w : SHELF_WIDTH_DEFAULT;
+}
+
 export function createAnnotationLayer(scrollArea, body, viewer) {
   let annotations = [];
   let shelfOpen = false;
   let shelfFilter = "";
+  let activeColor = null; // null = every colour
 
   // ── Shelf DOM ─────────────────────────────────────────────────────
   const shelf = document.createElement("div");
@@ -122,7 +140,19 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
 
   const shelfHeader = document.createElement("div");
   shelfHeader.className = "pdf-annot-shelf-header";
-  shelfHeader.textContent = "Annotations";
+  const shelfTitle = document.createElement("span");
+  shelfTitle.textContent = "Annotations";
+  shelfHeader.appendChild(shelfTitle);
+  // Read the annotations written into the file itself — the way in for
+  // a PDF imported from disk or the clipboard, whose annotations Zotero's
+  // API never handed over (pdf-annotation-extract.js).
+  const extractBtn = document.createElement("button");
+  extractBtn.type = "button";
+  extractBtn.className = "pdf-annot-shelf-extract";
+  extractBtn.textContent = "Extract Annotations";
+  extractBtn.title = "Read the annotations saved in this PDF file";
+  if (!viewer.getPdfDoc) extractBtn.style.display = "none";
+  shelfHeader.appendChild(extractBtn);
   shelfContent.appendChild(shelfHeader);
 
   const shelfSearch = document.createElement("input");
@@ -131,19 +161,120 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
   shelfSearch.placeholder = "Filter...";
   shelfContent.appendChild(shelfSearch);
 
+  // Colour filter — one swatch per highlight colour in the list, plus
+  // "all", the highlight browser's column laid on its side.
+  const shelfColors = document.createElement("div");
+  shelfColors.className = "pdf-annot-shelf-colors";
+  shelfContent.appendChild(shelfColors);
+
   const shelfBody = document.createElement("div");
   shelfBody.className = "pdf-annot-shelf-body";
   shelfContent.appendChild(shelfBody);
 
   shelf.appendChild(shelfContent);
+
+  // Left-edge resize strip, live only while the shelf is open (CSS).
+  const shelfResize = document.createElement("div");
+  shelfResize.className = "pdf-annot-shelf-resize";
+  shelf.appendChild(shelfResize);
   body.appendChild(shelf);
+
+  const clampWidth = (w) => Math.max(SHELF_WIDTH_MIN,
+    Math.min(Math.max(SHELF_WIDTH_MIN, (body.clientWidth || window.innerWidth) * SHELF_WIDTH_MAX_FRAC), w));
+  shelf.style.setProperty("--pdf-annot-shelf-width", clampWidth(storedShelfWidth()) + "px");
+
+  shelfResize.addEventListener("pointerdown", (e) => {
+    if (!shelfOpen) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = shelf.getBoundingClientRect().width;
+    let width = startW;
+    shelf.classList.add("resizing");
+    try { shelfResize.setPointerCapture(e.pointerId); } catch (_) {}
+    const onMove = (me) => {
+      // Right-anchored: a leftward drag widens it.
+      width = clampWidth(startW - (me.clientX - startX));
+      shelf.style.setProperty("--pdf-annot-shelf-width", width + "px");
+    };
+    const onUp = () => {
+      shelf.classList.remove("resizing");
+      shelfResize.removeEventListener("pointermove", onMove);
+      shelfResize.removeEventListener("pointerup", onUp);
+      shelfResize.removeEventListener("pointercancel", onUp);
+      window.__hushState__?.updateSettings?.({ pdfAnnotShelfWidth: Math.round(width) });
+    };
+    shelfResize.addEventListener("pointermove", onMove);
+    shelfResize.addEventListener("pointerup", onUp);
+    shelfResize.addEventListener("pointercancel", onUp);
+  });
 
   // ── Shelf interactions ────────────────────────────────────────────
   function toggleShelf() {
     shelfOpen = !shelfOpen;
     shelf.classList.toggle("open", shelfOpen);
     shelfGrip.textContent = shelfOpen ? "›" : "‹";
-    if (shelfOpen) rebuildShelfList();
+    if (shelfOpen) {
+      // Another viewer may have been resized since this one was built.
+      shelf.style.setProperty("--pdf-annot-shelf-width", clampWidth(storedShelfWidth()) + "px");
+      rebuildShelfList();
+    }
+  }
+
+  extractBtn.addEventListener("click", async () => {
+    if (extractBtn.disabled) return;
+    extractBtn.disabled = true;
+    const label = extractBtn.textContent;
+    extractBtn.textContent = "Extracting\u2026";
+    try {
+      const n = await viewer.extractAnnotations();
+      showShelfNote(n
+        ? `Found ${n} annotation${n === 1 ? "" : "s"} in this PDF`
+        : "This PDF has no annotations saved in it");
+    } catch (e) {
+      console.error("Extract annotations failed:", e);
+      showShelfNote(`Couldn't read annotations: ${e?.message || e}`);
+    } finally {
+      extractBtn.disabled = false;
+      extractBtn.textContent = label;
+    }
+  });
+
+  let noteTimer = null;
+  function showShelfNote(text) {
+    let note = shelfContent.querySelector(".pdf-annot-shelf-note");
+    if (!note) {
+      note = document.createElement("div");
+      note.className = "pdf-annot-shelf-note";
+      shelfContent.insertBefore(note, shelfSearch);
+    }
+    note.textContent = text;
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => note.remove(), 4000);
+  }
+
+  function paintColorFilter() {
+    shelfColors.innerHTML = "";
+    const colors = [];
+    for (const a of annotations) if (a.color && !colors.includes(a.color)) colors.push(a.color);
+    if (activeColor && !colors.includes(activeColor)) activeColor = null;
+    shelfColors.style.display = colors.length > 1 ? "" : "none";
+    const swatch = (color) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "pdf-annot-swatch" + (color ? "" : " pdf-annot-swatch-all")
+        + (activeColor === color ? " active" : "");
+      if (color) b.style.backgroundColor = color;
+      b.title = color ? "Only this colour" : "All colours";
+      b.addEventListener("click", () => {
+        activeColor = color && activeColor !== color ? color : null;
+        paintColorFilter();
+        rebuildShelfList();
+      });
+      return b;
+    };
+    shelfColors.appendChild(swatch(null));
+    for (const c of colors) shelfColors.appendChild(swatch(c));
   }
 
   shelfGrip.addEventListener("click", toggleShelf);
@@ -178,20 +309,23 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
       shelfBody.innerHTML = '<div class="pdf-annot-shelf-empty">No annotations</div>';
       return;
     }
-    const filtered = shelfFilter
-      ? annotations.filter(a => {
-          const text = (a.text || "").toLowerCase();
-          const comment = (a.comment || "").toLowerCase();
-          return text.includes(shelfFilter) || comment.includes(shelfFilter);
-        })
-      : annotations;
+    const filtered = annotations.filter(a => {
+      if (activeColor && a.color !== activeColor) return false;
+      if (!shelfFilter) return true;
+      const text = (a.text || "").toLowerCase();
+      const comment = (a.comment || "").toLowerCase();
+      return text.includes(shelfFilter) || comment.includes(shelfFilter);
+    });
 
     if (!filtered.length) {
       shelfBody.innerHTML = '<div class="pdf-annot-shelf-empty">No matches</div>';
       return;
     }
     for (const annot of filtered) {
-      if (!annot.text && !annot.comment) continue;
+      // A drawing or an image area has no words; it is listed by kind so
+      // it can still be found and jumped to.
+      const bare = !annot.text && !annot.comment;
+      if (bare && annot.type !== "ink" && annot.type !== "image") continue;
       const row = document.createElement("div");
       row.className = "pdf-annot-shelf-row";
       row.style.borderLeftColor = annot.color || "#ffff00";
@@ -204,6 +338,12 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
         textEl.className = "pdf-annot-shelf-text";
         textEl.appendChild(highlightMatches(annot.text, shelfFilter));
         row.appendChild(textEl);
+      }
+      if (bare) {
+        const kindEl = document.createElement("div");
+        kindEl.className = "pdf-annot-shelf-comment";
+        kindEl.textContent = annot.type === "ink" ? "Drawing" : "Image";
+        row.appendChild(kindEl);
       }
       if (annot.comment) {
         const commentEl = document.createElement("div");
@@ -268,6 +408,7 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
       if (pages[i].rendered) paintAnnotationsOnPage(i);
     }
     shelf.classList.toggle("has-annotations", annotations.length > 0);
+    paintColorFilter();
     if (shelfOpen) rebuildShelfList();
   }
 

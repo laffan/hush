@@ -123,18 +123,17 @@ export async function refreshPdfAnnotations(state) {
   await loadAnnotationsIfZotero(currentViewer, currentFileId, state, true);
 }
 
+/** The Zotero attachment's annotations, plus any extracted from the file
+ *  itself (Extract Annotations, on the shelf) — either half may be all
+ *  there is. */
 async function loadAnnotationsIfZotero(viewer, fileId, state, forceRefresh = false) {
   const { findNodeByFileId } = await import("../state/tree-helpers.js");
   const node = findNodeByFileId(state.fileTree, fileId);
-  if (!node?.zoteroAttKey) return;
-
-  const userId = state.settings?.zoteroUserId;
-  const apiKey = state.settings?.zoteroApiKey;
-  if (!userId || !apiKey) return;
 
   try {
-    const { getAnnotations } = await import("../zotero-annotations.js");
-    const { annotations } = await getAnnotations(node.zoteroAttKey, userId, apiKey, { forceRefresh });
+    const { loadPdfAnnotationList } = await import("../zotero-annotations.js");
+    const annotations = await loadPdfAnnotationList(fileId, node?.zoteroAttKey, state.settings, { forceRefresh });
+    if (!annotations.length && !node?.zoteroAttKey) return;
     viewer.setAnnotations(annotations);
     // Keep the shelf cover's baked-in annotation marks current with
     // what the viewer just loaded (first fetch or explicit refresh).

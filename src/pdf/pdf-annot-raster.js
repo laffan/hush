@@ -39,6 +39,7 @@ const HIGHLIGHT_ALPHA = 0.3;
 export function drawAnnotationsOnPage(ctx, viewport, scale, annots, pageIndex = 0) {
   if (!ctx || !annots || !annots.length) return;
   for (const ann of annots) {
+    if (ann.embedded) continue; // in the file, so pdfjs drew it already
     const pos = parseAnnotationPosition(ann);
     if (!pos || pos.pageIndex !== pageIndex) continue;
 
@@ -87,6 +88,7 @@ export function drawAnnotationsOnPage(ctx, viewport, scale, annots, pageIndex = 
 export function hasAnnotationsOnPage(annots, pageIndex) {
   if (!annots || !annots.length) return false;
   for (const ann of annots) {
+    if (ann.embedded) continue;
     const pos = parseAnnotationPosition(ann);
     if (pos && pos.pageIndex === pageIndex) return true;
   }
@@ -115,11 +117,17 @@ export async function loadPdfAnnotations(fileId, opts = {}) {
     const attKey = getPdfMeta(fileId)?.zoteroAttKey;
     if (!attKey) return [];
     const zotero = await import("../zotero-annotations.js");
+    let api;
     if (opts.userId && opts.apiKey) {
       const res = await zotero.getAnnotations(attKey, opts.userId, opts.apiKey);
-      return res?.annotations || [];
+      api = res?.annotations || [];
+    } else {
+      api = (await zotero.getCachedAnnotations(attKey)) || [];
     }
-    return (await zotero.getCachedAnnotations(attKey)) || [];
+    // Merged with what was extracted from the file, so an annotation
+    // that is both in the library and in the file is flagged embedded —
+    // the raster has it already, and painting it again doubles it.
+    return zotero.mergeAnnotationLists(api, await zotero.getExtractedAnnotations(fileId));
   } catch {
     return [];
   }

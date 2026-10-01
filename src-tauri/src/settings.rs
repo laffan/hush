@@ -395,6 +395,10 @@ pub struct AppSettings {
     // appearance on `default_light_colors` / `default_dark_colors`
     // under the `lineIndicator` key — no dedicated AppSettings field.
     #[serde(default)] pub line_indicator: Option<String>,
+    // Its underline / highlight shape (see `Style` for the meaning).
+    #[serde(default)] pub line_indicator_underline_thickness: Option<f64>,
+    #[serde(default)] pub line_indicator_highlight_thickness: Option<f64>,
+    #[serde(default)] pub line_indicator_full_width: Option<bool>,
 
     // Extra shortcuts
     #[serde(default = "default_shortcut_strikethrough")]
@@ -464,6 +468,9 @@ pub struct AppSettings {
     pub notebook_shelf_width: u32,
     #[serde(default = "default_notebook_proof_rail_width")]
     pub notebook_proof_rail_width: u32,
+    /// The PDF viewer's annotation shelf, dragged by its left edge.
+    #[serde(default = "default_pdf_annot_shelf_width")]
+    pub pdf_annot_shelf_width: u32,
     /// Is the proofread notebook's page rail on screen? App-wide rather
     /// than per-notebook: it's a reading preference, like the shelf's
     /// width, not something a proof carries with it.
@@ -819,6 +826,9 @@ impl Default for AppSettings {
             cursor_blink: None,
             cursor_idle_animation: None,
             line_indicator: None,
+            line_indicator_underline_thickness: None,
+            line_indicator_highlight_thickness: None,
+            line_indicator_full_width: None,
             ratchet_encourage_typing: false,
             persisted_panes: Vec::new(),
             sticky_notes: Vec::new(),
@@ -844,6 +854,7 @@ impl Default for AppSettings {
             notebook_text_max_width: default_notebook_text_max_width(),
             notebook_shelf_width: default_notebook_shelf_width(),
             notebook_proof_rail_width: default_notebook_proof_rail_width(),
+            pdf_annot_shelf_width: default_pdf_annot_shelf_width(),
             notebook_proof_rail_visible: true,
             notebook_proof_wheel_x: None,
             notebook_proof_wheel_y: None,

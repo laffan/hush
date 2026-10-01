@@ -94,7 +94,7 @@ export function buildPdfToolbar() {
     zoomOutBtn, zoomLabel, zoomInBtn,
     scrollToggleWrap, fitToggleWrap,
     foldBtn, foldFilterBtn,
-    thumbnailBtn, toolbarInfo, pageIndicator, zoteroLink,
+    toolbarInfo, pageIndicator, zoteroLink,
   );
 
   return {

@@ -34,6 +34,9 @@ function normalize(raw) {
     pageLabel: d.annotationPageLabel || "",
     sortIndex: d.annotationSortIndex || "",
     tags: Array.isArray(d.tags) ? d.tags.map((t) => t.tag).filter(Boolean) : [],
+    // Read out of the PDF file itself (pdf/pdf-annotation-extract.js):
+    // pdf.js paints those into the page, so overlays skip them.
+    embedded: !!d.hushEmbedded,
     _raw: raw,
   };
 }
@@ -148,4 +151,74 @@ export function groupByColor(annotations) {
     if (!colors.includes(ann.color)) colors.push(ann.color);
   }
   return { colors, byColor };
+}
+
+// ── Annotations extracted from the PDF file ─────────────────────────
+// "Extract Annotations" (the viewer's shelf) reads a PDF's own embedded
+// annotations into the same raw shape the API returns. They are cached
+// beside Zotero's, under a key that can't collide with an item key, per
+// Hush fileId — an imported PDF may have no attachment key at all.
+
+function extractedKey(fileId) {
+  return "hush-pdf-" + String(fileId || "").replace(/[^A-Za-z0-9_-]/g, "");
+}
+
+async function writeCache(key, list) {
+  const json = JSON.stringify(list);
+  if (!IS_TAURI) { localStorage.setItem("hush_zotero_ann_" + key, json); return; }
+  await tauriInvoke("save_zotero_annotations", { itemKey: key, data: json });
+}
+
+/** Raw items (the API's shape) → the list the viewer takes, sorted. */
+export function normalizeAnnotations(rawItems) {
+  return sortAnnotations((rawItems || []).map(normalize));
+}
+
+/** Persist a PDF's extracted annotations (raw items). */
+export async function saveExtractedAnnotations(fileId, rawItems) {
+  if (!fileId) return;
+  await writeCache(extractedKey(fileId), rawItems || []);
+}
+
+/** The extracted annotations cached for `fileId`, normalised; [] when the
+ *  file was never extracted. */
+export async function getExtractedAnnotations(fileId) {
+  if (!fileId) return [];
+  try {
+    const cached = await readCache(extractedKey(fileId));
+    if (Array.isArray(cached)) return sortAnnotations(cached.map(normalize));
+  } catch (_) {}
+  return [];
+}
+
+/** One list out of the API's and the file's. An annotation in both — a
+ *  PDF exported from Zotero carries each one's item key — is kept once,
+ *  as the API's (the library is the authority on its text and tags) but
+ *  flagged `embedded`, since the page already shows it. */
+export function mergeAnnotationLists(apiList, extractedList) {
+  if (!extractedList?.length) return apiList || [];
+  if (!apiList?.length) return extractedList;
+  const inFile = new Set(extractedList.map((a) => a.key));
+  const fromApi = new Set(apiList.map((a) => a.key));
+  const merged = apiList.map((a) => (inFile.has(a.key) ? { ...a, embedded: true } : a));
+  for (const a of extractedList) if (!fromApi.has(a.key)) merged.push(a);
+  return sortAnnotations(merged);
+}
+
+/**
+ * Everything a viewer should list for a PDF: the Zotero attachment's
+ * annotations (when there is a key and credentials), merged with any the
+ * file has had extracted. Errors on the API side leave the extracted
+ * half standing.
+ */
+export async function loadPdfAnnotationList(fileId, attKey, settings, opts = {}) {
+  const extracted = await getExtractedAnnotations(fileId);
+  let api = [];
+  const userId = settings?.zoteroUserId;
+  const apiKey = settings?.zoteroApiKey;
+  if (attKey && userId && apiKey) {
+    try { api = (await getAnnotations(attKey, userId, apiKey, opts)).annotations; }
+    catch (e) { console.error("Failed to load Zotero annotations:", e); }
+  }
+  return mergeAnnotationLists(api, extracted);
 }

@@ -22,7 +22,7 @@ import { findNode, findParentOfNode } from "../state/tree-helpers.js";
 import { escHtml, showPromptModal } from "../sidebar/files-panel-shared.js";
 import { getPdfMeta, isPdfDownloaded, getPdfBookmarks } from "../sync/pdf-sync.js";
 import { enforceFlaggedPdfOrder } from "../state/state-pdf-aliases.js";
-import { getCachedAnnotations } from "../zotero-annotations.js";
+import { getCachedAnnotations, getExtractedAnnotations, mergeAnnotationLists } from "../zotero-annotations.js";
 import { parseAnnotationPosition } from "./pdf-viewer-annotations.js";
 import { loadPdfCoverUrl, refreshPdfCoverIfStale } from "./pdf-covers.js";
 import { BOOKMARK_ICON, openBookmarkListPopup } from "./pdf-bookmarks.js";
@@ -391,15 +391,20 @@ function toggleFlag(nodeId) {
   _state.saveFileTree(); // emits files-changed → shelf re-renders
 }
 
-/** Build the lazy annotation index for cards that have a Zotero
- *  attachment — local cache only, never the network. Stores original
+/** Build the lazy annotation index for each card — its Zotero
+ *  attachment's annotations plus any extracted from the file, local
+ *  cache only, never the network. Stores original
  *  case (so match text can be shown + highlighted) and re-renders the
  *  results view when new text lands (if a query is still active). */
 function ensureAnnotIndex(cards) {
   for (const c of cards) {
-    if (!c.zoteroAttKey || _annotIndex.has(c.fileId) || _annotPending.has(c.fileId)) continue;
+    if (_annotIndex.has(c.fileId) || _annotPending.has(c.fileId)) continue;
     _annotPending.add(c.fileId);
-    getCachedAnnotations(c.zoteroAttKey).then((annots) => {
+    // Zotero's cached list and whatever was extracted from the file.
+    Promise.all([
+      c.zoteroAttKey ? getCachedAnnotations(c.zoteroAttKey) : [],
+      getExtractedAnnotations(c.fileId),
+    ]).then(([api, inFile]) => mergeAnnotationLists(api, inFile)).then((annots) => {
       _annotIndex.set(c.fileId, annots.map((a) => {
         // pageIndex (0-based, from the position payload) is the reliable
         // PDF page to jump to; pageLabel is the printed label to show.

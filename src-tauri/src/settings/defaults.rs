@@ -369,6 +369,9 @@ pub fn default_notebook_shelf_width() -> u32 {
 pub fn default_notebook_proof_rail_width() -> u32 {
     92
 }
+pub fn default_pdf_annot_shelf_width() -> u32 {
+    280
+}
 pub fn default_notebook_grid_opacity() -> f64 {
     0.20
 }
