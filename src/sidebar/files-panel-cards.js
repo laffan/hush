@@ -171,11 +171,22 @@ export function renderCardRow(item) {
 /** A container's CARDS notebook (state/tree-helpers.js#isCardsHome):
  *  "Cards" and the card icon — no timestamp, no number. Open, the row
  *  gives way to a bordered box of its cards (styles/cards.css,
- *  `.cards-home`). */
-export function renderCardsHomeRow(item, isActive, trailingHtml) {
+ *  `.cards-home`).
+ *
+ *  A click opens the notebook through its own listener, as a tab
+ *  marker's does: the row can't be dragged, and SortableList's pointer
+ *  flow bails on such rows before it would report a click. */
+export function renderCardsHomeRow(item, isActive, trailingHtml, onOpen) {
   const row = document.createElement("span");
   row.className = "tree-item-row tree-cards-home-row" + (isActive ? " active" : "");
   row.innerHTML = `<span class="tree-card-icon"></span><span class="tree-item-name">Cards</span>${trailingHtml}`;
+  if (typeof onOpen === "function") {
+    row.addEventListener("click", (e) => {
+      if (e.target.closest("button, input, a")) return;
+      e.stopPropagation();
+      onOpen(item);
+    });
+  }
   return row;
 }
 

@@ -362,6 +362,20 @@
   visibility: hidden;
   width: 6px;
 }
+/* A fold arrow that reveals nothing but cards — a file's, or the CARDS
+ * notebook's — shows only while the pointer is on the item (its row or
+ * the cards under it); `card-fold` is files-panel.js's mark. A file whose
+ * sub-rows include headings or tab markers keeps its arrow in view, as
+ * folders do. Without a hover (a touch screen) it stays in view too. */
+@media (hover: hover) {
+  .sl-item.card-fold > .sl-item-content .sl-fold-arrow {
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+  .sl-item.card-fold:hover > .sl-item-content .sl-fold-arrow { opacity: 0.5; }
+  .sl-item.card-fold > .sl-item-content .sl-fold-arrow:hover,
+  .sl-item.card-fold > .sl-item-content .sl-fold-arrow:focus-visible { opacity: 1; }
+}
 .tree-card-row {
   padding: 0;
   cursor: pointer;

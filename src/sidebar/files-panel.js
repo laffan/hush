@@ -184,11 +184,17 @@ export function createFilesPanel(container, state, hidePanel) {
       if (context?.li) {
         context.li.classList.toggle("multi-selected", !!isMultiSelected);
         if (item.fileId) context.li.dataset.fileId = item.fileId;
+        // A fold arrow that only reveals cards shows under the pointer (cards.css).
+        context.li.classList.toggle("card-fold", !!item.children?.length && item.children.every(isCardItem));
       }
       if (isCardsHome(item)) {
         context?.li?.classList.add("cards-home");
         context?.li?.classList.toggle("cards-home-empty", cardsHomeIsEmpty(item));
-        return renderCardsHomeRow(item, isActive, actionButtons(item.id, item.type, inTrash, item, inProject));
+        return renderCardsHomeRow(item, isActive, actionButtons(item.id, item.type, inTrash, item, inProject), (home) => {
+          if (state.selectedDocIds.length) state.clearSelectedDocs();
+          state.openNotebook(home.fileId);
+          if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
+        });
       }
       const isDesk = item.type === "desk";
       const isActiveDesk = isDesk && item.id === state.settings?.activeDeskId;

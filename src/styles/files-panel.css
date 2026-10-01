@@ -1489,6 +1489,13 @@ button.desk-switcher-row.desk-switcher-add {
 .tree-item-row:has(.tree-item-inbox) > .tree-type-icon {
   margin-top: 2px;
 }
+/* Its fold arrow goes with the name, as the icon does, rather than
+   centring on the two lines. -2px puts the 20px arrow's middle on the
+   icon's (2px down, 12px tall). A PDF row is the same shape. */
+.sl-item-content:has(> .sl-item-label .tree-item-inbox, > .sl-item-label .tree-item-pdf) > .sl-fold-arrow {
+  align-self: flex-start;
+  margin-top: -2px;
+}
 .tree-item-inbox {
   display: flex;
   flex-direction: column;

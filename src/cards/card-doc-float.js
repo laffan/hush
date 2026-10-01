@@ -149,7 +149,19 @@ export function createCardFloatLayer({ field, bind }) {
     update(u) {
       if (u.docChanged) for (const e of this.entries) e.from = u.changes.mapPos(e.from, -1);
       if (u.startState.field(field, false) !== u.state.field(field, false)) this.sync(u.state);
-      if (u.docChanged || u.geometryChanged || u.heightChanged || u.viewportChanged) this.measure();
+      // The column can move with nothing CodeMirror calls a change: the
+      // sidebar opening or closing re-pads the scroller (editor/modes.js
+      // writes its padding and edge cover, then dispatches an empty
+      // transaction), and the text slid under a left-margin card.
+      const frame = this.frame();
+      if (frame !== this.lastFrame) { this.lastFrame = frame; this.measure(); }
+      else if (u.docChanged || u.geometryChanged || u.heightChanged || u.viewportChanged) this.measure();
+    }
+
+    /** The scroller's inline padding and edge cover — reads no layout. */
+    frame() {
+      const s = this.view.scrollDOM.style;
+      return `${s.paddingLeft}|${s.paddingRight}|${s.getPropertyValue("--edge-cover-left")}|${s.getPropertyValue("--edge-cover-right")}`;
     }
 
     spans(state) {
