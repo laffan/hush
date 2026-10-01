@@ -247,38 +247,6 @@
   min-width: 0;
 }
 
-/* A project whose Desktop holds content keeps the Desktop icon right
-   after its name (files-panel-desktop-badge.js): the name shrinks to its
-   text so the icon follows it rather than the row's far edge, and the
-   hover actions drop their own copy of the button. */
-.tree-item-row.has-desktop-badge .tree-item-name { flex: 0 1 auto; }
-.tree-desktop-badge {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  margin-left: -2px; /* 4px from the name, inside the row's 6px gap */
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  border-radius: 3px;
-  color: var(--fg);
-  opacity: 0.5;
-  cursor: pointer;
-}
-.tree-desktop-badge:hover { opacity: 1; }
-.tree-desktop-badge svg {
-  width: 12px;
-  height: 12px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.tree-item-row.has-desktop-badge .tree-actions [data-tree-action="view-desktop"] { display: none; }
 
 /* Outline number prefix on project child rows (Show numbers). */
 .tree-item-number {
@@ -306,6 +274,27 @@
 .sl-item.sl-hovered > .sl-item-content .tree-actions {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* A project whose Desktop holds content (files-panel-desktop-badge.js)
+   keeps its Desktop button in view, exactly where the hover shows it;
+   the menu beside it still waits for the hover. Off hover the strip
+   drops its backing — it only masks a name running under it, and the
+   name now stops short of it (20px menu + 1px gap + 4px + 20px button,
+   and 4px to spare) rather than run under a button that never leaves. */
+.tree-item-row.has-desktop-content .tree-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.sl-item:not(.sl-hovered) > .sl-item-content .tree-item-row.has-desktop-content .tree-actions {
+  background: transparent;
+}
+.sl-item:not(.sl-hovered) > .sl-item-content .tree-item-row.has-desktop-content .tree-action-menu {
+  opacity: 0;
+  pointer-events: none;
+}
+.tree-item-row.has-desktop-content .tree-item-name {
+  margin-right: 49px;
 }
 
 /* Hide the action overlay while the row is in rename mode so the input

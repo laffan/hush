@@ -32,7 +32,7 @@ import {
   isCardItem, augmentTreeWithCards, foldCardParents, noteCardFolds, stripCardsFromTree, renderCardRow, renderCardsHomeRow, cardsHomeIsEmpty, openCard,
   dropCardOnRow, dropCardOutside, trackCardRowHover, onCardIndexChange,
 } from "./files-panel-cards.js";
-import { desktopBadgeHtml, onDesktopContentChange } from "./files-panel-desktop-badge.js";
+import { showsDesktopButton, onDesktopContentChange } from "./files-panel-desktop-badge.js";
 import { importFileIntoPdf } from "../pdf/pdf-manual-import.js"; // static: its picker must open inside the click
 import { renderFlaggedSection } from "./files-panel-flagged.js";
 import { renderDeskYouAreHere } from "./files-panel-you-are-here.js";
@@ -224,9 +224,9 @@ export function createFilesPanel(container, state, hidePanel) {
           const label = `${numPrefix}${escHtml(displayName)}`;
           const nameHtml = (isInboxItem(state.fileTree, item) && inboxNameHtml(state, item, label))
             || `<span class="tree-item-name">${label}</span>`;
-          const desktopBadge = desktopBadgeHtml(state, item, inTrash); // a Desktop with content in it
-          if (desktopBadge) row.classList.add("has-desktop-badge");
-          row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}${nameHtml}${desktopBadge}${trailing}`;
+          // A Desktop with content in it keeps its hover button in view.
+          if (showsDesktopButton(state, item, inTrash)) row.classList.add("has-desktop-content");
+          row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}${nameHtml}${trailing}`;
         }
       }
       if (item.type === "image" && item.fileId) attachImageTooltipToRow(row, item.fileId, item.name);
