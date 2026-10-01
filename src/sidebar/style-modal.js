@@ -66,6 +66,9 @@ function buildDefaultDraftFromSettings(state) {
     cursorBlink: s.cursorBlink,
     cursorIdleAnimation: s.cursorIdleAnimation,
     lineIndicator: s.lineIndicator || "none",
+    lineIndicatorUnderlineThickness: s.lineIndicatorUnderlineThickness ?? null,
+    lineIndicatorHighlightThickness: s.lineIndicatorHighlightThickness ?? null,
+    lineIndicatorFullWidth: s.lineIndicatorFullWidth ?? null,
     // Default style's post + background layers ride top-level
     // AppSettings fields so they persist alongside the other
     // Default-only knobs. `shaderLayer` is the retired single-overlay
@@ -189,6 +192,9 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         cursorBlink: draft.cursorBlink ?? null,
         cursorIdleAnimation: draft.cursorIdleAnimation ?? null,
         lineIndicator: draft.lineIndicator || "none",
+        lineIndicatorUnderlineThickness: draft.lineIndicatorUnderlineThickness ?? null,
+        lineIndicatorHighlightThickness: draft.lineIndicatorHighlightThickness ?? null,
+        lineIndicatorFullWidth: draft.lineIndicatorFullWidth ?? null,
         shaderLayer: draft.shaderLayer || null,
         postLayers: draft.postLayers || null,
         postProcessingEnabled: draft.postProcessingEnabled !== false,
@@ -241,6 +247,9 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         cursorBlink: state.settings.cursorBlink,
         cursorIdleAnimation: state.settings.cursorIdleAnimation,
         lineIndicator: state.settings.lineIndicator || "none",
+        lineIndicatorUnderlineThickness: state.settings.lineIndicatorUnderlineThickness ?? null,
+        lineIndicatorHighlightThickness: state.settings.lineIndicatorHighlightThickness ?? null,
+        lineIndicatorFullWidth: state.settings.lineIndicatorFullWidth ?? null,
         shaderLayer: state.settings.shaderLayer || null,
         postLayers: state.settings.postLayers || null,
         postProcessingEnabled: state.settings.postProcessingEnabled,

@@ -756,6 +756,13 @@
    !important on every flex property. */
 
 /* Right column: preview */
+/* Full-width underline / highlight in the preview: the demo line
+   reaches out through the pane's side padding, as the editor's reaches
+   the scroller's edges. */
+.style-modal-preview.line-ind-full .preview-active-line {
+  margin-inline: -36px;
+  padding-inline: 36px;
+}
 .style-modal-preview {
   flex: 1;
   padding: 32px 36px;
@@ -1015,9 +1022,13 @@
   margin: 0;
   cursor: pointer;
 }
+/* Both faint labels name their colour: the modal sets no foreground of
+   its own, so an uncoloured span inherits the document's default black
+   and stays black in a dark appearance. */
 .style-glow-option span {
   font-size: 11px;
   opacity: 0.55;
+  color: var(--sidebar-fg);
 }
 /* Per-appearance swatches: the Cursor section's, in the same two
    columns as the Glow switches so the Light and Dark halves line up down
@@ -1030,6 +1041,7 @@
 .style-appearance-swatch-label {
   font-size: 11px;
   opacity: 0.55;
+  color: var(--sidebar-fg);
 }
 .style-line-ind-color {
   flex: 1;
@@ -1306,6 +1318,10 @@
     overflow-y: auto;
     border-radius: 0;
     padding: 20px 24px;
+  }
+  .style-modal-preview.line-ind-full .preview-active-line {
+    margin-inline: -24px;
+    padding-inline: 24px;
   }
   .style-modal-divider {
     order: 1;

@@ -77,6 +77,17 @@ pub struct Style {
     /// `light_colors` / `dark_colors` under the `lineIndicator` key.
     #[serde(default)]
     pub line_indicator: Option<String>,
+    /// Underline indicator's rule, in px (unset = 2).
+    #[serde(default)]
+    pub line_indicator_underline_thickness: Option<f64>,
+    /// Highlight indicator's band, as a percentage of the line from its
+    /// foot (unset = 100, the whole line).
+    #[serde(default)]
+    pub line_indicator_highlight_thickness: Option<f64>,
+    /// Underline / highlight run the editor's full width instead of the
+    /// text column's.
+    #[serde(default)]
+    pub line_indicator_full_width: Option<bool>,
     /// Retired single-overlay post processing. Kept so styles written by
     /// an older build still round-trip and can derive their post layers
     /// on read; nothing writes it any more.

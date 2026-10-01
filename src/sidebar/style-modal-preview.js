@@ -16,6 +16,7 @@ import {
 } from "./styles-panel-shared.js";
 import { getThemeById } from "../themes/index.js";
 import { glowForAppearance, glowIntensity, cursorIdleAnimation } from "../editor/cursor-options.js";
+import { applyLineIndicatorShape, UNDERLINE_THICKNESS_DEFAULT, HIGHLIGHT_THICKNESS_DEFAULT } from "../editor/line-indicator.js";
 
 export const PREVIEW_MD = `# The Art of Writing
 
@@ -171,6 +172,12 @@ export function updatePreview(state, backdrop, draft, colorTab, previewState) {
   const allVariants = ["left-arrow", "double-arrow", "left-border", "border", "underline", "highlight"];
   allVariants.forEach(v => pane.classList.remove("line-ind-" + v));
   if (liVariant) pane.classList.add("line-ind-" + liVariant);
+  applyLineIndicatorShape(pane, {
+    underline: draft.lineIndicatorUnderlineThickness ?? UNDERLINE_THICKNESS_DEFAULT,
+    highlight: draft.lineIndicatorHighlightThickness ?? HIGHLIGHT_THICKNESS_DEFAULT,
+  });
+  pane.classList.toggle("line-ind-full", !!draft.lineIndicatorFullWidth
+    && (liVariant === "underline" || liVariant === "highlight"));
 
   const cursorEl = pane.querySelector(".preview-cursor");
   if (cursorEl) {

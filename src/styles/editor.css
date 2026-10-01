@@ -349,9 +349,16 @@ body.file-in-trash #notebook-container .notes-canvas + * {
   --line-ind-paint: var(--panel-border, rgba(128, 128, 128, 0.35));
   --line-ind-wash: 28%;
 }
+/* The wash is a band up from the line's foot, `--line-ind-highlight-h`
+   of it (100% — the default — is the whole line, as it always was). */
 .line-ind-highlight .hush-line-ind,
 .line-ind-highlight .preview-active-line {
-  background-color: color-mix(in srgb, var(--line-ind-paint) var(--line-ind-wash), transparent);
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--line-ind-paint) var(--line-ind-wash), transparent),
+    color-mix(in srgb, var(--line-ind-paint) var(--line-ind-wash), transparent));
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: 100% var(--line-ind-highlight-h, 100%);
 }
 /* Borders sit 10 px outside the text column (matching the arrow gap)
    rather than hugging the text edge, so the indicator reads as a
@@ -393,7 +400,7 @@ body.file-in-trash #notebook-container .notes-canvas + * {
   left: 0;
   right: 0;
   bottom: -3px;
-  height: 2px;
+  height: var(--line-ind-underline-h, 2px);
   border-radius: 1px;
   background-color: var(--line-ind-paint);
   pointer-events: none;

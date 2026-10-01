@@ -9,6 +9,11 @@
  * row, unchecking it drops both overrides so the indicator falls back to
  * the cursor again.
  *
+ * Underline and highlight add two more rows — Thickness and Width
+ * (`lineIndicatorUnderlineThickness` / `lineIndicatorHighlightThickness`
+ * / `lineIndicatorFullWidth`, top-level keys on the style, or on
+ * AppSettings for the Default style).
+ *
  * The overrides live where every other per-appearance colour lives —
  * `lightColors.lineIndicator` / `darkColors.lineIndicator` — so
  * `style-application.js` and the preview keep reading them from the
@@ -20,6 +25,7 @@ import { escAttr, escHtml } from "./styles-panel-shared.js";
 import { getThemeById } from "../themes/index.js";
 import { themeColorFor } from "./style-modal-preview.js";
 import { splitAlphaColor, joinAlphaColor } from "../ui/color-picker.js";
+import { UNDERLINE_THICKNESS_DEFAULT, HIGHLIGHT_THICKNESS_DEFAULT } from "../editor/line-indicator.js";
 
 /** True when either appearance carries a line-indicator override. */
 export function hasCustomLineIndicatorColor(draft) {
@@ -53,6 +59,41 @@ function swatchCell(id, label, value) {
           </span>`;
 }
 
+/** Underline and highlight have a shape the other variants don't: how
+ *  thick the rule or the band is, and whether it runs the text column
+ *  (Normal) or the editor's whole width (Full width). The underline's
+ *  thickness is px; the highlight's is the share of the line it covers,
+ *  measured up from the line's foot, so a thin one reads as a
+ *  highlighter pen's stroke rather than a slab. */
+function renderShapeRows(draft) {
+  const v = draft.lineIndicator;
+  if (v !== "underline" && v !== "highlight") return "";
+  const isUnderline = v === "underline";
+  const value = isUnderline
+    ? (draft.lineIndicatorUnderlineThickness ?? UNDERLINE_THICKNESS_DEFAULT)
+    : (draft.lineIndicatorHighlightThickness ?? HIGHLIGHT_THICKNESS_DEFAULT);
+  const unit = isUnderline ? "px" : "%";
+  const range = isUnderline ? 'min="1" max="10" step="1"' : 'min="10" max="100" step="5"';
+  const full = !!draft.lineIndicatorFullWidth;
+  return `
+    <div class="style-editor-row">
+      <label for="style-line-indicator-thickness">Thickness</label>
+      <div class="style-slider-group">
+        <input type="range" id="style-line-indicator-thickness" ${range} value="${value}" />
+        <span class="style-slider-value">${value}${unit}</span>
+      </div>
+    </div>
+    <div class="style-editor-row">
+      <label for="style-line-indicator-width">Width</label>
+      <div class="style-select-group">
+        <select id="style-line-indicator-width" class="style-native-select">
+          <option value="normal"${full ? "" : " selected"}>Normal</option>
+          <option value="full"${full ? " selected" : ""}>Full width</option>
+        </select>
+      </div>
+    </div>`;
+}
+
 /** The row under the Line Indicator dropdown: the "Custom color" box,
  *  and while it's ticked the Light and Dark pickers beside it on the same
  *  row. Nothing renders while the indicator is "none" — there's no mark
@@ -70,7 +111,7 @@ export function renderLineIndicatorColorRows(draft) {
           ${swatchCell("style-line-indicator-dark", "Dark", seedColor(draft, "dark"))}
         </div>` : ""}
       </div>
-    </div>`;
+    </div>${renderShapeRows(draft)}`;
 }
 
 /**
@@ -117,4 +158,23 @@ export function bindLineIndicatorColorRows(root, draft, rerender, onCommit) {
   };
   bindColor("#style-line-indicator-light", "light");
   bindColor("#style-line-indicator-dark", "dark");
+
+  // Thickness writes the key of whichever variant is showing; the label
+  // follows the drag without a re-render, which would drop the slider
+  // out from under the pointer.
+  const thickEl = root.querySelector("#style-line-indicator-thickness");
+  if (thickEl) thickEl.addEventListener("input", () => {
+    const n = Number(thickEl.value);
+    const isUnderline = draft.lineIndicator === "underline";
+    if (isUnderline) draft.lineIndicatorUnderlineThickness = n;
+    else draft.lineIndicatorHighlightThickness = n;
+    const label = thickEl.parentElement?.querySelector(".style-slider-value");
+    if (label) label.textContent = `${n}${isUnderline ? "px" : "%"}`;
+    onCommit();
+  });
+  const widthEl = root.querySelector("#style-line-indicator-width");
+  if (widthEl) widthEl.addEventListener("change", () => {
+    draft.lineIndicatorFullWidth = widthEl.value === "full";
+    onCommit();
+  });
 }

@@ -51,6 +51,12 @@ export function createDefaultSettings() {
     // indicator colour rides per-appearance on defaultLightColors /
     // defaultDarkColors under the `lineIndicator` key.
     lineIndicator: "none",
+    // Underline / highlight shape: the rule's px, the band's % of the
+    // line, and whether either spans the editor rather than the column.
+    // null = the defaults (2 px, 100 %, column).
+    lineIndicatorUnderlineThickness: null,
+    lineIndicatorHighlightThickness: null,
+    lineIndicatorFullWidth: null,
     typewriterLineOpacity: 0.08,
     // %% comment %% opacity. Markers dim to 2/3 of this value so the
     // delimiters fade further than the body content.
@@ -73,6 +79,8 @@ export function createDefaultSettings() {
     outlineFontStep: 0,
     notebookShelfWidth: 280,
     notebookProofRailWidth: 92,
+    // The PDF viewer's annotation shelf (dragged by its left edge).
+    pdfAnnotShelfWidth: 280,
     // Page rail on a proofread notebook — the live minimap down the
     // right edge. On by default; the toggle sits in the canvas's
     // bottom-right chrome row (notebook/ui/bg-settings-fixed-button.ts).

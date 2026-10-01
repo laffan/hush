@@ -24,6 +24,11 @@
  * pane's edge rather than to the text, and the highlight wash runs
  * edge to edge.
  *
+ * Underline and highlight also carry a shape (`resolveLineIndicatorShape`):
+ * a thickness, published on the overlay as a custom property, and an
+ * optional full width, which takes the flush geometry — the scroller's
+ * whole box — in every editor, not only in panes.
+ *
  * The container (editor / pane / preview wrapper) still carries a
  * `line-ind-<variant>` class — CSS targets `.line-ind-X
  * .hush-line-ind` to pick the variant skin.
@@ -31,6 +36,35 @@
 import { ViewPlugin } from "@codemirror/view";
 
 const VARIANTS = ["left-arrow", "double-arrow", "left-border", "border", "underline", "highlight"];
+
+/** Underline / highlight shape defaults — what a style that never set
+ *  them renders (the style modal opens its sliders on the same values). */
+export const UNDERLINE_THICKNESS_DEFAULT = 2;
+export const HIGHLIGHT_THICKNESS_DEFAULT = 100;
+
+/** The active style's (or, with none, the Default style's) underline /
+ *  highlight shape: `{ underline, highlight, fullWidth }` — the rule in
+ *  px, the band as a % of the line, and whether either spans the editor
+ *  instead of the text column. */
+export function resolveLineIndicatorShape(state) {
+  const styleId = state.settings.activeStyleId;
+  const src = styleId
+    ? ((state.settings.styles || []).find(s => s.id === styleId) || {})
+    : state.settings;
+  return {
+    underline: src.lineIndicatorUnderlineThickness ?? UNDERLINE_THICKNESS_DEFAULT,
+    highlight: src.lineIndicatorHighlightThickness ?? HIGHLIGHT_THICKNESS_DEFAULT,
+    fullWidth: !!src.lineIndicatorFullWidth,
+  };
+}
+
+/** Publish a shape onto an element that hosts an indicator (the overlay,
+ *  or the style preview's pane) as the custom properties editor.css
+ *  sizes the underline and the highlight band from. */
+export function applyLineIndicatorShape(el, shape) {
+  el.style.setProperty("--line-ind-underline-h", shape.underline + "px");
+  el.style.setProperty("--line-ind-highlight-h", shape.highlight + "%");
+}
 
 function resolveLineIndicator(state) {
   const styleId = state.settings.activeStyleId;
@@ -100,6 +134,11 @@ export function createLineIndicatorPlugin(state, opts) {
             const coords = this.view.coordsAtPos(head);
             if (!coords) return null;
             const muted = !this.view.hasFocus;
+            const shape = resolveLineIndicatorShape(state);
+            // Full width only means something for the two marks that run
+            // along the line; the margin marks stay beside the text.
+            const spansEditor = flush
+              || (shape.fullWidth && (indicator === "underline" || indicator === "highlight"));
             // Align the overlay's bounds with the *text* area, not the
             // cm-content's padding box. In the main editor, cm-scroller
             // carries the gutter padding and cm-content is flush, so
@@ -119,9 +158,9 @@ export function createLineIndicatorPlugin(state, opts) {
             // width clientWidth is precisely the host's inner edges, with
             // the 22 px scroller padding left as the margin the marks sit
             // in (see the module comment).
-            if (flush) {
+            if (spansEditor) {
               return {
-                indicator, muted, top, height,
+                indicator, muted, top, height, shape,
                 left: this.view.scrollDOM.scrollLeft,
                 width: this.view.scrollDOM.clientWidth,
               };
@@ -131,7 +170,7 @@ export function createLineIndicatorPlugin(state, opts) {
             const padLeft = parseFloat(cs.paddingLeft) || 0;
             const padRight = parseFloat(cs.paddingRight) || 0;
             return {
-              indicator, muted, top, height,
+              indicator, muted, top, height, shape,
               left: contentRect.left - scrollerRect.left + padLeft + this.view.scrollDOM.scrollLeft,
               width: Math.max(0, contentRect.width - padLeft - padRight),
             };
@@ -144,6 +183,7 @@ export function createLineIndicatorPlugin(state, opts) {
             for (const v of VARIANTS) this.overlay.classList.remove("hush-line-ind-" + v);
             this.overlay.classList.add("hush-line-ind-" + data.indicator);
             this.overlay.classList.toggle("hush-line-ind-muted", data.muted);
+            applyLineIndicatorShape(this.overlay, data.shape);
             this.overlay.style.display = "block";
             this.overlay.style.top = data.top + "px";
             this.overlay.style.left = data.left + "px";
