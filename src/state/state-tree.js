@@ -365,6 +365,30 @@ async function finalizeFileDeletion(state, fileIds) {
   state.emit("files-changed");
 }
 
+/** The file behind a node takes the node's new name (the tree is the
+ *  caller's to update and save). */
+export async function renameFileRecord(state, fileId, name) {
+  if (IS_TAURI) {
+    try {
+      await tauriInvoke("rename_file", { id: fileId, name });
+      // Patch the cache in place instead of re-reading the whole
+      // library. `list_files` loads every file's full content across
+      // the IPC bridge — and this path runs on every 1.5 s typing
+      // pause while a first line is being composed (the idle-debounce
+      // title rename), which stalled typing exactly the way the old
+      // autosave-path list_files did (see saveCurrentFile).
+      const cached = state.files.find((f) => f.id === fileId);
+      if (cached) cached.name = name;
+      else state.files = await tauriInvoke("list_files");
+    }
+    catch (e) { console.error("Rename failed:", e); }
+  } else {
+    const file = state.files.find((f) => f.id === fileId);
+    if (file) file.name = name;
+    state._saveFilesLocal();
+  }
+}
+
 export async function renameTreeNode(state, nodeId, newName) {
   const node = findNode(state.fileTree, nodeId);
   if (!node) return;
@@ -396,25 +420,7 @@ export async function renameTreeNode(state, nodeId, newName) {
   if (finalName === oldName) return;
   node.name = finalName;
   if ((node.type === "document" || node.type === "notebook" || node.type === "pdf") && node.fileId) {
-    if (IS_TAURI) {
-      try {
-        await tauriInvoke("rename_file", { id: node.fileId, name: finalName });
-        // Patch the cache in place instead of re-reading the whole
-        // library. `list_files` loads every file's full content across
-        // the IPC bridge — and this path runs on every 1.5 s typing
-        // pause while a first line is being composed (the idle-debounce
-        // title rename), which stalled typing exactly the way the old
-        // autosave-path list_files did (see saveCurrentFile).
-        const cached = state.files.find((f) => f.id === node.fileId);
-        if (cached) cached.name = finalName;
-        else state.files = await tauriInvoke("list_files");
-      }
-      catch (e) { console.error("Rename failed:", e); }
-    } else {
-      const file = state.files.find((f) => f.id === node.fileId);
-      if (file) file.name = finalName;
-      state._saveFilesLocal();
-    }
+    await renameFileRecord(state, node.fileId, finalName);
   }
   await state.saveFileTree();
   // Rewrite every `[[oldName]]` reference across the user's docs and

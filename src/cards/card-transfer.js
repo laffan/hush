@@ -148,8 +148,8 @@ async function editNotebookOnDisk(fileId, fn) {
   const env = parseEnvelope(file?.content);
   if (fn(env) === false) return false;
   await invoke("save_file", { id: fileId, content: JSON.stringify(env) });
-  const { cardIndexOf } = await import("../notebook/card-shape.ts");
-  publishNotebookCards(fileId, cardIndexOf(env.shapes));
+  const { cardIndexOf, hasNonCardShapes } = await import("../notebook/card-shape.ts");
+  publishNotebookCards(fileId, cardIndexOf(env.shapes), { otherContent: hasNonCardShapes(env.shapes) });
   return true;
 }
 

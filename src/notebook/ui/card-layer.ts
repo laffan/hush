@@ -31,7 +31,7 @@ import type { DrawingState } from "../state";
 import type { TextShape } from "../types";
 import { canvasToScreen } from "../utils";
 import {
-  cardIndexOf, cardMetaOf, isCardShape, patchCardShape, removeCardShape, setCardHeights, uncardShape,
+  cardIndexOf, cardMetaOf, hasNonCardShapes, isCardShape, patchCardShape, removeCardShape, setCardHeights, uncardShape,
 } from "../card-shape";
 import { cardBox } from "../card-geometry";
 import type { CardMeta } from "../../cards/card-model";
@@ -52,7 +52,7 @@ interface CardsBridge {
   startCardDrag(o: Record<string, unknown>): void;
   watchCanvasCardDrag?(o: Record<string, unknown>): void;
   insertAtRememberedCursor(text: string): boolean;
-  publishNotebookCards(fileId: string, cards: { id: string; title: string; bgColor?: string }[]): void;
+  publishNotebookCards(fileId: string, cards: { id: string; title: string; bgColor?: string }[], o?: { otherContent?: boolean }): void;
 }
 
 function bridge(): CardsBridge | null {
@@ -222,7 +222,7 @@ export function createCardLayer(state: DrawingState): HTMLElement {
       const key = JSON.stringify(index);
       if (key === lastIndexKey) return;
       lastIndexKey = key;
-      b.publishNotebookCards(fileId, index);
+      b.publishNotebookCards(fileId, index, { otherContent: hasNonCardShapes(state.shapes) });
     }, 300);
   }
 

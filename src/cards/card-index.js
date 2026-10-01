@@ -13,6 +13,10 @@
  */
 
 export const CARD_INDEX_EVENT = "hush-card-index-changed";
+/** A notebook's last card just left it, and it holds other things too
+ *  (`detail.fileId`) — cards/card-home-rescue.js keeps a CARDS notebook
+ *  in that state from going out of sight. */
+export const CARDS_EMPTIED_EVENT = "hush-cards-emptied";
 const STORE_KEY = "hush-nb-card-index";
 
 /** { [notebookFileId]: [{ id, title, bgColor? }] } */
@@ -46,7 +50,9 @@ export function announceCardsChanged() {
   announce();
 }
 
-export function publishNotebookCards(fileId, cards) {
+/** `otherContent`: the notebook holds something besides its cards
+ *  (notebook/card-shape.ts#hasNonCardShapes). */
+export function publishNotebookCards(fileId, cards, { otherContent = false } = {}) {
   if (!fileId) return;
   const next = (cards || []).map((c) => ({ id: c.id, title: c.title, ...(c.bgColor ? { bgColor: c.bgColor } : {}) }));
   const prev = index[fileId];
@@ -55,6 +61,9 @@ export function publishNotebookCards(fileId, cards) {
   index = { ...index, [fileId]: next };
   save();
   announce();
+  if (prev?.length && !next.length && otherContent) {
+    window.dispatchEvent(new CustomEvent(CARDS_EMPTIED_EVENT, { detail: { fileId } }));
+  }
 }
 
 /** Whether this device knows what cards notebook `fileId` holds (its

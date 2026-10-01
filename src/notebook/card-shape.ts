@@ -201,6 +201,13 @@ export function cardIndexOf(shapes: Shape[]): { id: string; title: string; bgCol
     .map((s) => ({ id: s.id, title: cardTitle(s.text), bgColor: (s.cardMeta?.bgColor as string) || undefined }));
 }
 
+/** Whether a notebook holds anything but cards — ink, text, images, a
+ *  flowchart. (A CARDS notebook with nothing else in it can simply
+ *  stand empty; one with more is kept in the Inbox: cards/card-home-rescue.js.) */
+export function hasNonCardShapes(shapes: Shape[]): boolean {
+  return shapes.some((s) => !isCardShape(s));
+}
+
 export const GRID_GAP = 24;
 export const GRID_COLUMNS = 4;
 
