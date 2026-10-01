@@ -339,6 +339,20 @@ mod tests {
             .map_err(|e| e.first().map(|d| d.message.to_string()).unwrap_or_default())
     }
 
+    /// A markdown table keeps its shape: as many columns as the
+    /// delimiter row has, the header row in `table.header`. It used to
+    /// go out as `columns: auto` — a single column — and every cell
+    /// printed stacked down the page.
+    #[test]
+    fn table_keeps_its_columns() {
+        let md = "| Name | Year | Pages |\n|:---|:---:|---:|\n| Hoskins | 2011 | 12 |\n| *Smith* | 2020 | 3 |";
+        let body = markdown::to_typst(md, markdown::CitationMode::Strip, &std::collections::HashSet::new());
+        assert!(body.contains("columns: 3"), "{body}");
+        assert!(body.contains("align: (left, center, right,)"), "{body}");
+        assert!(body.contains("table.header("), "{body}");
+        compiles(&body).expect("table compiles");
+    }
+
     /// The Typst behaviour the code-block fencing rule is built on: a
     /// raw block closes at the first matching backtick run, so a fence
     /// must be longer than anything inside it. Pinned as a test because

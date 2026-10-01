@@ -24,7 +24,7 @@ When in doubt: a slightly degraded rendering beats refusing to compile.
 
 use std::collections::HashSet;
 
-use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 use super::citations::{expand_cite_sentinels, preprocess_cites};
 use super::code::{emit_code_block, emit_inline_code};
@@ -131,6 +131,9 @@ struct Emitter<'a> {
     code_lang: Option<String>,
     /// Normalized paths the World can serve — see `to_typst`.
     available_images: &'a HashSet<String>,
+    /// Inside a table's header row (its cells are bold, and sit inside
+    /// `table.header(…)`).
+    in_table_head: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -165,6 +168,7 @@ impl<'a> Emitter<'a> {
             code_block: None,
             code_lang: None,
             available_images,
+            in_table_head: false,
         }
     }
 
@@ -302,9 +306,32 @@ impl<'a> Emitter<'a> {
                     alt: String::new(),
                 });
             }
-            Tag::Table(_) => out.push_str("\n#table(columns: auto,\n"),
-            Tag::TableHead | Tag::TableRow => {}
-            Tag::TableCell => out.push_str("  ["),
+            // `columns` must be the count: `columns: auto` is *one*
+            // auto-sized column, which stacked every cell of the table
+            // down the page. The header row goes in `table.header` (it
+            // repeats when a table breaks across pages) and is set bold,
+            // as the editor's table renderer draws it.
+            Tag::Table(aligns) => {
+                let align: Vec<&str> = aligns
+                    .iter()
+                    .map(|a| match a {
+                        Alignment::Center => "center",
+                        Alignment::Right => "right",
+                        Alignment::Left | Alignment::None => "left",
+                    })
+                    .collect();
+                out.push_str(&format!(
+                    "\n#table(\n  columns: {},\n  align: ({},),\n  stroke: 0.5pt + luma(170),\n  inset: (x: 0.6em, y: 0.45em),\n",
+                    aligns.len().max(1),
+                    align.join(", "),
+                ));
+            }
+            Tag::TableHead => {
+                self.in_table_head = true;
+                out.push_str("  table.header(\n");
+            }
+            Tag::TableRow => {}
+            Tag::TableCell => out.push_str(if self.in_table_head { "  [#strong[" } else { "  [" }),
             Tag::FootnoteDefinition(_) => out.push_str("\n#footnote[\n"),
             Tag::HtmlBlock
             | Tag::MetadataBlock(_)
@@ -364,8 +391,12 @@ impl<'a> Emitter<'a> {
             | TagEnd::DefinitionListTitle
             | TagEnd::DefinitionListDefinition => {}
             TagEnd::Table => out.push_str(")\n\n"),
-            TagEnd::TableHead | TagEnd::TableRow => out.push('\n'),
-            TagEnd::TableCell => out.push_str("],\n"),
+            TagEnd::TableHead => {
+                self.in_table_head = false;
+                out.push_str("  ),\n");
+            }
+            TagEnd::TableRow => out.push('\n'),
+            TagEnd::TableCell => out.push_str(if self.in_table_head { "]],\n" } else { "],\n" }),
             TagEnd::FootnoteDefinition => out.push_str("\n]\n\n"),
             TagEnd::Superscript | TagEnd::Subscript => self.write("]", out),
         }
