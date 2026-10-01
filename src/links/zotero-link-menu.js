@@ -10,15 +10,18 @@
  *   - "Open in Hush"    — when the link's item resolves to a PDF that's
  *     already in the desk's collection (the PDF registry), opens it in
  *     the main viewer, honouring the link's `?page=` anchor.
- *   - "Download to Hush" — when the reference has a PDF attachment that
- *     isn't in Hush yet: registers a placeholder, downloads in the
- *     background (same pipeline as Zotero: Save PDF), and opens the
- *     PDF the moment the binary lands.
- *   - "Import PDF File…" — the offline way in (pdf/pdf-manual-import.js):
- *     a PDF picked from disk, linked to the reference from the library
- *     cache on this device, or put behind a placeholder whose download is
- *     pending or failed. Offered beside every download state, since a
- *     download that can't reach Zotero only says so once it has failed.
+ *   - "Import PDF" — while the PDF isn't in Hush yet, a label over three
+ *     icons, the three ways it can arrive:
+ *       · download — when the reference has a PDF attachment: registers
+ *         a placeholder, downloads in the background (same pipeline as
+ *         Zotero: Save PDF), and opens the PDF the moment the binary
+ *         lands; a spinner while it runs, a retry once it has failed;
+ *       · clipboard / file — the offline ways in (pdf/pdf-manual-import
+ *         .js): the PDF on the clipboard or one picked from disk, linked
+ *         to the reference from the library cache on this device, or put
+ *         behind a placeholder whose download is pending or failed.
+ *         Offered beside every download state, since a download that
+ *         can't reach Zotero only says so once it has failed.
  *
  * Notebook text shapes route here through `window.__hushOpenZoteroLink`
  * (registered by initZoteroLinkMenu) so the canvas module stays free of
@@ -220,17 +223,58 @@ function makeSpinner() {
   return s;
 }
 
-/** The manual-import row. `run` resolves to the fileId the file went
- *  behind, or null (cancelled, or it failed and said so); it must reach
- *  the picker without awaiting anything first. */
-function makeImportRow(page, projectId, run) {
-  return makeRow("Import PDF File\u2026", async () => {
+// Import strip glyphs — download (Zotero), clipboard, file on disk.
+const IMPORT_ICONS = {
+  download: `<svg viewBox="0 0 16 16"><path d="M8 2v8"/><path d="M4.5 6.5 8 10l3.5-3.5"/><path d="M2.5 11v2.5h11V11"/></svg>`,
+  clipboard: `<svg viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="11.5" rx="1.5"/><path d="M6 3V2h4v1"/><path d="M5.5 7h5M5.5 9.5h5M5.5 12h3"/></svg>`,
+  file: `<svg viewBox="0 0 16 16"><path d="M9.5 1.5H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5z"/><path d="M9.5 1.5V5H13"/><path d="M8 7v5"/><path d="M6 10l2 2 2-2"/></svg>`,
+};
+
+/** One button of the import strip. `spec` is `{ title, run?, busy? }`:
+ *  no `run` leaves it disabled (the title says why), `busy` swaps the
+ *  glyph for a spinner. */
+function makeImportIcon(kind, spec) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = `zotero-link-menu-icon zotero-link-menu-icon-${kind}`;
+  btn.title = spec.title;
+  btn.setAttribute("aria-label", spec.title);
+  if (spec.busy) btn.appendChild(makeSpinner());
+  else btn.innerHTML = IMPORT_ICONS[kind];
+  if (spec.run) btn.addEventListener("click", spec.run);
+  else btn.disabled = true;
+  return btn;
+}
+
+/** "Import PDF" and, under it, the three ways a PDF can arrive: from
+ *  Zotero, off the clipboard, from a file on disk. */
+function makeImportBlock({ download, clipboard, file }) {
+  const block = document.createElement("div");
+  block.className = "zotero-link-menu-import";
+  const label = document.createElement("div");
+  label.className = "zotero-link-menu-import-label";
+  label.textContent = "Import PDF";
+  block.appendChild(label);
+  const strip = document.createElement("div");
+  strip.className = "zotero-link-menu-import-icons";
+  strip.appendChild(makeImportIcon("download", download));
+  strip.appendChild(makeImportIcon("clipboard", clipboard));
+  strip.appendChild(makeImportIcon("file", file));
+  block.appendChild(strip);
+  return block;
+}
+
+/** A clipboard / file import action. `run(source)` resolves to the
+ *  fileId the PDF went behind, or null (cancelled, or it failed and said
+ *  so); it must reach the picker without awaiting anything first. */
+function importAction(page, projectId, source, run) {
+  return async () => {
     closeZoteroLinkMenu();
-    const fileId = await run();
+    const fileId = await run(source);
     if (!fileId) return;
     await aliasPdfIntoProject(fileId, projectId);
     void openPdfInHush(fileId, page);
-  });
+  };
 }
 
 /**
@@ -289,69 +333,71 @@ export async function openZoteroLinkMenu(url, anchor) {
 
     if (entry) {
       // Placeholder registered — a download is (or was) in flight. Either
-      // way the file can come from disk instead.
-      const fillFromDisk = makeImportRow(parsed.page, projectId, async () =>
-        ((await importFileIntoPdf(_state, entry.fileId)) ? entry.fileId : null));
+      // way the file can come from the clipboard or disk instead.
+      const fill = (source) => importAction(parsed.page, projectId, source, async (src) =>
+        ((await importFileIntoPdf(_state, entry.fileId, { source: src })) ? entry.fileId : null));
       const inFlight = pdfSync.getPdfDownloadProgress(entry.fileId) !== null;
-      if (!inFlight) {
-        slot.appendChild(makeRow("Download failed — retry", () => {
-          pdfSync.triggerBackgroundDownload(entry.fileId, _state);
-          watchDownload(pdfSync, entry.fileId, parsed.page, el, renderHushRow, projectId);
-          renderHushRow();
-        }));
-        slot.appendChild(fillFromDisk);
-        return;
-      }
-      const row = makeRow("Downloading…", null);
-      row.prepend(makeSpinner());
-      slot.appendChild(row);
-      slot.appendChild(fillFromDisk);
-      watchDownload(pdfSync, entry.fileId, parsed.page, el, renderHushRow, projectId);
+      if (inFlight) watchDownload(pdfSync, entry.fileId, parsed.page, el, renderHushRow, projectId);
+      slot.appendChild(makeImportBlock({
+        download: inFlight
+          ? { title: "Downloading\u2026", busy: true }
+          : { title: "Download failed \u2014 retry", run: () => {
+              pdfSync.triggerBackgroundDownload(entry.fileId, _state);
+              watchDownload(pdfSync, entry.fileId, parsed.page, el, renderHushRow, projectId);
+              renderHushRow();
+            } },
+        clipboard: { title: "Paste PDF from clipboard", run: fill("clipboard") },
+        file: { title: "Import PDF file\u2026", run: fill("file") },
+      }));
       return;
     }
 
+    if (!_state.registerPdfPlaceholder) return;
     // Offline, a download can only fail: say so rather than start one.
     const offline = typeof navigator !== "undefined" && navigator.onLine === false;
-    if (ref && pdfAtt && _state.registerPdfPlaceholder && offline) {
-      slot.appendChild(makeRow("Download to Hush \u2014 offline", null));
-    } else if (ref && pdfAtt && _state.registerPdfPlaceholder) {
-      slot.appendChild(makeRow("Download to Hush", async () => {
-        try {
-          const baseName = sanitizeFilename(ref.shortTitle || ref.title || "PDF");
-          const result = await _state.registerPdfPlaceholder(baseName, {
-            zoteroAttKey: pdfAtt.key,
-            zoteroItemKey: ref.key,
-            zoteroTitle: ref.title || "Untitled",
-            zoteroAuthors: ref.authors || "",
-            zoteroFirstAuthor: ref.firstAuthor || "",
-            zoteroYear: ref.year || "",
-            zoteroCitekey: ref.citekey || "",
-          });
-          if (result) {
-            pdfSync.startBatchDownload([result.fileId], _state);
-            // Alias into the project right away (shows pending there,
-            // mirroring the desk entry) so it survives a superseded watch
-            // or an app quit mid-download; watchDownload re-aliases on
-            // completion (dedup-safe) for the already-in-flight paths.
-            void aliasPdfIntoProject(result.fileId, projectId);
-            watchDownload(pdfSync, result.fileId, parsed.page, el, renderHushRow, projectId);
-          }
-        } catch (err) {
-          console.error("Download to Hush failed:", err);
+    let download;
+    if (!ref || !pdfAtt) download = { title: "Zotero has no PDF for this item" };
+    else if (offline) download = { title: "Download from Zotero \u2014 offline" };
+    else download = { title: "Download from Zotero", run: async () => {
+      try {
+        const baseName = sanitizeFilename(ref.shortTitle || ref.title || "PDF");
+        const result = await _state.registerPdfPlaceholder(baseName, {
+          zoteroAttKey: pdfAtt.key,
+          zoteroItemKey: ref.key,
+          zoteroTitle: ref.title || "Untitled",
+          zoteroAuthors: ref.authors || "",
+          zoteroFirstAuthor: ref.firstAuthor || "",
+          zoteroYear: ref.year || "",
+          zoteroCitekey: ref.citekey || "",
+        });
+        if (result) {
+          pdfSync.startBatchDownload([result.fileId], _state);
+          // Alias into the project right away (shows pending there,
+          // mirroring the desk entry) so it survives a superseded watch
+          // or an app quit mid-download; watchDownload re-aliases on
+          // completion (dedup-safe) for the already-in-flight paths.
+          void aliasPdfIntoProject(result.fileId, projectId);
+          watchDownload(pdfSync, result.fileId, parsed.page, el, renderHushRow, projectId);
         }
-        renderHushRow();
-      }));
-    }
+      } catch (err) {
+        console.error("Download to Hush failed:", err);
+      }
+      renderHushRow();
+    } };
 
-    // A new linked entry from a file on disk, described by the cached
-    // reference — or, when the cache has never seen the item, by the key
-    // the link carries (an `open-pdf` link names the attachment).
-    if (_state.registerPdfPlaceholder) {
-      const meta = ref ? referencePdfMeta(ref, pdfAtt)
-        : parsed.kind === "open-pdf" ? { zoteroAttKey: parsed.key } : { zoteroItemKey: parsed.key };
-      slot.appendChild(makeImportRow(parsed.page, projectId, async () =>
-        (await importPdfFileForReference(_state, meta))?.fileId || null));
-    }
+    // A new linked entry from the clipboard or a file on disk, described
+    // by the cached reference — or, when the cache has never seen the
+    // item, by the key the link carries (an `open-pdf` link names the
+    // attachment).
+    const meta = ref ? referencePdfMeta(ref, pdfAtt)
+      : parsed.kind === "open-pdf" ? { zoteroAttKey: parsed.key } : { zoteroItemKey: parsed.key };
+    const create = (source) => importAction(parsed.page, projectId, source, async (src) =>
+      (await importPdfFileForReference(_state, meta, { source: src }))?.fileId || null);
+    slot.appendChild(makeImportBlock({
+      download,
+      clipboard: { title: "Paste PDF from clipboard", run: create("clipboard") },
+      file: { title: "Import PDF file\u2026", run: create("file") },
+    }));
   }
 
   renderHushRow();

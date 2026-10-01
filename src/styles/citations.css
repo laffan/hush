@@ -93,7 +93,7 @@
 }
 
 /* Zotero link menu — the Cmd+click tooltip on `[Title](zotero://…)`
-   links: "Open in Zotero" / "Open in Hush" / "Download to Hush". */
+   links: "Open in Zotero" / "Open in Hush" / "Import PDF". */
 .zotero-link-menu {
   position: fixed;
   z-index: 1000;
@@ -140,6 +140,49 @@
   white-space: nowrap;
 }
 
+/* "Import PDF" — a label over the three ways in (download, clipboard,
+   file), each a small icon button. */
+.zotero-link-menu-import {
+  padding: 5px 8px 4px;
+}
+.zotero-link-menu-import-label {
+  white-space: nowrap;
+  margin-bottom: 4px;
+}
+.zotero-link-menu-import-icons {
+  display: flex;
+  gap: 4px;
+}
+.zotero-link-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--fg, #888) 16%, transparent);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg, #ddd);
+  cursor: pointer;
+}
+.zotero-link-menu-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.zotero-link-menu-icon:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent, #4a86e8) 16%, transparent);
+}
+.zotero-link-menu-icon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* `[@` search popup — extends .wikilink-popup. The popup carries its
    own search input (focus jumps into it on open). */
 .citation-popup {
@@ -184,4 +227,7 @@
   max-width: 40%;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.zotero-link-menu-icon .citation-card-spinner {
+  margin-right: 0;
 }

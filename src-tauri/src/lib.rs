@@ -459,6 +459,7 @@ pub fn run() {
             commands::google_docs::append_google_sync_log,
             commands::google_docs::clear_google_sync_log,
             commands::pdfs::save_pdf,
+            commands::clipboard_pdf::read_clipboard_pdf,
             commands::pdfs::load_pdf,
             commands::pdfs::delete_pdf,
             commands::pdfs::pdf_exists,

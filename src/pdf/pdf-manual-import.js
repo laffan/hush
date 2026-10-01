@@ -8,7 +8,8 @@
  * this device (`zotero_references.json`), so a linked entry can be made
  * offline; only the bytes have to come from somewhere else, and the file
  * is usually already on disk (Zotero's own storage folder, a download, a
- * colleague's copy). Two ways in:
+ * colleague's copy), or on the clipboard. Two ways in, each taking either
+ * source:
  *
  *   - `importPdfFileForReference` — a new entry described by the cached
  *     reference, filled from a file the user picks. It is linked exactly
@@ -89,14 +90,50 @@ async function writePdfBytes(state, fileId, bytes) {
   state.emit("files-changed");
 }
 
-/** Pick a file and check it can be used. Null (with the reason said)
- *  when it can't, or on cancel. */
-async function pickUsablePdf() {
-  if (!IS_TAURI) {
+/** The PDF on the system clipboard as `{ name, bytes }`, or null. The
+ *  native side reads the pasteboard (commands/clipboard_pdf.rs) — the
+ *  webview's clipboard API never offers `application/pdf`, and a file
+ *  copied in the Finder reaches it only as a URL it may not open. `name`
+ *  stands in for a filename the clipboard doesn't carry. */
+export async function readClipboardPdf(name = "Clipboard PDF") {
+  let bytes = null;
+  if (IS_TAURI) {
+    const arr = await tauriInvoke("read_clipboard_pdf");
+    if (arr && arr.length) bytes = new Uint8Array(arr);
+  } else if (navigator.clipboard?.read) {
+    // A browser build — some engines do expose PDF data.
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find((t) => t === "application/pdf");
+      if (!type) continue;
+      bytes = new Uint8Array(await (await item.getType(type)).arrayBuffer());
+      break;
+    }
+  }
+  return bytes ? { name: `${name}.pdf`, bytes } : null;
+}
+
+/** Get a PDF from `source` — "file" (the picker) or "clipboard" — and
+ *  check it can be used. Null (with the reason said) when it can't, or
+ *  on cancel. `clipName` names a clipboard PDF in the toasts. */
+async function pickUsablePdf(source = "file", clipName) {
+  if (!IS_TAURI && source === "file") {
     showImportToast("Importing a PDF needs the desktop app", "error");
     return null;
   }
-  const picked = await pickPdfFile();
+  let picked = null;
+  if (source === "clipboard") {
+    try { picked = await readClipboardPdf(clipName); }
+    catch (e) {
+      showImportToast(`Couldn't read the clipboard: ${e?.message || e}`, "error");
+      return null;
+    }
+    if (!picked) {
+      showImportToast("There's no PDF on the clipboard", "error");
+      return null;
+    }
+  } else {
+    picked = await pickPdfFile();
+  }
   if (!picked) return null;
   if (!looksLikePdf(picked.bytes)) {
     showImportToast(`${picked.name} isn't a PDF`, "error");
@@ -106,11 +143,12 @@ async function pickUsablePdf() {
 }
 
 /**
- * Fill the entry `fileId` from a file on disk. Returns true once the
+ * Fill the entry `fileId` from a file on disk — or, with `{ source:
+ * "clipboard" }`, from the PDF on the clipboard. Returns true once the
  * bytes are in place.
  */
-export async function importFileIntoPdf(state, fileId) {
-  const picked = await pickUsablePdf();
+export async function importFileIntoPdf(state, fileId, { source = "file" } = {}) {
+  const picked = await pickUsablePdf(source);
   if (!picked) return false;
   try {
     await writePdfBytes(state, fileId, picked.bytes);
@@ -124,13 +162,13 @@ export async function importFileIntoPdf(state, fileId) {
 
 /**
  * A new PDF entry linked to a Zotero reference, filled from a file on
- * disk. `meta` carries the reference as `registerPdfPlaceholder` takes it
+ * disk (or the clipboard, as above). `meta` carries the reference as `registerPdfPlaceholder` takes it
  * (`zoteroTitle`, `zoteroItemKey`, `zoteroAttKey`, …) — from the cached
  * library, or just a key when the cache has never seen the item. Returns
  * `{ fileId, name }`, or null.
  */
-export async function importPdfFileForReference(state, meta = {}) {
-  const picked = await pickUsablePdf();
+export async function importPdfFileForReference(state, meta = {}, { source = "file" } = {}) {
+  const picked = await pickUsablePdf(source, sanitizeName(meta.zoteroTitle || "Clipboard PDF"));
   if (!picked) return null;
   let result = null;
   try {

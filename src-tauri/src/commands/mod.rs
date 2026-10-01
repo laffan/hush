@@ -1,4 +1,5 @@
 pub mod backup;
+pub mod clipboard_pdf;
 pub mod desks;
 pub mod diagnostics;
 pub mod files;
