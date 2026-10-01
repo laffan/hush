@@ -21,7 +21,8 @@
  * cover the words. A margin is only what can be seen of it: the main
  * editor's column layout says how much of each edge its chrome covers —
  * an inset sidebar, the right-hand bars, docked panes (`--edge-cover-*`,
- * editor/modes.js) — and cards stay out of that.
+ * editor/modes.js), and the right sidebar's toggle where it floats over
+ * the editor — and cards stay out of that.
  *
  * **Pinned.** A pinned card (`pinned`, `pinY`) is held in view: it sits
  * `pinY` below the top of the editor's visible area in a second layer,
@@ -57,13 +58,23 @@ function textEdges(view) {
   const pad = parseFloat(getComputedStyle(view.contentDOM).paddingRight) || 0;
   const scroller = view.scrollDOM.getBoundingClientRect();
   const sc = getComputedStyle(view.scrollDOM);
+  let visRight = scroller.left + view.scrollDOM.clientWidth - (parseFloat(sc.getPropertyValue("--edge-cover-right")) || 0);
+  // The right sidebar's toggle floats over the window's right edge
+  // (ui/right-panel-setup.js), and a card in the margin ran under it.
+  // Where it lies over this editor it covers that edge like any other
+  // chrome: the margin ends at its left. (A zero rect is a hidden toggle.)
+  const toggle = document.querySelector(".right-panel-trigger")?.getBoundingClientRect();
+  if (toggle && toggle.width && toggle.left < visRight && toggle.right > scroller.left
+      && toggle.bottom > scroller.top && toggle.top < scroller.bottom) {
+    visRight = Math.min(visRight, toggle.left);
+  }
   return {
     content,
     scroller,
     textLeft: content.left,
     textRight: content.right - pad,
     visLeft: scroller.left + (parseFloat(sc.getPropertyValue("--edge-cover-left")) || 0),
-    visRight: scroller.left + view.scrollDOM.clientWidth - (parseFloat(sc.getPropertyValue("--edge-cover-right")) || 0),
+    visRight,
     gutter: view.dom.classList.contains("cm-card-gutter"),
   };
 }

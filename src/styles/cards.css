@@ -372,7 +372,12 @@
 .tree-cards-home-row { gap: 6px; }
 /* With no cards in it, there's no entry (files-panel-cards.js). */
 .sl-item.cards-home.cards-home-empty { display: none; }
-.tree-cards-home-row .tree-card-icon { margin-left: 2px; }
+/* Lined up on the container above it, folded or open: the fold arrow
+ * under the Inbox's or project's icon, and the card icons under the
+ * first letter of its name. The offsets are measured from the sidebar's
+ * nesting (a child list sits 10px in, a row pads 6px), so they hold at
+ * any depth. */
+.sl-item.cards-home > .sl-item-content .sl-fold-arrow { margin-left: -3px; }
 .sl-item.cards-home.has-children:not(.collapsed) {
   position: relative;
   margin: 4px 0;
@@ -383,9 +388,10 @@
 .sl-item.cards-home.has-children:not(.collapsed) > .sl-item-content {
   position: absolute;
   top: 3px;
-  left: 0;
+  left: 5px;
   z-index: 1;
 }
+.sl-item.cards-home.has-children:not(.collapsed) > .sl-list { margin-left: -7px; }
 .sl-item.cards-home.has-children:not(.collapsed) > .sl-item-content .sl-item-label { display: none; }
 /* Not dimmed in a project the way its other notebooks are
  * (files-panel.css): it reads the same wherever it is. */

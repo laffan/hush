@@ -53,7 +53,7 @@ export function setCardEditorFactory(fn) { editorFactory = fn; }
 
 const ICONS = {
   grip: `<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="4" cy="3" r="1"/><circle cx="8" cy="3" r="1"/><circle cx="4" cy="6" r="1"/><circle cx="8" cy="6" r="1"/><circle cx="4" cy="9" r="1"/><circle cx="8" cy="9" r="1"/></svg>`,
-  insert: `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5v5.5M3.8 4.8L6 7l2.2-2.2"/><path d="M4.5 10.5h3M6 8.8v3.2"/></svg>`,
+  insert: `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5v8.5M3 7l3 3 3-3"/></svg>`,
   delete: `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 3.5l5 5M8.5 3.5l-5 5"/></svg>`,
   mark: `<svg viewBox="0 0 12 14" aria-hidden="true"><path d="M6 1v10M2.5 7.5L6 11l3.5-3.5"/></svg>`,
   pin: `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.3 1.5h3.4M4.8 1.5v3L3.2 6.6h5.6L7.2 4.5v-3M6 6.6v3.9"/></svg>`,

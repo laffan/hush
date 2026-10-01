@@ -144,6 +144,29 @@
   padding-bottom: 0;
 }
 
+/* A doc or notebook open on its cards (or headings, or tab markers)
+   lists them first and its pane icons after: the strip leaves the name
+   and is placed against the row's whole box, at its foot, still at the
+   name's first letter — 42px in (the row's 6px padding, the fold
+   arrow's 18 and the icon's 18 with its gap). A folder or project keeps
+   its strip under its name; its sub-rows are its contents. */
+.sl-item:is([data-type="document"], [data-type="notebook"]):has(> .sl-item-content .tree-pane-indicators):has(> .sl-list) {
+  position: relative;
+  padding-bottom: 15px;
+}
+.sl-item:is([data-type="document"], [data-type="notebook"]):has(> .sl-item-content .tree-pane-indicators) > .sl-list {
+  padding-top: 0;
+}
+.sl-item:is([data-type="document"], [data-type="notebook"]):has(> .sl-list) > .sl-item-content .tree-item-cell {
+  position: static;
+}
+.sl-item:is([data-type="document"], [data-type="notebook"]):has(> .sl-list) > .sl-item-content .tree-pane-indicators {
+  top: auto;
+  bottom: 4px;
+  left: 42px;
+  margin-top: 0;
+}
+
 .tree-pane-indicators {
   position: absolute;
   top: 100%;

@@ -375,6 +375,10 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
 
     const hasText = selected.some((s) => s.type === "text");
     const hasImage = selected.some((s) => s.type === "image");
+    // A card styles itself — its own colour, a type size of its own —
+    // and is the Doc's component rather than ink, so a selection holding
+    // one gets none of the canvas's colour, size or rasterize controls.
+    const hasCard = selected.some((s) => s.type === "text" && !!s.card);
     const hasColorable = selected.some((s) => s.type === "text");
     const hasBgable = selected.some((s) => s.type === "text" || s.type === "drag-area");
     const multiSelect = selected.length > 1;
@@ -423,7 +427,7 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
       }));
     }
 
-    if (hasColorable || hasBgable) {
+    if ((hasColorable || hasBgable) && !hasCard) {
       const wrapper = h("div", { style: { position: "relative" } });
       const reopen = () => {
         closePopup();
@@ -440,7 +444,7 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
       if (savedPopup === "colors") reopen();
     }
 
-    if (hasText) {
+    if (hasText && !hasCard) {
       const wrapper = h("div", { style: { position: "relative" } });
       wrapper.appendChild(makeIconBtn("text-size", "Text size", () => {
         const textShape = selected.find((s) => s.type === "text");
@@ -508,7 +512,7 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
     // Rasterize is withheld on Desktops entirely — thumbnails are live
     // previews, and even drag-areas there mostly wrap thumbnails.
     if (access && !(selected.length === 1 && selected[0].type === "image")
-      && !hasFileRefSelected && !state.desktopMode) {
+      && !hasFileRefSelected && !hasCard && !state.desktopMode) {
       container.appendChild(makeIconBtn("rasterize", "Rasterize as image", () => {
         rasterizeSelectionToImage({
           state, imageCache: access.getImageCache(), drawingLayer: access.getDrawingLayer(),
