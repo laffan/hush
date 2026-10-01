@@ -197,29 +197,52 @@
   padding: 0 !important;
 }
 
-/* The width handle: the card's right edge. */
+/* The width handle is the bottom-right corner, and it shows itself the
+   way a pane's corner does (floating-pane.css): only under the pointer,
+   and then as the two edges meeting there lighting up. The overlay is an
+   inset ::after rather than the card's own border so it sits over the
+   card's editor. It stays lit for the length of a drag. */
 .hush-card-resize {
   position: absolute;
-  top: 0;
   right: 0;
-  width: 6px;
-  height: 100%;
+  bottom: 0;
+  width: 12px;
+  height: 12px;
+  z-index: 2;
   cursor: ew-resize;
   touch-action: none;
 }
-.hush-card-resize::after {
+.hush-card::after {
   content: "";
   position: absolute;
-  top: 25%;
-  bottom: 25%;
-  right: 2px;
-  width: 2px;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--card-fg) 25%, transparent);
-  opacity: 0;
-  transition: opacity 0.12s;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  border-radius: inherit;
+  border: 3px solid transparent;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
 }
-.hush-card:hover .hush-card-resize::after { opacity: 1; }
+.hush-card:has(> .hush-card-resize:hover)::after,
+.hush-card.resizing::after {
+  border-right-color: rgba(128, 128, 128, 0.6);
+  border-bottom-color: rgba(128, 128, 128, 0.6);
+}
+
+/* Headings at a card's own scale: an h1 four pixels up from the body
+   type, an h2 two, the rest the body size in bold. A Doc's progression
+   (markdown-highlight.js, a multiple of the style's size) made a card's
+   title half the card. The heading spans carry that progression as class
+   rules, so they take the line's size here. `cm-md-h*` is
+   heading-indent.js's line class. */
+.hush-card .cm-line.cm-md-h1 { font-size: calc(1em + 4px) !important; }
+.hush-card .cm-line.cm-md-h2 { font-size: calc(1em + 2px) !important; }
+.hush-card .cm-line:is(.cm-md-h1, .cm-md-h2, .cm-md-h3, .cm-md-h4, .cm-md-h5, .cm-md-h6) * {
+  font-size: inherit !important;
+  line-height: inherit !important;
+}
+.hush-card .cm-line:is(.cm-md-h3, .cm-md-h4, .cm-md-h5, .cm-md-h6),
+.hush-card .cm-line:is(.cm-md-h3, .cm-md-h4, .cm-md-h5, .cm-md-h6) * { font-weight: 700 !important; }
 
 /* ── In a Doc ───────────────────────────────────────────────────────
  * A card never moves the text (cards/card-doc-float.js): nothing of it
@@ -331,6 +354,10 @@
   padding-top: 1px;
   padding-bottom: 1px;
 }
+/* Under a document or notebook, a card's icon starts where the file's
+ * name does — and where its first pane icon does. (The CARDS box lines
+ * its cards up on its own container; see below.) */
+.sl-item:not(.cards-home) > .sl-list > .sl-item[data-type="card"] { margin-left: 1px; }
 .sl-item[data-type="card"] > .sl-item-content .sl-fold-arrow {
   visibility: hidden;
   width: 6px;

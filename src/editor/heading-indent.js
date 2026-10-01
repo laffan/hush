@@ -1,5 +1,6 @@
 import { ViewPlugin, Decoration } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
+import { insideCard } from "../cards/card-facet.js";
 
 // Plugin that hides heading `#` markers unless the cursor is on that
 // heading line. When the user enters the line, the markers re-appear
@@ -50,6 +51,11 @@ function listIndentLineDeco(paddingPx, textIndentPx) {
 
 const blockquoteLineDeco = Decoration.line({ class: "cm-blockquote" });
 
+// A heading line names its level, so a surface can size its headings in
+// its own terms — a card sets them a few pixels up from its body type
+// rather than at a Doc's scale (styles/cards.css).
+const headingLineDecos = [1, 2, 3, 4, 5, 6].map((n) => Decoration.line({ class: `cm-md-h${n}` }));
+
 export const headingIndentPlugin = ViewPlugin.fromClass(
   class {
     constructor(view) {
@@ -57,7 +63,7 @@ export const headingIndentPlugin = ViewPlugin.fromClass(
     }
     update(update) {
       if (update.docChanged || update.viewportChanged || update.geometryChanged
-          || update.selectionSet
+          || update.selectionSet || update.focusChanged
           || update.transactions.some(tr => tr.effects.length > 0)) {
         this.decorations = this.buildDecorations(update.view);
       }
@@ -70,7 +76,11 @@ export const headingIndentPlugin = ViewPlugin.fromClass(
       // overlaps that line; otherwise they collapse away entirely. We check
       // ranges (not just the primary selection) so multi-cursor edits still
       // show all affected heading markers.
-      const selRanges = view.state.selection.ranges;
+      //
+      // In a card, a selection only counts while the card has the keyboard.
+      // A card left with its caret on a heading line kept that line's
+      // markers showing after it was deselected, as if still being edited.
+      const selRanges = view.state.facet(insideCard) && !view.hasFocus ? [] : view.state.selection.ranges;
       const lineTouchesSelection = (lineFrom, lineTo) => {
         for (const r of selRanges) {
           const rFrom = Math.min(r.from, r.to);
@@ -85,6 +95,7 @@ export const headingIndentPlugin = ViewPlugin.fromClass(
         const blockquoteMatch = !headingMatch && line.text.match(/^>+\s?/);
         const listMatch = !headingMatch && !blockquoteMatch && line.text.match(/^(\s*)([-*+]|\d+[.)])(\s+)/);
         if (headingMatch) {
+          builder.add(line.from, line.from, headingLineDecos[headingMatch[1].length - 1]);
           const markerEnd = line.from + headingMatch[0].length;
           // When the cursor is on the heading line, leave the markers
           // visible inline (no decoration needed — the syntax highlighter

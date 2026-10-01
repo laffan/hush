@@ -526,7 +526,9 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
     // honest). Mixed selections keep Delete for the deletable rest.
     const allFileRefs = selected.length > 0
       && selected.every((s) => s.type === "image" && (s as ImageShape).fileRef);
-    if (!allFileRefs) {
+    // Nor for cards alone: each carries its own delete in its header.
+    const allCards = selected.length > 0 && selected.every((s) => s.type === "text" && !!s.card);
+    if (!allFileRefs && !allCards) {
       container.appendChild(makeIconBtn("trash", "Delete", () => state.deleteSelected()));
     }
 

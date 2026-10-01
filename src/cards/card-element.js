@@ -271,6 +271,7 @@ export function createCardElement(o) {
     const startX = e.clientX;
     const startW = el.getBoundingClientRect().width / scale;
     let w = Math.round(startW);
+    el.classList.add("resizing");
     try { grip.setPointerCapture(e.pointerId); } catch (_) { /* detached */ }
     const move = (me) => {
       w = Math.max(CARD_MIN_WIDTH, Math.round(startW + (me.clientX - startX) / scale));
@@ -279,6 +280,7 @@ export function createCardElement(o) {
       el.style.setProperty("width", `${w}px`, "important");
     };
     const up = () => {
+      el.classList.remove("resizing");
       el.style.width = `${w}px`;
       grip.removeEventListener("pointermove", move);
       grip.removeEventListener("pointerup", up);
