@@ -6,12 +6,13 @@
  *
  * Top to bottom, every row centred: the task; Timer / Alarm; either
  * hours and minutes (a timer's length) or a clock time (an alarm's — the
- * next time the clock reads it, today or tomorrow); a timeline of the
- * session laid out from the current time — each break and the finish,
- * re-laid on every change (and every few seconds, since "now" moves);
- * and under it two lines of minutes: a lead-in — a break before the work
- * begins — and then a No Breaks | Breaks toggle that reads into how often
- * to break and how long each break lasts (No Breaks greys those out). Start replaces any timer already
+ * next time the clock reads it, today or tomorrow); two lines of
+ * minutes: a lead-in — a break before the work begins — and then a
+ * No Breaks / Breaks choice that reads into how often to break and how
+ * long each break lasts (No Breaks greys those out); then, under all the
+ * settings, a timeline of the session laid out from the current time —
+ * each break and the finish, re-laid on every change (and every few
+ * seconds, since "now" moves) — and its summary line; and the buttons. Start replaces any timer already
  * there: there is only ever one (timer-store.js).
  */
 
@@ -75,11 +76,6 @@ export function openTimerSheet(state) {
           <button type="button" class="timer-period" data-period="pm">PM</button>
         </div>
       </div>
-      <div class="timer-timeline" aria-hidden="true">
-        <div class="timer-track"><div class="timer-rule"></div></div>
-        <div class="timer-labels"></div>
-      </div>
-      <div class="timer-summary"></div>
       <div class="timer-minutes timer-lead-row">
         <label class="timer-field">
           <span>Lead-in</span>
@@ -103,6 +99,11 @@ export function openTimerSheet(state) {
           <span>min</span>
         </label>
       </div>
+      <div class="timer-timeline" aria-hidden="true">
+        <div class="timer-track"><div class="timer-rule"></div></div>
+        <div class="timer-labels"></div>
+      </div>
+      <div class="timer-summary"></div>
       <div class="timer-actions">
         <button type="button" class="timer-cancel">Cancel</button>
         <button type="button" class="timer-start">Start</button>
