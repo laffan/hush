@@ -28,12 +28,24 @@
  * so — a break's in red, in the middle of the screen; ones that passed
  * while it was closed stay quiet. A finished timer's "Done" is a button
  * that deletes it.
+ *
+ * The ring's line runs red through the last five minutes; at the finish
+ * it blinks five times (when the finish is seen happening) and stays a
+ * red ring with a ✓ in the middle, which is its Done: a click on it
+ * deletes the timer rather than opening the sidebar.
  */
 
 import {
   getTimer, timerStatus, formatMinutes, minutesLeft, formatClock, renameTimer, deleteTimer, ALARM_WARNING_MS,
 } from "./timer-store.js";
 import { installRingDrag } from "./timer-ring-drag.js";
+
+/** The ring's line turns red for a session's last five minutes. */
+const FINAL_MINUTES_MS = 5 * 60 * 1000;
+/** The finish blink — keep in step with `.timer-ring.finish-blink` in
+ *  styles/timer.css. */
+const FINISH_BLINK_MS = 600;
+const FINISH_BLINKS = 5;
 
 /** Ring geometry: 30 px across with a 3 px stroke, so the stroke's centre
  *  line runs at radius 13.5. */
@@ -128,7 +140,12 @@ export function mountTimerBox(slot, state, panelOverlay) {
       </svg>
       <span class="timer-ring-label"></span>`;
     // A press that travels is a drag; one that doesn't opens the sidebar.
-    uninstallDrag = installRingDrag(ring, state, () => state.emit("toggle-left-panel"));
+    // A click opens the sidebar — except on a finished timer, where the
+    // ring's ✓ is the Done button.
+    uninstallDrag = installRingDrag(ring, state, () => {
+      if (timer && timerStatus(timer).finished) void deleteTimer(state);
+      else state.emit("toggle-left-panel");
+    });
     document.body.appendChild(ring);
     els.ringFill = ring.querySelector(".timer-ring-fill");
     els.ringLabel = ring.querySelector(".timer-ring-label");
@@ -206,6 +223,8 @@ export function mountTimerBox(slot, state, panelOverlay) {
     els.bar.style.width = `${st.progress * 100}%`;
     els.ringFill.style.strokeDashoffset = String(100 - st.progress * 100);
     ring.classList.toggle("finished", st.finished);
+    // The last five minutes: the ring's line runs red to the finish.
+    ring.classList.toggle("final-minutes", !st.finished && st.remaining <= FINAL_MINUTES_MS);
     renderMarks(st.breakMarks);
     // The break's own progress, filling the same way the session's does.
     // The bar is always laid out — only transparent between breaks — so
@@ -229,7 +248,7 @@ export function mountTimerBox(slot, state, panelOverlay) {
       els.brk.textContent = "";
       els.end.innerHTML = `<span class="w-ends">ended </span>${clockHtml(st.end)}`;
       els.ringLabel.textContent = "✓";
-      ring.setAttribute("aria-label", "Timer done");
+      ring.setAttribute("aria-label", "Timer done — delete it");
     } else {
       els.countdown.innerHTML = `${formatMinutes(st.remaining)}<span class="w-togo"> to go</span>`;
       box.classList.toggle("break-now", !!brk);
@@ -256,11 +275,24 @@ export function mountTimerBox(slot, state, panelOverlay) {
     if (seen) {
       if (st.finished && !seen.finished) {
         void toast(`${timer.mode === "alarm" ? "Alarm" : "Timer done"}${timer.task ? ` — ${timer.task}` : ""}`);
+        blinkRing();
       }
       else if (st.breaksPassed > seen.breaksPassed) void toast("Time for a break", "break");
     }
     seen = { breaksPassed: st.breaksPassed, finished: st.finished };
     if (st.finished && tick) { clearInterval(tick); tick = null; }
+  }
+
+  /** The finish, seen happen: the ring blinks FINISH_BLINKS times (the
+   *  `finish-blink` animation in timer.css) and then stays red until its
+   *  ✓ deletes the timer. */
+  function blinkRing() {
+    if (!ring) return;
+    ring.classList.remove("finish-blink");
+    void ring.offsetWidth; // restart the animation if it was mid-run
+    ring.classList.add("finish-blink");
+    const r = ring;
+    setTimeout(() => r.classList.remove("finish-blink"), FINISH_BLINK_MS * FINISH_BLINKS);
   }
 
   function sync() {

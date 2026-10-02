@@ -628,6 +628,29 @@ html[data-theme="dark"] .sidebar-timer.break-now {
   font-weight: 600;
 }
 
+/* The last five minutes: the ring's line runs red to the finish. At the
+   finish it stays red — the whole circle now — with the ✓ showing in the
+   middle without a hover, until a click on it deletes the timer. */
+.timer-ring.final-minutes,
+.timer-ring.finished { opacity: 1; }
+/* (a break in the last five minutes keeps its white-on-red disc) */
+.timer-ring.final-minutes:not(.on-break) .timer-ring-fill,
+.timer-ring.finished .timer-ring-fill { stroke: var(--timer-alarm-red); }
+.timer-ring.finished .timer-ring-label {
+  opacity: 1;
+  color: var(--timer-alarm-red);
+  font-weight: 700;
+}
+
+/* The finish, seen happening: five blinks (FINISH_BLINKS × FINISH_BLINK_MS
+   in timer-box.js), then it holds. */
+.timer-ring.finish-blink {
+  animation: timer-ring-finish-blink 600ms steps(1, end) 5;
+}
+@keyframes timer-ring-finish-blink {
+  50% { opacity: 0.08; }
+}
+
 /* An alarm's last ten minutes: the minutes to go turn red, in the box
    and in the ring, where they show without a hover. */
 .sidebar-timer.alarm-soon .sidebar-timer-countdown { color: var(--timer-alarm-red); }
