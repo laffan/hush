@@ -3,8 +3,9 @@
  * (and every window: it lives in `settings.timer`, opaque to Rust — see
  * `timer` on `AppSettings`):
  *
- *   { active: { task, mode, startedAt, durationMs, breakEveryMs } | null,
- *     last:   { mode, hours, minutes, alarmHour, alarmMinute, breakEvery } }
+ *   { active: { task, mode, startedAt, durationMs, breakEveryMs, breakMs, leadInMs } | null,
+ *     last:   { mode, hours, minutes, alarmHour, alarmMinute,
+ *               breakEvery, breakNever, breakLength, leadIn } }
  *
  * `active` holds absolute times, so a timer keeps running while the app
  * is closed and every window reads the same clock. `last` is what the
@@ -15,23 +16,35 @@
  * length is whatever is left until that time — and the mode only
  * changes how the sheet asks and how the last ten minutes look.
  *
- * Breaks start every `breakEveryMs` from the start, stopping short of
- * the finish, and last `BREAK_MS` (cut short by the finish). The session
- * countdown never pauses for them — a break is counted inside the
- * session, with a countdown of its own while it runs.
+ * A session may open with a lead-in (`leadInMs`): a break before the
+ * work begins. Breaks start every `breakEveryMs` from the end of the
+ * lead-in, stopping short of the finish, and last `breakMs` (cut short
+ * by the finish). The session countdown never pauses for either — both
+ * are counted inside the session, each with a countdown of its own while
+ * it runs, so an alarm still goes off at the time it was set for.
  */
 
 const MINUTE = 60 * 1000;
 
-/** Break frequencies the sheet offers, in minutes (0 = no breaks). */
-export const BREAK_CHOICES = [0, 25, 30, 45, 60, 90];
-
 export const DEFAULT_LAST = {
-  mode: "timer", hours: 1, minutes: 0, alarmHour: null, alarmMinute: 0, breakEvery: 25,
+  mode: "timer", hours: 1, minutes: 0, alarmHour: null, alarmMinute: 0,
+  breakEvery: 25, breakNever: false, breakLength: 3, leadIn: 0,
 };
 
-/** Every break is this long. */
-export const BREAK_MS = 2 * MINUTE;
+/** How long a break lasts in a timer saved before its length was a
+ *  choice. */
+const LEGACY_BREAK_MS = 2 * MINUTE;
+
+/** A timer's break length. */
+export function breakLengthMs(timer) {
+  return Number.isFinite(timer?.breakMs) && timer.breakMs > 0 ? timer.breakMs : LEGACY_BREAK_MS;
+}
+
+/** A timer's lead-in, 0 when it has none. */
+export function leadInMs(timer) {
+  const l = timer?.leadInMs;
+  return Number.isFinite(l) && l > 0 ? Math.min(l, timer.durationMs) : 0;
+}
 
 /** The final stretch of an alarm, which the sidebar paints red. */
 export const ALARM_WARNING_MS = 10 * MINUTE;
@@ -54,7 +67,10 @@ export function getTimer(state) {
 
 export function lastValues(state) {
   const l = read(state).last;
-  return { ...DEFAULT_LAST, ...(l && typeof l === "object" ? l : {}) };
+  const out = { ...DEFAULT_LAST, ...(l && typeof l === "object" ? l : {}) };
+  // Saved before "Never" kept the frequency it switched off: 0 was never.
+  if (!(out.breakEvery > 0)) { out.breakNever = true; out.breakEvery = DEFAULT_LAST.breakEvery; }
+  return out;
 }
 
 export function isTimerRunning(state, now = Date.now()) {
@@ -68,11 +84,18 @@ function write(state, patch) {
   return state.updateSettings({ timer: next });
 }
 
-/** Start a timer, replacing any other (there is only ever one). */
-export function startTimer(state, { task, mode = "timer", durationMs, breakEvery, last }, now = Date.now()) {
+/** Start a timer, replacing any other (there is only ever one).
+ *  `breakEvery` is 0 for no breaks; `breakLength` and `leadIn` are
+ *  minutes. `last` is what the sheet opens on next time. */
+export function startTimer(state, {
+  task, mode = "timer", durationMs, breakEvery, breakLength = DEFAULT_LAST.breakLength, leadIn = 0, last,
+}, now = Date.now()) {
   return write(state, {
-    active: { task: task.trim(), mode, startedAt: now, durationMs, breakEveryMs: breakEvery * MINUTE },
-    last: { ...lastValues(state), ...last, mode, breakEvery },
+    active: {
+      task: task.trim(), mode, startedAt: now, durationMs,
+      breakEveryMs: breakEvery * MINUTE, breakMs: breakLength * MINUTE, leadInMs: leadIn * MINUTE,
+    },
+    last: { ...lastValues(state), ...last, mode },
   });
 }
 
@@ -104,23 +127,35 @@ export function deleteTimer(state) {
   return write(state, { active: null });
 }
 
-/** Break moments (absolute ms) strictly between the start and the finish. */
-export function breakTimes(startedAt, durationMs, breakEveryMs) {
+/** Break moments (absolute ms) strictly between the start and the
+ *  finish, counted from the end of the lead-in. */
+export function breakTimes(startedAt, durationMs, breakEveryMs, leadMs = 0) {
   const out = [];
   if (!(breakEveryMs > 0)) return out;
   const end = startedAt + durationMs;
-  for (let t = startedAt + breakEveryMs; t < end; t += breakEveryMs) out.push(t);
+  for (let t = startedAt + leadMs + breakEveryMs; t < end; t += breakEveryMs) out.push(t);
   return out;
 }
 
 /** Everything the sidebar box shows, at `now`. */
 export function timerStatus(timer, now = Date.now()) {
   const end = timer.startedAt + timer.durationMs;
-  const breaks = breakTimes(timer.startedAt, timer.durationMs, timer.breakEveryMs);
+  const lead = leadInMs(timer);
+  const leadEnd = timer.startedAt + lead;
+  const breaks = breakTimes(timer.startedAt, timer.durationMs, timer.breakEveryMs, lead);
   const nextBreak = breaks.find((b) => b > now) ?? null;
-  const breakEnd = (b) => Math.min(b + BREAK_MS, end);
+  const breakEnd = (b) => Math.min(b + breakLengthMs(timer), end);
   const current = breaks.find((b) => b <= now && now < breakEnd(b)) ?? null;
+  const inLead = lead > 0 && now < leadEnd;
   return {
+    /** The lead-in under way: its time left and how far through it is. */
+    leadIn: !inLead ? null : {
+      remaining: leadEnd - now,
+      progress: Math.max(0, (now - timer.startedAt) / lead),
+    },
+    /** Where the lead-in ends along the session, 0-1, or null. */
+    leadInMark: lead > 0 && lead < timer.durationMs ? lead / timer.durationMs : null,
+    leadInPassed: lead > 0 && !inLead,
     end,
     remaining: Math.max(0, end - now),
     untilBreak: nextBreak == null ? null : nextBreak - now,

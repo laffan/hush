@@ -9,17 +9,22 @@
  * next time the clock reads it, today or tomorrow); a timeline of the
  * session laid out from the current time — each break and the finish,
  * re-laid on every change (and every few seconds, since "now" moves);
- * and under it, how often to break. Start replaces any timer already there: there is only ever
- * one (timer-store.js).
+ * and under it, one line of minutes: how often to break (or Never, which
+ * greys the break fields out), how long each break lasts, and a lead-in —
+ * a break before the work begins. Start replaces any timer already
+ * there: there is only ever one (timer-store.js).
  */
 
 import {
-  BREAK_CHOICES, lastValues, startTimer, breakTimes, formatClock, nextOccurrence, uses12HourClock,
+  lastValues, startTimer, breakTimes, formatClock, nextOccurrence, uses12HourClock,
 } from "./timer-store.js";
 
 const MINUTE = 60 * 1000;
 /** The nearest two timeline labels may sit, as a share of its width. */
 const LABEL_GAP = 0.14;
+const MAX_BREAK_EVERY = 600;
+const MAX_BREAK_LENGTH = 60;
+const MAX_LEAD_IN = 120;
 
 let open = null; // the live sheet's handle, or null
 
@@ -76,11 +81,24 @@ export function openTimerSheet(state) {
       </div>
       <div class="timer-summary"></div>
       <div class="timer-breaks">
-        <span class="timer-caption">Break every</span>
-        <div class="timer-seg" role="group" aria-label="Break every">
-          ${BREAK_CHOICES.map((m) => `<button type="button" class="timer-break" data-min="${m}">${m ? m : "Never"}</button>`).join("")}
+        <div class="timer-break-group">
+          <label class="timer-field timer-break-field">
+            <span>Break every</span>
+            <input class="timer-num timer-small timer-break-every" type="text" inputmode="numeric" maxlength="3" aria-label="Break every, minutes" />
+            <span>min</span>
+          </label>
+          <label class="timer-field timer-break-field">
+            <span>for</span>
+            <input class="timer-num timer-small timer-break-length" type="text" inputmode="numeric" maxlength="2" aria-label="Break length, minutes" />
+            <span>min</span>
+          </label>
+          <button type="button" class="timer-break timer-never" aria-pressed="false">Never</button>
         </div>
-        <span class="timer-caption timer-unit">min</span>
+        <label class="timer-field timer-lead-field">
+          <span>Lead-in</span>
+          <input class="timer-num timer-small timer-lead-in" type="text" inputmode="numeric" maxlength="3" aria-label="Lead-in, minutes" />
+          <span>min</span>
+        </label>
       </div>
       <div class="timer-actions">
         <button type="button" class="timer-cancel">Cancel</button>
@@ -102,8 +120,19 @@ export function openTimerSheet(state) {
   const clockHourEl = root.querySelector(".timer-clock-hour");
   const clockMinuteEl = root.querySelector(".timer-clock-minute");
   const periodsEl = root.querySelector(".timer-periods");
+  const breakEveryEl = root.querySelector(".timer-break-every");
+  const breakLengthEl = root.querySelector(".timer-break-length");
+  const leadInEl = root.querySelector(".timer-lead-in");
+  const neverEl = root.querySelector(".timer-never");
 
-  let breakEvery = BREAK_CHOICES.includes(last.breakEvery) ? last.breakEvery : 0;
+  let breakNever = !!last.breakNever;
+  breakEveryEl.value = String(clampInt(last.breakEvery, MAX_BREAK_EVERY, 1));
+  breakLengthEl.value = String(clampInt(last.breakLength, MAX_BREAK_LENGTH, 1));
+  leadInEl.value = String(clampInt(last.leadIn, MAX_LEAD_IN));
+  /** Minutes between breaks, 0 when there are none. */
+  const breakEvery = () => (breakNever ? 0 : clampInt(breakEveryEl.value, MAX_BREAK_EVERY, 1));
+  const breakLength = () => clampInt(breakLengthEl.value, MAX_BREAK_LENGTH, 1);
+  const leadIn = () => clampInt(leadInEl.value, MAX_LEAD_IN);
   let mode = last.mode === "alarm" ? "alarm" : "timer";
   hoursEl.value = String(clampInt(last.hours, 23));
   minutesEl.value = String(clampInt(last.minutes, 59));
@@ -143,9 +172,10 @@ export function openTimerSheet(state) {
   /** Lay the session out from the current time: a tick per break and a
    *  label wherever one fits without crowding its neighbours. */
   function renderTimeline() {
-    for (const b of root.querySelectorAll(".timer-break")) {
-      b.classList.toggle("active", Number(b.dataset.min) === breakEvery);
-    }
+    neverEl.classList.toggle("active", breakNever);
+    neverEl.setAttribute("aria-pressed", String(breakNever));
+    for (const f of root.querySelectorAll(".timer-break-field")) f.classList.toggle("timer-off", breakNever);
+    breakEveryEl.disabled = breakLengthEl.disabled = breakNever;
     const now = Date.now();
     const durationMs = durationFrom(now);
     startEl.disabled = durationMs <= 0;
@@ -158,10 +188,14 @@ export function openTimerSheet(state) {
     }
     root.classList.remove("timer-empty");
     const end = now + durationMs;
-    const breaks = breakTimes(now, durationMs, breakEvery * MINUTE);
+    const leadMs = Math.min(leadIn() * MINUTE, durationMs);
+    const leadEnd = now + leadMs;
+    const breaks = breakTimes(now, durationMs, breakEvery() * MINUTE, leadMs);
     const at = (t) => (t - now) / durationMs;
+    trackEl.style.setProperty("--timer-lead", `${at(leadEnd) * 100}%`);
 
     const ticks = [
+      ...(leadMs > 0 && leadEnd < end ? [{ t: leadEnd, kind: "lead" }] : []),
       ...breaks.map((t) => ({ t, kind: "break" })),
       { t: end, kind: "end" },
     ];
@@ -175,10 +209,10 @@ export function openTimerSheet(state) {
     // Now and the finish are always labelled; breaks fill in between
     // where there is room.
     const labels = [{ t: now, text: formatClock(now, { period: false }), kind: "now" }];
-    for (const t of breaks) {
+    for (const { t, kind } of ticks.slice(0, -1)) {
       const prev = labels[labels.length - 1];
       if (at(t) - at(prev.t) >= LABEL_GAP && 1 - at(t) >= LABEL_GAP) {
-        labels.push({ t, text: formatClock(t, { period: false }), kind: "break" });
+        labels.push({ t, text: formatClock(t, { period: false }), kind });
       }
     }
     labels.push({ t: end, text: formatClock(end, { period: false }), kind: "end" });
@@ -187,7 +221,8 @@ export function openTimerSheet(state) {
 
     const n = breaks.length;
     const tomorrow = new Date(end).toDateString() !== new Date(now).toDateString();
-    summaryEl.textContent = `${n ? `${n} break${n === 1 ? "" : "s"} · ` : ""}done at ${formatClock(end)}${tomorrow ? " tomorrow" : ""}`;
+    const lead = leadMs > 0 ? `${Math.round(leadMs / MINUTE)} min lead-in · ` : "";
+    summaryEl.textContent = `${lead}${n ? `${n} break${n === 1 ? "" : "s"} · ` : ""}done at ${formatClock(end)}${tomorrow ? " tomorrow" : ""}`;
   }
 
   async function start() {
@@ -199,10 +234,18 @@ export function openTimerSheet(state) {
       task: taskEl.value,
       mode,
       durationMs,
-      breakEvery,
-      last: mode === "alarm"
-        ? { alarmHour: alarmHour24(), alarmMinute: clampInt(clockMinuteEl.value, 59) }
-        : { hours: clampInt(hoursEl.value, 23), minutes: clampInt(minutesEl.value, 59) },
+      breakEvery: breakEvery(),
+      breakLength: breakLength(),
+      leadIn: leadIn(),
+      last: {
+        ...(mode === "alarm"
+          ? { alarmHour: alarmHour24(), alarmMinute: clampInt(clockMinuteEl.value, 59) }
+          : { hours: clampInt(hoursEl.value, 23), minutes: clampInt(minutesEl.value, 59) }),
+        breakNever,
+        breakEvery: clampInt(breakEveryEl.value, MAX_BREAK_EVERY, 1),
+        breakLength: breakLength(),
+        leadIn: leadIn(),
+      },
     };
     close();
     await startTimer(state, opts, now);
@@ -250,6 +293,9 @@ export function openTimerSheet(state) {
     { el: minutesEl, min: 0, max: 59, step: 5 },
     { el: clockHourEl, min: hourMin, max: hourMax, step: 1 },
     { el: clockMinuteEl, min: 0, max: 59, step: 5, pad: true },
+    { el: breakEveryEl, min: 1, max: MAX_BREAK_EVERY, step: 5 },
+    { el: breakLengthEl, min: 1, max: MAX_BREAK_LENGTH, step: 1 },
+    { el: leadInEl, min: 0, max: MAX_LEAD_IN, step: 1 },
   ];
   for (const { el, min, max, step, pad } of fields) {
     const tidy = (n) => (pad ? String(n).padStart(2, "0") : String(n));
@@ -284,11 +330,12 @@ export function openTimerSheet(state) {
     applyMode();
   });
 
-  root.querySelector(".timer-breaks .timer-seg").addEventListener("click", (e) => {
-    const b = e.target instanceof Element ? e.target.closest(".timer-break") : null;
-    if (!b) return;
-    breakEvery = Number(b.dataset.min);
+  // Never switches breaks off and greys their fields; pressed again it
+  // brings them back with the numbers they had.
+  neverEl.addEventListener("click", () => {
+    breakNever = !breakNever;
     renderTimeline();
+    if (!breakNever) breakEveryEl.focus();
   });
 
   root.querySelector(".timer-backdrop").addEventListener("pointerdown", (e) => { e.preventDefault(); close(); });

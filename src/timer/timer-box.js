@@ -17,7 +17,12 @@
  * finish, once the breaks are used up) on hover. Clicking it opens the
  * sidebar — the way in on a screen with no hover.
  *
- * Breaks show as hash marks along both. While one runs (BREAK_MS) the
+ * A lead-in runs first when the timer has one: both bars and the ring's
+ * line turn blue, the second bar fills with the lead-in's own countdown,
+ * and the ring shows the minutes of it left without a hover. Its end is
+ * a hash mark like a break's.
+ *
+ * Breaks show as hash marks along both. While one runs the
  * box turns red with white type and a second countdown bar, as thick as
  * the session's, fills under it; the ring turns into a red disc, its
  * bars white, with the seconds of break left in the middle. The ring
@@ -29,7 +34,8 @@
  * while it was closed stay quiet. A finished timer's "Done" is a button
  * that deletes it.
  *
- * The ring's line runs red through the last five minutes; at the finish
+ * In the final minute the ring counts the seconds down, 60 to 0, without
+ * a hover. The ring's line runs red through the last five minutes; at the finish
  * it blinks five times (when the finish is seen happening) and stays a
  * red ring with a ✓ in the middle, which is its Done: a click on it
  * deletes the timer rather than opening the sidebar.
@@ -42,6 +48,8 @@ import { installRingDrag } from "./timer-ring-drag.js";
 
 /** The ring's line turns red for a session's last five minutes. */
 const FINAL_MINUTES_MS = 5 * 60 * 1000;
+/** …and its figure counts seconds through the last one. */
+const FINAL_MINUTE_MS = 60 * 1000;
 /** The finish blink — keep in step with `.timer-ring.finish-blink` in
  *  styles/timer.css. */
 const FINISH_BLINK_MS = 600;
@@ -225,14 +233,21 @@ export function mountTimerBox(slot, state, panelOverlay) {
     ring.classList.toggle("finished", st.finished);
     // The last five minutes: the ring's line runs red to the finish.
     ring.classList.toggle("final-minutes", !st.finished && st.remaining <= FINAL_MINUTES_MS);
-    renderMarks(st.breakMarks);
+    renderMarks(st.leadInMark != null ? [st.leadInMark, ...st.breakMarks] : st.breakMarks);
     // The break's own progress, filling the same way the session's does.
     // The bar is always laid out — only transparent between breaks — so
-    // nothing below it moves when one starts or ends.
+    // nothing below it moves when one starts or ends. A lead-in fills it
+    // too, in blue.
     const brk = st.finished ? null : st.onBreak;
-    els.breakBar.classList.toggle("active", !!brk);
+    const lead = st.finished ? null : st.leadIn;
+    els.breakBar.classList.toggle("active", !!(brk || lead));
     ring.classList.toggle("on-break", !!brk);
-    els.breakBar.firstElementChild.style.width = `${(brk ? brk.progress : 0) * 100}%`;
+    box.classList.toggle("lead-in-now", !!lead);
+    ring.classList.toggle("lead-in", !!lead);
+    const sub = brk || lead;
+    els.breakBar.firstElementChild.style.width = `${(sub ? sub.progress : 0) * 100}%`;
+    const finalMinute = !st.finished && st.remaining <= FINAL_MINUTE_MS;
+    ring.classList.toggle("final-minute", finalMinute);
 
     // An alarm's last ten minutes: the minutes to go in red, and the ring
     // shows them without being hovered.
@@ -253,15 +268,25 @@ export function mountTimerBox(slot, state, panelOverlay) {
       els.countdown.innerHTML = `${formatMinutes(st.remaining)}<span class="w-togo"> to go</span>`;
       box.classList.toggle("break-now", !!brk);
       els.brk.innerHTML = brk ? `break<span class="w-in"> ·</span> ${formatMinutes(brk.remaining)}`
+        : lead ? `lead-in<span class="w-in"> ·</span> ${formatMinutes(lead.remaining)}`
         : st.untilBreak != null ? `break<span class="w-in"> in</span> ${formatMinutes(st.untilBreak)}` : "";
       els.end.innerHTML = `<span class="w-ends">ends </span>${clockHtml(st.end)}`;
       // Minutes to the next break, or to the finish once none are left.
       // On a break, the seconds left of it — the break is what's happening
       // now, even in an alarm's last ten minutes.
-      if (brk) {
+      // The final minute counts down in seconds, over everything else.
+      if (finalMinute) {
+        const secs = Math.max(0, Math.ceil(st.remaining / 1000));
+        els.ringLabel.textContent = String(secs);
+        ring.setAttribute("aria-label", `${secs} s to go`);
+      } else if (brk) {
         const secs = Math.max(0, Math.ceil(brk.remaining / 1000));
         els.ringLabel.textContent = String(secs);
         ring.setAttribute("aria-label", `${secs} s of break left`);
+      } else if (lead) {
+        const mins = minutesLeft(lead.remaining);
+        els.ringLabel.textContent = String(mins);
+        ring.setAttribute("aria-label", `${mins} min of lead-in left`);
       } else {
         const toNext = alarmSoon ? st.remaining : (st.untilBreak ?? st.remaining);
         const mins = minutesLeft(toNext);
@@ -278,8 +303,9 @@ export function mountTimerBox(slot, state, panelOverlay) {
         blinkRing();
       }
       else if (st.breaksPassed > seen.breaksPassed) void toast("Time for a break", "break");
+      else if (st.leadInPassed && !seen.leadInPassed) void toast("Lead-in over — time to start");
     }
-    seen = { breaksPassed: st.breaksPassed, finished: st.finished };
+    seen = { breaksPassed: st.breaksPassed, finished: st.finished, leadInPassed: st.leadInPassed };
     if (st.finished && tick) { clearInterval(tick); tick = null; }
   }
 
@@ -302,7 +328,8 @@ export function mountTimerBox(slot, state, panelOverlay) {
     // A reworded task is the same timer: keep the toast bookkeeping.
     const sameClock = next && timer
       && next.startedAt === timer.startedAt && next.durationMs === timer.durationMs
-      && next.breakEveryMs === timer.breakEveryMs;
+      && next.breakEveryMs === timer.breakEveryMs
+      && next.breakMs === timer.breakMs && next.leadInMs === timer.leadInMs;
     key = nextKey;
     timer = next;
     if (!sameClock) seen = null;

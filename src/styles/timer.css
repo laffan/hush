@@ -30,7 +30,7 @@
   position: absolute;
   left: 50%;
   bottom: calc(max(var(--ipad-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)) + 20px);
-  width: min(460px, calc(100vw - 32px));
+  width: min(540px, calc(100vw - 32px));
   max-height: calc(100% - var(--top-chrome-inset, 0px) - 48px);
   overflow-y: auto;
   box-sizing: border-box;
@@ -193,7 +193,44 @@ html[data-theme="dark"] .timer-sheet {
   border-bottom-color: currentColor;
 }
 
-.timer-unit { margin-left: -6px; }
+/* The minutes line: break every / for / Never, then the lead-in. The
+   figures are typed, set smaller than the session's length above. */
+.timer-break-group {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.timer-num.timer-small {
+  width: 2em;
+  font-size: 15px;
+  padding: 1px 0 3px;
+}
+
+/* Never greys the break fields out; they keep their numbers. */
+.timer-break-field { transition: opacity 0.15s; }
+.timer-break-field.timer-off { opacity: 0.3; }
+.timer-num:disabled { color: inherit; -webkit-text-fill-color: currentColor; opacity: 1; }
+
+.timer-lead-field {
+  padding-left: 14px;
+  border-left: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
+}
+
+/* The lead-in's stretch of the timeline: the rule runs blue from now to
+   where the work begins. */
+.timer-track { --timer-lead: 0%; }
+.timer-rule::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -0.5px;
+  height: 2px;
+  width: var(--timer-lead);
+  background: var(--timer-lead-blue);
+}
+.timer-tick-lead { background: var(--timer-lead-blue); height: 9px; }
+.timer-label-lead { color: var(--timer-lead-blue); opacity: 0.85; }
 
 /* Timeline — a hairline from now to the finish, a short tick per break
    and a taller one at the end, each time centred under its mark. The
@@ -501,6 +538,20 @@ html[data-theme="dark"] .sidebar-timer.break-now {
 .sidebar-timer.break-now .w-togo { opacity: 0.8; }
 .sidebar-timer.break-now.alarm-soon .sidebar-timer-countdown { color: #fff; }
 
+/* The lead-in: both bars run blue — the session's, and the second bar
+   filling with the lead-in's own countdown — and the lead-in's figure
+   takes the blue too. */
+.sidebar-timer.lead-in-now .sidebar-timer-progress span,
+.sidebar-timer.lead-in-now .sidebar-timer-break-bar span { background: var(--timer-lead-blue); }
+.sidebar-timer.lead-in-now .sidebar-timer-break-bar {
+  background: color-mix(in srgb, var(--timer-lead-blue) 18%, transparent);
+}
+.sidebar-timer.lead-in-now .sidebar-timer-break-bar.active span { animation: none; }
+.sidebar-timer.lead-in-now .sidebar-timer-break {
+  opacity: 1;
+  color: var(--timer-lead-blue);
+}
+
 /* A finished timer's "Done" is the way to put it away: a small outlined
    button that deletes it. */
 .sidebar-timer-done {
@@ -628,6 +679,24 @@ html[data-theme="dark"] .sidebar-timer.break-now {
   font-weight: 600;
 }
 
+/* The lead-in: a blue line and the minutes of it left, shown without a
+   hover. */
+.timer-ring.lead-in { opacity: 1; }
+.timer-ring.lead-in .timer-ring-fill { stroke: var(--timer-lead-blue); }
+.timer-ring.lead-in .timer-ring-label {
+  opacity: 1;
+  color: var(--timer-lead-blue);
+}
+
+/* The final minute: the seconds count down in the middle, 60 to 0,
+   without a hover (white on a break's red disc, red otherwise). */
+.timer-ring.final-minute { opacity: 1; }
+.timer-ring.final-minute .timer-ring-label {
+  opacity: 1;
+  font-weight: 600;
+}
+.timer-ring.final-minute:not(.on-break) .timer-ring-label { color: var(--timer-alarm-red); }
+
 /* The last five minutes: the ring's line runs red to the finish. At the
    finish it stays red — the whole circle now — with the ✓ showing in the
    middle without a hover, until a click on it deletes the timer. */
@@ -663,9 +732,11 @@ html[data-theme="dark"] .sidebar-timer.break-now {
 /* --timer-break-fill is the break red for surfaces carrying white type
    (the box, the ring's disc, the break toast): a shade deeper than the
    bright bar red, so small white figures on it stay legible. */
+.timer-root,
 .sidebar-timer,
 .timer-ring,
 .import-toast-break {
+  --timer-lead-blue: #2f7fe0;
   --timer-alarm-red: #d2453b;
   --timer-break-red: #ff2a1f;
   --timer-break-fill: #d92b20;

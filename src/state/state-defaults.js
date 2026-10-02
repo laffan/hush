@@ -106,8 +106,8 @@ export function createDefaultSettings() {
     // Courier's per-device memory: `{ mode, scope, locations: { [slot]: key } }`
     // (see src/courier/courier-store.js).
     courier: null,
-    // Focus timer: `{ active: { task, startedAt, durationMs, breakEveryMs } | null,
-    // last: { hours, minutes, breakEvery } }` (see src/timer/timer-store.js).
+    // Focus timer: `{ active: { task, startedAt, durationMs, breakEveryMs, breakMs, leadInMs } | null,
+    // last: { hours, minutes, breakEvery, breakNever, breakLength, leadIn } }` (see src/timer/timer-store.js).
     // One timer at a time, shared by every desk.
     timer: null,
     // Wall clock: `{ visible, x, y, alarmAt }` (see src/clock/clock-store.js).
