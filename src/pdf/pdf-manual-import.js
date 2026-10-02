@@ -98,8 +98,10 @@ async function writePdfBytes(state, fileId, bytes) {
 export async function readClipboardPdf(name = "Clipboard PDF") {
   let bytes = null;
   if (IS_TAURI) {
-    const arr = await tauriInvoke("read_clipboard_pdf");
-    if (arr && arr.length) bytes = new Uint8Array(arr);
+    // Raw bytes, not JSON — an ArrayBuffer, empty when there's no PDF.
+    const buf = await tauriInvoke("read_clipboard_pdf");
+    const arr = buf instanceof ArrayBuffer ? new Uint8Array(buf) : buf ? new Uint8Array(buf) : null;
+    if (arr && arr.length) bytes = arr;
   } else if (navigator.clipboard?.read) {
     // A browser build — some engines do expose PDF data.
     for (const item of await navigator.clipboard.read()) {
