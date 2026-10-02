@@ -174,3 +174,29 @@ export async function fetchReferences(userId, apiKey, onProgress) {
   onProgress("Processing references...", 0.9);
   return references;
 }
+
+/** Every annotation in the library (highlights, underlines, notes, …),
+ *  grouped by the attachment it belongs to — `{ attKey: [raw items] }`,
+ *  each item in the API's own shape, as the per-attachment fetch returns
+ *  them. Paged like the rest; `onProgress(done, total)` after each page. */
+export async function fetchAllAnnotations(userId, apiKey, onProgress) {
+  const pageSize = 100;
+  const byAttachment = {};
+  let total = null;
+  let count = 0;
+  for (let start = 0; total == null || start < total; start += pageSize) {
+    const url = `${ZOTERO_API}/users/${userId}/items?key=${apiKey}&format=json&itemType=annotation&limit=${pageSize}&start=${start}`;
+    const resp = await zoteroFetch(url);
+    if (total == null) total = parseInt(resp.headers.get("Total-Results") || "0", 10);
+    const batch = await resp.json();
+    for (const item of batch) {
+      const parent = item?.data?.parentItem;
+      if (!parent) continue;
+      (byAttachment[parent] ||= []).push(item);
+      count++;
+    }
+    onProgress?.(Math.min(start + pageSize, total), total);
+    if (batch.length === 0) break;
+  }
+  return { byAttachment, count };
+}

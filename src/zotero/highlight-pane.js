@@ -19,7 +19,7 @@ import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_H
 import { schedulePersist } from "../pane/pane-persistence.js";
 import { loadReferences, loadCollections, fuzzySearch } from "../zotero.js";
 import { createLibraryBrowser } from "./library-browser.js";
-import { getAnnotations, groupByColor } from "../zotero-annotations.js";
+import { getAnnotations, groupByColor, libraryHighlightCounts } from "../zotero-annotations.js";
 import { startTextDrag } from "../pane/text-drag.js";
 
 /** Clean up the raw highlight string Zotero pulled out of the PDF.
@@ -118,6 +118,12 @@ async function renderSearchView(pane) {
 
   // Folder tree + item list, same widget the Save PDF modal uses. Built
   // after the refs load because it needs them for its per-folder counts.
+  // With the library's highlights on this device, each result says how
+  // many it holds — the browser can tell before it is opened.
+  const counts = await libraryHighlightCounts();
+  const highlightCount = (ref) => (ref.attachments || [])
+    .reduce((n, a) => n + (counts?.get(a.key) || 0), 0);
+
   const browser = createLibraryBrowser({
     host: list,
     refs,
@@ -142,7 +148,8 @@ async function renderSearchView(pane) {
       row.appendChild(t);
       const m = document.createElement("span");
       m.className = "zh-result-meta";
-      const meta = [ref.year, ref.authors].filter(Boolean).join(" — ");
+      const n = counts ? highlightCount(ref) : 0;
+      const meta = [ref.year, ref.authors, n ? `${n} highlight${n === 1 ? "" : "s"}` : ""].filter(Boolean).join(" — ");
       if (meta) m.textContent = meta;
       row.appendChild(m);
       row.addEventListener("click", () => onPickItem(pane, ref));
@@ -306,16 +313,12 @@ async function fetchAndPaint(pane, force) {
   const settings = pane._zh.appState?.settings || {};
   const userId = settings.zoteroUserId || "";
   const apiKey = settings.zoteroApiKey || "";
-  if (!userId || !apiKey) {
-    if (pane._zh.statusEl) {
-      pane._zh.statusEl.textContent = "Zotero credentials missing — set them in Settings > Zotero.";
-    }
-    pane._zh._fetching = false;
-    return;
-  }
+  // No credentials check up front: with the library's highlights
+  // downloaded (Settings → Zotero → Include highlights) the read is
+  // local and needs none. getAnnotations says so when it has to ask.
   if (pane._zh.statusEl) pane._zh.statusEl.textContent = force ? "Refreshing…" : "Loading…";
   try {
-    const { annotations, fromCache } = await getAnnotations(z.attKey, userId, apiKey, {
+    const { annotations, fromCache, local } = await getAnnotations(z.attKey, userId, apiKey, {
       forceRefresh: !!force,
     });
     // Drop entries with no highlighted text (typically ink / image
@@ -329,7 +332,7 @@ async function fetchAndPaint(pane, force) {
       .map((a) => ({ ...a, text: tidyHighlightText(a.text) }));
     if (pane._zh.statusEl) {
       const noun = annotations.length === 1 ? "annotation" : "annotations";
-      pane._zh.statusEl.textContent = `${annotations.length} ${noun}${fromCache ? " (cached)" : ""}`;
+      pane._zh.statusEl.textContent = `${annotations.length} ${noun}${local ? " (on this device)" : fromCache ? " (cached)" : ""}`;
     }
     paintColors(pane);
     paintAnnotations(pane);

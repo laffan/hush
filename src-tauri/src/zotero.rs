@@ -54,6 +54,24 @@ impl ZoteroManager {
         }
     }
 
+    /// Save every highlight in the library — `{ attachmentKey: [raw
+    /// annotation items] }` — downloaded with the references when
+    /// Settings → Zotero → Include highlights is on. One file rather than
+    /// one per attachment: it is written in one go, and its presence is
+    /// what tells the highlight browser the whole library is on this
+    /// device (an attachment missing from it has no highlights).
+    pub fn save_highlights(&self, data: &str) -> Result<(), Box<dyn std::error::Error>> {
+        write_atomic_str(&self.data_dir.join("zotero_highlights.json"), data)?;
+        Ok(())
+    }
+
+    /// Load the library's highlights file, or `None` when it was never
+    /// downloaded.
+    pub fn load_highlights(&self) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        let path = self.data_dir.join("zotero_highlights.json");
+        if path.exists() { Ok(Some(fs::read_to_string(path)?)) } else { Ok(None) }
+    }
+
     /// Save a downloaded PDF binary keyed by Zotero attachment key.
     /// Filenames are sanitised (alphanumeric + dash + underscore only) so
     /// callers can't escape the `zotero_pdfs/` directory.

@@ -30,6 +30,22 @@ pub fn load_zotero_collections(state: State<AppState>) -> Result<String, String>
         .map_err(|e| e.to_string())
 }
 
+/// Persist the whole library's highlights (`zotero_highlights.json`).
+#[tauri::command]
+pub fn save_zotero_highlights(state: State<AppState>, data: String) -> Result<(), String> {
+    state.zotero_manager.lock().unwrap()
+        .save_highlights(&data)
+        .map_err(|e| e.to_string())
+}
+
+/// The library's highlights file, or `None` when it was never downloaded.
+#[tauri::command]
+pub fn load_zotero_highlights(state: State<AppState>) -> Result<Option<String>, String> {
+    state.zotero_manager.lock().unwrap()
+        .load_highlights()
+        .map_err(|e| e.to_string())
+}
+
 /// Persist a downloaded Zotero PDF locally, keyed by attachment id.
 /// PDFs live under `{data_dir}/zotero_pdfs/{itemKey}.pdf` and are not
 /// part of any sync folder — they're a local cache for snapshot

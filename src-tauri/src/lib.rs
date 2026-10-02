@@ -471,6 +471,8 @@ pub fn run() {
             commands::pdfs::load_pdf_registry,
             commands::zotero::save_zotero_references,
             commands::zotero::load_zotero_references,
+            commands::zotero::save_zotero_highlights,
+            commands::zotero::load_zotero_highlights,
             commands::zotero::save_zotero_collections,
             commands::zotero::load_zotero_collections,
             commands::zotero::save_zotero_pdf,

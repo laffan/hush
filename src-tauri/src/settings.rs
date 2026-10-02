@@ -357,6 +357,11 @@ pub struct AppSettings {
     #[serde(default)] pub zotero_last_update: Option<String>,
     #[serde(default)] pub zotero_reference_count: u32,
     #[serde(default)] pub zotero_file_size: Option<String>,
+    /// Download every highlight in the library alongside the references
+    /// (`zotero_highlights.json`), so the highlight browser reads locally.
+    #[serde(default)] pub zotero_include_highlights: bool,
+    /// Highlights in the last such download — shown under References.
+    #[serde(default)] pub zotero_highlight_count: u32,
     #[serde(default = "default_shortcut_zotero")] pub shortcut_zotero: String,
     #[serde(default = "default_shortcut_switch_desks")] pub shortcut_switch_desks: String,
     #[serde(default = "default_zotero_snapshot_render_height")]
@@ -795,6 +800,8 @@ impl Default for AppSettings {
             zotero_last_update: None,
             zotero_reference_count: 0,
             zotero_file_size: None,
+            zotero_include_highlights: false,
+            zotero_highlight_count: 0,
             shortcut_zotero: default_shortcut_zotero(),
             shortcut_switch_desks: default_shortcut_switch_desks(),
             zotero_snapshot_render_height: default_zotero_snapshot_render_height(),

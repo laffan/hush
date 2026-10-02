@@ -333,6 +333,8 @@ export function createDefaultSettings() {
     zoteroUserId: null,
     zoteroLastUpdate: null,
     zoteroReferenceCount: 0,
+    zoteroIncludeHighlights: false,
+    zoteroHighlightCount: 0,
     zoteroFileSize: null,
     zoteroSnapshotRenderHeight: 1500,
     zoteroSnapshotDisplayHeight: 300,

@@ -435,6 +435,7 @@ function bindAll() {
     });
   }
 
+  bindCheckbox("zotero-include-highlights", "zoteroIncludeHighlights");
   bindNumber("zotero-snapshot-render-height", "zoteroSnapshotRenderHeight");
   bindNumber("zotero-snapshot-display-height", "zoteroSnapshotDisplayHeight");
   bindNumber("zotero-snapshot-quality", "zoteroSnapshotQuality");
@@ -451,9 +452,13 @@ function bindAll() {
       const textEl = document.getElementById("zotero-progress-text");
       if (progressEl) progressEl.style.display = "";
       try {
+        let highlightCount = 0;
         const refs = await downloadZoteroReferences(userId, apiKey, (msg, pct) => {
           if (fillEl) fillEl.style.width = Math.round(pct * 100) + "%";
           if (textEl) textEl.textContent = msg;
+        }, {
+          includeHighlights: !!settings.zoteroIncludeHighlights,
+          onHighlights: (n) => { highlightCount = n; },
         });
         // Save references via Tauri command
         const jsonStr = JSON.stringify(refs);
@@ -474,6 +479,7 @@ function bindAll() {
         saveSetting("zoteroLastUpdate", timestamp);
         saveSetting("zoteroReferenceCount", refs.length);
         saveSetting("zoteroFileSize", fileSize);
+        saveSetting("zoteroHighlightCount", highlightCount);
         saveSetting("zoteroUserId", userId);
         saveSetting("zoteroApiKey", apiKey);
         render();

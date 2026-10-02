@@ -9,6 +9,14 @@
  *
  * Cache policy: cache-first. Callers can pass `forceRefresh: true` to
  * skip the cached read. The pane UI exposes a refresh button for that.
+ *
+ * Library-wide highlights: with Settings → Zotero → Include highlights
+ * on, the reference download also writes every annotation in the library
+ * to one file (`zotero_highlights.json`, `{ attKey: [raw items] }`).
+ * While that file exists it is read first — and an attachment it doesn't
+ * list is one with no annotations, not one to ask Zotero about — so the
+ * highlight browser is a local operation. A refresh still goes to the
+ * network, and folds what it gets back into the file.
  */
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
@@ -96,6 +104,68 @@ async function fetchFromNetwork(attKey, userId, apiKey) {
   return all;
 }
 
+// ── The library's highlights file ───────────────────────────────────
+
+let libraryHighlights; // undefined = not read yet, null = never downloaded
+
+/** `{ attKey: [raw items] }` from the last download that included
+ *  highlights, or null when there has been none. Read once per window. */
+export async function loadLibraryHighlights() {
+  if (libraryHighlights !== undefined) return libraryHighlights;
+  try {
+    const json = IS_TAURI
+      ? await tauriInvoke("load_zotero_highlights")
+      : localStorage.getItem("hush_zotero_highlights");
+    const parsed = json ? JSON.parse(json) : null;
+    libraryHighlights = parsed && typeof parsed === "object" ? parsed : null;
+  } catch (_) {
+    libraryHighlights = null;
+  }
+  return libraryHighlights;
+}
+
+/** Replace the library's highlights file (the reference download).
+ *  `null` retires it — a download made with Include highlights off — so
+ *  reads go back to asking Zotero rather than trusting an old copy. */
+export async function saveLibraryHighlights(byAttachment) {
+  const json = JSON.stringify(byAttachment ?? null);
+  if (IS_TAURI) await tauriInvoke("save_zotero_highlights", { data: json });
+  else localStorage.setItem("hush_zotero_highlights", json);
+  libraryHighlights = byAttachment ?? null;
+  // Every other window (the settings window downloads, the editor
+  // window reads) drops its copy and reads the file afresh.
+  if (IS_TAURI) {
+    try { (await import("@tauri-apps/api/event")).emit(HIGHLIGHTS_SAVED_EVENT, null); } catch (_) {}
+  }
+}
+
+const HIGHLIGHTS_SAVED_EVENT = "hush-zotero-highlights-saved";
+if (IS_TAURI) {
+  import("@tauri-apps/api/event")
+    .then(({ listen }) => listen(HIGHLIGHTS_SAVED_EVENT, () => { libraryHighlights = undefined; }))
+    .catch(() => {});
+}
+
+/** How many annotations the library file holds for each attachment —
+ *  null when it was never downloaded. For the highlight browser's list. */
+export async function libraryHighlightCounts() {
+  const lib = await loadLibraryHighlights();
+  if (!lib) return null;
+  const out = new Map();
+  for (const [k, list] of Object.entries(lib)) if (Array.isArray(list)) out.set(k, list.length);
+  return out;
+}
+
+/** Fold a fresh per-attachment fetch back into the library file, so the
+ *  next local read has it. A no-op while there is no file. */
+async function patchLibraryHighlights(attKey, rawItems) {
+  const lib = await loadLibraryHighlights();
+  if (!lib) return;
+  const next = { ...lib };
+  if (rawItems?.length) next[attKey] = rawItems; else delete next[attKey];
+  try { await saveLibraryHighlights(next); } catch (_) { /* the fetch itself succeeded */ }
+}
+
 /** Cache-only read — never hits the network. Used by the PDF Shelf's
  *  search to index annotation text without pinging the API per PDF. */
 export async function getCachedAnnotations(attKey) {
@@ -121,6 +191,12 @@ export async function getAnnotations(attKey, userId, apiKey, opts = {}) {
   if (!attKey) throw new Error("attachment key required");
 
   if (!forceRefresh) {
+    // Local first: the whole library, when it has been downloaded.
+    const lib = await loadLibraryHighlights();
+    if (lib) {
+      const list = Array.isArray(lib[attKey]) ? lib[attKey] : [];
+      return { annotations: sortAnnotations(list.map(normalize)), fromCache: true, local: true };
+    }
     const cached = await readCache(attKey);
     if (cached && Array.isArray(cached)) {
       return {
@@ -130,7 +206,9 @@ export async function getAnnotations(attKey, userId, apiKey, opts = {}) {
     }
   }
 
+  if (!userId || !apiKey) throw new Error("Zotero credentials missing — set them in Settings > Zotero.");
   const fresh = await fetchFromNetwork(attKey, userId, apiKey);
+  await patchLibraryHighlights(attKey, fresh);
   return {
     annotations: sortAnnotations(fresh.map(normalize)),
     fromCache: false,

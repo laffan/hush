@@ -79,10 +79,12 @@ export async function startZoteroUpdate(state) {
   if (!userId || !apiKey) return;
   activeTask = "zotero";
   try {
+    const includeHighlights = !!state.settings.zoteroIncludeHighlights;
+    let highlightCount = 0;
     const refs = await downloadZoteroReferences(userId, apiKey, (msg, progress) => {
       state.emit("background-task-progress", { label: "Zotero", progress });
       broadcastProgress(msg, progress);
-    });
+    }, { includeHighlights, onHighlights: (n) => { highlightCount = n; } });
     // Persist
     if (IS_TAURI) {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -93,6 +95,7 @@ export async function startZoteroUpdate(state) {
         zoteroLastUpdate: new Date().toISOString(),
         zoteroReferenceCount: refs.length,
         zoteroFileSize: size,
+        zoteroHighlightCount: highlightCount,
       });
     } else {
       localStorage.setItem("hush_zotero_references", JSON.stringify(refs));
