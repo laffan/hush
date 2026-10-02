@@ -2,7 +2,7 @@
  * Sidebar progress center — manages background tasks with visual
  * progress indicators in the sidebar grip area.
  */
-import { downloadZoteroReferences, clearCache as clearZoteroCache } from "../zotero.js";
+import { updateReferences, isCancelled } from "../zotero/zotero-download.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -51,60 +51,59 @@ function clearProgress() {
 }
 
 /** Broadcast progress to both same-window listeners (iOS modal) and
- *  cross-window listeners (desktop Tauri settings window). */
-async function broadcastProgress(msg, progress) {
-  window.dispatchEvent(new CustomEvent("hush-zotero-progress", { detail: { msg, progress } }));
+ *  cross-window listeners (desktop Tauri settings window). `kind` says
+ *  which Settings → Zotero section it belongs to. */
+async function broadcast(name, detail) {
+  window.dispatchEvent(new CustomEvent(name, { detail }));
   if (IS_TAURI) {
     try {
       const { emit } = await import("@tauri-apps/api/event");
-      await emit("hush-zotero-progress", { msg, progress });
-    } catch (_) {}
-  }
-}
-async function broadcastDone() {
-  window.dispatchEvent(new CustomEvent("hush-zotero-done"));
-  if (IS_TAURI) {
-    try {
-      const { emit } = await import("@tauri-apps/api/event");
-      await emit("hush-zotero-done");
+      await emit(name, detail);
     } catch (_) {}
   }
 }
 
-/** Start a Zotero reference update in the background. */
+// The Cancel in Settings → Zotero reaches a download running here as
+// `hush-zotero-cancel` — a window event when Settings is a modal in this
+// window (iPad), a Tauri event from the settings window otherwise.
+let zoteroAbort = null;
+function onCancel(detail) {
+  if ((detail?.kind || "references") === "references") zoteroAbort?.abort();
+}
+window.addEventListener("hush-zotero-cancel", (e) => onCancel(e.detail));
+if (IS_TAURI) {
+  import("@tauri-apps/api/event")
+    .then(({ listen }) => listen("hush-zotero-cancel", (e) => onCancel(e.payload)))
+    .catch(() => {});
+}
+
+/** Start a Zotero reference update in the background (the palette's
+ *  "Update Zotero References"). Highlights are a download of their own,
+ *  in Settings → Zotero. */
 export async function startZoteroUpdate(state) {
   if (activeTask) return; // one task at a time
   const userId = state.settings.zoteroUserId;
   const apiKey = state.settings.zoteroApiKey;
   if (!userId || !apiKey) return;
   activeTask = "zotero";
+  zoteroAbort = new AbortController();
   try {
-    const includeHighlights = !!state.settings.zoteroIncludeHighlights;
-    let highlightCount = 0;
-    const refs = await downloadZoteroReferences(userId, apiKey, (msg, progress) => {
-      state.emit("background-task-progress", { label: "Zotero", progress });
-      broadcastProgress(msg, progress);
-    }, { includeHighlights, onHighlights: (n) => { highlightCount = n; } });
-    // Persist
-    if (IS_TAURI) {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const data = JSON.stringify(refs);
-      await invoke("save_zotero_references", { data });
-      const size = new Blob([data]).size;
-      state.updateSettings({
-        zoteroLastUpdate: new Date().toISOString(),
-        zoteroReferenceCount: refs.length,
-        zoteroFileSize: size,
-        zoteroHighlightCount: highlightCount,
-      });
-    } else {
-      localStorage.setItem("hush_zotero_references", JSON.stringify(refs));
-    }
-    clearZoteroCache();
+    const patch = await updateReferences(userId, apiKey, {
+      signal: zoteroAbort.signal,
+      onProgress: (msg, progress) => {
+        state.emit("background-task-progress", { label: "Zotero", progress });
+        void broadcast("hush-zotero-progress", { msg, progress, kind: "references" });
+      },
+    });
+    await state.updateSettings(patch);
     state.emit("background-task-done");
-    broadcastDone();
+    void broadcast("hush-zotero-done", { kind: "references" });
   } catch (err) {
-    console.error("Zotero update failed:", err);
+    const cancelled = isCancelled(err);
+    if (!cancelled) console.error("Zotero update failed:", err);
     state.emit("background-task-done");
+    void broadcast("hush-zotero-done", { kind: "references", cancelled, error: cancelled ? null : String(err?.message || err) });
+  } finally {
+    zoteroAbort = null;
   }
 }

@@ -6,7 +6,7 @@
  */
 import { DEFAULT_STOPWORDS } from "../editor/plugins/dry-highlight.js";
 import { bindFlagsTab } from "../overview/overview-settings.js";
-import { testZoteroConnection, downloadZoteroReferences, clearCache as clearZoteroCache } from "../zotero.js";
+import { bindZoteroTab } from "./settings-zotero.js";
 import {
   isIOSSettings,
   renderGeneralTab, renderEditorTab, renderShortcutsTab,
@@ -412,113 +412,12 @@ function bindAll() {
   // Sync tab (delegated to settings-sync-tab.js)
   import("./settings-sync-tab.js").then(m => m.bindSyncTab(saveSetting, settings, render));
 
-  // Zotero tab
-  const zoteroTestBtn = document.getElementById("zotero-test-btn");
-  if (zoteroTestBtn) {
-    zoteroTestBtn.addEventListener("click", async () => {
-      const userIdInput = document.getElementById("zotero-user-id");
-      const apiKeyInput = document.getElementById("zotero-api-key");
-      const status = document.getElementById("zotero-test-status");
-      const userId = userIdInput?.value?.trim();
-      const apiKey = apiKeyInput?.value?.trim();
-      if (!userId || !apiKey) { status.textContent = "Please enter both User ID and API Key."; status.className = "zotero-status error"; return; }
-      status.textContent = "Testing..."; status.className = "zotero-status";
-      try {
-        await testZoteroConnection(userId, apiKey);
-        status.textContent = "Connected successfully!"; status.className = "zotero-status success";
-        saveSetting("zoteroUserId", userId); saveSetting("zoteroApiKey", apiKey);
-        const dlBtn = document.getElementById("zotero-download-btn");
-        if (dlBtn) dlBtn.disabled = false;
-      } catch (e) {
-        status.textContent = "Connection failed: " + e.message; status.className = "zotero-status error";
-      }
-    });
-  }
+  // Zotero tab — the downloads and their Cancel (settings-zotero.js).
+  bindZoteroTab({ settings, saveSetting, render });
 
-  bindCheckbox("zotero-include-highlights", "zoteroIncludeHighlights");
   bindNumber("zotero-snapshot-render-height", "zoteroSnapshotRenderHeight");
   bindNumber("zotero-snapshot-display-height", "zoteroSnapshotDisplayHeight");
   bindNumber("zotero-snapshot-quality", "zoteroSnapshotQuality");
-
-  const zoteroDownloadBtn = document.getElementById("zotero-download-btn");
-  if (zoteroDownloadBtn) {
-    zoteroDownloadBtn.addEventListener("click", async () => {
-      const userId = settings.zoteroUserId || document.getElementById("zotero-user-id")?.value?.trim();
-      const apiKey = settings.zoteroApiKey || document.getElementById("zotero-api-key")?.value?.trim();
-      if (!userId || !apiKey) return;
-      zoteroDownloadBtn.disabled = true;
-      const progressEl = document.getElementById("zotero-progress");
-      const fillEl = document.getElementById("zotero-progress-fill");
-      const textEl = document.getElementById("zotero-progress-text");
-      if (progressEl) progressEl.style.display = "";
-      try {
-        let highlightCount = 0;
-        const refs = await downloadZoteroReferences(userId, apiKey, (msg, pct) => {
-          if (fillEl) fillEl.style.width = Math.round(pct * 100) + "%";
-          if (textEl) textEl.textContent = msg;
-        }, {
-          includeHighlights: !!settings.zoteroIncludeHighlights,
-          onHighlights: (n) => { highlightCount = n; },
-        });
-        // Save references via Tauri command
-        const jsonStr = JSON.stringify(refs);
-        const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
-        if (IS_TAURI) {
-          const { invoke } = await import("@tauri-apps/api/core");
-          await invoke("save_zotero_references", { data: jsonStr });
-        } else {
-          localStorage.setItem("hush_zotero_refs", jsonStr);
-        }
-        clearZoteroCache();
-        // Compute human-readable file size
-        const bytes = new Blob([jsonStr]).size;
-        const fileSize = bytes < 1024 * 1024
-          ? (bytes / 1024).toFixed(1) + " KB"
-          : (bytes / (1024 * 1024)).toFixed(1) + " MB";
-        const timestamp = new Date().toLocaleString();
-        saveSetting("zoteroLastUpdate", timestamp);
-        saveSetting("zoteroReferenceCount", refs.length);
-        saveSetting("zoteroFileSize", fileSize);
-        saveSetting("zoteroHighlightCount", highlightCount);
-        saveSetting("zoteroUserId", userId);
-        saveSetting("zoteroApiKey", apiKey);
-        render();
-      } catch (e) {
-        if (textEl) textEl.textContent = "Download failed: " + e.message;
-        zoteroDownloadBtn.disabled = false;
-      }
-    });
-  }
-
-  // Reflect background Zotero updates (triggered from the command palette)
-  // into the settings panel's progress bar. Listen on both window
-  // (same-window modal) and Tauri events (separate settings window).
-  function onZoteroProgress(data) {
-    const { msg, progress } = data || {};
-    const pEl = document.getElementById("zotero-progress");
-    const fEl = document.getElementById("zotero-progress-fill");
-    const tEl = document.getElementById("zotero-progress-text");
-    if (pEl) pEl.style.display = "";
-    if (fEl) fEl.style.width = Math.round((progress || 0) * 100) + "%";
-    if (tEl) tEl.textContent = msg || "";
-    const btn = document.getElementById("zotero-download-btn");
-    if (btn) btn.disabled = true;
-  }
-  function onZoteroDone() {
-    const pEl = document.getElementById("zotero-progress");
-    if (pEl) pEl.style.display = "none";
-    const btn = document.getElementById("zotero-download-btn");
-    if (btn) btn.disabled = false;
-    render();
-  }
-  window.addEventListener("hush-zotero-progress", (e) => onZoteroProgress(e.detail));
-  window.addEventListener("hush-zotero-done", () => onZoteroDone());
-  if (IS_TAURI) {
-    import("@tauri-apps/api/event").then(({ listen }) => {
-      listen("hush-zotero-progress", (e) => onZoteroProgress(e.payload));
-      listen("hush-zotero-done", () => onZoteroDone());
-    }).catch(() => {});
-  }
 
   // Shortcuts tab — click on shortcut-keys to record
   document.querySelectorAll(".shortcut-display .shortcut-keys").forEach(el => {

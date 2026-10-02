@@ -10,9 +10,9 @@
  * Cache policy: cache-first. Callers can pass `forceRefresh: true` to
  * skip the cached read. The pane UI exposes a refresh button for that.
  *
- * Library-wide highlights: with Settings → Zotero → Include highlights
- * on, the reference download also writes every annotation in the library
- * to one file (`zotero_highlights.json`, `{ attKey: [raw items] }`).
+ * Library-wide highlights: Settings → Zotero → Highlights downloads
+ * every annotation in the library to a file of its own, separate from
+ * the references (`zotero_highlights.json`, `{ attKey: [raw items] }`).
  * While that file exists it is read first — and an attachment it doesn't
  * list is one with no annotations, not one to ask Zotero about — so the
  * highlight browser is a local operation. A refresh still goes to the
@@ -124,9 +124,8 @@ export async function loadLibraryHighlights() {
   return libraryHighlights;
 }
 
-/** Replace the library's highlights file (the reference download).
- *  `null` retires it — a download made with Include highlights off — so
- *  reads go back to asking Zotero rather than trusting an old copy. */
+/** Replace the library's highlights file (Settings → Zotero →
+ *  Highlights). Returns the file's size in bytes. */
 export async function saveLibraryHighlights(byAttachment) {
   const json = JSON.stringify(byAttachment ?? null);
   if (IS_TAURI) await tauriInvoke("save_zotero_highlights", { data: json });
@@ -137,6 +136,7 @@ export async function saveLibraryHighlights(byAttachment) {
   if (IS_TAURI) {
     try { (await import("@tauri-apps/api/event")).emit(HIGHLIGHTS_SAVED_EVENT, null); } catch (_) {}
   }
+  return new Blob([json]).size;
 }
 
 const HIGHLIGHTS_SAVED_EVENT = "hush-zotero-highlights-saved";

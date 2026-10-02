@@ -9,6 +9,7 @@ export function renderZoteroTab(settings) {
   const s = settings;
   const hasCredentials = s.zoteroApiKey && s.zoteroUserId;
   const hasRefs = s.zoteroReferenceCount > 0;
+  const hasHighlights = !!s.zoteroHighlightsLastUpdate;
   return `
     <div class="settings-section">
       <h2>Zotero API</h2>
@@ -31,27 +32,33 @@ export function renderZoteroTab(settings) {
     </div>
     <div class="settings-section">
       <h2>References</h2>
-      <div class="settings-row">
-        <label>Include highlights</label>
-        <input type="checkbox" id="zotero-include-highlights" ${s.zoteroIncludeHighlights ? "checked" : ""} />
-      </div>
-      <p class="settings-help">
-        Also download every highlight in your library into a file of its own, so the highlight browser opens them from this device instead of asking Zotero.
-      </p>
-      <div id="zotero-progress" class="zotero-progress" style="display:none;">
-        <div class="zotero-progress-bar"><div id="zotero-progress-fill" class="zotero-progress-fill"></div></div>
-        <div id="zotero-progress-text" class="zotero-progress-text"></div>
-      </div>
+      ${zoteroProgress("references")}
       ${hasRefs ? `
         <div class="zotero-ref-info">
           <strong>${s.zoteroReferenceCount}</strong> reference${s.zoteroReferenceCount !== 1 ? "s" : ""}
           ${s.zoteroLastUpdate ? `<br/><span class="zotero-ref-detail">Last updated: ${s.zoteroLastUpdate}</span>` : ""}
           ${s.zoteroFileSize ? `<br/><span class="zotero-ref-detail">File size: ${s.zoteroFileSize}</span>` : ""}
-          ${s.zoteroIncludeHighlights && s.zoteroHighlightCount ? `<br/><span class="zotero-ref-detail">${s.zoteroHighlightCount} highlight${s.zoteroHighlightCount !== 1 ? "s" : ""}</span>` : ""}
         </div>
       ` : ""}
-      <button id="zotero-download-btn" class="zotero-download-btn" ${!hasCredentials ? "disabled" : ""}>
+      <button id="zotero-download-references" class="zotero-download-btn" ${!hasCredentials ? "disabled" : ""}>
         ${hasRefs ? "Update References" : "Download References"}
+      </button>
+    </div>
+    <div class="settings-section">
+      <h2>Highlights</h2>
+      <p class="settings-help">
+        Every highlight in your library, in a file of its own. With it on this device the highlight browser opens a paper's highlights without asking Zotero.
+      </p>
+      ${zoteroProgress("highlights")}
+      ${hasHighlights ? `
+        <div class="zotero-ref-info">
+          <strong>${s.zoteroHighlightCount}</strong> highlight${s.zoteroHighlightCount !== 1 ? "s" : ""}
+          <br/><span class="zotero-ref-detail">Last updated: ${s.zoteroHighlightsLastUpdate}</span>
+          ${s.zoteroHighlightsFileSize ? `<br/><span class="zotero-ref-detail">File size: ${s.zoteroHighlightsFileSize}</span>` : ""}
+        </div>
+      ` : ""}
+      <button id="zotero-download-highlights" class="zotero-download-btn" ${!hasCredentials ? "disabled" : ""}>
+        ${hasHighlights ? "Update Highlights" : "Download Highlights"}
       </button>
     </div>
     <div class="settings-section">
@@ -73,4 +80,17 @@ export function renderZoteroTab(settings) {
       </div>
     </div>
   `;
+}
+
+/** A download's progress bar, its message and its Cancel — hidden until
+ *  that download runs (settings/settings-zotero.js). */
+function zoteroProgress(job) {
+  return `
+      <div class="zotero-progress" data-zotero-job="${job}" style="display:none;">
+        <div class="zotero-progress-bar"><div class="zotero-progress-fill"></div></div>
+        <div class="zotero-progress-row">
+          <div class="zotero-progress-text"></div>
+          <button type="button" class="zotero-cancel-btn">Cancel</button>
+        </div>
+      </div>`;
 }

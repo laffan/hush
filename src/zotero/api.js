@@ -20,19 +20,31 @@ export async function testZoteroConnection(userId, apiKey) {
  *  Response so callers can read headers; throws only after exhausting
  *  retries so an incomplete fetch surfaces instead of silently dropping
  *  data. */
-async function zoteroFetch(url, tries = 4) {
+async function zoteroFetch(url, signal, tries = 4) {
   let lastErr = null;
   for (let i = 0; i < tries; i++) {
+    throwIfCancelled(signal);
     try {
-      const resp = await fetch(url);
+      const resp = await fetch(url, { signal });
       if (resp.ok) return resp;
       // 429 / 5xx are transient; 4xx (bad key etc.) won't improve.
       if (resp.status !== 429 && resp.status < 500) throw new Error(`HTTP ${resp.status}`);
       lastErr = new Error(`HTTP ${resp.status}`);
-    } catch (e) { lastErr = e; }
+    } catch (e) {
+      if (e?.name === "AbortError") throw e; // cancelled — no retry
+      lastErr = e;
+    }
     await new Promise((r) => setTimeout(r, 400 * Math.pow(2, i))); // 0.4s, 0.8s, 1.6s
   }
   throw lastErr || new Error("Zotero fetch failed");
+}
+
+/** Every download takes an optional AbortSignal (Settings → Zotero's
+ *  Cancel); a cancelled one throws an `AbortError` between pages or out
+ *  of the request in flight. Nothing here writes, so a cancel leaves the
+ *  caches exactly as they were. */
+export function throwIfCancelled(signal) {
+  if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
 }
 
 /** Whether a Zotero attachment's data describes a PDF. Prefers the
@@ -49,12 +61,12 @@ function isPdfAttachment(d) {
 /** Every collection (Zotero's word for a folder) in the library, as
  *  `{ key, name, parentKey }`. Nesting is by `parentKey`; a top-level
  *  collection has `null`. Paginated like everything else in this API. */
-export async function fetchCollections(userId, apiKey) {
+export async function fetchCollections(userId, apiKey, signal) {
   const pageSize = 100;
   const out = [];
   for (let start = 0; ; start += pageSize) {
     const url = `${ZOTERO_API}/users/${userId}/collections?key=${apiKey}&format=json&limit=${pageSize}&start=${start}`;
-    const resp = await zoteroFetch(url);
+    const resp = await zoteroFetch(url, signal);
     const batch = await resp.json();
     for (const c of batch) {
       if (!c?.key) continue;
@@ -69,11 +81,11 @@ export async function fetchCollections(userId, apiKey) {
   return out;
 }
 
-export async function fetchReferences(userId, apiKey, onProgress) {
+export async function fetchReferences(userId, apiKey, onProgress, signal) {
   // Step 1: Get total count of top-level items
   onProgress("Checking library size...", 0);
   const countUrl = `${ZOTERO_API}/users/${userId}/items/top?key=${apiKey}&format=json&limit=1`;
-  const countResp = await fetch(countUrl);
+  const countResp = await fetch(countUrl, { signal });
   if (!countResp.ok) throw new Error(`HTTP ${countResp.status}`);
   const totalItems = parseInt(countResp.headers.get("Total-Results") || "0", 10);
 
@@ -85,7 +97,7 @@ export async function fetchReferences(userId, apiKey, onProgress) {
     const start = page * pageSize;
     onProgress(`Fetching items (${start + 1}–${Math.min(start + pageSize, totalItems)} of ${totalItems})...`, (page / totalPages) * 0.6);
     const url = `${ZOTERO_API}/users/${userId}/items/top?key=${apiKey}&format=json&limit=${pageSize}&start=${start}`;
-    const resp = await fetch(url);
+    const resp = await fetch(url, { signal });
     if (!resp.ok) throw new Error(`HTTP ${resp.status} at page ${page}`);
     const batch = await resp.json();
     items.push(...batch);
@@ -95,7 +107,7 @@ export async function fetchReferences(userId, apiKey, onProgress) {
   onProgress("Fetching attachments...", 0.6);
   const attachments = [];
   const attUrl = `${ZOTERO_API}/users/${userId}/items?key=${apiKey}&format=json&itemType=attachment&limit=1`;
-  const attCountResp = await zoteroFetch(attUrl);
+  const attCountResp = await zoteroFetch(attUrl, signal);
   const totalAtt = parseInt(attCountResp.headers.get("Total-Results") || "0", 10);
   const attPages = Math.ceil(totalAtt / pageSize) || 1;
   for (let page = 0; page < attPages; page++) {
@@ -105,7 +117,7 @@ export async function fetchReferences(userId, apiKey, onProgress) {
     // Retry rather than `break` — a single transient page failure used to
     // silently drop every attachment after it, so items further down the
     // library lost their PDFs and the menu couldn't offer "Download to Hush".
-    const resp = await zoteroFetch(url);
+    const resp = await zoteroFetch(url, signal);
     attachments.push(...(await resp.json()));
   }
 
@@ -179,14 +191,14 @@ export async function fetchReferences(userId, apiKey, onProgress) {
  *  grouped by the attachment it belongs to — `{ attKey: [raw items] }`,
  *  each item in the API's own shape, as the per-attachment fetch returns
  *  them. Paged like the rest; `onProgress(done, total)` after each page. */
-export async function fetchAllAnnotations(userId, apiKey, onProgress) {
+export async function fetchAllAnnotations(userId, apiKey, onProgress, signal) {
   const pageSize = 100;
   const byAttachment = {};
   let total = null;
   let count = 0;
   for (let start = 0; total == null || start < total; start += pageSize) {
     const url = `${ZOTERO_API}/users/${userId}/items?key=${apiKey}&format=json&itemType=annotation&limit=${pageSize}&start=${start}`;
-    const resp = await zoteroFetch(url);
+    const resp = await zoteroFetch(url, signal);
     if (total == null) total = parseInt(resp.headers.get("Total-Results") || "0", 10);
     const batch = await resp.json();
     for (const item of batch) {

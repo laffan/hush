@@ -395,6 +395,27 @@
   font-size: 11px;
   opacity: 0.6;
 }
+/* The message and the running download's Cancel, side by side. */
+.zotero-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.zotero-cancel-btn {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.4));
+  background: transparent;
+  color: var(--fg);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: system-ui, sans-serif;
+}
+.zotero-cancel-btn:hover:not(:disabled) { background: rgba(128, 128, 128, 0.12); }
+.zotero-cancel-btn:disabled { opacity: 0.4; cursor: default; }
+.zotero-cancel-btn[hidden] { display: none; }
 
 .zotero-download-btn {
   display: block;

@@ -5,7 +5,7 @@
  * Triggered by Cmd+Shift+L or the sidebar book icon.
  */
 
-import { fetchAllAnnotations, fetchCollections, fetchReferences, testZoteroConnection } from "./zotero/api.js";
+import { fetchAllAnnotations, fetchCollections, fetchReferences, testZoteroConnection, throwIfCancelled } from "./zotero/api.js";
 import { saveLibraryHighlights } from "./zotero-annotations.js";
 
 // Re-exported so the settings window and the sidebar's background
@@ -20,37 +20,42 @@ let zoteroModal = null;
 
 // ===== Download =====
 
-/** Refresh the local caches from the library. References are returned
- *  (both callers persist them alongside their own bookkeeping); the
- *  collection tree is saved here, since nothing outside this module has
- *  a reason to hold it, and so are the highlights when
- *  `opts.includeHighlights` asks for them (`opts.onHighlights(count)`
- *  hears how many). A collections failure is non-fatal — the
- *  library browser falls back to a flat list. */
+/** Refresh the reference cache's sources from the library. References
+ *  are returned for the caller to persist (`zotero/zotero-download.js`);
+ *  the collection tree is saved here, since nothing outside this module
+ *  has a reason to hold it. A collections failure is non-fatal — the
+ *  library browser falls back to a flat list — but a cancel is not:
+ *  `opts.signal` aborts the whole download before anything is saved. */
 export async function downloadZoteroReferences(userId, apiKey, onProgress, opts = {}) {
-  const references = await fetchReferences(userId, apiKey, onProgress);
+  const { signal } = opts;
+  const references = await fetchReferences(userId, apiKey, onProgress, signal);
   try {
     onProgress("Fetching collections...", 0.95);
-    await saveCollections(await fetchCollections(userId, apiKey));
+    const collections = await fetchCollections(userId, apiKey, signal);
+    throwIfCancelled(signal);
+    await saveCollections(collections);
   } catch (e) {
+    if (e?.name === "AbortError") throw e;
     console.warn("Zotero collections fetch failed:", e);
   }
-  // Settings → Zotero → Include highlights: every annotation in the
-  // library, into a file of its own, so the highlight browser can read
-  // locally. Unlike the collections this one is fatal — a half-fetched
-  // file would read as "these papers have no highlights".
-  if (opts.includeHighlights) {
-    onProgress("Fetching highlights...", 0.96);
-    const { byAttachment, count } = await fetchAllAnnotations(userId, apiKey, (done, total) => {
-      onProgress(`Fetching highlights (${done} of ${total})...`, 0.96 + (total ? (done / total) * 0.03 : 0));
-    });
-    await saveLibraryHighlights(byAttachment);
-    opts.onHighlights?.(count);
-  } else {
-    await saveLibraryHighlights(null);
-  }
+  throwIfCancelled(signal);
   onProgress("Done!", 1);
   return references;
+}
+
+/** Every highlight in the library, into a file of its own (the
+ *  highlight browser reads it first — see zotero-annotations.js). Saved
+ *  only once the whole library has arrived; returns `{ count, bytes }`. */
+export async function downloadZoteroHighlights(userId, apiKey, onProgress, opts = {}) {
+  const { signal } = opts;
+  onProgress("Fetching highlights...", 0);
+  const { byAttachment, count } = await fetchAllAnnotations(userId, apiKey, (done, total) => {
+    onProgress(`Fetching highlights (${done} of ${total})...`, total ? (done / total) * 0.95 : 0);
+  }, signal);
+  throwIfCancelled(signal);
+  const bytes = await saveLibraryHighlights(byAttachment);
+  onProgress("Done!", 1);
+  return { count, bytes };
 }
 
 // ===== Storage =====
