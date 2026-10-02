@@ -25,8 +25,9 @@
  *     offset would type onto the `<<<` or `>>>` line and dissolve the
  *     card; a deletion that pulls the next line up onto `>>>` would do
  *     the same. The filter pushes such text onto a line of its own
- *     instead (so Backspace at the start of the line after a card does
- *     nothing, rather than eating the fence).
+ *     instead — and Backspace / Delete at a card's edge go *round* it:
+ *     the lines either side join and the card moves up beside the joined
+ *     line, rather than the deletion eating a fence (or stopping dead).
  *   - **Refusing edits inside.** Nothing but the card's own replay
  *     (`cardEdit`) may change the span partway.
  *   - **The card editor's fence guard**, which refuses a `<<<` / `>>>`
@@ -38,7 +39,7 @@
  */
 
 import { EditorView, Decoration, keymap } from "@codemirror/view";
-import { EditorState, StateField, Transaction, Text, Facet, Prec } from "@codemirror/state";
+import { EditorState, StateField, Transaction, Text, Facet, Prec, findClusterBreak } from "@codemirror/state";
 import { insideCard, cardEdit } from "./card-facet.js";
 import { createCardElement } from "./card-element.js";
 import { startCardDrag, relocateCard } from "./card-drag.js";
@@ -252,6 +253,121 @@ function insertCardAtCursor(view, span) {
   view.focus();
 }
 
+/** The run of cards `c` belongs to: cards stacked with nothing but a
+ *  line break between them are passed over as one. */
+function cardBlock(cards, c) {
+  let from = c.from;
+  let to = c.to;
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const k of cards) {
+      if (k.to === from - 1) { from = k.from; grew = true; }
+      if (k.from === to + 1) { to = k.to; grew = true; }
+    }
+  }
+  return { from, to };
+}
+
+/** One character (cluster) before `pos`, or the line break before it at
+ *  a line's start; null at the top of the document. */
+function charBefore(doc, pos) {
+  if (pos <= 0) return null;
+  const line = doc.lineAt(pos);
+  if (pos === line.from) return { from: pos - 1, to: pos };
+  return { from: line.from + findClusterBreak(line.text, pos - line.from, false), to: pos };
+}
+
+/** One character (cluster) after `pos`, or the line break after it at a
+ *  line's end; null at the end of the document. */
+function charAfter(doc, pos) {
+  if (pos >= doc.length) return null;
+  const line = doc.lineAt(pos);
+  if (pos === line.to) return { from: pos, to: pos + 1 };
+  return { from: pos, to: line.from + findClusterBreak(line.text, pos - line.from, true) };
+}
+
+/**
+ * Backspace and Delete at a card's edge go round the card.
+ *
+ * In the text a card is a zero-height block between the line above it
+ * and its anchor line, the one it sits beside — so with the caret at the
+ * start of the anchor line, the character Backspace means is the end of
+ * the line *above the card*. Deleting the real line break there would
+ * put text on a fence line, which the guard below refuses, and the
+ * deletion simply stopped at every card. Instead the two lines join as
+ * if the card weren't there, and the card's markdown moves up to sit
+ * before the joined line, so it stays beside the words it was beside;
+ * Delete at the end of the line above does the same from the other side.
+ * The caret positions on the card itself count as the nearer of those two
+ * lines' edges. Stacked cards are passed over together. Returns null when
+ * the transaction isn't a lone Backspace / Delete against a card.
+ */
+function deleteAroundCard(tr, cards) {
+  const back = tr.isUserEvent("delete.backward");
+  if (!back && !tr.isUserEvent("delete.forward")) return null;
+  const sel = tr.startState.selection;
+  if (sel.ranges.length > 1 || !sel.main.empty) return null;
+  let one = null;
+  let count = 0;
+  tr.changes.iterChanges((fromA, toA, _fb, _tb, inserted) => { count++; one = { fromA, toA, empty: !inserted.length }; });
+  if (count !== 1 || !one.empty) return null;
+  const doc = tr.startState.doc;
+  const head = sel.main.head;
+  const { fromA, toA } = one;
+
+  // Which card, and which side of it the key is pressed on: "after"
+  // (Backspace from the anchor line or the card's far edge) or "before"
+  // (Delete from the line above or the card's near edge) go round it;
+  // Backspace on the near edge and Delete on the far edge are ordinary
+  // deletions in the line beyond.
+  let card = null;
+  let side = null;
+  for (const c of cards) {
+    if (back && fromA === c.to && toA === c.to + 1) { card = c; side = "around"; }
+    else if (back && fromA === c.from && toA === c.to) { card = c; side = head === c.to ? "around" : "before-line"; }
+    else if (back && toA === c.from && head === c.from) { card = c; side = "before-line"; }
+    else if (!back && fromA === c.from - 1 && toA === c.from) { card = c; side = "around"; }
+    else if (!back && fromA === c.from && toA === c.to) { card = c; side = head === c.from ? "around" : "after-line"; }
+    else if (!back && fromA === c.to && head === c.to) { card = c; side = "after-line"; }
+    if (card) break;
+  }
+  if (!card) return null;
+  const block = cardBlock(cards, card);
+  const hasAbove = block.from > 0;
+  const hasBelow = block.to < doc.length;
+  const userEvent = tr.annotation(Transaction.userEvent);
+
+  // No line on the far side to join: delete in the line there is.
+  if (side === "around" && back && !hasAbove) return [];
+  if (side === "around" && !back && !hasBelow) return [];
+  if (side === "around" && back && !hasBelow) side = "before-line";
+  if (side === "around" && !back && !hasAbove) side = "after-line";
+
+  if (side === "before-line") {
+    const r = hasAbove ? charBefore(doc, block.from - 1) : null;
+    if (!r) return [];
+    return { changes: r, selection: { anchor: r.from }, userEvent, scrollIntoView: true };
+  }
+  if (side === "after-line") {
+    const r = hasBelow ? charAfter(doc, block.to + 1) : null;
+    if (!r) return [];
+    return { changes: r, selection: { anchor: r.from }, userEvent, scrollIntoView: true };
+  }
+
+  // Join the line above and the anchor line; the cards move up to sit
+  // before the joined line.
+  const above = doc.lineAt(block.from - 1);
+  const below = doc.lineAt(block.to + 1);
+  const cardText = doc.sliceString(block.from, block.to);
+  const insert = cardText + "\n" + above.text + below.text;
+  return {
+    changes: { from: above.from, to: below.to, insert },
+    selection: { anchor: above.from + cardText.length + 1 + above.text.length },
+    userEvent,
+    scrollIntoView: true,
+  };
+}
+
 /**
  * Keep typing and deleting next to a card off its fence lines. Runs on
  * the user's own edits only; a change that would leave a fence sharing a
@@ -265,8 +381,9 @@ function insertCardAtCursor(view, span) {
  * own ✕ (or a drag, or Send to Inbox — all `cardEdit`) and nothing else:
  * an `input` / `delete` edit that covers whole cards is carved around
  * them, so a selection deleted across a card takes the text and leaves
- * the card, typing over one lands the text before it, and a lone
- * Backspace or Delete against a card steps the caret over it instead.
+ * the card, and typing over one lands the text before it. A lone
+ * Backspace or Delete against a card never gets this far: it goes round
+ * the card (`deleteAroundCard`, above).
  * Undo, redo and app-driven rewrites (no user event — Zen's write-back,
  * a sync pull) still carry whole cards, as do moves.
  */
@@ -274,6 +391,8 @@ const boundaryGuard = EditorState.transactionFilter.of((tr) => {
   if (!tr.docChanged || tr.annotation(programmaticChange) || tr.annotation(cardEdit)) return tr;
   const cards = tr.startState.field(cardField, false)?.cards;
   if (!cards || !cards.length) return tr;
+  const around = deleteAroundCard(tr, cards);
+  if (around) return around;
   const doc = tr.startState.doc;
   const protect = tr.isUserEvent("input") || tr.isUserEvent("delete");
   let changed = false;
@@ -321,8 +440,9 @@ const boundaryGuard = EditorState.transactionFilter.of((tr) => {
   if (refused) return [];
   if (!changed) return tr;
   if (!specs.length) {
-    // Nothing left once the cards are kept: a Backspace or Delete
-    // against a card. Step over it, the way the caret steps over it.
+    // Nothing left once the cards are kept — a deletion of only cards
+    // that `deleteAroundCard` didn't take (one with no direction, say a
+    // sentence delete). Step over the card, the way the caret does.
     const sel = tr.startState.selection.main;
     if (!sel.empty || !stepped.length) return [];
     const c = stepped[0];
