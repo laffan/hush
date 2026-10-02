@@ -21,6 +21,8 @@ import { resolveWikilink, openWikilink, getLinkableNotes, getActiveNoteNodeId } 
 import { openWikilinkPopup } from "../../links/wikilink-popup.js";
 
 const WIKILINK_RE = /\[\[([^\[\]\n]+?)\]\]/g;
+// Longest last word that stays glued to the inline-pane arrow.
+const GLUE_MAX_CHARS = 24;
 
 class WikilinkWidget extends WidgetType {
   constructor(title, broken, occurrence, fileType, showInlineArrow) {
@@ -48,16 +50,36 @@ class WikilinkWidget extends WidgetType {
   toDOM() {
     const wrap = document.createElement("span");
     wrap.className = "cm-wikilink-wrap";
-    const span = document.createElement("span");
-    span.className = "cm-wikilink-rendered" + (this.broken ? " broken" : "");
-    span.textContent = this.title;
-    span.title = this.broken ? "No note named \"" + this.title + "\"" : this.title;
-    span.dataset.wikilink = this.title;
-    wrap.appendChild(span);
+    const makeSpan = (text) => {
+      const span = document.createElement("span");
+      span.className = "cm-wikilink-rendered" + (this.broken ? " broken" : "");
+      span.textContent = text;
+      span.title = this.broken ? "No note named \"" + this.title + "\"" : this.title;
+      span.dataset.wikilink = this.title;
+      return span;
+    };
+    const withArrow = !this.broken && this.showInlineArrow;
+    // The title wraps like the prose around it — a long one (a PDF's
+    // full title, usually) held on one line widened the whole editor.
+    // Only the last word is glued to the arrow, so the arrow never
+    // starts a line on its own; a last word too long to fit a line is
+    // left free to break.
+    const cut = withArrow ? this.title.lastIndexOf(" ") + 1 : 0;
+    const last = this.title.slice(cut);
+    let arrowHost = wrap;
+    if (withArrow && last.length <= GLUE_MAX_CHARS) {
+      if (cut > 0) wrap.appendChild(makeSpan(this.title.slice(0, cut)));
+      arrowHost = document.createElement("span");
+      arrowHost.className = "cm-wikilink-glue";
+      arrowHost.appendChild(makeSpan(last));
+      wrap.appendChild(arrowHost);
+    } else {
+      wrap.appendChild(makeSpan(this.title));
+    }
     // Down-arrow button — opens the target as a pane embedded in the
     // doc text just below this line. Resolved wikilinks only (nothing
     // to embed for broken links), and only in editors that opted in.
-    if (!this.broken && this.showInlineArrow) {
+    if (withArrow) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "cm-wikilink-arrow";
@@ -67,7 +89,7 @@ class WikilinkWidget extends WidgetType {
       btn.setAttribute("aria-label", "Open inline pane");
       btn.title = "Open inline pane";
       btn.innerHTML = `<svg viewBox="0 0 10 10" width="9" height="9" aria-hidden="true"><polyline points="2.5,4 5,6.5 7.5,4" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-      wrap.appendChild(btn);
+      arrowHost.appendChild(btn);
     }
     return wrap;
   }

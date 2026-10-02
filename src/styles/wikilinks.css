@@ -2,9 +2,18 @@
    search popup the user gets when typing `[[`. */
 
 .cm-wikilink-wrap {
-  /* Inline container so the rendered link + arrow stay glued together
-     when the line wraps mid-paragraph. */
+  /* The title wraps with the prose: held on one line, a title wider
+     than the text column (a PDF's, usually) pushed the editor wider
+     than the window. A single unbroken run still breaks rather than
+     overflow. */
   display: inline;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* The title's last word and the inline-pane arrow stay together, so
+   the arrow never begins a line by itself. */
+.cm-wikilink-glue {
   white-space: nowrap;
 }
 
@@ -87,7 +96,7 @@
 .floating-pane.inline-wide .fp-resize-w {
   display: none;
 }
-.cm-wikilink-rendered:hover {
+.cm-wikilink-wrap:hover .cm-wikilink-rendered {
   text-decoration-color: currentColor;
 }
 .cm-wikilink-rendered.broken {
