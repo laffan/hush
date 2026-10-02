@@ -39,7 +39,7 @@ import { snapshotFlowchart } from "../notebook/flowchart-snapshot.ts";
 import { drawStickyBox } from "../notebook/renderer.ts";
 import {
   makeCanvas, encode, loadImage, baseRenderOpts, drawCard,
-  docThumbText, pageGround, docPageTheme, CARD_W, CARD_H,
+  docThumbText, normalizeDocText, pageGround, docPageTheme, CARD_W, CARD_H,
 } from "./desktop-thumb-draw.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
@@ -57,7 +57,7 @@ const DOC_FONT_SIZE = 8;
 const BASE_LONG_EDGE = 400;
 // Bump when thumbnail geometry / styling changes so cached renders
 // regenerate on the next Desktop open.
-const THUMB_STYLE_VERSION = 14;
+const THUMB_STYLE_VERSION = 15;
 // Doc outline column geometry + drawing live in ./desktop-outline.js.
 // Width of each constituent slice in a stack file's thumbnail.
 const STACK_SLICE_WIDTH = 80;
@@ -184,7 +184,7 @@ async function renderDocThumb(state, entry, themeCtx) {
   let outline = null;
   if (entry.outline) {
     const { parseHeadings } = await import("../overview/overview-parser.js");
-    outline = layoutDocOutline(parseHeadings(content), scale, 0);
+    outline = layoutDocOutline(parseHeadings(normalizeDocText(content)), scale, 0);
   }
 
   // The column takes the left band, so everything the page draws shifts

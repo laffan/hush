@@ -10,6 +10,8 @@
  * desktop-thumbs imports these, never the reverse.
  */
 
+import { stripFrontmatter } from "../editor/frontmatter.js";
+
 // Fallback card dims, and the raster density every thumbnail renders at.
 export const CARD_W = 220;
 export const CARD_H = 280;
@@ -90,14 +92,20 @@ export function drawCard(themeCtx, label, glyph, cssW = CARD_W, cssH = CARD_H) {
   return { dataUrl: encode(canvas), w: cssW, h: cssH };
 }
 
+/** A doc's text as the editor holds it: CodeMirror reads `\r\n` and a
+ *  lone `\r` as line breaks, and the canvas's markdown parser splits on
+ *  `\n` alone — so a file saved with Windows line endings left a `\r` on
+ *  every line, and no heading, list or frontmatter fence matched. */
+export function normalizeDocText(content) {
+  return (content || "").replace(/\r\n?/g, "\n");
+}
+
 /** Strip YAML frontmatter + %%comments%% so a doc thumbnail starts at
- *  its actual prose (and the page count skips editorial scaffolding). */
+ *  its actual prose (and the page count skips editorial scaffolding).
+ *  The frontmatter is found by the editor's own parser, which an empty
+ *  block (`---` straight after `---`) and a `...` close both satisfy. */
 export function docThumbText(content) {
-  let text = content || "";
-  if (text.startsWith("---\n")) {
-    const end = text.indexOf("\n---", 4);
-    if (end !== -1) text = text.slice(end + 4).replace(/^\n+/, "");
-  }
+  const text = stripFrontmatter(normalizeDocText(content)).replace(/^\n+/, "");
   return text.replace(/%%[\s\S]*?%%/g, "");
 }
 
