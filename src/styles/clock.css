@@ -64,11 +64,24 @@
 }
 
 /* …and on the minute they blink: 4 × 600 ms, BLINKS × BLINK_MS in
-   wall-clock.js, which clears the alarm when the last one ends. */
-.wall-clock.alarm-ringing svg {
-  animation: wall-clock-blink 600ms steps(1, end) 4;
+   wall-clock.js, which clears the alarm when the last one ends. Each
+   blink is half normal — red lines on the style's background — and half
+   inverted: a red disc with the lines in the background colour. Every
+   line is at full strength for both halves (the faded ones too), so the
+   face flashes rather than just going out. */
+.wall-clock.alarm-ringing {
+  animation: wall-clock-invert-face 600ms steps(1, end) 4;
+}
+.wall-clock.alarm-ringing .wc-mark,
+.wall-clock.alarm-ringing .wc-hour,
+.wall-clock.alarm-ringing .wc-minute {
+  opacity: 1;
+  animation: wall-clock-invert-ink 600ms steps(1, end) 4;
 }
 
-@keyframes wall-clock-blink {
-  50% { opacity: 0; }
+@keyframes wall-clock-invert-face {
+  50% { background-color: var(--wc-alarm-red); }
+}
+@keyframes wall-clock-invert-ink {
+  50% { stroke: var(--theme-bg, var(--bg)); }
 }
