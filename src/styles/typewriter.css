@@ -31,3 +31,41 @@ body.notebook-mode .typewriter-boundary {
   opacity: 0.5 !important;
   height: 4px;
 }
+
+/* A pane's (or stack column's) own typewriter line — pane-editor.js.
+   The element is a thin grab strip centred on the line, so it can be
+   dragged like the main editor's boundary; the visible 1px rule is its
+   ::before. */
+.pane-tw-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 6px;
+  transform: translateY(-3px);
+  cursor: row-resize;
+  z-index: 5;
+  touch-action: none;
+}
+.pane-tw-line::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 2.5px;
+  height: 1px;
+  background: var(--fg, #888);
+  opacity: var(--pane-tw-opacity, 0.25);
+  transition: opacity 0.2s, height 0.15s, top 0.15s;
+}
+@media (hover: hover) {
+  .pane-tw-line:hover::before {
+    opacity: 0.5;
+    height: 3px;
+    top: 1.5px;
+  }
+}
+.pane-tw-line.dragging::before {
+  opacity: 0.5;
+  height: 3px;
+  top: 1.5px;
+}

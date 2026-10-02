@@ -18,6 +18,7 @@ import { createDryHighlightPlugin } from "../editor/plugins/dry-highlight.js";
 import { resolveStyleForAppearance } from "../sidebar/styles-panel.js";
 import { themeBackgrounds } from "../theme-colors.js";
 import { hasAcceptableDragPayload, readDragText } from "../editor/file-drop.js";
+import { applyTypewriterPadding, repositionTypewriterBoundary } from "../editor/plugins/typewriter.js";
 
 /**
  * Create a CodeMirror editor suitable for a floating pane.
@@ -300,22 +301,58 @@ function _applyPaneTypewriter(view, state, container) {
     line = document.createElement("div");
     line.className = "pane-tw-line";
     container.appendChild(line);
+    setupPaneTypewriterDrag(line, view, state, container);
   }
   const rawOpacity = state.settings.typewriterLineOpacity ?? 0.08;
-  Object.assign(line.style, {
-    position: "absolute",
-    left: "0",
-    right: "0",
-    top: targetY + "px",
-    height: "1px",
-    background: "var(--fg, #888)",
-    opacity: String(Math.max(rawOpacity, 0.25)),
-    pointerEvents: "none",
-    zIndex: "5",
-  });
+  line.style.top = targetY + "px";
+  line.style.setProperty("--pane-tw-opacity", String(Math.max(rawOpacity, 0.25)));
 
   observePaneTypewriterResize(view, state, container);
   requestAnimationFrame(() => scrollPaneCursorToTypewriter(view, state, container));
+}
+
+/** The AppState a mode context inherits from — the owner of the shared
+ *  `typewriterPosition`. A context is `Object.create(appState)`, so a
+ *  plain assignment on it would only shadow the value for this pane. */
+function typewriterOwner(state) {
+  let s = state;
+  while (s && !Object.prototype.hasOwnProperty.call(s, "typewriterPosition")) s = Object.getPrototypeOf(s);
+  return s || state;
+}
+
+/** Drag the pane's typewriter line, as the main editor's boundary drags.
+ *  The position it writes is the shared fraction, so the main editor's
+ *  line (hidden while a pane is active) is moved to match and the two
+ *  surfaces keep agreeing on where the line goes. */
+function setupPaneTypewriterDrag(line, view, state, container) {
+  line.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    line.classList.add("dragging");
+    try { line.setPointerCapture(e.pointerId); } catch (_) {}
+    const owner = typewriterOwner(state);
+    const onMove = (ev) => {
+      const rect = container.getBoundingClientRect();
+      if (!rect.height) return;
+      const frac = (ev.clientY - rect.top) / rect.height;
+      owner.typewriterPosition = Math.min(0.9, Math.max(0.1, frac));
+      _applyPaneTypewriter(view, state, container);
+      scrollPaneCursorToTypewriter(view, state, container);
+    };
+    const onUp = () => {
+      line.classList.remove("dragging");
+      line.removeEventListener("pointermove", onMove);
+      line.removeEventListener("pointerup", onUp);
+      line.removeEventListener("pointercancel", onUp);
+      repositionTypewriterBoundary(owner);
+      const mainView = owner.editor?.view;
+      if (owner.typewriterMode && mainView) applyTypewriterPadding(mainView, owner);
+    };
+    line.addEventListener("pointermove", onMove);
+    line.addEventListener("pointerup", onUp);
+    line.addEventListener("pointercancel", onUp);
+  });
 }
 
 /** Re-centre the line and the cursor whenever the host box changes size.
