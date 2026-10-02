@@ -99,6 +99,10 @@ body.focus-mode-active .wall-clock:not(:hover):not(.alarm-soon) {
   background: color-mix(in srgb, currentColor 18%, transparent);
 }
 
+.focus-mode-dim .cm-youarehere-note {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
 .focus-mode-dim .cm-md-heading {
   color: inherit;
 }

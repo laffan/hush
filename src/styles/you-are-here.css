@@ -10,6 +10,22 @@
   border-radius: 5px;
   padding: 1px 5px;
   font-weight: 600;
+  /* The app's face, not the style's: the tag (and the note beside it)
+     is the app's mark on the text rather than part of it. Set on the
+     span itself, so the main editor's `!important` line face — which
+     the span only inherits — doesn't reach it. */
+  font-family: var(--ui-font-family);
+}
+
+/* The rest of the marker's line: the note left for next time, on a red
+   tint, in the app's face like the tag. */
+.cm-youarehere-note {
+  background: rgba(255, 43, 43, 0.16);
+  border-radius: 3px;
+  padding: 1px 0;
+  font-family: var(--ui-font-family);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 /* Sidebar row above the Flagged list */
