@@ -525,6 +525,11 @@ pub struct AppSettings {
     /// can render it.
     #[serde(default)]
     pub track_startup_timing: bool,
+    /// Settings > Debug > Activity Log — "Record activity". Off by
+    /// default; nothing is appended to `activity.log` while it's off
+    /// (`activity_log::set_enabled`, mirrored on load and save).
+    #[serde(default)]
+    pub activity_log_enabled: bool,
     /// The most recent recorded launch. Opaque JSON owned by the JS side
     /// (`src/startup-trace.js`) — Rust never reads into it, so the shape
     /// can grow phases without a schema change here.
@@ -866,6 +871,7 @@ impl Default for AppSettings {
             properties_visible: false,
             debug_perf_hud: false,
             track_startup_timing: false,
+            activity_log_enabled: false,
             startup_timings: serde_json::Value::Null,
             use_desks: true,
             desks: Vec::new(),
@@ -898,6 +904,7 @@ impl AppSettings {
             let content = fs::read_to_string(&path)?;
             let mut settings: AppSettings = serde_json::from_str(&content)?;
             settings.data_dir = data_dir.clone();
+            crate::activity_log::set_enabled(settings.activity_log_enabled);
             Ok(settings)
         } else {
             let mut settings = AppSettings::default();
@@ -907,6 +914,7 @@ impl AppSettings {
     }
 
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
+        crate::activity_log::set_enabled(self.activity_log_enabled);
         let path = self.data_dir.join("settings.json");
         let content = serde_json::to_string_pretty(self)?;
         write_atomic_str(&path, &content)?;

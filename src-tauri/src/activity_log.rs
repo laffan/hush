@@ -19,6 +19,7 @@ use crate::atomic::write_atomic_str;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 type BoxError = Box<dyn std::error::Error>;
@@ -32,6 +33,18 @@ const MAX_ENTRIES: usize = 4000;
 const TRIM_SLACK: usize = 500;
 
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
+
+/// Settings → Debug → "Record activity". Off by default: the log is for
+/// chasing a problem, and left running it grows to its cap and stays
+/// there. Mirrored from `AppSettings::activity_log_enabled` on every
+/// settings load and save, so one switch in Settings stops every writer —
+/// the webviews' flushes and the Rust-side `note`s alike — at this one
+/// gate.
+static ENABLED: AtomicBool = AtomicBool::new(false);
+
+pub fn set_enabled(on: bool) {
+    ENABLED.store(on, Ordering::Relaxed);
+}
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -62,7 +75,7 @@ fn log_path() -> PathBuf {
 
 /// Append entries, trimming the file when it outgrows the cap.
 pub fn append(entries: &[ActivityEntry]) -> Result<(), BoxError> {
-    if entries.is_empty() {
+    if entries.is_empty() || !ENABLED.load(Ordering::Relaxed) {
         return Ok(());
     }
     let path = log_path();

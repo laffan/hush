@@ -133,6 +133,9 @@ export function createDefaultSettings() {
     // breakdown to `startupTimings` for the settings webview to render
     // (src/startup-trace.js).
     trackStartupTiming: false,
+    // Settings → Debug → Activity Log → "Record activity" (off: nothing
+    // is written to activity.log).
+    activityLogEnabled: false,
     // The most recent recorded launch. Opaque to Rust; shape owned by
     // src/startup-trace.js#getStartupTrace.
     startupTimings: null,

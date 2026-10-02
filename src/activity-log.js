@@ -17,6 +17,12 @@
  * can say which process was responsible, the way a devtools console
  * attributes a line to a file.
  *
+ * Whether anything is kept is Rust's call: Settings → Debug → "Record
+ * activity" (off by default) gates `activity_log::append`, the one place
+ * every window's flushes and the Rust-side notes all land. Gating there
+ * rather than here means a switch flipped in the settings webview is in
+ * force the instant it saves, with no window holding a stale copy.
+ *
  * Entries are buffered and flushed on a short timer — a busy pass costs
  * one IPC round trip, not one per line — and flushed eagerly on `error`
  * and on page hide, so a crash or a swipe-away doesn't take the trail

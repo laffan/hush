@@ -338,6 +338,7 @@ function bindAll() {
   // Debug tab
   bindCheckbox("setting-debug-perf-hud", "debugPerfHud");
   bindCheckbox("setting-track-startup-timing", "trackStartupTiming");
+  bindCheckbox("setting-activity-log-enabled", "activityLogEnabled");
   bindDebugTab();
 
   // Flags tab

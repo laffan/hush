@@ -137,6 +137,11 @@ export function renderDebugTab(settings) {
 
     <div class="settings-section" id="debug-activity">
       <h2>Activity Log</h2>
+      <div class="settings-row">
+        <label for="setting-activity-log-enabled">Record activity</label>
+        <input type="checkbox" id="setting-activity-log-enabled" ${s.activityLogEnabled ? "checked" : ""} />
+      </div>
+      <p class="settings-help">Off by default, so the log doesn't grow while nothing is being chased. Switch it on before reproducing a problem; what's already recorded stays until you clear it.</p>
       <p class="settings-help">Everything the app does across every desk and every window, kept between launches. Select any part of a row to copy just that, or copy the whole log at once. Filter by a subsystem's name to follow one thing end to end — <code>paste</code> traces an image paste from the event through the clipboard read to the file being written, which is how to find out why one didn't land.</p>
       <div class="debug-log-toolbar">
         <input type="search" id="debug-log-filter" class="debug-log-filter" placeholder="Filter…" />
@@ -220,6 +225,13 @@ export function bindDebugTab() {
  *  no fixed length any more: it ends when the last round lands, or when
  *  a round times out. */
 async function runSyncTest() {
+  // The test's whole output is the activity log — record it, whatever
+  // the switch said. Ticking the box goes through its own save.
+  const record = document.getElementById("setting-activity-log-enabled");
+  if (record && !record.checked) {
+    record.checked = true;
+    record.dispatchEvent(new Event("change"));
+  }
   const btn = document.getElementById("debug-sync-test-run");
   const out = document.getElementById("debug-sync-test-result");
   const newDesk = !!document.getElementById("debug-sync-test-new-desk")?.checked;
