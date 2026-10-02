@@ -12,7 +12,7 @@
  *     the main viewer, honouring the link's `?page=` anchor.
  *   - "Import PDF" — while the PDF isn't in Hush yet, a label over three
  *     icons, the three ways it can arrive:
- *       · download — when the reference has a PDF attachment: registers
+ *       · download (a globe) — when the reference has a PDF attachment: registers
  *         a placeholder, downloads in the background (same pipeline as
  *         Zotero: Save PDF), and opens the PDF the moment the binary
  *         lands; a spinner while it runs, a retry once it has failed;
@@ -34,6 +34,7 @@ import { addPdfAliasToProject } from "../state/state-pdf-aliases.js";
 // asked for it, and an `await import()` in between can outlast WebKit's
 // user activation.
 import { importFileIntoPdf, importPdfFileForReference, referencePdfMeta } from "../pdf/pdf-manual-import.js";
+import { applyTooltip } from "../tooltips.js";
 
 const OPEN_ICON = `<svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5H2v7.5h7.5V7"/><path d="M7 1.5h3.5V5"/><path d="M10.5 1.5 5.5 6.5"/></svg>`;
 
@@ -223,9 +224,10 @@ function makeSpinner() {
   return s;
 }
 
-// Import strip glyphs — download (Zotero), clipboard, file on disk.
+// Import strip glyphs — download (a globe: it comes over the network
+// from Zotero), clipboard, file on disk.
 const IMPORT_ICONS = {
-  download: `<svg viewBox="0 0 16 16"><path d="M8 2v8"/><path d="M4.5 6.5 8 10l3.5-3.5"/><path d="M2.5 11v2.5h11V11"/></svg>`,
+  download: `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.25"/><ellipse cx="8" cy="8" rx="2.6" ry="6.25"/><path d="M1.75 8h12.5"/><path d="M2.75 4.9h10.5M2.75 11.1h10.5"/></svg>`,
   clipboard: `<svg viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="11.5" rx="1.5"/><path d="M6 3V2h4v1"/><path d="M5.5 7h5M5.5 9.5h5M5.5 12h3"/></svg>`,
   file: `<svg viewBox="0 0 16 16"><path d="M9.5 1.5H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5z"/><path d="M9.5 1.5V5H13"/><path d="M8 7v5"/><path d="M6 10l2 2 2-2"/></svg>`,
 };
@@ -237,7 +239,9 @@ function makeImportIcon(kind, spec) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = `zotero-link-menu-icon zotero-link-menu-icon-${kind}`;
-  btn.title = spec.title;
+  // Through the app's tooltip helper, not a bare `title`: iPadOS draws no
+  // `title` tooltip, and the helper paints one on press-and-hold there.
+  applyTooltip(btn, spec.title);
   btn.setAttribute("aria-label", spec.title);
   if (spec.busy) btn.appendChild(makeSpinner());
   else btn.innerHTML = IMPORT_ICONS[kind];

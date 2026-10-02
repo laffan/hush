@@ -5,7 +5,10 @@
    tooltip and never mounts this. */
 .hush-painted-tooltip {
   position: fixed;
-  z-index: var(--z-popover);
+  /* Above everything: a tooltip is transient and takes no pointer, and
+     the menus it labels (the Zotero link menu, Courier) sit above the
+     popover band — at `--z-popover` it painted underneath them. */
+  z-index: calc(var(--z-courier, 10010) + 10);
   pointer-events: none;
   max-width: 60vw;
   padding: 5px 9px;
