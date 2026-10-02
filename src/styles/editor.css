@@ -824,9 +824,15 @@ body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection
 /* Markdown tables: a GFM pipe table renders as a real <table> while the
    cursor is elsewhere, reverting to editable raw source when the caret
    enters it — see plugins/table-renderer.js. Colours derive from the
-   editor text colour so tables stay on-theme in light and dark. */
+   editor text colour so tables stay on-theme in light and dark.
+   The space above and below is padding, never margin: the wrapper is a
+   block widget, CodeMirror's height map measures it without its margins,
+   and every line below the table then sat 1em lower on screen than
+   CodeMirror believed — enough that ArrowUp anywhere below a table
+   skipped straight to the top of the document (README-TECHNICAL,
+   "Never put vertical margin on a CM block"). */
 .cm-md-table-wrap {
-  margin: 0.5em 0;
+  padding: 0.5em 0;
   max-width: 100%;
   overflow-x: auto;
   cursor: text;

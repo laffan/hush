@@ -53,7 +53,13 @@
 .cm-inline-pane-host {
   display: block;
   width: 100%;
-  margin: 6px 0;
+  /* Padding, not margin — see the table wrapper in editor.css: a block
+     widget's margins are invisible to CodeMirror's height map. The pane
+     inside is absolutely positioned, so pane-inline.js sets its `top` to
+     the same gap. */
+  --inline-pane-gap: 6px;
+  padding: var(--inline-pane-gap) 0;
+  box-sizing: content-box;
   position: relative;
   overflow: visible;
   text-align: left;

@@ -297,7 +297,9 @@ function buildInlineDecorations(doc, appState) {
     }
     if (pane.el) {
       pane.el.style.position = "absolute";
-      pane.el.style.top = "0";
+      // Below the host's top padding (its gap above the pane — padding,
+      // because a block widget's margin is invisible to CM's height map).
+      pane.el.style.top = "var(--inline-pane-gap, 0px)";
       pane.el.style.margin = "";
       pane.el.style.height = pane.height + "px";
       // A widened pane is measured against the scroller, which can't be
