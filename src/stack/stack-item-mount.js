@@ -178,6 +178,7 @@ async function mountDocContent(contentEl, item, state, liveData) {
     let snapKeystrokes = 0;
     const editor = createPaneEditor(wrapper, state, () => { dirty = true; snapKeystrokes++; }, {
       modeContext: mc.proxy,
+      runway: true,
       // The doc this column holds, for its word cap — a column over a
       // capped doc is as much a way into it as a pane is.
       getFileId: () => item.fileId,
@@ -588,6 +589,7 @@ async function mountProjectContent(contentEl, item, state, liveData) {
     let dirty = false;
     const editor = createPaneEditor(wrapper, projectState, () => { dirty = true; }, {
       modeContext: mc.proxy,
+      runway: true,
       extraExtensions: [
         createProjectViewField(mc.proxy),
         createSeparatorFilter(mc.proxy),

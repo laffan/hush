@@ -422,7 +422,10 @@ body.stack-resizing .stack-column,
 .stack-doc-wrapper .cm-content {
   max-width: var(--column-width, 800px);
   margin: 0 auto;
-  padding: 50px 50px 50vh 50px;
+  /* The bottom is the scroll runway, written inline by
+     editor/plugins/bottom-runway.js: half the column, not half the
+     window. */
+  padding: 50px;
   box-sizing: content-box;
 }
 

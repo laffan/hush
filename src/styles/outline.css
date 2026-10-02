@@ -279,7 +279,7 @@
    the footer.
 
    It sits inside its host's `.cm-editor`, and the host's own rules reach
-   it — the main editor's 50vh typing runway and wide scroller padding, a
+   it — the main editor's wide scroller padding, a
    pane's padding and docked-column width. Each is put back here, with
    `!important` because several of them carry an id. */
 .outline-pinned-editor {

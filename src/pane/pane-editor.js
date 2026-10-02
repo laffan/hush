@@ -19,6 +19,7 @@ import { resolveStyleForAppearance } from "../sidebar/styles-panel.js";
 import { themeBackgrounds } from "../theme-colors.js";
 import { hasAcceptableDragPayload, readDragText } from "../editor/file-drop.js";
 import { applyTypewriterPadding, repositionTypewriterBoundary } from "../editor/plugins/typewriter.js";
+import { createBottomRunway, refreshBottomRunway } from "../editor/plugins/bottom-runway.js";
 
 /**
  * Create a CodeMirror editor suitable for a floating pane.
@@ -64,7 +65,14 @@ export function createPaneEditor(container, appState, onChange, opts) {
     }
   });
 
-  const extraExts = opts?.extraExtensions || [];
+  // `runway`: a surface holding a whole document (a pane, a stack
+  // column) gets space below its last line to scroll it up to the
+  // middle of the surface. Cards, the pinned outline and other editors
+  // that size to their content leave it off.
+  const runwayExts = opts?.runway
+    ? [createBottomRunway({ isTypewriter: () => !!modeRef.typewriterMode })]
+    : [];
+  const extraExts = [...runwayExts, ...(opts?.extraExtensions || [])];
   // Ahead of the shared list: a keymap here outranks its `Prec.highest`
   // bindings on order (a card's ⌘↩ in Courier — cards/card-element.js).
   const leadExts = opts?.leadingExtensions || [];
@@ -387,6 +395,7 @@ function _removePaneTypewriter(view, container) {
     view.scrollDOM.style.paddingTop = "";
     view.scrollDOM.style.paddingBottom = "";
     if (view.contentDOM) view.contentDOM.style.paddingBottom = "";
+    refreshBottomRunway(view);
   }
   if (container) {
     const line = container.querySelector(".pane-tw-line");

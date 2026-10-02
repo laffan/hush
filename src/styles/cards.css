@@ -6,7 +6,7 @@
  * The body's editor sits inside whatever surface hosts the card — the
  * main editor, a pane, a stack column, Zen — and every one of those
  * reaches into nested editors with descendant rules (`#editor-container
- * .cm-content { padding-bottom: 50vh }`, `.zen-focus-stage .cm-scroller
+ * .cm-line { line-height … }`, `.zen-focus-stage .cm-scroller
  * { padding: 50vh … }`, `.stack-doc-wrapper .cm-content { max-width … }`).
  * The card puts each back with `!important`, which is the only thing
  * that beats them from inside without knowing every host by name. */

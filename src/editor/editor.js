@@ -64,6 +64,7 @@ import { bindLineIndicatorToContainer, createLineIndicatorPlugin } from "./line-
 import { buildFoldingExtension } from "./folding.js";
 import { createFoldArrowPlugin } from "./fold-arrow.js";
 import { createPropertiesPlugin } from "./plugins/properties.js";
+import { createMainEditorRunway } from "./plugins/bottom-runway.js";
 
 // Re-export for callers that imported these from editor.js historically.
 export { headingIndentPlugin, createMultiLineCommentPlugin, createCommentAfterPlugin };
@@ -299,6 +300,7 @@ export function createEditor(container, state) {
       footnotePlugin,
       flagHighlightPlugin,
       youAreHerePlugin,
+      createMainEditorRunway(state),
       buildFoldingExtension(),
       createFoldArrowPlugin(),
       createLineIndicatorPlugin(state),

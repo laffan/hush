@@ -24,9 +24,9 @@ function isIOSLike() {
  * "scroll the last line up to the midpoint" affordance) is NOT set
  * here: WebKit doesn't count a scroll container's own paddingBottom as
  * scrollable overflow, so scroller padding never produced any scroll
- * range. It lives as a static `padding-bottom: 50vh` on `.cm-content`
- * in editor.css instead — the same mechanism CodeMirror's own
- * scrollPastEnd() uses, measured and accounted for by CM natively.
+ * range. It lives as `padding-bottom` on `.cm-content` instead, measured
+ * and written by editor/plugins/bottom-runway.js — the same mechanism
+ * CodeMirror's own scrollPastEnd() uses, accounted for by CM natively.
  *
  * When typewriter mode owns the editor we defer to its own padding
  * routine, which pins the cursor line to the typewriter boundary.
