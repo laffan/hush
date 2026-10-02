@@ -18,7 +18,8 @@
  * layer's entry for a card follows the card's first offset through
  * every change, so nothing holds an offset that can go stale.
  *
- * Three things protect the fences from the text around them:
+ * Three things protect the fences from the text around them (and the
+ * first protects the card itself — only its ✕ deletes it):
  *
  *   - **The boundary guard.** A caret parked at a card's first or last
  *     offset would type onto the `<<<` or `>>>` line and dissolve the
@@ -256,39 +257,86 @@ function insertCardAtCursor(view, span) {
  * the user's own edits only; a change that would leave a fence sharing a
  * line with other text gets a newline to keep them apart, and one that
  * reaches into a card partway is refused.
+ *
+ * **A keystroke never takes a whole card either.** In the text a card is
+ * one atomic range, so Backspace with the caret just after it (or Delete
+ * just before) removed the entire span — the card vanished from a key
+ * pressed in what looks like empty space. A card leaves a Doc through its
+ * own ✕ (or a drag, or Send to Inbox — all `cardEdit`) and nothing else:
+ * an `input` / `delete` edit that covers whole cards is carved around
+ * them, so a selection deleted across a card takes the text and leaves
+ * the card, typing over one lands the text before it, and a lone
+ * Backspace or Delete against a card steps the caret over it instead.
+ * Undo, redo and app-driven rewrites (no user event — Zen's write-back,
+ * a sync pull) still carry whole cards, as do moves.
  */
 const boundaryGuard = EditorState.transactionFilter.of((tr) => {
   if (!tr.docChanged || tr.annotation(programmaticChange) || tr.annotation(cardEdit)) return tr;
   const cards = tr.startState.field(cardField, false)?.cards;
   if (!cards || !cards.length) return tr;
   const doc = tr.startState.doc;
+  const protect = tr.isUserEvent("input") || tr.isUserEvent("delete");
   let changed = false;
+  let carved = false;
   let refused = false;
+  let caret = null; // where the edit's own text ends, once carved
+  const stepped = [];
   const specs = [];
   tr.changes.iterChanges((fromA, toA, _fb, _tb, inserted) => {
-    let insert = inserted.toString();
-    for (const c of cards) {
-      if (fromA <= c.from && toA >= c.to) continue; // the whole card goes
-      if ((fromA > c.from && fromA < c.to) || (toA > c.from && toA < c.to)) { refused = true; return; }
-      // Text that would end up on the `<<<` line, before the fence.
-      if (toA === c.from && !insert.endsWith("\n")) {
-        const lineStart = doc.lineAt(fromA).from;
-        if (fromA > lineStart || insert.length) { insert += "\n"; changed = true; }
-      }
-      // Text that would end up on the `>>>` line, after the fence.
-      if (fromA === c.to && !insert.startsWith("\n")) {
-        const lineEnd = doc.lineAt(toA).to;
-        if (toA < lineEnd || insert.length) { insert = "\n" + insert; changed = true; }
+    // Whole cards inside a typed / deleted range stay where they are.
+    let pieces = [[fromA, toA]];
+    if (protect && toA > fromA) {
+      const covered = cards.filter((c) => fromA <= c.from && toA >= c.to);
+      if (covered.length) {
+        carved = changed = true;
+        stepped.push(...covered);
+        pieces = [];
+        let at = fromA;
+        for (const c of covered) { pieces.push([at, c.from]); at = c.to; }
+        pieces.push([at, toA]);
       }
     }
-    specs.push({ from: fromA, to: toA, insert });
+    pieces.forEach(([from, to], i) => {
+      const typed = i === 0 ? inserted.toString() : "";
+      let insert = typed;
+      if (from === to && !insert) return;
+      for (const c of cards) {
+        if (from <= c.from && to >= c.to) continue; // the whole card goes (undo, a move)
+        if ((from > c.from && from < c.to) || (to > c.from && to < c.to)) { refused = true; return; }
+        // Text that would end up on the `<<<` line, before the fence.
+        if (to === c.from && !insert.endsWith("\n")) {
+          const lineStart = doc.lineAt(from).from;
+          if (from > lineStart || insert.length) { insert += "\n"; changed = true; }
+        }
+        // Text that would end up on the `>>>` line, after the fence.
+        if (from === c.to && !insert.startsWith("\n")) {
+          const lineEnd = doc.lineAt(to).to;
+          if (to < lineEnd || insert.length) { insert = "\n" + insert; changed = true; }
+        }
+      }
+      if (i === 0 && caret == null) caret = { from, end: insert.indexOf(typed) + typed.length };
+      specs.push({ from, to, insert });
+    });
   });
   if (refused) return [];
   if (!changed) return tr;
+  if (!specs.length) {
+    // Nothing left once the cards are kept: a Backspace or Delete
+    // against a card. Step over it, the way the caret steps over it.
+    const sel = tr.startState.selection.main;
+    if (!sel.empty || !stepped.length) return [];
+    const c = stepped[0];
+    const pos = tr.isUserEvent("delete.forward") ? c.to : c.from;
+    return { selection: { anchor: pos }, scrollIntoView: true };
+  }
   const changes = tr.startState.changes(specs);
   return {
     changes,
-    selection: tr.startState.selection.map(changes, 1),
+    // Carved, the old selection maps across the card it was meant to
+    // remove; the caret goes where the edit's text ends instead.
+    selection: carved && caret
+      ? { anchor: changes.mapPos(caret.from, -1) + caret.end }
+      : tr.startState.selection.map(changes, 1),
     effects: tr.effects,
     userEvent: tr.annotation(Transaction.userEvent) || undefined,
     scrollIntoView: tr.scrollIntoView,
