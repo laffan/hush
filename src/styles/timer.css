@@ -155,16 +155,6 @@ html[data-theme="dark"] .timer-sheet {
   text-align: center;
 }
 
-/* Break frequency — segmented text buttons, the choice in full ink and
-   underlined, as Courier's modes are. */
-.timer-breaks {
-  display: flex;
-  justify-content: center;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-}
-
 .timer-seg {
   display: flex;
   gap: 12px;
@@ -193,13 +183,16 @@ html[data-theme="dark"] .timer-sheet {
   border-bottom-color: currentColor;
 }
 
-/* The minutes line: break every / for / Never, then the lead-in. The
-   figures are typed, set smaller than the session's length above. */
-.timer-break-group {
+/* The two lines of minutes under the timeline: the lead-in, then the
+   breaks. Typed figures, set smaller than the session's length above. */
+.timer-minutes {
   display: flex;
+  justify-content: center;
   align-items: baseline;
-  gap: 14px;
+  flex-wrap: wrap;
+  gap: 6px 14px;
 }
+.timer-lead-row { margin-bottom: -6px; }
 
 .timer-num.timer-small {
   width: 2em;
@@ -207,38 +200,43 @@ html[data-theme="dark"] .timer-sheet {
   padding: 1px 0 3px;
 }
 
-/* No Breaks — the one button on the line, so it wears a hairline
-   outline to read as one; pressed, it fills faintly. It greys the break
-   fields out, which keep their numbers. */
-.timer-never {
+/* No Breaks | Breaks — a two-sided toggle in one hairline outline, the
+   chosen side filled faintly and in full ink. "Breaks" doubles as the
+   first word of its line: Breaks every 25 min for 3 min. */
+.timer-toggle {
+  display: inline-flex;
+  align-self: baseline;
+  border: 1px solid color-mix(in srgb, var(--fg) 22%, transparent);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.timer-toggle-opt {
   font: inherit;
   font-size: 12px;
   color: inherit;
   padding: 2px 9px 3px;
   background: transparent;
-  border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
-  border-radius: 4px;
+  border: none;
   cursor: pointer;
-  opacity: 0.6;
+  opacity: 0.5;
   -webkit-appearance: none;
   appearance: none;
-  transition: opacity 0.15s, border-color 0.15s, background-color 0.15s;
+  transition: opacity 0.15s, background-color 0.15s;
 }
-.timer-never:hover { opacity: 0.9; border-color: color-mix(in srgb, var(--fg) 35%, transparent); }
-.timer-never:focus-visible { outline: none; opacity: 0.9; border-color: color-mix(in srgb, var(--fg) 45%, transparent); }
-.timer-never.active {
+.timer-toggle-opt + .timer-toggle-opt {
+  border-left: 1px solid color-mix(in srgb, var(--fg) 22%, transparent);
+}
+.timer-toggle-opt:hover { opacity: 0.85; }
+.timer-toggle-opt:focus-visible { outline: none; opacity: 0.85; text-decoration: underline; text-underline-offset: 3px; }
+.timer-toggle-opt.active {
   opacity: 1;
   background: color-mix(in srgb, var(--fg) 8%, transparent);
-  border-color: color-mix(in srgb, var(--fg) 40%, transparent);
+  cursor: default;
 }
 .timer-break-field { transition: opacity 0.15s; }
 .timer-break-field.timer-off { opacity: 0.3; }
 .timer-num:disabled { color: inherit; -webkit-text-fill-color: currentColor; opacity: 1; }
 
-.timer-lead-field {
-  padding-left: 14px;
-  border-left: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
-}
 
 /* The lead-in's stretch of the timeline: the rule runs blue from now to
    where the work begins. */

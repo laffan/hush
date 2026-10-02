@@ -9,9 +9,9 @@
  * next time the clock reads it, today or tomorrow); a timeline of the
  * session laid out from the current time — each break and the finish,
  * re-laid on every change (and every few seconds, since "now" moves);
- * and under it, one line of minutes: how often to break (or No Breaks, which
- * greys the break fields out), how long each break lasts, and a lead-in —
- * a break before the work begins. Start replaces any timer already
+ * and under it two lines of minutes: a lead-in — a break before the work
+ * begins — and then a No Breaks | Breaks toggle that reads into how often
+ * to break and how long each break lasts (No Breaks greys those out). Start replaces any timer already
  * there: there is only ever one (timer-store.js).
  */
 
@@ -80,23 +80,26 @@ export function openTimerSheet(state) {
         <div class="timer-labels"></div>
       </div>
       <div class="timer-summary"></div>
-      <div class="timer-breaks">
-        <div class="timer-break-group">
-          <label class="timer-field timer-break-field">
-            <span>Break every</span>
-            <input class="timer-num timer-small timer-break-every" type="text" inputmode="numeric" maxlength="3" aria-label="Break every, minutes" />
-            <span>min</span>
-          </label>
-          <label class="timer-field timer-break-field">
-            <span>for</span>
-            <input class="timer-num timer-small timer-break-length" type="text" inputmode="numeric" maxlength="2" aria-label="Break length, minutes" />
-            <span>min</span>
-          </label>
-          <button type="button" class="timer-never" aria-pressed="false">No Breaks</button>
-        </div>
-        <label class="timer-field timer-lead-field">
+      <div class="timer-minutes timer-lead-row">
+        <label class="timer-field">
           <span>Lead-in</span>
           <input class="timer-num timer-small timer-lead-in" type="text" inputmode="numeric" maxlength="3" aria-label="Lead-in, minutes" />
+          <span>min</span>
+        </label>
+      </div>
+      <div class="timer-minutes timer-breaks">
+        <div class="timer-toggle" role="radiogroup" aria-label="Breaks">
+          <button type="button" class="timer-toggle-opt" role="radio" data-breaks="off">No Breaks</button>
+          <button type="button" class="timer-toggle-opt" role="radio" data-breaks="on">Breaks</button>
+        </div>
+        <label class="timer-field timer-break-field">
+          <span>every</span>
+          <input class="timer-num timer-small timer-break-every" type="text" inputmode="numeric" maxlength="3" aria-label="Break every, minutes" />
+          <span>min</span>
+        </label>
+        <label class="timer-field timer-break-field">
+          <span>for</span>
+          <input class="timer-num timer-small timer-break-length" type="text" inputmode="numeric" maxlength="2" aria-label="Break length, minutes" />
           <span>min</span>
         </label>
       </div>
@@ -123,7 +126,7 @@ export function openTimerSheet(state) {
   const breakEveryEl = root.querySelector(".timer-break-every");
   const breakLengthEl = root.querySelector(".timer-break-length");
   const leadInEl = root.querySelector(".timer-lead-in");
-  const neverEl = root.querySelector(".timer-never");
+  const toggleEl = root.querySelector(".timer-toggle");
 
   let breakNever = !!last.breakNever;
   breakEveryEl.value = String(clampInt(last.breakEvery, MAX_BREAK_EVERY, 1));
@@ -172,8 +175,11 @@ export function openTimerSheet(state) {
   /** Lay the session out from the current time: a tick per break and a
    *  label wherever one fits without crowding its neighbours. */
   function renderTimeline() {
-    neverEl.classList.toggle("active", breakNever);
-    neverEl.setAttribute("aria-pressed", String(breakNever));
+    for (const b of toggleEl.querySelectorAll(".timer-toggle-opt")) {
+      const on = (b.dataset.breaks === "off") === breakNever;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-checked", String(on));
+    }
     for (const f of root.querySelectorAll(".timer-break-field")) f.classList.toggle("timer-off", breakNever);
     breakEveryEl.disabled = breakLengthEl.disabled = breakNever;
     const now = Date.now();
@@ -330,10 +336,15 @@ export function openTimerSheet(state) {
     applyMode();
   });
 
-  // No Breaks switches breaks off and greys their fields; pressed again it
-  // brings them back with the numbers they had.
-  neverEl.addEventListener("click", () => {
-    breakNever = !breakNever;
+  // No Breaks | Breaks: off greys the break fields out; back on, they
+  // return with the numbers they had. "Breaks" is also the first word of
+  // its line — Breaks every 25 min for 3 min.
+  toggleEl.addEventListener("click", (e) => {
+    const b = e.target instanceof Element ? e.target.closest(".timer-toggle-opt") : null;
+    if (!b) return;
+    const off = b.dataset.breaks === "off";
+    if (off === breakNever) return;
+    breakNever = off;
     renderTimeline();
     if (!breakNever) breakEveryEl.focus();
   });
