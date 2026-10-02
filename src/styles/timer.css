@@ -183,8 +183,8 @@ html[data-theme="dark"] .timer-sheet {
   border-bottom-color: currentColor;
 }
 
-/* The two lines of minutes under the timeline: the lead-in, then the
-   breaks. Typed figures, set smaller than the session's length above. */
+/* The line of minutes, read as a sentence: warmup, then breaks, or No
+   Breaks. Typed figures, set smaller than the session's length above. */
 .timer-minutes {
   display: flex;
   justify-content: center;
@@ -192,7 +192,6 @@ html[data-theme="dark"] .timer-sheet {
   flex-wrap: wrap;
   gap: 6px 14px;
 }
-.timer-lead-row { margin-bottom: -6px; }
 
 .timer-num.timer-small {
   width: 2em;
@@ -200,14 +199,10 @@ html[data-theme="dark"] .timer-sheet {
   padding: 1px 0 3px;
 }
 
-/* No Breaks / Breaks — text buttons like Timer / Alarm: the choice in
-   full ink and underlined, the other faded. "Breaks" doubles as the
-   first word of its line: Breaks every 25 min for 3 min. */
-.timer-toggle {
-  display: inline-flex;
-  gap: 12px;
-}
-.timer-toggle-opt {
+/* No Breaks — a lone toggle at the end of the line, set as text like
+   Timer / Alarm: faded while breaks are on; pressed, it turns red and
+   underlined, and the break settings before it grey out. */
+.timer-nobreaks {
   font: inherit;
   font-size: 13px;
   color: inherit;
@@ -217,33 +212,39 @@ html[data-theme="dark"] .timer-sheet {
   border-bottom: 1px solid transparent;
   border-radius: 0;
   cursor: pointer;
-  opacity: 0.4;
+  opacity: 0.45;
   -webkit-appearance: none;
   appearance: none;
-  transition: opacity 0.15s, border-color 0.15s;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s;
 }
-.timer-toggle-opt:hover { opacity: 0.75; }
-.timer-toggle-opt:focus-visible { outline: none; opacity: 0.85; }
-.timer-toggle-opt.active { opacity: 1; border-bottom-color: currentColor; }
+.timer-nobreaks:hover { opacity: 0.8; }
+.timer-nobreaks:focus-visible { outline: none; opacity: 0.85; }
+.timer-nobreaks.active {
+  opacity: 1;
+  color: var(--timer-alarm-red);
+  border-bottom-color: currentColor;
+}
+.timer-or { gap: 6px; }
 .timer-break-field { transition: opacity 0.15s; }
 .timer-break-field.timer-off { opacity: 0.3; }
 .timer-num:disabled { color: inherit; -webkit-text-fill-color: currentColor; opacity: 1; }
 
 
-/* The lead-in's stretch of the timeline: the rule runs blue from now to
-   where the work begins. */
-.timer-track { --timer-lead: 0%; }
-.timer-rule::after {
-  content: "";
+/* The warmup and each break, drawn along the rule at their real
+   length: blue for the warmup, red for a break — the colours the
+   sidebar box wears while each runs. */
+.timer-span {
   position: absolute;
-  left: 0;
-  top: -0.5px;
-  height: 2px;
-  width: var(--timer-lead);
-  background: var(--timer-lead-blue);
+  top: 50%;
+  height: 3px;
+  transform: translateY(-50%);
+  border-radius: 1.5px;
+  pointer-events: none;
 }
-.timer-tick-lead { background: var(--timer-lead-blue); height: 9px; }
+.timer-span-lead { background: var(--timer-lead-blue); }
+.timer-span-break { background: var(--timer-break-red); }
 .timer-label-lead { color: var(--timer-lead-blue); opacity: 0.85; }
+.timer-label-break { color: var(--timer-alarm-red); opacity: 0.85; }
 
 /* Timeline — a hairline from now to the finish, a short tick per break
    and a taller one at the end, each time centred under its mark. The
@@ -770,3 +771,8 @@ html[data-theme="dark"] .sidebar-timer.break-now {
 /* Let the last rows scroll out from under the box. */
 #panel-overlay.has-timer .panel-overlay-body:has(+ .sidebar-timer-slot) { padding-bottom: 84px; }
 #panel-overlay.has-timer .recent-files-panel:has(+ .sidebar-timer-slot) .recent-files-list { padding-bottom: 72px; }
+
+/* The plan line reads as one sentence, so its words sit at one even
+   spacing rather than the wider gaps between the length fields above. */
+.timer-plan,
+.timer-plan .timer-field { gap: 6px; }

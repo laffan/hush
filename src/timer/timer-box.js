@@ -268,7 +268,7 @@ export function mountTimerBox(slot, state, panelOverlay) {
       els.countdown.innerHTML = `${formatMinutes(st.remaining)}<span class="w-togo"> to go</span>`;
       box.classList.toggle("break-now", !!brk);
       els.brk.innerHTML = brk ? `break<span class="w-in"> ·</span> ${formatMinutes(brk.remaining)}`
-        : lead ? `lead-in<span class="w-in"> ·</span> ${formatMinutes(lead.remaining)}`
+        : lead ? `warmup<span class="w-in"> ·</span> ${formatMinutes(lead.remaining)}`
         : st.untilBreak != null ? `break<span class="w-in"> in</span> ${formatMinutes(st.untilBreak)}` : "";
       els.end.innerHTML = `<span class="w-ends">ends </span>${clockHtml(st.end)}`;
       // Minutes to the next break, or to the finish once none are left.
@@ -286,7 +286,7 @@ export function mountTimerBox(slot, state, panelOverlay) {
       } else if (lead) {
         const mins = minutesLeft(lead.remaining);
         els.ringLabel.textContent = String(mins);
-        ring.setAttribute("aria-label", `${mins} min of lead-in left`);
+        ring.setAttribute("aria-label", `${mins} min of warmup left`);
       } else {
         const toNext = alarmSoon ? st.remaining : (st.untilBreak ?? st.remaining);
         const mins = minutesLeft(toNext);
@@ -303,7 +303,7 @@ export function mountTimerBox(slot, state, panelOverlay) {
         blinkRing();
       }
       else if (st.breaksPassed > seen.breaksPassed) void toast("Time for a break", "break");
-      else if (st.leadInPassed && !seen.leadInPassed) void toast("Lead-in over — time to start");
+      else if (st.leadInPassed && !seen.leadInPassed) void toast("Warmup over — time to start");
     }
     seen = { breaksPassed: st.breaksPassed, finished: st.finished, leadInPassed: st.leadInPassed };
     if (st.finished && tick) { clearInterval(tick); tick = null; }
