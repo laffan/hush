@@ -585,12 +585,14 @@ body.text-drag-active .floating-pane:not(.active) .floating-pane-content {
    Google Docs sync pill. Taking the title bar out of the flex flow lets
    the content fill the whole pane, with the pill floating over its top.
    Reverts to the normal bar the moment the pane is undragged out of the
-   dock (`.docked` drops). A bottom-docked pane's title bar is nowhere
-   near the band, so it keeps the ordinary bar.
+   dock (`.docked` drops). A bottom-docked pane wears the same pill, so
+   every dock edge reads alike; its top is mid-screen, nowhere near the
+   band, so its pill sits just inside the pane's own top edge.
    Off iPad the tokens are 0 and these rules never match. */
 html.ios:not(.phone) .floating-pane.docked.docked-left .floating-pane-titlebar,
 html.ios:not(.phone) .floating-pane.docked.docked-right .floating-pane-titlebar,
-html.ios:not(.phone) .floating-pane.docked.docked-top .floating-pane-titlebar {
+html.ios:not(.phone) .floating-pane.docked.docked-top .floating-pane-titlebar,
+html.ios:not(.phone) .floating-pane.docked.docked-bottom .floating-pane-titlebar {
   position: absolute;
   top: calc(max(var(--ipad-safe-top, 0px), env(safe-area-inset-top, 0px)) + 6px);
   left: 50%;
@@ -606,6 +608,9 @@ html.ios:not(.phone) .floating-pane.docked.docked-top .floating-pane-titlebar {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
   z-index: 3;
 }
+html.ios:not(.phone) .floating-pane.docked.docked-bottom .floating-pane-titlebar {
+  top: 6px;
+}
 
 /* A pill shrink-wraps its contents, so the filename and the button
    cluster end up touching and the whole bar is covered by things that
@@ -617,13 +622,15 @@ html.ios:not(.phone) .floating-pane.docked.docked-top .floating-pane-titlebar {
    bar's empty middle does. */
 html.ios:not(.phone) .floating-pane.docked.docked-left .floating-pane-titlebar,
 html.ios:not(.phone) .floating-pane.docked.docked-right .floating-pane-titlebar,
-html.ios:not(.phone) .floating-pane.docked.docked-top .floating-pane-titlebar {
+html.ios:not(.phone) .floating-pane.docked.docked-top .floating-pane-titlebar,
+html.ios:not(.phone) .floating-pane.docked.docked-bottom .floating-pane-titlebar {
   /* The strip is the buttons' own margin, so drop the bar's flex gap
      here and the reserved space is exactly 30px. */
   gap: 0;
 }
 html.ios:not(.phone) .floating-pane.docked.docked-left .floating-pane-buttons,
 html.ios:not(.phone) .floating-pane.docked.docked-right .floating-pane-buttons,
-html.ios:not(.phone) .floating-pane.docked.docked-top .floating-pane-buttons {
+html.ios:not(.phone) .floating-pane.docked.docked-top .floating-pane-buttons,
+html.ios:not(.phone) .floating-pane.docked.docked-bottom .floating-pane-buttons {
   margin-left: 30px;
 }
