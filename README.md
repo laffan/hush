@@ -87,6 +87,12 @@ Courier reopens where your last note went, so a second one to the same place is 
 
 There is one timer at a time, the same one on every desk and in every window, and it keeps counting while Hush is closed. **Delete timer** in the command palette takes it away — as does the **Done** button a finished timer shows in the sidebar; once a timer has finished, **Start timer** replaces it.
 
+## Progress
+
+**Show Desk Progress** in the command palette — and **Show Project Progress**, while the document you are in belongs to a project — opens a tally of the words you added each day. Two tabs: a **Calendar** of the month, each day's slot holding its count and tinted deeper the more you wrote, and a **Graph** of the same month as bars. Pick a day in either and the panel underneath breaks it down by document and, within each document, by section (the heading the words were written under). ‹ and › step through the months.
+
+It counts words *added*, not the net change, so a morning spent rewriting a paragraph shows the new words you wrote rather than zero; a paragraph moved elsewhere adds nothing. Nothing is recorded for it: the counts are read back out of each document's version history, whether you wrote in the document on its own, in a pane, or in its project's joined editor — so it reaches back as far as your Versions do (every day is kept, one version a day once a week has passed).
+
 ## Clock
 
 **Toggle clock** in the command palette floats a small analog clock over whatever you're working on: twelve short 1px marks, one every five minutes, and two 2px hands meeting at the centre, all in the text colour. No numbers. Its face is the window's background colour, so over a document it's just the marks and hands, and over a notebook or a PDF it's a solid disc. It floats over the document and any floating panes, and slides under the sidebars. Drag it anywhere; it stays on, and where you put it, across desks and relaunches.

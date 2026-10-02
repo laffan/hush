@@ -1,5 +1,5 @@
 /**
- * Desk-scoped (and cross-desk: Courier and the Inbox's cards, the focus timer, the wall clock) command palette entries — split out of
+ * Desk-scoped (and cross-desk: Courier and the Inbox's cards, the focus timer, the wall clock, writing progress) command palette entries — split out of
  * `command-palette-commands.js` to keep that file under the 700-line cap.
  *
  * `buildDeskCommands(ctx)` returns the same command descriptors
@@ -14,9 +14,12 @@ import { toggleDeskRatchet } from "./state/state-modes.js";
 import { getTimer, isTimerRunning, deleteTimer } from "./timer/timer-store.js";
 import { toggleClock } from "./clock/clock-store.js";
 import { hasCardsToSend, sendSurfaceCardsToInbox } from "./cards/card-inbox.js";
+import { currentProjectNode } from "./progress/progress-data.js";
 
 // Stopwatch — a round face with a crown and a single hand.
 const timerIcon = `<svg viewBox="0 0 24 24"><circle cx="12" cy="13.5" r="7.5"/><path d="M10 3 H14 M12 3 V6 M12 13.5 V9.5 M17.8 7.7 L19.3 6.2"/></svg>`;
+// Progress — a month's bars.
+const progressIcon = `<svg viewBox="0 0 24 24"><path d="M4 20 H20 M7 17 V12 M11 17 V7 M15 17 V10 M19 17 V5"/></svg>`;
 // Wall clock — a plain face with two hands.
 const clockIcon = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7 V12 L15.5 14"/></svg>`;
 
@@ -168,6 +171,15 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
     { id: "clock-toggle", section: "View", label: "Toggle clock", icon: clockIcon, shortcutKey: null, ctx: "shared",
       keywords: "wall analog time alarm show hide",
       action: (s) => toggleClock(s) },
+    // Words added per day, out of version history — for the project the
+    // open document belongs to, or the whole desk (progress/).
+    { id: "progress-project", section: "Writing", label: "Show Project Progress", icon: progressIcon, shortcutKey: null, ctx: "shared",
+      keywords: "words written calendar graph tally daily stats history",
+      hiddenIf: (s) => !currentProjectNode(s),
+      action: async (s) => (await import("./progress/progress-modal.js")).openProgressModal(s, "project") },
+    { id: "progress-desk", section: "Writing", label: "Show Desk Progress", icon: progressIcon, shortcutKey: null, ctx: "shared",
+      keywords: "words written calendar graph tally daily stats history",
+      action: async (s) => (await import("./progress/progress-modal.js")).openProgressModal(s, "desk") },
     { id: "desk-archives", section: "Desks", label: "View archived desks", icon: icons.desk, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const m = await import("./sidebar/desk-archive.js");

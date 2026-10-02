@@ -1,0 +1,244 @@
+/* ===== Progress (src/progress/) =====
+   The modal behind "Show Project Progress" / "Show Desk Progress": a
+   month as a calendar or a bar chart, and the picked day broken down by
+   file and section. Set in the UI face; one hue throughout — the
+   style's heading colour — since every mark here is the same measure. */
+
+.progress-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  /* Hung from near the top rather than centred: the calendar and the
+     graph differ in height, and a centred modal jumped at every tab. */
+  align-items: flex-start;
+  justify-content: center;
+  padding: calc(8vh + var(--top-chrome-inset, 0px)) 16px 16px;
+  background: rgba(0, 0, 0, 0.3);
+  font-family: var(--ui-font-family);
+}
+
+.progress-modal {
+  --progress-ink: var(--heading-color, var(--fg));
+  width: min(720px, 100%);
+  max-height: calc(92vh - 16px - var(--top-chrome-inset, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px 14px;
+  box-sizing: border-box;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  border: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+  border-radius: 8px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.progress-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.progress-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.progress-kind {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.55;
+}
+.progress-scope {
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Calendar / Graph — text tabs, the choice in full ink and underlined,
+   as the timer sheet's modes are. */
+.progress-tabs { display: flex; gap: 14px; }
+.progress-tab,
+.progress-close,
+.progress-step {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 2px 0 3px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.progress-tab {
+  font-size: 13px;
+  opacity: 0.45;
+  border-bottom: 1px solid transparent;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+.progress-tab:hover { opacity: 0.8; }
+.progress-tab.active { opacity: 1; border-bottom-color: currentColor; }
+.progress-close { font-size: 20px; line-height: 1; opacity: 0.45; padding: 0 2px; }
+.progress-close:hover { opacity: 0.9; }
+
+.progress-nav {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.progress-step { font-size: 18px; line-height: 1; opacity: 0.55; padding: 0 4px; }
+.progress-step:hover:not(:disabled) { opacity: 1; }
+.progress-step:disabled { opacity: 0.15; cursor: default; }
+.progress-month {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 9.5em;
+  text-align: center;
+}
+.progress-month-total {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-view { min-height: 0; flex: 0 0 auto; }
+.progress-status,
+.progress-empty {
+  font-size: 13px;
+  opacity: 0.55;
+  padding: 18px 2px;
+}
+
+/* ---- Calendar ---- */
+.progress-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+.progress-weekday {
+  font-size: 11px;
+  opacity: 0.5;
+  text-align: center;
+  padding-bottom: 2px;
+}
+.progress-cell {
+  position: relative;
+  height: 52px;
+  padding: 4px 6px;
+  box-sizing: border-box;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  border: 1px solid color-mix(in srgb, var(--fg) 8%, transparent);
+  border-radius: 5px;
+  /* The day's words as a tint of the one hue, deeper for more. */
+  background: color-mix(in srgb, var(--progress-ink) calc(var(--share, 0) * 34%), transparent);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.progress-cell-pad { border: none; background: none; cursor: default; }
+.progress-cell-date {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  font-size: 11px;
+  opacity: 0.55;
+}
+.progress-cell-count {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.progress-cell.future { opacity: 0.35; }
+.progress-cell.today .progress-cell-date { opacity: 1; font-weight: 700; }
+.progress-cell.today { border-color: color-mix(in srgb, var(--fg) 35%, transparent); }
+.progress-cell.picked { box-shadow: inset 0 0 0 2px var(--progress-ink); }
+.progress-cell:hover:not(.progress-cell-pad) { border-color: color-mix(in srgb, var(--fg) 30%, transparent); }
+
+/* ---- Graph ---- */
+.progress-graph { position: relative; }
+.progress-graph svg { display: block; width: 100%; height: auto; overflow: visible; }
+.progress-grid { stroke: color-mix(in srgb, var(--fg) 8%, transparent); stroke-width: 1; }
+.progress-grid.base { stroke: color-mix(in srgb, var(--fg) 25%, transparent); }
+.progress-axis {
+  fill: var(--fg);
+  opacity: 0.5;
+  font-size: 10px;
+  font-family: var(--ui-font-family);
+  font-variant-numeric: tabular-nums;
+}
+.progress-hit { fill: transparent; cursor: pointer; }
+.progress-bar {
+  fill: var(--progress-ink);
+  opacity: 0.75;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+.progress-col:hover .progress-bar,
+.progress-bar.picked { opacity: 1; }
+.progress-col:hover .progress-hit { fill: color-mix(in srgb, var(--fg) 4%, transparent); }
+.progress-tip {
+  position: absolute;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  background: var(--theme-bg, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--fg) 15%, transparent);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- The picked day ---- */
+.progress-day {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  border-top: 1px solid color-mix(in srgb, var(--fg) 8%, transparent);
+  padding-top: 10px;
+}
+.progress-day-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.progress-day-total { font-variant-numeric: tabular-nums; }
+.progress-files,
+.progress-sections { list-style: none; margin: 0; padding: 0; }
+.progress-file { padding: 4px 0; }
+.progress-file + .progress-file { border-top: 1px solid color-mix(in srgb, var(--fg) 5%, transparent); }
+.progress-sections { padding-left: 14px; margin-top: 2px; }
+.progress-row {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.progress-sections .progress-row { font-size: 12px; opacity: 0.7; }
+.progress-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.progress-name.untitled { font-style: italic; }
+.progress-n { font-variant-numeric: tabular-nums; flex: none; }
+
+@media (max-width: 520px) {
+  .progress-head { flex-wrap: wrap; }
+  .progress-cell { height: 42px; padding: 3px; }
+  .progress-cell-count { font-size: 11px; right: 4px; }
+}

@@ -112,6 +112,19 @@ impl SnapshotManager {
         Ok(ms)
     }
 
+    /// Every snapshot of a document as `(path, createdAtMs)`, oldest
+    /// first, without reading any of them — for the writing-progress
+    /// tally (`progress.rs`), which reads only the few it needs.
+    pub fn snapshot_files(&self, document_id: &str) -> Vec<(PathBuf, i64)> {
+        let mut out: Vec<(PathBuf, i64)> = self
+            .read_dirs(document_id)
+            .iter()
+            .flat_map(|d| list_snaps(d))
+            .collect();
+        out.sort_by_key(|(_, ms)| *ms);
+        out
+    }
+
     pub fn get_snapshots(&self, document_id: &str) -> Result<Vec<SnapshotEntry>, BoxError> {
         let mut entries = Vec::new();
         for dir in self.read_dirs(document_id) {

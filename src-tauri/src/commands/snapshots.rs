@@ -44,3 +44,21 @@ pub fn delete_document_snapshots(
         .delete_document_snapshots(&document_id)
         .map_err(|e| e.to_string())
 }
+
+/// Words added per day — per file and section — over a run of days,
+/// read out of version history (see `crate::progress`). Off the main
+/// thread: it lists every requested document's snapshots and reads and
+/// diffs the ones that fall on day boundaries.
+#[tauri::command]
+pub async fn writing_progress(
+    request: crate::progress::ProgressRequest,
+) -> Result<Vec<crate::progress::DayProgress>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let data_dir = crate::get_data_dir();
+        let store = crate::desk_store::DeskStore::new(&data_dir);
+        let snaps = crate::snapshots::SnapshotManager::new(&data_dir);
+        crate::progress::writing_progress(&store, &snaps, &request)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}

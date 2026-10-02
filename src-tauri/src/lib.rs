@@ -40,6 +40,8 @@ mod ios_scene;
 mod local_sync;
 mod multi_window;
 mod pdfs;
+mod progress;
+mod progress_diff;
 mod settings;
 mod snapshots;
 mod startup_trace;
@@ -471,6 +473,7 @@ pub fn run() {
             commands::pdfs::load_pdf_registry,
             commands::zotero::save_zotero_references,
             commands::zotero::load_zotero_references,
+            commands::snapshots::writing_progress,
             commands::zotero::save_zotero_highlights,
             commands::zotero::load_zotero_highlights,
             commands::zotero::save_zotero_collections,
