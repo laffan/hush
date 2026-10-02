@@ -207,7 +207,30 @@ html[data-theme="dark"] .timer-sheet {
   padding: 1px 0 3px;
 }
 
-/* Never greys the break fields out; they keep their numbers. */
+/* No Breaks — the one button on the line, so it wears a hairline
+   outline to read as one; pressed, it fills faintly. It greys the break
+   fields out, which keep their numbers. */
+.timer-never {
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  padding: 2px 9px 3px;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.6;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: opacity 0.15s, border-color 0.15s, background-color 0.15s;
+}
+.timer-never:hover { opacity: 0.9; border-color: color-mix(in srgb, var(--fg) 35%, transparent); }
+.timer-never:focus-visible { outline: none; opacity: 0.9; border-color: color-mix(in srgb, var(--fg) 45%, transparent); }
+.timer-never.active {
+  opacity: 1;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  border-color: color-mix(in srgb, var(--fg) 40%, transparent);
+}
 .timer-break-field { transition: opacity 0.15s; }
 .timer-break-field.timer-off { opacity: 0.3; }
 .timer-num:disabled { color: inherit; -webkit-text-fill-color: currentColor; opacity: 1; }

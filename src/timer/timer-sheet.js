@@ -9,7 +9,7 @@
  * next time the clock reads it, today or tomorrow); a timeline of the
  * session laid out from the current time — each break and the finish,
  * re-laid on every change (and every few seconds, since "now" moves);
- * and under it, one line of minutes: how often to break (or Never, which
+ * and under it, one line of minutes: how often to break (or No Breaks, which
  * greys the break fields out), how long each break lasts, and a lead-in —
  * a break before the work begins. Start replaces any timer already
  * there: there is only ever one (timer-store.js).
@@ -92,7 +92,7 @@ export function openTimerSheet(state) {
             <input class="timer-num timer-small timer-break-length" type="text" inputmode="numeric" maxlength="2" aria-label="Break length, minutes" />
             <span>min</span>
           </label>
-          <button type="button" class="timer-break timer-never" aria-pressed="false">Never</button>
+          <button type="button" class="timer-never" aria-pressed="false">No Breaks</button>
         </div>
         <label class="timer-field timer-lead-field">
           <span>Lead-in</span>
@@ -330,7 +330,7 @@ export function openTimerSheet(state) {
     applyMode();
   });
 
-  // Never switches breaks off and greys their fields; pressed again it
+  // No Breaks switches breaks off and greys their fields; pressed again it
   // brings them back with the numbers they had.
   neverEl.addEventListener("click", () => {
     breakNever = !breakNever;

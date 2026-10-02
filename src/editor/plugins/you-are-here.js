@@ -2,10 +2,13 @@
  * YOUAREHERE editor support — two jobs, one plugin:
  *
  * 1. Decorate every literal `YOUAREHERE` (caps, no spaces) as a bright
- *    red rounded tag (`.cm-youarehere`), and the rest of its line — the
- *    note the user leaves themselves about what to do next — on a red
- *    tint (`.cm-youarehere-note`). Both are set in the app's UI face,
- *    not the style's: they are the app talking, not the text.
+ *    red rounded tag (`.cm-youarehere`), and whatever follows it on its
+ *    line — the note the user leaves themselves about what to do next —
+ *    on a red tint (`.cm-youarehere-note`) that runs on from the tag
+ *    with no gap: the space after the token is tinted too, and the two
+ *    share square corners where they meet. Text *before* the token is
+ *    ordinary text. Both are set in the app's UI face, not the style's:
+ *    they are the app talking, not the text.
  * 2. Enforce "one marker per buffer" at typing time: when an edit
  *    completes a NEW instance while another already exists, the older
  *    instance(s) are deleted in a follow-up (undoable) transaction.
@@ -22,15 +25,16 @@ import { programmaticChange } from "../base-extensions.js";
 import { YAH_TOKEN, findMarkerOffsets } from "../../you-are-here.js";
 
 const markDeco = Decoration.mark({ class: "cm-youarehere" });
+const markWithNoteDeco = Decoration.mark({ class: "cm-youarehere cm-youarehere-has-note" });
 const noteDeco = Decoration.mark({ class: "cm-youarehere-note" });
 
-/** `[from, to)` with surrounding whitespace trimmed off, or null when
- *  nothing but whitespace is left — a tint over bare spaces reads as a
- *  stray smudge. */
-function trimmed(text, from, to) {
-  while (from < to && /\s/.test(text[from])) from++;
+/** End of the note that follows a token ending at `from`: the line up
+ *  to `to` with trailing whitespace dropped, or null when nothing but
+ *  whitespace follows — a tint over bare spaces reads as a stray
+ *  smudge. Leading whitespace stays, so the tint meets the tag. */
+function noteEnd(text, from, to) {
   while (to > from && /\s/.test(text[to - 1])) to--;
-  return from < to ? [from, to] : null;
+  return to > from ? to : null;
 }
 
 export function createYouAreHerePlugin() {
@@ -51,18 +55,16 @@ export function createYouAreHerePlugin() {
         const builder = new RangeSetBuilder();
         const doc = view.state.doc;
         const text = doc.toString();
-        let lineEnd = -1; // where the last note added stopped, so a line with two markers isn't tinted twice
         for (const o of findMarkerOffsets(text)) {
           const end = o + YAH_TOKEN.length;
           const line = doc.lineAt(o);
-          const before = trimmed(text, Math.max(line.from, lineEnd), o);
-          if (before) builder.add(before[0], before[1], noteDeco);
-          builder.add(o, end, markDeco);
+          // The note runs to the end of the line, or to the next token
+          // on it — which starts a note of its own.
           const next = text.indexOf(YAH_TOKEN, end);
           const stop = next !== -1 && next < line.to ? next : line.to;
-          const after = trimmed(text, end, stop);
-          if (after) builder.add(after[0], after[1], noteDeco);
-          lineEnd = stop;
+          const to = noteEnd(text, end, stop);
+          builder.add(o, end, to != null ? markWithNoteDeco : markDeco);
+          if (to != null) builder.add(end, to, noteDeco);
         }
         return builder.finish();
       }

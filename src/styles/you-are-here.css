@@ -17,15 +17,21 @@
   font-family: var(--ui-font-family);
 }
 
-/* The rest of the marker's line: the note left for next time, on a red
-   tint, in the app's face like the tag. */
+/* What follows the tag on its line: the note left for next time, on a
+   red tint in the app's face, running straight on from the tag — the
+   tag gives up its right-hand rounding where the note takes over, and
+   the note keeps the tag's vertical padding so the two are one band.
+   No horizontal padding or rounding on the note itself: CodeMirror
+   splits a mark into several spans wherever other marks (bold, a link)
+   cross it, and each span would carry its own, leaving seams. */
+.cm-youarehere.cm-youarehere-has-note {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
 .cm-youarehere-note {
   background: rgba(255, 43, 43, 0.16);
-  border-radius: 3px;
   padding: 1px 0;
   font-family: var(--ui-font-family);
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
 }
 
 /* Sidebar row above the Flagged list */
