@@ -51,6 +51,10 @@ pub struct AppSettings {
     pub underline_headers: bool,
     #[serde(default = "default_header_scale")]
     pub header_scale: f64,
+    /// Default style's heading size (0 = body size, 1 = default); see
+    /// `Style::heading_size`. Absent → derived from `header_scale`.
+    #[serde(default)]
+    pub heading_size: Option<f64>,
     // Default-style color overrides (bg/fg/header/cursor/selection) per appearance
     #[serde(default)]
     pub default_light_colors: std::collections::HashMap<String, String>,
@@ -682,6 +686,7 @@ impl Default for AppSettings {
             normalize_header_color: false,
             underline_headers: false,
             header_scale: default_header_scale(),
+            heading_size: None,
             default_light_colors: std::collections::HashMap::new(),
             default_dark_colors: std::collections::HashMap::new(),
             make_space_for_panes: true,

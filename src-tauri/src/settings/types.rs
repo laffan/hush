@@ -71,6 +71,11 @@ pub struct Style {
     pub underline_headers: Option<bool>,
     #[serde(default)]
     pub header_scale: Option<f64>,
+    /// Heading size over the body text: 0 = body size, 1 = the default
+    /// progression. Supersedes `header_scale` (a plain multiplier, still
+    /// written beside it for older builds); absent → derived from it.
+    #[serde(default)]
+    pub heading_size: Option<f64>,
     /// "Highlight current line" affordance — one of "none", "left-arrow",
     /// "double-arrow", "left-border", "border", "underline", "highlight".
     /// Unset / "none" disables the indicator. Indicator colour rides per-appearance on

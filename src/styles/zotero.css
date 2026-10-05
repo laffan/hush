@@ -662,6 +662,9 @@
   white-space: pre-wrap;
 }
 .fp-zotero-highlights .zh-annot-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
   margin-top: 4px;
   font-size: 11px;
   color: var(--sidebar-fg);
@@ -673,6 +676,19 @@
   cursor: pointer;
 }
 .fp-zotero-highlights .zh-annot-page:hover {
+  text-decoration: underline;
+}
+.fp-zotero-highlights .zh-annot-open {
+  margin-left: auto;
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fp-zotero-highlights .zh-annot-open::after {
+  content: " \2197";
+}
+.fp-zotero-highlights .zh-annot-open:hover {
   text-decoration: underline;
 }
 
@@ -759,31 +775,32 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The twisty is the files sidebar's fold arrow (.sl-fold-arrow in
+   sortable-list.css): the same ▶︎ / ▼ glyphs, size, box and hover. */
 .zlib-twisty,
 .zlib-twisty-spacer {
   flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
-  line-height: 14px;
-  text-align: center;
+  width: 20px;
+  height: 20px;
+  margin: 0 2px 0 -4px;
 }
 
 .zlib-twisty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 0;
   border: none;
+  border-radius: 3px;
   background: none;
   color: inherit;
   font-size: 9px;
   cursor: pointer;
-  opacity: 0.6;
-  transition: transform 0.12s ease;
-}
-
-.zlib-twisty.open {
-  transform: rotate(90deg);
+  opacity: 0.5;
 }
 
 .zlib-twisty:hover {
+  background: rgba(128, 128, 128, 0.15);
   opacity: 1;
 }
 
@@ -802,8 +819,4 @@ html.ios .zlib-row {
   padding-top: 8px;
   padding-bottom: 8px;
   font-size: 13px;
-}
-html.ios .zlib-twisty,
-html.ios .zlib-twisty-spacer {
-  width: 20px;
 }

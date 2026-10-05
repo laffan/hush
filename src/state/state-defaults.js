@@ -18,6 +18,10 @@ export function createDefaultSettings() {
     normalizeHeaderColor: false,
     underlineHeaders: false,
     headerScale: 1.0,
+    // Heading size over the body text: 0 = body size, 1 = the default
+    // progression. Null until set; `resolveHeadingSize` then reads it out
+    // of the older `headerScale` multiplier.
+    headingSize: null,
     defaultLightColors: {},
     defaultDarkColors: {},
     makeSpaceForPanes: true,

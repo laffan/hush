@@ -15,6 +15,7 @@ import {
   applyPreviewCursorMode,
 } from "./styles-panel-shared.js";
 import { getThemeById } from "../themes/index.js";
+import { resolveHeadingSize, headingFontScale } from "../editor/markdown-highlight.js";
 import { glowForAppearance, glowIntensity, cursorIdleAnimation } from "../editor/cursor-options.js";
 import { applyLineIndicatorShape, UNDERLINE_THICKNESS_DEFAULT, HIGHLIGHT_THICKNESS_DEFAULT } from "../editor/line-indicator.js";
 
@@ -203,19 +204,18 @@ export function updatePreview(state, backdrop, draft, colorTab, previewState) {
   const headingColor = draft.suppressHeaderColor
     ? fg
     : (colors.header || (theme ? theme.headingColor : fg));
-  const scale = draft.headerScale != null ? draft.headerScale : 1.0;
+  const headingSize = resolveHeadingSize(draft) ?? 1;
   const baseSize = draft.fontSize || state.settings.fontSize || 20;
   const suppressSize = !!draft.suppressHeaderSize;
-  const scales = { h1: 1.8, h2: 1.5, h3: 1.3 };
   pane.querySelectorAll(".preview-h1, .preview-h2, .preview-h3").forEach(el => {
     el.style.color = headingColor;
     el.style.textDecoration = draft.underlineHeaders ? "underline" : "";
     if (suppressSize) {
       el.style.fontSize = baseSize + "px";
     } else {
-      const tag = el.classList.contains("preview-h1") ? "h1"
-        : el.classList.contains("preview-h2") ? "h2" : "h3";
-      el.style.fontSize = (baseSize * scales[tag] * scale) + "px";
+      const level = el.classList.contains("preview-h1") ? 1
+        : el.classList.contains("preview-h2") ? 2 : 3;
+      el.style.fontSize = (baseSize * headingFontScale(level, headingSize)) + "px";
     }
   });
 }

@@ -1,4 +1,5 @@
 import { findNode } from "../state/tree-helpers.js";
+import { isIOS } from "../settings/settings-ui.js";
 
 export async function exportCurrentFile(state, opts = {}) {
   if (!state.editor) return;
@@ -23,6 +24,19 @@ export async function exportCurrentFile(state, opts = {}) {
   const images = collectImageRefs(state, content);
 
   const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
+  if (IS_TAURI && isIOS()) {
+    // iOS hands the save dialog's pick back as a security-scoped URL the
+    // fs plugin's write can't reach, so the picker's placeholder file was
+    // all that landed: an empty .md. The share sheet ("Save to Files"
+    // among its options) is how PDF and RTF already leave the iPad.
+    try {
+      await shareMarkdownExport(name, content, images);
+    } catch (e) {
+      if (e && (e.name === "AbortError" || /aborted|cancel/i.test(e.message || ""))) return;
+      console.error("Export failed:", e);
+    }
+    return;
+  }
   if (IS_TAURI) {
     try {
       if (images.length === 0) {
@@ -60,6 +74,34 @@ export async function exportCurrentFile(state, opts = {}) {
     a.click();
     URL.revokeObjectURL(url);
   }
+}
+
+/** Share the export on iOS: the bare `.md`, or — when it embeds images —
+ *  a zip holding the same `text.md` + `images/` folder the desktop
+ *  export writes. */
+async function shareMarkdownExport(name, content, images) {
+  let file;
+  if (images.length === 0) {
+    file = new File([content], `${name}.md`, { type: "text/markdown" });
+  } else {
+    const [{ default: JSZip }, { invoke }] = await Promise.all([
+      import("jszip"),
+      import("@tauri-apps/api/core"),
+    ]);
+    const zip = new JSZip();
+    const root = zip.folder(name);
+    root.file("text.md", rewriteImageRefsForExport(content, images));
+    for (const filename of images) {
+      const bytes = await invoke("load_image_bytes", { filename });
+      root.file(`images/${filename}`, new Uint8Array(bytes));
+    }
+    const blob = await zip.generateAsync({ type: "blob" });
+    file = new File([blob], `${name}.zip`, { type: "application/zip" });
+  }
+  if (!(navigator.canShare && navigator.canShare({ files: [file] }))) {
+    throw new Error("Web Share API cannot share this file on this device");
+  }
+  await navigator.share({ files: [file] });
 }
 
 /**

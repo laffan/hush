@@ -22,8 +22,10 @@ import {
 } from "./timer-store.js";
 
 const MINUTE = 60 * 1000;
-/** The nearest two timeline labels may sit, as a share of its width. */
-const LABEL_GAP = 0.14;
+/** The least room between two timeline labels on one row, in px. */
+const LABEL_GAP = 6;
+/** The height of one row of timeline labels, in px. */
+const LABEL_ROW = 14;
 const MAX_BREAK_EVERY = 600;
 const MAX_BREAK_LENGTH = 60;
 const MAX_LEAD_IN = 120;
@@ -168,8 +170,8 @@ export function openTimerSheet(state) {
   }
 
   /** Lay the session out from the current time: the warmup and every
-   *  break drawn along the rule at their real length — blue and red —
-   *  and a label wherever one fits without crowding its neighbours. */
+   *  break drawn along the rule at their real length — blue, and the
+   *  text colour — and a time under each (see `stackLabels`). */
   function renderTimeline() {
     noBreaksEl.classList.toggle("active", breakNever);
     noBreaksEl.setAttribute("aria-pressed", String(breakNever));
@@ -209,28 +211,42 @@ export function openTimerSheet(state) {
     endTick.style.left = "100%";
     trackEl.appendChild(endTick);
 
-    // Now and the finish are always labelled; the end of the warmup and
-    // the start of each break fill in between where there is room.
-    const marks = [
+    // Now, the finish, the end of the warmup and the start of every
+    // break each get their time.
+    const labels = [
+      { t: now, kind: "now" },
       ...(leadMs > 0 && leadEnd < end ? [{ t: leadEnd, kind: "lead" }] : []),
       ...breaks.map((t) => ({ t, kind: "break" })),
+      { t: end, kind: "end" },
     ];
-    const labels = [{ t: now, text: formatClock(now, { period: false }), kind: "now" }];
-    for (const { t, kind } of marks) {
-      const prev = labels[labels.length - 1];
-      if (at(t) - at(prev.t) >= LABEL_GAP && 1 - at(t) >= LABEL_GAP) {
-        labels.push({ t, text: formatClock(t, { period: false }), kind });
-      }
-    }
-    labels.push({ t: end, text: formatClock(end, { period: false }), kind: "end" });
     labelsEl.innerHTML = labels.map((l) =>
-      `<span class="timer-label timer-label-${l.kind}" style="left:${at(l.t) * 100}%">${esc(l.text)}</span>`).join("");
+      `<span class="timer-label timer-label-${l.kind}" style="left:${at(l.t) * 100}%">${esc(formatClock(l.t, { period: false }))}</span>`).join("");
+    stackLabels();
 
     const n = breaks.length;
     const tomorrow = new Date(end).toDateString() !== new Date(now).toDateString();
     const lead = leadMs > 0 ? `${Math.round(leadMs / MINUTE)} min warmup · ` : "";
     const brk = n ? `${n} break${n === 1 ? "" : "s"} of ${breakLength()} min · ` : "";
     summaryEl.textContent = `${lead}${brk}done at ${formatClock(end)}${tomorrow ? " tomorrow" : ""}`;
+  }
+
+  /** Close-set breaks (an alarm's long session, a short break interval)
+   *  have times too wide to sit side by side, so a label that would run
+   *  into one already placed drops to the next row down rather than
+   *  being left out. Now and the finish are placed first, on the top row. */
+  function stackLabels() {
+    const els = [...labelsEl.querySelectorAll(".timer-label")];
+    const order = [els[0], els[els.length - 1], ...els.slice(1, -1)].filter(Boolean);
+    const rows = [];
+    for (const el of order) {
+      const { left, right } = el.getBoundingClientRect();
+      let row = rows.findIndex((placed) =>
+        placed.every((p) => left >= p.right + LABEL_GAP || right <= p.left - LABEL_GAP));
+      if (row === -1) { row = rows.length; rows.push([]); }
+      rows[row].push({ left, right });
+      el.style.top = `${row * LABEL_ROW}px`;
+    }
+    labelsEl.style.height = `${16 + Math.max(0, rows.length - 1) * LABEL_ROW}px`;
   }
 
   async function start() {

@@ -12,7 +12,7 @@ import { getActiveTheme } from "../themes/index.js";
 import { createBaseExtensions, buildShortcutExtension, programmaticAnnotations } from "../editor/base-extensions.js";
 import { bindLineIndicatorToContainer } from "../editor/line-indicator.js";
 import { bindCursorModeToContainer, paintCursorMode, resolveCursorPaint } from "../editor/block-cursor.js";
-import { getMarkdownHighlight } from "../editor/markdown-highlight.js";
+import { getMarkdownHighlight, headingSizeOf } from "../editor/markdown-highlight.js";
 import { bypassSeparatorFilter } from "../editor/plugins/project-view.js";
 import { createDryHighlightPlugin } from "../editor/plugins/dry-highlight.js";
 import { resolveStyleForAppearance } from "../sidebar/styles-panel.js";
@@ -198,7 +198,7 @@ export function createPaneEditor(container, appState, onChange, opts) {
         ? (effective.styles || []).find(s => s.id === effective.activeStyleId) : null;
       const nh = style?.suppressHeaderSize ?? effective.normalizeHeaders;
       const nhc = style?.suppressHeaderColor ?? effective.normalizeHeaderColor;
-      const hScale = style?.headerScale ?? effective.headerScale ?? 1.0;
+      const hScale = headingSizeOf(style, effective);
       const headerOverrideSource = style
         ? (effective.appearance === "dark" ? style.darkColors : style.lightColors)
         : (effective.appearance === "dark" ? effective.defaultDarkColors : effective.defaultLightColors);

@@ -105,7 +105,7 @@ export function createLibraryBrowser({ host, refs, collections, onChange }) {
         ${kids.length
           ? `<button type="button" class="zlib-twisty${open ? " open" : ""}"
                      data-twisty="${escAttr(c.key)}"
-                     aria-label="${open ? "Collapse" : "Expand"} ${escAttr(c.name)}">▸</button>`
+                     aria-label="${open ? "Collapse" : "Expand"} ${escAttr(c.name)}">${open ? "\u25BC" : "\u25B6\uFE0E"}</button>`
           : '<span class="zlib-twisty-spacer"></span>'}
         <span class="zlib-row-name">${escHtml(c.name)}</span>
         <span class="zlib-row-count">${countFor(c.key)}</span>

@@ -12,6 +12,7 @@ import { createFootnotePlugin } from "./plugins/footnotes.js";
 import { createProjectViewField, createSeparatorFilter, bypassSeparatorFilter } from "./plugins/project-view.js";
 import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createCalloutPlugin } from "./plugins/callouts.js";
+import { createHorizontalRulePlugin } from "./plugins/horizontal-rule.js";
 import { createLinkDecoratorPlugin } from "./plugins/link-decorator.js";
 import { createWikilinkPlugin } from "./plugins/wikilink-decorator.js";
 import { createCitationPlugin } from "./plugins/citation-decorator.js";
@@ -42,7 +43,7 @@ import { caretFollowPlugin } from "./caret-follow.js";
 import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js";
 import { createGrammarCheckPlugin, createGrammarHoverTooltip } from "./plugins/grammar-check.js";
 import { createSpellcheckPlugin, spellcheckClickHandler } from "./plugins/spellcheck.js";
-import { getMarkdownHighlight, resolveHeaderColorOverride } from "./markdown-highlight.js";
+import { getMarkdownHighlight, resolveHeaderColorOverride, headingSizeOf } from "./markdown-highlight.js";
 import {
   commentTag, commentMarkTag, highlightTag, highlightMarkTag,
   CommentExtension, HighlightExtension, CardFenceExtension,
@@ -55,10 +56,7 @@ import {
   programmaticAnnotations, isProgrammaticUpdate,
 } from "./base-extensions.js";
 import { applyBlockCursor } from "./block-cursor.js";
-import {
-  bypassRatchet, createRatchetExtensions, setRatchetAnchor,
-  deskRatchetActive, deskOnlyRatchet,
-} from "./ratchet.js";
+import { bypassRatchet, createRatchetExtensions, setRatchetAnchor, deskRatchetActive, deskOnlyRatchet } from "./ratchet.js";
 import { createWordLimitExtensions } from "./word-limit.js";
 import { bindLineIndicatorToContainer, createLineIndicatorPlugin } from "./line-indicator.js";
 import { buildFoldingExtension } from "./folding.js";
@@ -270,7 +268,7 @@ export function createEditor(container, state) {
         const _s = state.settings.activeStyleId ? (state.settings.styles || []).find(s => s.id === state.settings.activeStyleId) : null;
         const nh = _s?.suppressHeaderSize ?? state.settings.normalizeHeaders;
         const nhc = _s?.suppressHeaderColor ?? state.settings.normalizeHeaderColor;
-        const hScale = _s?.headerScale ?? state.settings.headerScale ?? 1.0;
+        const hScale = headingSizeOf(_s, state.settings);
         const headerOverride = resolveHeaderColorOverride(state, _s);
         const underline = _s?.underlineHeaders ?? state.settings.underlineHeaders ?? false;
         return getMarkdownHighlight(nh, nhc ? undefined : (headerOverride || getActiveTheme(state.settings)?.headingColor), hScale, { underline });
@@ -297,6 +295,7 @@ export function createEditor(container, state) {
       dryHighlightPlugin,
       focusModePlugin,
       calloutPlugin,
+      createHorizontalRulePlugin(),
       footnotePlugin,
       flagHighlightPlugin,
       youAreHerePlugin,
@@ -561,7 +560,7 @@ export function createEditor(container, state) {
       : null;
     const normalizeHeaders = _activeStyle?.suppressHeaderSize ?? state.settings.normalizeHeaders;
     const normalizeHeaderColor = _activeStyle?.suppressHeaderColor ?? state.settings.normalizeHeaderColor;
-    const hScale = _activeStyle?.headerScale ?? state.settings.headerScale ?? 1.0;
+    const hScale = headingSizeOf(_activeStyle, state.settings);
     const headerOverride = resolveHeaderColorOverride(state, _activeStyle);
     const headingColor = normalizeHeaderColor ? undefined : (headerOverride || t?.headingColor);
     const underline = _activeStyle?.underlineHeaders ?? state.settings.underlineHeaders ?? false;

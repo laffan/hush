@@ -415,8 +415,10 @@ function buildAnnotationRow(pane, ann) {
     row.appendChild(c);
   }
   // Meta row: the page label is a clickable Zotero link; type (if any)
-  // follows as plain text.
-  if (ann.pageLabel || (ann.type && ann.type !== "highlight")) {
+  // follows as plain text; "Open in Zotero" at the end of every row opens
+  // the PDF at the annotation itself, so it's one click from the pane
+  // rather than a drag out and a click on the dropped citation.
+  {
     const metaRow = h("div", "zh-annot-meta");
     if (ann.pageLabel) {
       const pageLink = document.createElement("a");
@@ -431,6 +433,13 @@ function buildAnnotationRow(pane, ann) {
       typeBit.textContent = (ann.pageLabel ? " · " : "") + ann.type;
       metaRow.appendChild(typeBit);
     }
+    const openLink = document.createElement("a");
+    openLink.className = "zh-annot-open";
+    openLink.href = pdfLink(pane.zotero.attKey, ann.pageLabel || null, ann.key);
+    openLink.textContent = "Open in Zotero";
+    openLink.title = "Open the PDF in Zotero at this highlight";
+    attachExternalLinkHandler(openLink);
+    metaRow.appendChild(openLink);
     row.appendChild(metaRow);
   }
 
@@ -455,7 +464,7 @@ function formatAnnotationForDrop(z, ann) {
   const body = (ann.text || "").trim();
   const comment = (ann.comment || "").trim();
   const pageBit = ann.pageLabel ? ` p.${ann.pageLabel}` : "";
-  const link = pdfLink(z.attKey, ann.pageLabel || null);
+  const link = pdfLink(z.attKey, ann.pageLabel || null, ann.key);
   const title = z.title || "Untitled";
   const cite = `— [${title}${pageBit}](${link})`;
 
@@ -477,11 +486,15 @@ function formatAnnotationForDrop(z, ann) {
 }
 
 /** zotero://open-pdf URL with optional page anchor. `page` may be the
- *  Zotero page label string or null. */
-function pdfLink(attKey, page) {
-  let url = `zotero://open-pdf/library/items/${attKey}`;
-  if (page != null && page !== "") url += `?page=${encodeURIComponent(page)}`;
-  return url;
+ *  Zotero page label string or null; `annotationKey`, when given, makes
+ *  Zotero scroll to and select that annotation (the same link its own
+ *  "copy annotation" produces). */
+function pdfLink(attKey, page, annotationKey) {
+  const params = [];
+  if (page != null && page !== "") params.push(`page=${encodeURIComponent(page)}`);
+  if (annotationKey) params.push(`annotation=${encodeURIComponent(annotationKey)}`);
+  const url = `zotero://open-pdf/library/items/${attKey}`;
+  return params.length ? `${url}?${params.join("&")}` : url;
 }
 
 /** Tauri webviews don't navigate plain `<a href>` anchors with custom

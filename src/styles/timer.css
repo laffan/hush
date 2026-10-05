@@ -242,9 +242,11 @@ html[data-theme="dark"] .timer-sheet {
   pointer-events: none;
 }
 .timer-span-lead { background: var(--timer-lead-blue); }
-.timer-span-break { background: var(--timer-break-red); }
+/* Breaks are dashes in the text colour (black on a light sheet), their
+   times grey; the warmup keeps its blue. */
+.timer-span-break { background: var(--fg); }
 .timer-label-lead { color: var(--timer-lead-blue); opacity: 0.85; }
-.timer-label-break { color: var(--timer-alarm-red); opacity: 0.85; }
+.timer-label-break { color: var(--fg); opacity: 0.45; }
 
 /* Timeline — a hairline from now to the finish, a short tick per break
    and a taller one at the end, each time centred under its mark. The

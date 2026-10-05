@@ -47,25 +47,45 @@ function rangeUntil(state, line, isBoundary) {
 
 /** Section fold: hide everything under the heading up to the next
  *  heading of the SAME or HIGHER level — so folding an H1 also hides its
- *  H2 / H3 bodies.  Used by the hover arrow, "fold current section", and
- *  the per-level "Fold all Hn" commands. */
+ *  H2 / H3 sections, which `sectionFoldsForHeading` folds in turn. */
 export function foldRangeForHeading(state, line) {
   const level = headingLevel(line.text);
   if (!level) return null;
   return rangeUntil(state, line, (lvl) => lvl > 0 && lvl <= level);
 }
 
-/** Body fold: hide content under the heading up to the NEXT heading of
- *  ANY level — keeps the full outline visible.  Used by "fold all
- *  sections" so every heading line survives the collapse. */
-export function foldBodyForHeading(state, line) {
-  if (!headingLevel(line.text)) return null;
-  return rangeUntil(state, line, (lvl) => lvl > 0);
+/** True when two ranges cross — share interior space without one
+ *  containing the other. Nesting is fine (CodeMirror draws the outer
+ *  fold and keeps the inner one for when the outer opens); a crossing
+ *  pair of replace decorations is what breaks the view layer. */
+function crosses(a, b) {
+  if (!(a.from < b.to && b.from < a.to)) return false;
+  const aHoldsB = a.from <= b.from && a.to >= b.to;
+  const bHoldsA = b.from <= a.from && b.to >= a.to;
+  return !aHoldsB && !bHoldsA;
 }
 
-/** True when two ranges share interior space (touching edges don't count). */
-function overlaps(a, b) {
-  return a.from < b.to && b.from < a.to;
+/** The section fold for every heading inside `range` (a heading's own
+ *  section fold), so folding a section folds the sections under it too:
+ *  open an H1 and its H2s are still folded, each holding its H3s. */
+function nestedSectionFolds(state, range) {
+  const out = [];
+  const first = state.doc.lineAt(range.from).number + 1;
+  const last = state.doc.lineAt(range.to).number;
+  for (let i = first; i <= last; i++) {
+    const line = state.doc.line(i);
+    if (!headingLevel(line.text)) continue;
+    const r = foldRangeForHeading(state, line);
+    if (r && r.from >= range.from && r.to <= range.to) out.push(r);
+  }
+  return out;
+}
+
+/** A heading's section fold plus every section fold nested inside it,
+ *  outermost first. Null when the heading has nothing to fold. */
+export function sectionFoldsForHeading(state, line) {
+  const range = foldRangeForHeading(state, line);
+  return range ? [range, ...nestedSectionFolds(state, range)] : null;
 }
 
 /** Snapshot of every currently-folded range. */
@@ -104,15 +124,16 @@ export function isRangeFolded(state, range) {
 }
 
 /** Dispatch fold effects for `candidates`, dropping any that would
- *  overlap an existing fold or an earlier candidate — overlapping
- *  replace decorations would otherwise crash the view layer. Returns
- *  true when at least one fold was applied. */
+ *  cross an existing fold or an earlier candidate — crossing replace
+ *  decorations would otherwise crash the view layer. A candidate that
+ *  nests inside a fold, or holds one, is kept. Returns true when at
+ *  least one fold was applied. */
 export function applyFolds(view, candidates) {
   const accepted = currentFolds(view.state);
   const added = [];
   for (const r of candidates) {
     if (!r || r.to <= r.from) continue;
-    if (accepted.some((x) => overlaps(x, r) || (x.from === r.from && x.to === r.to))) continue;
+    if (accepted.some((x) => crosses(x, r) || (x.from === r.from && x.to === r.to))) continue;
     accepted.push(r);
     added.push(r);
   }
@@ -121,12 +142,15 @@ export function applyFolds(view, candidates) {
   // CodeMirror auto-clears a fold whose interior holds the caret on the
   // next selection-bearing transaction. If the caret (or selection)
   // would be stranded inside a freshly folded range, park a cursor at
-  // the fold's start (heading line / selection start) so it sticks.
+  // the fold's start (heading line / selection start) so it sticks —
+  // the outermost one's, since a nested fold's start is itself hidden.
   const sel = view.state.selection.main;
-  const strand = added.find(
-    (r) => (sel.head > r.from && sel.head <= r.to) ||
-           (!sel.empty && sel.from >= r.from && sel.to <= r.to)
-  );
+  let strand = null;
+  for (const r of added) {
+    const holds = (sel.head > r.from && sel.head <= r.to) ||
+                  (!sel.empty && sel.from >= r.from && sel.to <= r.to);
+    if (holds && (!strand || r.from < strand.from)) strand = r;
+  }
   if (strand) spec.selection = { anchor: strand.from };
   view.dispatch(spec);
   return true;
@@ -147,8 +171,8 @@ export function foldCurrentSection(view) {
   const head = state.selection.main.head;
   const hLine = headingAtOrAbove(state, state.doc.lineAt(head).number);
   if (!hLine) return false;
-  const range = foldRangeForHeading(state, hLine);
-  return range ? applyFolds(view, [range]) : false;
+  const ranges = sectionFoldsForHeading(state, hLine);
+  return ranges ? applyFolds(view, ranges) : false;
 }
 
 /** Unfold the fold at the cursor, else the section of the nearest
@@ -178,28 +202,30 @@ export function foldSelection(view) {
   return applyFolds(view, [{ from: sel.from, to: sel.to }]);
 }
 
-/** Fold the section under every heading of `level` (1/2/3…). */
+/** Fold the section under every heading of `level` (1/2/3…), each with
+ *  the deeper sections inside it folded too. */
 export function foldAllAtLevel(view, level) {
   const { state } = view;
   const ranges = [];
   for (let i = 1; i <= state.doc.lines; i++) {
     const line = state.doc.line(i);
     if (headingLevel(line.text) === level) {
-      const r = foldRangeForHeading(state, line);
-      if (r) ranges.push(r);
+      const r = sectionFoldsForHeading(state, line);
+      if (r) ranges.push(...r);
     }
   }
   return applyFolds(view, ranges);
 }
 
-/** Collapse the body of every heading, leaving the full outline visible. */
+/** Fold every heading's section, nested: the outermost headings stay in
+ *  view, and opening one shows its subheadings, still folded. */
 export function foldAllSections(view) {
   const { state } = view;
   const ranges = [];
   for (let i = 1; i <= state.doc.lines; i++) {
     const line = state.doc.line(i);
     if (headingLevel(line.text)) {
-      const r = foldBodyForHeading(state, line);
+      const r = foldRangeForHeading(state, line);
       if (r) ranges.push(r);
     }
   }

@@ -28,6 +28,9 @@ import {
   formatPreviewHtml,
   updatePreview as renderPreview,
 } from "./style-modal-preview.js";
+import {
+  resolveHeadingSize, legacyHeaderScale, HEADING_SIZE_MIN, HEADING_SIZE_MAX,
+} from "../editor/markdown-highlight.js";
 import appearanceLightRaw from "./sidebar_icons/appearance-light.svg?raw";
 import appearanceDarkRaw from "./sidebar_icons/appearance-dark.svg?raw";
 
@@ -57,6 +60,7 @@ function buildDefaultDraftFromSettings(state) {
     suppressHeaderColor: !!s.normalizeHeaderColor,
     underlineHeaders: !!s.underlineHeaders,
     headerScale: s.headerScale != null ? s.headerScale : 1.0,
+    headingSize: resolveHeadingSize(s) ?? 1,
     blockCursor: !!s.blockCursor,
     cursorMode: s.cursorMode || (s.blockCursor ? "block" : "system"),
     cursorGlow: !!s.cursorGlow,
@@ -183,6 +187,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         normalizeHeaderColor: !!draft.suppressHeaderColor,
         underlineHeaders: !!draft.underlineHeaders,
         headerScale: draft.headerScale != null ? draft.headerScale : 1.0,
+        headingSize: resolveHeadingSize(draft) ?? 1,
         blockCursor: !!draft.blockCursor,
         cursorMode: draft.cursorMode || (draft.blockCursor ? "block" : "system"),
         cursorGlow: !!draft.cursorGlow,
@@ -238,6 +243,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         normalizeHeaderColor: state.settings.normalizeHeaderColor,
         underlineHeaders: state.settings.underlineHeaders,
         headerScale: state.settings.headerScale,
+        headingSize: state.settings.headingSize,
         blockCursor: state.settings.blockCursor,
         cursorMode: state.settings.cursorMode,
         cursorGlow: state.settings.cursorGlow,
@@ -269,7 +275,28 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     saveTimer = setTimeout(() => { saveTimer = null; commitDraft(); }, 200);
   }
 
+  // A burst of edits (a slider drag) applies once it rests rather than on
+  // every tick; `flushSaveIdle` applies a pending burst at once.
+  let idleTimer = null;
+  function scheduleSaveIdle() {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => { idleTimer = null; scheduleSave(); }, 150);
+  }
+  function flushSaveIdle() {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = null;
+    scheduleSave();
+  }
+
   function flushSave() {
+    // A burst still resting has not been applied or saved yet: commit it.
+    const resting = !!idleTimer;
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+    if (resting && !deleted) {
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+      commitDraft();
+      return;
+    }
     if (deleted) { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; } return; }
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; commitDraft(); }
   }
@@ -309,7 +336,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
 
     const activeColors = colorTab === "light" ? (draft.lightColors || {}) : (draft.darkColors || {});
 
-    const headerScale = draft.headerScale != null ? draft.headerScale : 1.0;
+    const headingSize = resolveHeadingSize(draft) ?? 1;
     // The Default style isn't renameable, so it keeps a static heading. Every
     // other style turns the heading slot itself into the editable name field —
     // there's no separate "Name" section, the title *is* the name.
@@ -428,8 +455,8 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
               <div class="style-editor-row${draft.suppressHeaderSize ? ' style-row-hidden' : ''}" id="header-scale-row">
                 <label>Size</label>
                 <div class="style-slider-group">
-                  <input type="range" id="style-header-scale" min="0.8" max="2.0" step="0.05" value="${headerScale}" />
-                  <span class="style-slider-value">${headerScale.toFixed(2)}x</span>
+                  <input type="range" id="style-header-scale" min="${HEADING_SIZE_MIN}" max="${HEADING_SIZE_MAX}" step="0.05" value="${headingSize}" />
+                  <span class="style-slider-value">${headingSize.toFixed(2)}x</span>
                 </div>
               </div>
             </div>
@@ -587,14 +614,23 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
       scheduleSave();
     });
 
+    // Heading size: 0 is the body size, 1 the default progression. The
+    // preview follows every tick; the app-wide restyle (every editor's
+    // highlight rebuilt) waits for the slider to rest, since running it
+    // per tick is what made the drag stutter.
     const hsEl = backdrop.querySelector("#style-header-scale");
-    if (hsEl) hsEl.addEventListener("input", () => {
-      const v = parseFloat(hsEl.value);
-      hsEl.nextElementSibling.textContent = v.toFixed(2) + "x";
-      draft.headerScale = v;
-      updatePreview();
-      scheduleSave();
-    });
+    if (hsEl) {
+      const setSize = () => {
+        const v = parseFloat(hsEl.value);
+        if (!Number.isFinite(v)) return;
+        hsEl.nextElementSibling.textContent = v.toFixed(2) + "x";
+        draft.headingSize = v;
+        draft.headerScale = legacyHeaderScale(v);
+        updatePreview();
+      };
+      hsEl.addEventListener("input", () => { setSize(); scheduleSaveIdle(); });
+      hsEl.addEventListener("change", () => { setSize(); flushSaveIdle(); });
+    }
 
     bindCursorSection(backdrop, draft, {
       render,

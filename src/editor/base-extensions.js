@@ -10,6 +10,7 @@ import { createFootnotePlugin } from "./plugins/footnotes.js";
 import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createPrivacyExtensions } from "./plugins/private-mode.js";
 import { createCalloutPlugin } from "./plugins/callouts.js";
+import { createHorizontalRulePlugin } from "./plugins/horizontal-rule.js";
 import { createLinkDecoratorPlugin } from "./plugins/link-decorator.js";
 import { createWikilinkPlugin } from "./plugins/wikilink-decorator.js";
 import { createCitationPlugin } from "./plugins/citation-decorator.js";
@@ -29,7 +30,7 @@ import { createCommentAnchorPlugin } from "./plugins/comment-anchors.js";
 import { createImagePasteExtension } from "./image-paste.js";
 import { caretFollowPlugin } from "./caret-follow.js";
 import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js";
-import { getMarkdownHighlight, resolveHeaderColorOverride } from "./markdown-highlight.js";
+import { getMarkdownHighlight, resolveHeaderColorOverride, headingSizeOf } from "./markdown-highlight.js";
 import { CommentExtension, HighlightExtension, CardFenceExtension } from "./markdown-extensions.js";
 import { createFlagHighlightPlugin } from "./flag-highlight.js";
 import { createYouAreHerePlugin } from "./plugins/you-are-here.js";
@@ -192,7 +193,7 @@ export function createBaseExtensions(state, onChange, opts) {
     ? (state.settings.styles || []).find(s => s.id === state.settings.activeStyleId) : null;
   const nh = _s?.suppressHeaderSize ?? state.settings.normalizeHeaders;
   const nhc = _s?.suppressHeaderColor ?? state.settings.normalizeHeaderColor;
-  const hScale = _s?.headerScale ?? state.settings.headerScale ?? 1.0;
+  const hScale = headingSizeOf(_s, state.settings);
   const headerOverride = resolveHeaderColorOverride(state, _s);
   const underlineHeaders = _s?.underlineHeaders ?? state.settings.underlineHeaders ?? false;
 
@@ -247,6 +248,7 @@ export function createBaseExtensions(state, onChange, opts) {
     createWordLimitExtensions(state, { getFileId: opts?.fragment ? null : opts?.getFileId }),
     _shortcutComp.of(buildShortcutExtension(state)),
     createCalloutPlugin(),
+    createHorizontalRulePlugin(),
     createFootnotePlugin(state),
     createFlagHighlightPlugin(state),
     createYouAreHerePlugin(),

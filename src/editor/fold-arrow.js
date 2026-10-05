@@ -21,7 +21,7 @@
 import { ViewPlugin } from "@codemirror/view";
 import { foldedRanges, unfoldEffect } from "@codemirror/language";
 import {
-  foldRangeForHeading, isRangeFolded, applyFolds, headingLevel,
+  foldRangeForHeading, sectionFoldsForHeading, isRangeFolded, applyFolds, headingLevel,
 } from "./folding.js";
 
 /** How far the arrow's left edge sits from its anchor: its 16 px width
@@ -118,13 +118,17 @@ export function createFoldArrowPlugin() {
         const state = view.state;
         const specs = [];
 
-        // Persistent unfold arrows: one per folded heading section.
+        // Persistent unfold arrows: one per folded heading section that
+        // is on screen — a fold nested inside another is hidden with it.
         const cur = foldedRanges(state).iter();
+        let outerTo = -1;
         while (cur.value) {
           const from = cur.from;
           const to = cur.to;
           const line = state.doc.lineAt(from);
-          if (line.to === from && headingLevel(line.text)) {
+          const nested = from < outerTo;
+          if (!nested) outerTo = to;
+          if (!nested && line.to === from && headingLevel(line.text)) {
             specs.push({ action: "unfold", from, to, anchorPos: line.from, folded: true });
           }
           cur.next();
@@ -139,7 +143,7 @@ export function createFoldArrowPlugin() {
           const range = foldRangeForHeading(state, line);
           // A folded header already shows its persistent unfold arrow.
           if (range && !isRangeFolded(state, range)) {
-            specs.push({ action: "fold", from: range.from, to: range.to, anchorPos: line.from, folded: false });
+            specs.push({ action: "fold", from: range.from, to: range.to, anchorPos: line.from, folded: false, heading: line.number });
           }
         }
 
@@ -198,6 +202,11 @@ export function createFoldArrowPlugin() {
         if (!t) return;
         if (t.action === "unfold") {
           this.view.dispatch({ effects: unfoldEffect.of({ from: t.from, to: t.to }) });
+        } else if (t.heading) {
+          // A heading folds with its subsections folded inside it.
+          const { state } = this.view;
+          const line = t.heading <= state.doc.lines ? state.doc.line(t.heading) : null;
+          applyFolds(this.view, (line && sectionFoldsForHeading(state, line)) || [{ from: t.from, to: t.to }]);
         } else {
           applyFolds(this.view, [{ from: t.from, to: t.to }]);
         }

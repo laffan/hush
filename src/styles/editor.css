@@ -911,3 +911,27 @@ body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection
 .cm-tab-marker-label {
   white-space: nowrap;
 }
+
+/* Horizontal rule (plugins/horizontal-rule.js): a thematic break's row
+   keeps its dashes — so the line height and the caret's stops are the
+   text's — but stops painting them, and draws a 1px rule centred on the
+   row across 70% of the column. Text fill, not `color`, is what goes
+   transparent, so `currentColor` is still the surface's text colour. A
+   caret on the row drops the class and the markdown shows again. */
+.cm-line.cm-hush-hr {
+  position: relative;
+}
+.cm-line.cm-hush-hr,
+.cm-line.cm-hush-hr * {
+  -webkit-text-fill-color: transparent;
+}
+.cm-line.cm-hush-hr::after {
+  content: "";
+  position: absolute;
+  left: 15%;
+  right: 15%;
+  top: calc(50% - 0.5px);
+  height: 1px;
+  background: color-mix(in srgb, currentColor 45%, transparent);
+  pointer-events: none;
+}
