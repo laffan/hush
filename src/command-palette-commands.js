@@ -54,7 +54,6 @@ import expandRaw from "./sidebar/sidebar_icons/expand.svg?raw";
 import { typeIcons, showDeleteConfirmModal } from "./sidebar/files-panel-shared.js";
 import { getActiveModeContext } from "./state/mode-context.js";
 import { openShuffleEditor, shuffleSelectionAvailable } from "./editor/shuffle-editor.js";
-import { addSticky, canAddFileSticky, canAddProjectSticky } from "./sticky/sticky-notes.js";
 import {
   foldCurrentSection, unfoldCurrentSection, foldSelection,
   foldAllSections, unfoldAllSections, foldAllAtLevel,
@@ -69,6 +68,7 @@ import {
 } from "./outline/outline-commands.js";
 import { buildDeskCommands } from "./command-palette-desk-commands.js";
 import { buildGoogleCommands } from "./command-palette-google-commands.js";
+import { buildStickyCommands } from "./sticky/sticky-commands.js";
 
 /** Resolve the editor view the fold commands should act on: the focused
  *  pane / stack column if one owns the active mode context, else the
@@ -428,21 +428,7 @@ function buildCommands(state) {
       action: (s) => import("./editor/plugins/properties.js").then((m) => m.togglePropertiesVisibility(s)) },
     { id: "properties-add", section: "Document", label: "Add property", icon: icons.doc, shortcutKey: null, ctx: "doc",
       action: (s) => import("./editor/plugins/properties.js").then((m) => m.addPropertyFromPalette(s)) },
-    // === STICKY NOTES ===
-    // Temporary reminders floating above every surface. File + project
-    // stickies show while their target (or any file in the project) is
-    // open; desk stickies while their desk is active; global always.
-    { id: "sticky-file", section: "Sticky Notes", label: "Add File Sticky", icon: icons.sticky, shortcutKey: null, ctx: "shared",
-      hiddenIf: (s) => !canAddFileSticky(s),
-      action: (s) => addSticky(s, "file") },
-    { id: "sticky-project", section: "Sticky Notes", label: "Add Project Sticky", icon: icons.sticky, shortcutKey: null, ctx: "shared",
-      hiddenIf: (s) => !canAddProjectSticky(s),
-      action: (s) => addSticky(s, "project") },
-    { id: "sticky-desk", section: "Sticky Notes", label: "Add Desk Sticky", icon: icons.sticky, shortcutKey: null, ctx: "shared",
-      hiddenIf: (s) => !s.getActiveDesk?.(),
-      action: (s) => addSticky(s, "desk") },
-    { id: "sticky-global", section: "Sticky Notes", label: "Add Global Sticky", icon: icons.sticky, shortcutKey: null, ctx: "shared",
-      action: (s) => addSticky(s, "global") },
+    ...buildStickyCommands({ icons }),
     { id: "versions", section: "Document", label: "Versions", icon: icons.versions, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("show-versions-panel") },
     { id: "history", section: "Document", label: "History", icon: icons.history, shortcutKey: null, ctx: "shared",

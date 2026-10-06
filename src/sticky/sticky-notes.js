@@ -534,6 +534,35 @@ function activateNote(note) {
   note.el.style.zIndex = ++zCounter;
 }
 
+// ── Desk-wide actions (sticky-commands.js) ───────────────────────────
+
+/** `deskId`'s stickies as `{ id, text, width, height, collapsed }`,
+ *  oldest first. */
+export function deskStickies(deskId) {
+  return [...notes.values()]
+    .filter((n) => n.kind === "desk" && n.target === deskId)
+    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+    .map((n) => ({ id: n.id, text: n.textarea ? n.textarea.value : (n.text || ""), width: n.width, height: n.height, collapsed: !!n.collapsed }));
+}
+
+/** Put notes at viewport positions: `[{ id, x, y }]`. */
+export function moveStickies(placements) {
+  for (const { id, x, y } of placements) {
+    const n = notes.get(id);
+    if (!n) continue;
+    n.x = clampAxis(x, n.width, window.innerWidth);
+    n.y = clampAxis(y, HEADER_HEIGHT, window.innerHeight);
+    n.el.style.left = n.x + "px";
+    n.el.style.top = n.y + "px";
+  }
+  schedulePersist();
+}
+
+/** Close several notes at once. */
+export function closeStickies(ids) {
+  for (const id of ids) closeNote(id);
+}
+
 function closeNote(id) {
   const note = notes.get(id);
   if (!note) return;

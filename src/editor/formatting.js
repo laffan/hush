@@ -1,15 +1,33 @@
 /**
  * Markdown formatting toggle commands for CodeMirror 6.
- * Supports bold, italic, highlight (==), and Obsidian-style comments (%%).
+ * Supports bold, italic, highlight (==), strikethrough (~~) and
+ * Obsidian-style comments (%%). Each wraps the selection less any
+ * whitespace at its ends (`trimmedSelection`).
  */
 import { EditorSelection } from "@codemirror/state";
 import { bypassRatchet } from "./ratchet.js";
+
+/** The selection with any leading / trailing whitespace and line breaks
+ *  left out, so markers sit flush against the first and last non-blank
+ *  characters: `** word**` is not bold to a markdown parser, and a
+ *  selection made by dragging or double-clicking often overshoots into
+ *  the space beside a word. A selection that is all whitespace is left
+ *  as it is. */
+function trimmedSelection(view) {
+  const sel = view.state.selection.main;
+  if (sel.empty) return sel;
+  const text = view.state.doc.sliceString(sel.from, sel.to);
+  const leading = text.match(/^\s*/)[0].length;
+  const trailing = text.match(/\s*$/)[0].length;
+  if (leading + trailing >= text.length) return sel;
+  return EditorSelection.range(sel.from + leading, sel.to - trailing);
+}
 
 /** `annotations` rides on every dispatch this makes — strikethrough
  *  passes the ratchet bypass so it stays the one edit a ratcheted
  *  selection is allowed to make. */
 function toggleWrap(view, marker, annotations) {
-  const sel = view.state.selection.main;
+  const sel = trimmedSelection(view);
   const doc = view.state.doc;
   const mLen = marker.length;
 
@@ -83,30 +101,11 @@ export function toggleComment(view) {
   return toggleWrap(view, "%%");
 }
 
-/** Toggle ~~strikethrough~~ on the selection, trimming any leading or
- *  trailing whitespace / line breaks so the markers sit flush against
- *  the first and last non-blank characters. Matches what users expect
- *  when they drag a selection that overshoots the words they want
- *  struck through.
+/** Toggle ~~strikethrough~~ on the selection.
  *
  *  Every dispatch carries `bypassRatchet`: under a Desk Ratchet the
  *  user can select committed text, and striking it through is the one
  *  revision the mode allows (see editor/ratchet.js). */
 export function toggleStrikethrough(view) {
-  const strike = [bypassRatchet.of(true)];
-  const sel = view.state.selection.main;
-  if (sel.empty) return toggleWrap(view, "~~", strike);
-  const text = view.state.doc.sliceString(sel.from, sel.to);
-  const leading = text.match(/^\s*/)[0].length;
-  const trailing = text.match(/\s*$/)[0].length;
-  // All whitespace, or no whitespace to trim — defer to the normal path.
-  if (leading + trailing >= text.length || (leading === 0 && trailing === 0)) {
-    return toggleWrap(view, "~~", strike);
-  }
-  const innerFrom = sel.from + leading;
-  const innerTo = sel.to - trailing;
-  view.dispatch({
-    selection: EditorSelection.range(innerFrom, innerTo),
-  });
-  return toggleWrap(view, "~~", strike);
+  return toggleWrap(view, "~~", [bypassRatchet.of(true)]);
 }

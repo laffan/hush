@@ -358,3 +358,6 @@ html[data-theme="dark"] .courier-sheet {
 .courier-card-stage .courier-doc-name { align-self: center; }
 .courier-card-stage .hush-card { flex: 0 0 auto; max-width: 100%; }
 .courier-card-stage .hush-card-header { cursor: default; }
+/* Twice the room an empty card has elsewhere (a line of text and a line
+   under it): three lines of text plus the line under them. */
+.courier-card-stage .hush-card-body { min-height: 4.35em; }

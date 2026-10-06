@@ -98,13 +98,17 @@ export async function readDocumentText(state, fileId) {
 /**
  * Deliver `text`. `mode` is "sticky", "append" or "card"; `scope` is the
  * sticky's document / desk / global; `location` is the chosen row (none
- * for a global sticky or a card); `cardMeta` is the card's colour.
+ * for a global sticky; a desk for a card, whose Inbox it goes to);
+ * `cardMeta` is the card's colour.
  * Returns the label for the confirmation toast.
  */
 export async function deliver(state, { mode, scope, location, cardMeta }, text) {
   if (mode === "card") {
     const { sendCardToInbox } = await import("../cards/card-courier.js");
-    return `Card added to ${await sendCardToInbox(state, text, cardMeta)}`;
+    const { specialNodeId } = await import("../state/state-desks.js");
+    const inboxId = location?.deskId ? specialNodeId("__inbox__", location.deskId) : state.getInboxId();
+    const home = await sendCardToInbox(state, text, cardMeta, inboxId);
+    return location?.label ? `Card added to ${location.label} / Inbox / ${home}` : `Card added to ${home}`;
   }
   if (mode === "append") {
     if (!location?.fileId) throw new Error("Choose a document");

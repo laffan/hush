@@ -9,7 +9,7 @@ import {
   isEditing, closeOverlay, getActiveOverlay,
   getFootnoteSettings, resolveFootnoteFont, getThemeColors,
   createEditableContent, showOverlayAt, openFootnoteOverlayByPos,
-  updateMarginalia, debouncedUpdateMarginalia,
+  updateMarginalia, debouncedUpdateMarginalia, clearMarginalia,
   setupFootnoteHandlers, setFindDefRange, setDropIndicatorFns,
 } from "./footnotes-ui.js";
 
@@ -36,8 +36,13 @@ function isNumericId(id) { return /^\d+$/.test(id); }
 
 const MARGIN_THRESHOLD = 200;
 
-function getMargins() {
-  const scroller = document.querySelector("#editor-container .cm-scroller");
+/** The text column's side margins in `view` (the scroller's inline
+ *  padding, which modes.js writes for the main editor). Measured on the
+ *  view itself: the plugin runs in panes, stack columns and cards too, and
+ *  reading the main editor's padding for those drew marginalia into
+ *  surfaces with no room for them. */
+function getMargins(view) {
+  const scroller = view?.scrollDOM;
   if (!scroller) return { left: 0, right: 0 };
   return {
     left: parseInt(scroller.style.paddingLeft) || 50,
@@ -45,8 +50,8 @@ function getMargins() {
   };
 }
 
-function isWideMargin() {
-  const m = getMargins();
+function isWideMargin(view) {
+  const m = getMargins(view);
   return m.left >= MARGIN_THRESHOLD && m.right >= MARGIN_THRESHOLD;
 }
 
@@ -325,31 +330,53 @@ export function insertFootnote(view) {
   return true;
 }
 
+// Every live view carrying the plugin, and the one the user last worked
+// in. The document-level handlers are installed once, not once per
+// editor: each pane, stack column and card makes a footnote plugin, and
+// a handler per instance (each holding its own, possibly destroyed, view)
+// ran a click on a footnote once for every editor ever opened.
+const liveViews = new Set();
+let lastView = null;
+let handlersInstalled = false;
+
+function viewFor(el) {
+  if (el) for (const v of liveViews) if (v.dom.contains(el)) return v;
+  return lastView && liveViews.has(lastView) ? lastView : null;
+}
+
 export function createFootnotePlugin(stateRef) {
   _stateRef = stateRef;
-  let currentView = null;
-  setupFootnoteHandlers(stateRef, () => currentView, uiDeps);
-  setDropIndicatorFns(showDropIndicator, hideDropIndicator);
+  if (!handlersInstalled) {
+    handlersInstalled = true;
+    setupFootnoteHandlers(stateRef, viewFor, () => liveViews, uiDeps);
+    setDropIndicatorFns(showDropIndicator, hideDropIndicator);
+  }
 
   return ViewPlugin.fromClass(
     class {
       constructor(view) {
-        currentView = view;
+        this.view = view;
+        liveViews.add(view);
+        lastView = view;
         this.decorations = buildDecorations(view, stateRef);
         requestAnimationFrame(() => updateMarginalia(view, stateRef, uiDeps));
       }
       update(update) {
-        currentView = update.view;
+        if (update.docChanged || update.selectionSet) lastView = update.view;
         if (isEditing() && !update.viewportChanged) return;
         if (update.docChanged || update.viewportChanged || update.selectionSet) {
-          if (!isEditing()) closeOverlay();
+          // Only this view's overlay: another editor's edit (a card, a
+          // pane) is no reason to close it.
+          if (!isEditing() && update.view.scrollDOM.contains(getActiveOverlay())) closeOverlay();
           this.decorations = buildDecorations(update.view, stateRef);
           if (!isEditing()) debouncedUpdateMarginalia(update.view, stateRef, uiDeps);
         }
       }
       destroy() {
-        closeOverlay();
-        document.querySelectorAll(".footnote-marginalia").forEach(el => el.remove());
+        liveViews.delete(this.view);
+        if (lastView === this.view) lastView = null;
+        if (this.view.scrollDOM.contains(getActiveOverlay())) closeOverlay();
+        clearMarginalia(this.view);
       }
     },
     { decorations: (v) => v.decorations }

@@ -9,8 +9,9 @@
   --wc-accent: var(--heading-color, var(--wc-ink));
   --wc-alarm-red: #d2453b;
   position: fixed;
-  top: calc(var(--top-chrome-inset, 0px) + 44px);
-  right: 24px;
+  /* Until it is dragged: the upper right corner, 100px in from each edge. */
+  top: 100px;
+  right: 100px;
   border-radius: 50%;
   background: var(--theme-bg, var(--bg));
   z-index: var(--z-clock);

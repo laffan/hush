@@ -3,8 +3,9 @@
  *
  * Three modes: a **Sticky** (scoped to a document, a desk, or global),
  * an **Append** (a new paragraph at the end of a document) and a
- * **Card** (a card in the Inbox's CARDS notebook — cards/card-courier.js,
- * which needs no destination). A
+ * **Card** (a card in a desk's Inbox — its CARDS notebook,
+ * cards/card-courier.js — the desk chosen from the list, the active one
+ * by default). A
  * destination row is `{ key, label, group, detail?, fileId? | deskId? }`
  * — `key` is stable across launches so the sheet can reselect the last
  * one used (courier-store.js).
@@ -85,7 +86,7 @@ function deskRows(state) {
 /** Rows for a mode (and, for a sticky, its scope). A global sticky has
  *  nowhere to choose, so it gets none. */
 export function buildLocations(state, mode, scope) {
-  if (mode === "card") return []; // always the CARDS notebook in the Inbox
+  if (mode === "card") return deskRows(state); // the CARDS notebook in that desk's Inbox
   if (mode === "append") return documentRows(state);
   if (scope === "document") return documentRows(state);
   if (scope === "desk") return deskRows(state);

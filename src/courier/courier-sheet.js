@@ -6,12 +6,14 @@
  *
  * Two columns. The left chooses: **Sticky**, **Append** or **Card**
  * across the top; a sticky adds a second row — Document, Desk, Global —
- * and then the search over documents or desks (a global sticky and a
- * card need none). The right is the thing itself, written in place: a
+ * and then the search over documents or desks (a global sticky needs
+ * none; a card picks the desk whose Inbox it goes to, the active desk
+ * unless another is chosen). The right is the thing itself, written in place: a
  * sticky note (the real sticky markup and palette) whose text you type
  * straight into, the end of the target document with a live editor after
  * it (courier-append-editor.js), or a card — the same card component
- * Docs and notebooks show, bound for the Inbox's CARDS notebook. What's typed carries across a switch
+ * Docs and notebooks show, bound for the chosen desk's Inbox (its CARDS
+ * notebook). What's typed carries across a switch
  * between the two. Escape / Cancel dismiss; ⌘↩ / Ctrl↩ sends.
  *
  * The sheet lives in `document.body` at `--z-courier`, above the whole
@@ -96,7 +98,7 @@ export function openCourier(state) {
   const docText = new Map(); // fileId → text, for the append surface
 
   const selected = () => rows.find((r) => r.key === selectedKey) || null;
-  const needsLocation = () => !(mode === "sticky" && scope === "global") && mode !== "card";
+  const needsLocation = () => !(mode === "sticky" && scope === "global");
 
   function currentMessage() {
     if (stickyText) return stickyText.value;
@@ -139,13 +141,16 @@ export function openCourier(state) {
     stickyText.setSelectionRange(message.length, message.length);
   }
 
+  /** Where a card is going, as its stage labels it. */
+  const cardWhere = (loc) => `${loc?.label ? `${loc.label} / ` : ""}Inbox / CARDS`;
+
   /** Card — the card itself, the component every surface shows, written
-   *  in place. It lands in the Inbox's CARDS notebook. */
+   *  in place. It lands in the chosen desk's Inbox, in its CARDS notebook. */
   async function mountCard(seq) {
     canvasEl.className = "courier-canvas courier-card-stage";
     const { createCardElement } = await import("../cards/card-element.js");
     if (seq !== surfaceSeq || !open) return;
-    canvasEl.innerHTML = `<div class="courier-doc-name">Inbox / CARDS</div>`;
+    canvasEl.innerHTML = `<div class="courier-doc-name courier-card-where">${esc(cardWhere(selected()))}</div>`;
     cardEl = createCardElement({
       appState: state,
       body: message,
@@ -210,6 +215,8 @@ export function openCourier(state) {
     if (key === surfaceKey) {
       const where = canvasEl.querySelector(".courier-sticky-where");
       if (where) where.textContent = scope === "global" ? "Global" : (loc?.label || "");
+      const cardLabel = canvasEl.querySelector(".courier-card-where");
+      if (cardLabel) cardLabel.textContent = cardWhere(loc);
       syncControls();
       return;
     }
@@ -272,9 +279,10 @@ export function openCourier(state) {
     filterEl.hidden = !searchable;
     listEl.hidden = !searchable;
     filterEl.value = "";
-    filterEl.placeholder = mode === "sticky" && scope === "desk" ? "Search desks…" : "Search documents…";
+    filterEl.placeholder = (mode === "sticky" && scope === "desk") || mode === "card" ? "Search desks…" : "Search documents…";
     rows = searchable ? buildLocations(state, mode, scope) : [];
-    const remembered = lastLocation(state, slotFor(mode, scope));
+    // A card starts on the active desk (first in the list) every time.
+    const remembered = mode === "card" ? null : lastLocation(state, slotFor(mode, scope));
     selectedKey = rows.some((r) => r.key === remembered) ? remembered : null;
     renderList();
   }

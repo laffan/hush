@@ -110,10 +110,19 @@ function resolveOverlaps(entries) {
   }
 }
 
+/** Remove `view`'s marginalia — only its own. Clearing every
+ *  `.footnote-marginalia` in the document let any other editor (a pane, a
+ *  card, an outline panel) wipe the main editor's notes whenever it
+ *  updated, which is what made them blink in and out. */
+export function clearMarginalia(view) {
+  view?.scrollDOM.querySelectorAll(":scope > .footnote-marginalia").forEach(el => el.remove());
+}
+
 export function updateMarginalia(view, stateRef, deps) {
   const { FOOTNOTE_REF_RE, FOOTNOTE_DEF_RE, parseDefinitions, getColorForId, isWideMargin } = deps;
-  document.querySelectorAll(".footnote-marginalia").forEach(el => el.remove());
-  if (stateRef.privateMode || !isWideMargin()) return;
+  if (!view.dom.isConnected) return;
+  clearMarginalia(view);
+  if (stateRef.privateMode || !isWideMargin(view)) return;
 
   const fsettings = getFootnoteSettings(stateRef);
   const doc = view.state.doc;
@@ -186,10 +195,12 @@ export function updateMarginalia(view, stateRef, deps) {
   }
 }
 
-let marginaliaTimeout = null;
+// One pending refresh per view: a single shared timer meant the last
+// editor to update cancelled every other editor's refresh.
+const marginaliaTimeouts = new WeakMap();
 export function debouncedUpdateMarginalia(view, stateRef, deps) {
-  clearTimeout(marginaliaTimeout);
-  marginaliaTimeout = setTimeout(() => updateMarginalia(view, stateRef, deps), 100);
+  clearTimeout(marginaliaTimeouts.get(view));
+  marginaliaTimeouts.set(view, setTimeout(() => updateMarginalia(view, stateRef, deps), 100));
 }
 
 export function showOverlayAt(el, id, view, stateRef, deps) {
@@ -270,8 +281,7 @@ export function setDropIndicatorFns(show, hide) {
   _hideDropIndicator = hide;
 }
 
-export function setupFootnoteHandlers(stateRef, getCurrentView, deps) {
-  const { isWideMargin } = deps;
+export function setupFootnoteHandlers(stateRef, getCurrentView, getLiveViews, deps) {
 
   document.addEventListener("mousedown", (e) => {
     if (ui.activeOverlay && !ui.activeOverlay.contains(e.target) &&
@@ -286,7 +296,7 @@ export function setupFootnoteHandlers(stateRef, getCurrentView, deps) {
     const el = e.target.closest(".footnote-underline");
     if (!el) return;
     const id = el.dataset.footnoteId;
-    const cv = getCurrentView();
+    const cv = getCurrentView(el);
     if (!id || !cv) return;
     e.preventDefault();
     e.stopPropagation();
@@ -335,13 +345,11 @@ export function setupFootnoteHandlers(stateRef, getCurrentView, deps) {
 
   window.addEventListener("resize", () => {
     closeOverlay();
-    const v = getCurrentView();
-    if (v) debouncedUpdateMarginalia(v, stateRef, deps);
+    for (const v of getLiveViews()) debouncedUpdateMarginalia(v, stateRef, deps);
   });
 
   stateRef.on("layout-changed", () => {
-    const v = getCurrentView();
-    if (v) debouncedUpdateMarginalia(v, stateRef, deps);
+    for (const v of getLiveViews()) debouncedUpdateMarginalia(v, stateRef, deps);
   });
 
 }

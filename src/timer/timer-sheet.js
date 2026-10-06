@@ -22,6 +22,8 @@ import {
 } from "./timer-store.js";
 
 const MINUTE = 60 * 1000;
+/** How far ahead of now an alarm starts out. */
+const ALARM_DEFAULT_AHEAD = 120 * MINUTE;
 /** The least room between two timeline labels on one row, in px. */
 const LABEL_GAP = 6;
 /** The height of one row of timeline labels, in px. */
@@ -138,13 +140,14 @@ export function openTimerSheet(state) {
   minutesEl.value = String(clampInt(last.minutes, 59));
 
   // The alarm clock follows the locale: 1-12 with AM / PM, or 0-23. It
-  // opens on the last alarm set, or on the next full hour.
+  // opens two hours on from the moment the sheet came up.
   const twelve = uses12HourClock();
   periodsEl.hidden = !twelve;
-  const seedHour = Number.isInteger(last.alarmHour) ? last.alarmHour : (new Date().getHours() + 1) % 24;
+  const seed = new Date(Date.now() + ALARM_DEFAULT_AHEAD);
+  const seedHour = seed.getHours();
   let pm = seedHour >= 12;
   clockHourEl.value = String(twelve ? (seedHour % 12 || 12) : seedHour);
-  clockMinuteEl.value = String(clampInt(last.alarmMinute, 59)).padStart(2, "0");
+  clockMinuteEl.value = String(seed.getMinutes()).padStart(2, "0");
   const hourMax = twelve ? 12 : 23;
   const hourMin = twelve ? 1 : 0;
 

@@ -119,6 +119,15 @@ export function writeCardMeta(view, span, meta) {
  * in the float layer, and `locate` finds the card's span in the document
  * as it stands now.
  */
+// A card about to be written that should take the keyboard once it is
+// drawn (an empty card from ⌘⇧,): its view → the card's first offset.
+const focusOnBind = new WeakMap();
+
+/** Focus the card that will start at `from` in `view` when it binds. */
+export function focusCardWhenBound(view, from) {
+  focusOnBind.set(view, from);
+}
+
 function bindCard(view, host, span0, locate) {
   const appState = view.state.facet(cardAppState);
   let pending = null;
@@ -198,6 +207,10 @@ function bindCard(view, host, span0, locate) {
       });
     },
   });
+  if (focusOnBind.get(view) === span0.from) {
+    focusOnBind.delete(view);
+    requestAnimationFrame(() => card.focus());
+  }
   wrap.appendChild(card.el);
 
   return {

@@ -1,10 +1,14 @@
 /**
- * ⌘⇧, (`shortcutMakeCard`): make a card of what is selected.
+ * ⌘⇧, (`shortcutMakeCard`): make a card of what is selected — or, with
+ * nothing selected, an empty card to type into.
  *
  *   - **In a Doc** the selection is fenced as a card where it stands —
  *     `<<<` and `>>>` on lines of their own, so a selection in the middle
- *     of a line splits the line around the card.
+ *     of a line splits the line around the card. With no selection an
+ *     empty card goes in at the caret, and its editor takes the keyboard.
  *   - **On a canvas** each selected text shape becomes a card in place.
+ *     With no text shape selected an empty card lands under the pointer
+ *     (the middle of the view when the pointer is elsewhere), focused.
  *
  * More than `CARD_CONFIRM_WORDS` words asks first, as a card typed or
  * pasted into existence does. Which surface the key is meant for is the
@@ -17,6 +21,7 @@
 
 import { Transaction } from "@codemirror/state";
 import { cardEdit, insideCard } from "./card-facet.js";
+import { focusCardWhenBound } from "./card-doc-plugin.js";
 import { confirmLongCard } from "./card-confirm.js";
 import { serializeCard, isFenceLine } from "./card-model.ts";
 
@@ -25,11 +30,37 @@ async function toast(message) {
   showImportToast(message, "info");
 }
 
+/** An empty card at a Doc's caret, its editor focused. A caret in the
+ *  middle of a line splits the line around the card. */
+export function insertEmptyCard(view) {
+  if (view.state.facet(insideCard)) return false;
+  const doc = view.state.doc;
+  const pos = view.state.selection.main.head;
+  const line = doc.lineAt(pos);
+  const blank = line.length === 0;
+  const from = pos;
+  const card = serializeCard("", null);
+  // A blank line takes the card; anywhere else it gets lines of its own.
+  // At the very end of the document it gets a line after it, so the
+  // caret has somewhere to go that isn't the card's edge.
+  const lead = pos === line.from ? "" : "\n";
+  const tail = blank && pos < doc.length ? "" : "\n";
+  const cardFrom = from + lead.length;
+  focusCardWhenBound(view, cardFrom);
+  view.dispatch({
+    changes: { from, insert: lead + card + tail },
+    selection: { anchor: cardFrom + card.length + 1 },
+    annotations: [cardEdit.of(true), Transaction.userEvent.of("input.card")],
+    scrollIntoView: true,
+  });
+  return true;
+}
+
 /** Fence a Doc's selection as a card. */
 export function makeCardFromSelection(view) {
   if (view.state.facet(insideCard)) return false;
   const sel = view.state.selection.main;
-  if (sel.empty) return false;
+  if (sel.empty) return insertEmptyCard(view);
   const doc = view.state.doc;
   const raw = doc.sliceString(sel.from, sel.to);
   // Whole lines selected with their trailing break: the break stays in
@@ -76,13 +107,36 @@ async function activeCanvasState() {
   return st?.canvasEl?.isConnected && st.canvasEl.getClientRects().length ? st : null;
 }
 
-/** Turn a canvas's selected text shapes into cards. */
+// Where the pointer last was, so a canvas card can land under it.
+let lastPointer = null;
+if (typeof window !== "undefined") {
+  window.addEventListener("pointermove", (e) => { lastPointer = { x: e.clientX, y: e.clientY }; }, { passive: true, capture: true });
+}
+
+/** An empty card under the pointer — or in the middle of the view when
+ *  the pointer isn't over the canvas — focused for typing. */
+async function addEmptyCardOnCanvas(st, cs) {
+  const { viewCentreWorld, screenToWorld } = await import("./card-transfer.js");
+  const r = st.canvasEl.getBoundingClientRect();
+  const p = lastPointer;
+  const over = p && p.x >= r.left && p.x <= r.right && p.y >= r.top && p.y <= r.bottom;
+  const at = over ? screenToWorld(st.camera, p.x - r.left, p.y - r.top) : viewCentreWorld(st);
+  const shape = cs.addCardShapeCentred(st, "", null, at);
+  st.focusCardId = shape.id;
+  st.notify("shapes");
+}
+
+/** Turn a canvas's selected text shapes into cards; with none selected,
+ *  add an empty one. */
 async function makeCardsOnCanvas() {
   const st = await activeCanvasState();
   if (!st) return;
   const cs = await import("../notebook/card-shape.ts");
   const picked = cs.convertibleToCards(st);
-  if (!picked.length) return;
+  if (!picked.length) {
+    if (!st.selectedIds?.size) await addEmptyCardOnCanvas(st, cs);
+    return;
+  }
   const longest = picked.reduce((a, s) => (s.text.length > a.length ? s.text : a), "");
   if (!(await confirmLongCard(longest))) return;
   cs.convertShapesToCards(st, picked.map((s) => s.id));
