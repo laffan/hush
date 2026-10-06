@@ -231,7 +231,7 @@ async function _mountNotebookImpl(container, fileId, state) {
     // popups dispatch the same event but carry their own state ref, so
     // we filter to the main canvas instance.
     if (d.state && d.state !== canvasInstance.state) return;
-    _notebookBackground = { pattern: d.pattern, spacing: d.spacing, opacity: d.opacity, rotationEnabled: d.rotationEnabled };
+    _notebookBackground = { pattern: d.pattern, spacing: d.spacing, opacity: d.opacity, rotationEnabled: d.rotationEnabled, snapToGrid: d.snapToGrid };
     notebookDirty = true;
   };
   document.addEventListener("notebook-bg-changed", onBgChange);
@@ -383,6 +383,7 @@ function applyNotebookBackground(bg) {
   // Setter no-ops when unchanged; when flipping to off it also snaps
   // any live camera rotation back to 0.
   if (typeof bg.rotationEnabled === "boolean") s.setCanvasRotationEnabled(bg.rotationEnabled);
+  if (typeof bg.snapToGrid === "boolean") s.setSnapToGrid(bg.snapToGrid);
   s.notify("theme");
 }
 
@@ -490,6 +491,7 @@ async function _saveNotebookInner(opts) {
     spacing: canvas.state.gridSpacing,
     opacity: canvas.state.gridOpacity,
     rotationEnabled: canvas.state.canvasRotationEnabled,
+    snapToGrid: canvas.state.snapToGrid,
   });
   try {
     const { parseLocalSentinel } = await import("../sync/local-sync.js");

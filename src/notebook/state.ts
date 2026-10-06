@@ -47,6 +47,7 @@ import { placeBookmark } from "./bookmarks";
 import { addCardShape, toggleCardCollapsed } from "./card-shape";
 import { CARD_HEADER_HEIGHT } from "../cards/card-model";
 import { titledAreaFollowers } from "./drag-area-title";
+import { snapMovedToGrid } from "./grid-snap";
 
 /**
  * A pinned outline is drawn against the frame, not the canvas, so its
@@ -98,7 +99,7 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "drawingToolbarMinimized" | "drawingToolbarOffset" | "drawingToolbarPosition"
   | "drawingToolbarVertical" | "drawingToolbarCollapsed"
   | "strokeEngineDragging" | "reorderDragAreaId" | "reorderMode"
-  | "reorderHoverTargetId" | "reorderPreview" | "canvasRotationEnabled"
+  | "reorderHoverTargetId" | "reorderPreview" | "canvasRotationEnabled" | "snapToGrid"
   // "splits" is a CONTENT key like "shapes" — split lines persist in the
   // envelope, so moving one has to mark the notebook dirty. "grab" is
   // session-only (the popup + place bar read it) and repaint-only.
@@ -144,6 +145,11 @@ export class DrawingState extends EventTarget {
    *  persisted per-notebook alongside the background overrides.
    *  Turning it off snaps any live rotation back to 0. */
   canvasRotationEnabled = false;
+  /** Opt-in, per notebook like rotation: a dropped drag snaps to the
+   *  background grid (grid-snap.ts). */
+  snapToGrid = false;
+  /** The shapes as a drag found them, for snapping what it moved. */
+  private _preDragShapes: Shape[] | null = null;
   selectionBox: SelectionBox | null = null;
   editingText: EditingText | null = null;
   /** Point bookmarks — see bookmarks.ts. Ride the undo checkpoint. */
@@ -612,6 +618,13 @@ export class DrawingState extends EventTarget {
     if (this.lassoHoldMs === n) return;
     this.lassoHoldMs = n;
     this.notify("lassoHoldMs");
+  }
+
+  setSnapToGrid(on: boolean) {
+    const v = !!on;
+    if (this.snapToGrid === v) return;
+    this.snapToGrid = v;
+    this.notify("snapToGrid");
   }
 
   setCanvasRotationEnabled(on: boolean) {
@@ -2289,6 +2302,11 @@ export class DrawingState extends EventTarget {
         return;
       }
 
+      // Snap to grid: before re-parenting, so the drop target is judged
+      // where the shapes actually land.
+      snapMovedToGrid(this, this._preDragShapes);
+      this._preDragShapes = null;
+
       const dragAreas = this.shapes.filter((s) => s.type === "drag-area");
       this.shapes = this.shapes.map((s) => {
         if (!this.selectedIds.has(s.id)) return s;
@@ -2649,6 +2667,7 @@ export class DrawingState extends EventTarget {
    *  from every selected point on every frame of the drag. */
   private _beginShapeDrag(): void {
     this._dragStartFired = true;
+    this._preDragShapes = this.shapes;
     const adopted = this.onShapeDragStart?.(this.selectedIds);
     this._engineDragIds = adopted && adopted.size > 0 ? adopted : null;
     if (this._engineDragIds && !this.strokeEngineDragging) {

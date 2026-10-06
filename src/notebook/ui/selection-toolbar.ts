@@ -12,6 +12,7 @@ import { makeColorsMenu } from "./selection-colors-menu";
 import { perf } from "../perf-hud";
 import { dragAreaMarkdown } from "../drag-area-markdown";
 import { writeClipboardText } from "../canvas-paste";
+import { setSelectedGridFree } from "../grid-snap";
 
 /** Accessors the toolbar needs from the owning NotesCanvas for the
  *  raster-backed actions (Rasterize group, Recognize handwriting).
@@ -503,6 +504,18 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
       const copied = copiedAreaId === dragArea.id;
       container.appendChild(makeIconBtn(copied ? "copied" : "copy",
         copied ? "Copied" : "Copy contents as markdown", () => copyDragArea(dragArea.id)));
+    }
+
+    // Snap to grid: release the selection from the grid, or attach it
+    // again (grid-snap.ts). Ink isn't snapped, so a strokes-only
+    // selection gets no button.
+    const griddable = selected.filter((s) => s.type !== "draw");
+    if (state.snapToGrid && griddable.length) {
+      const attached = griddable.some((s) => !s.gridFree);
+      const gridBtn = makeIconBtn("grid-snap", attached ? "Release from grid" : "Re-attach to grid",
+        () => setSelectedGridFree(state, attached));
+      if (attached) { gridBtn.style.background = state.theme.accent; gridBtn.style.color = "#fff"; }
+      container.appendChild(gridBtn);
     }
 
     // Rasterize: bake the whole selection (groups, drag-areas with

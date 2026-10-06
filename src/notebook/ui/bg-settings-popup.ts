@@ -57,6 +57,7 @@ export function emitNotebookBgChange(state: DrawingState): void {
       spacing: state.gridSpacing,
       opacity: state.gridOpacity,
       rotationEnabled: state.canvasRotationEnabled,
+      snapToGrid: state.snapToGrid,
     },
   }));
 }
@@ -219,6 +220,21 @@ export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
       opacityRow.appendChild(opacityLabel);
       popup.appendChild(opacityRow);
     }
+    // Snap to grid — dropped drags land on the grid above (grid-snap.ts);
+    // a shape can be released from it in the selection toolbar.
+    const snapRow = h("label", {
+      style: {
+        display: "flex", alignItems: "center", gap: "8px", marginTop: "10px",
+        fontSize: "12px", color: theme.foreground, cursor: "pointer", userSelect: "none",
+      },
+    });
+    const snapBox = h("input", { attrs: { type: "checkbox" }, style: { accentColor: theme.accent, margin: "0" } }) as HTMLInputElement;
+    snapBox.checked = state.snapToGrid;
+    snapBox.addEventListener("change", () => { state.setSnapToGrid(snapBox.checked); emitBgChange(); });
+    snapRow.appendChild(snapBox);
+    snapRow.appendChild(document.createTextNode("Snap to grid"));
+    popup.appendChild(snapRow);
+
     // Host-injected extras — the Desktop view appends its per-Desktop
     // options (doc text size, thumbnail long edge, labels, gutters).
     if (state.extraBgSettingsSection) {

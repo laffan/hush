@@ -258,6 +258,7 @@ async function encodeHushnote(canvas: NotesCanvas): Promise<Uint8Array> {
       spacing: canvas.state.gridSpacing,
       opacity: canvas.state.gridOpacity,
       rotationEnabled: canvas.state.canvasRotationEnabled,
+      snapToGrid: canvas.state.snapToGrid,
     },
     splits: canvas.state.splits,
     proof: canvas.state.proof ?? undefined,

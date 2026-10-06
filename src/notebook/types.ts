@@ -70,6 +70,9 @@ interface ShapeBase {
    *  as "older than every split", so pre-existing content is carried
    *  across a collapse rather than swept away by it. */
   createdAt?: number;
+  /** Released from the grid: a drag of this shape alone doesn't snap,
+   *  even with Snap to grid on (grid-snap.ts). */
+  gridFree?: boolean;
 }
 
 /** Stroke points carry pressure for brush-size modulation by the
