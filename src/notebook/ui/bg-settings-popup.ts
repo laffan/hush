@@ -58,6 +58,7 @@ export function emitNotebookBgChange(state: DrawingState): void {
       opacity: state.gridOpacity,
       rotationEnabled: state.canvasRotationEnabled,
       snapToGrid: state.snapToGrid,
+      snapGridSize: state.snapGridSize,
     },
   }));
 }
@@ -230,10 +231,24 @@ export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
     });
     const snapBox = h("input", { attrs: { type: "checkbox" }, style: { accentColor: theme.accent, margin: "0" } }) as HTMLInputElement;
     snapBox.checked = state.snapToGrid;
-    snapBox.addEventListener("change", () => { state.setSnapToGrid(snapBox.checked); emitBgChange(); });
+    snapBox.addEventListener("change", () => { state.setSnapToGrid(snapBox.checked); emitBgChange(); render(); });
     snapRow.appendChild(snapBox);
     snapRow.appendChild(document.createTextNode("Snap to grid"));
     popup.appendChild(snapRow);
+    if (state.snapToGrid) {
+      // The snap grid's own size — drawn only while something is being
+      // moved or resized, so it doesn't follow the background pattern.
+      const sizeRow = h("div", { style: { display: "flex", alignItems: "center", gap: "6px", marginTop: "6px" } });
+      const sizeInput = h("input", { attrs: { type: "range", min: "5", max: "100", step: "5", "aria-label": "Snap grid size" }, style: { flex: "1", accentColor: theme.accent } }) as HTMLInputElement;
+      sizeInput.value = String(state.snapGridSize);
+      const sizeLabel = h("span", { text: `${state.snapGridSize}px`, style: { fontSize: "11px", color: theme.foreground, opacity: "0.6", minWidth: "36px", textAlign: "right" } });
+      sizeInput.addEventListener("input", () => { sizeLabel.textContent = `${sizeInput.value}px`; });
+      sizeInput.addEventListener("change", () => { state.setSnapGridSize(parseInt(sizeInput.value, 10)); emitBgChange(); });
+      sizeRow.appendChild(h("span", { text: "Grid", style: { fontSize: "11px", color: theme.foreground, opacity: "0.7" } }));
+      sizeRow.appendChild(sizeInput);
+      sizeRow.appendChild(sizeLabel);
+      popup.appendChild(sizeRow);
+    }
 
     // Host-injected extras — the Desktop view appends its per-Desktop
     // options (doc text size, thumbnail long edge, labels, gutters).

@@ -37,6 +37,8 @@ export interface NotebookBackground {
   rotationEnabled?: boolean;
   /** Snap to grid (canvas options) — per notebook, like rotation. */
   snapToGrid?: boolean;
+  /** The snap grid's step in canvas px. */
+  snapGridSize?: number;
 }
 
 export interface NotebookContent {
@@ -130,6 +132,7 @@ function parseBackground(v: unknown): NotebookBackground | undefined {
   if (typeof b.opacity === "number") out.opacity = b.opacity;
   if (typeof b.rotationEnabled === "boolean") out.rotationEnabled = b.rotationEnabled;
   if (typeof b.snapToGrid === "boolean") out.snapToGrid = b.snapToGrid;
+  if (typeof b.snapGridSize === "number" && b.snapGridSize > 0) out.snapGridSize = b.snapGridSize;
   return Object.keys(out).length ? out : undefined;
 }
 

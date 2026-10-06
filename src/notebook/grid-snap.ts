@@ -1,8 +1,11 @@
 /**
  * Snap to grid — a per-notebook option (the canvas options popup, saved
  * with the background like canvas rotation) under which a moved selection
- * lands on the background grid: the grid of `gridSpacing`, phase-locked to
- * the world origin, which is the one the pattern draws.
+ * lands on a grid of `snapGridSize` canvas px, phase-locked to the world
+ * origin, and a resized shape's dragged edges land on it too. The grid
+ * has its own size (a slider under the option), and is drawn over the
+ * canvas only while a move or a resize is under way
+ * (`DrawingState.snapGuideVisible`).
  *
  * A drag snaps when it is dropped. The whole moved set shifts by one
  * offset — the one that puts the top-left of its attached shapes' box on
@@ -25,7 +28,7 @@ function positionOf(s: Shape): { x: number; y: number } | null {
 
 /** The offset that puts the top-left of `shapes`' box on the grid. */
 function snapOffset(state: DrawingState, shapes: Shape[]): { dx: number; dy: number } | null {
-  const step = state.gridSpacing;
+  const step = state.snapGridSize;
   if (!(step > 0) || !shapes.length) return null;
   let minX = Infinity, minY = Infinity;
   for (const s of shapes) {
@@ -62,7 +65,7 @@ export function snapMovedToGrid(state: DrawingState, before: Shape[] | null): bo
 /** Release the selected shapes from the grid, or attach them to it again
  *  (snapping each attached one into place). One undo step. */
 export function setSelectedGridFree(state: DrawingState, free: boolean): void {
-  const step = state.gridSpacing;
+  const step = state.snapGridSize;
   state.shapes = state.shapes.map((s) => {
     if (!state.selectedIds.has(s.id) || s.type === "draw") return s;
     if (free) return s.gridFree ? s : { ...s, gridFree: true };
@@ -74,4 +77,21 @@ export function setSelectedGridFree(state: DrawingState, free: boolean): void {
   });
   state.recordHistory();
   state.notify("shapes");
+}
+
+/** A resize's drag, adjusted so the edges the handle moves land on the
+ *  grid: `orig` is the shape's box at the start, `dx` / `dy` the raw
+ *  pointer travel. Untouched when snapping is off or the shape is
+ *  released from the grid. */
+export function snapResizeDelta(
+  state: DrawingState, shape: Shape, handle: string,
+  orig: { minX: number; minY: number; maxX: number; maxY: number }, dx: number, dy: number,
+): { dx: number; dy: number } {
+  const step = state.snapGridSize;
+  if (!state.snapToGrid || shape.gridFree || shape.type === "draw" || !(step > 0)) return { dx, dy };
+  const snap = (edge: number, d: number) => Math.round((edge + d) / step) * step - edge;
+  return {
+    dx: handle.includes("e") ? snap(orig.maxX, dx) : handle.includes("w") ? snap(orig.minX, dx) : dx,
+    dy: handle.includes("s") ? snap(orig.maxY, dy) : handle.includes("n") ? snap(orig.minY, dy) : dy,
+  };
 }

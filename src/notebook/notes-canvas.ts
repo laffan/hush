@@ -1229,6 +1229,7 @@ export class NotesCanvas {
         flowArrowLineCap: this.state.flowArrowLineCap ?? undefined,
         flowEdgesLocked: this.state.flowEdgesLocked,
         strokeEngineDragging: this.state.strokeEngineDragging,
+        snapGrid: this.state.snapGuideVisible ? this.state.snapGridSize : null,
         reorderDragAreaId: this.state.reorderDragAreaId,
         reorderPreview: this.state.reorderPreview,
         flagColors: getFlagColorsFromHush(),

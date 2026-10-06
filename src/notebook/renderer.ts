@@ -128,6 +128,9 @@ export interface RenderState {
    *  engine bbox is the only chrome on the canvas during the
    *  gesture. */
   strokeEngineDragging?: boolean;
+  /** The snap grid's step while it is shown (a move or resize under
+   *  Snap to grid), else null — grid-snap.ts. */
+  snapGrid?: number | null;
   /** Reorder mode: active drag-area id (solid accent outline + swap-on-drop). */
   reorderDragAreaId?: string | null;
   /** Reorder hover preview: boundary rects + baked clones at swap destinations. */
@@ -178,6 +181,9 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     // Use foreground color at scaled opacity (100% slider = 80% alpha of foreground)
     drawBackground(ctx, camera, w, h, theme.foreground, backgroundPattern, gridSpacing, gridOpacity * 0.8);
   }
+  // The snap grid, over the pattern and under the shapes — only while a
+  // move or resize it governs is under way.
+  if (state.snapGrid) drawBackground(ctx, camera, w, h, theme.accent, "grid", state.snapGrid, 0.35);
 
   // Compute pocket layout once for this frame. While the user is dragging
   // into the pocket zone, treat the selected shapes as already pocketed so

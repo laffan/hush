@@ -47,7 +47,7 @@ import { placeBookmark } from "./bookmarks";
 import { addCardShape, toggleCardCollapsed } from "./card-shape";
 import { CARD_HEADER_HEIGHT } from "../cards/card-model";
 import { titledAreaFollowers } from "./drag-area-title";
-import { snapMovedToGrid } from "./grid-snap";
+import { snapMovedToGrid, snapResizeDelta } from "./grid-snap";
 
 /**
  * A pinned outline is drawn against the frame, not the canvas, so its
@@ -145,9 +145,12 @@ export class DrawingState extends EventTarget {
    *  persisted per-notebook alongside the background overrides.
    *  Turning it off snaps any live rotation back to 0. */
   canvasRotationEnabled = false;
-  /** Opt-in, per notebook like rotation: a dropped drag snaps to the
-   *  background grid (grid-snap.ts). */
+  /** Opt-in, per notebook like rotation: a dropped drag and a resize
+   *  snap to a grid of `snapGridSize` (grid-snap.ts). */
   snapToGrid = false;
+  /** The snap grid's step, in canvas px — its own size, not the
+   *  background pattern's. */
+  snapGridSize = 25;
   /** The shapes as a drag found them, for snapping what it moved. */
   private _preDragShapes: Shape[] | null = null;
   selectionBox: SelectionBox | null = null;
@@ -625,6 +628,19 @@ export class DrawingState extends EventTarget {
     if (this.snapToGrid === v) return;
     this.snapToGrid = v;
     this.notify("snapToGrid");
+  }
+
+  setSnapGridSize(px: number) {
+    const v = Math.round(px);
+    if (!(v > 0) || this.snapGridSize === v) return;
+    this.snapGridSize = v;
+    this.notify("snapToGrid");
+  }
+
+  /** Whether the snap grid is drawn: only while a move or a resize it
+   *  governs is under way. */
+  get snapGuideVisible(): boolean {
+    return this.snapToGrid && (this._isResizing || (this._isDragging && this._dragStartFired));
   }
 
   setCanvasRotationEnabled(on: boolean) {
@@ -2198,7 +2214,9 @@ export class DrawingState extends EventTarget {
       if (this.croppingImageId === origShape.id && origShape.type === "image") {
         this.shapes = this.shapes.map((s) => s.id !== origShape.id ? s : applyCropResize(origShape, handle, orig, dx, dy));
       } else {
-        this.shapes = this.shapes.map((s) => s.id !== origShape.id ? s : applyResize(origShape, handle, orig, dx, dy));
+        // Snap to grid: the edges being dragged land on the grid.
+        const d = snapResizeDelta(this, origShape, handle, orig, dx, dy);
+        this.shapes = this.shapes.map((s) => s.id !== origShape.id ? s : applyResize(origShape, handle, orig, d.dx, d.dy));
       }
       this.notify("shapes");
       return;
@@ -2533,6 +2551,8 @@ export class DrawingState extends EventTarget {
       this._resizeOrigShape = null;
       this._resizeOrigBounds = null;
       this.recordHistory();
+      // Repaint: the snap grid shown during the resize goes away.
+      if (this.snapToGrid) this.notify("interaction");
       return;
     }
 

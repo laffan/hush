@@ -332,6 +332,7 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
         if (typeof bg.opacity === "number") canvas.state.gridOpacity = bg.opacity;
         if (typeof bg.rotationEnabled === "boolean") canvas.state.setCanvasRotationEnabled(bg.rotationEnabled);
         if (typeof bg.snapToGrid === "boolean") canvas.state.setSnapToGrid(bg.snapToGrid);
+        if (typeof bg.snapGridSize === "number") canvas.state.setSnapGridSize(bg.snapGridSize);
         canvas.state.notify("theme");
       }
     }
@@ -378,6 +379,7 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
           opacity: canvas.state.gridOpacity,
           rotationEnabled: canvas.state.canvasRotationEnabled,
           snapToGrid: canvas.state.snapToGrid,
+          snapGridSize: canvas.state.snapGridSize,
         },
       });
       if (IS_TAURI) {

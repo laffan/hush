@@ -262,6 +262,7 @@ async function loadNotebookPane(pane) {
       if (typeof bg.opacity === "number") canvas.state.gridOpacity = bg.opacity;
       if (typeof bg.rotationEnabled === "boolean") canvas.state.setCanvasRotationEnabled(bg.rotationEnabled);
       if (typeof bg.snapToGrid === "boolean") canvas.state.setSnapToGrid(bg.snapToGrid);
+      if (typeof bg.snapGridSize === "number") canvas.state.setSnapGridSize(bg.snapGridSize);
       canvas.state.notify("theme");
       pane._notebookBackground = { ...bg };
     }
@@ -335,7 +336,7 @@ async function loadNotebookPane(pane) {
     if (d.state !== pane.notebook.state) return;
     // Kept so a theme re-sync (`pane-theme-sync.js`) can lay it back
     // over the global defaults it re-applies.
-    pane._notebookBackground = { pattern: d.pattern, spacing: d.spacing, opacity: d.opacity, rotationEnabled: d.rotationEnabled, snapToGrid: d.snapToGrid };
+    pane._notebookBackground = { pattern: d.pattern, spacing: d.spacing, opacity: d.opacity, rotationEnabled: d.rotationEnabled, snapToGrid: d.snapToGrid, snapGridSize: d.snapGridSize };
     pane.dirty = true;
   };
   document.addEventListener("notebook-bg-changed", onPaneBgChange);
@@ -439,6 +440,7 @@ export async function savePaneContent(pane) {
             opacity: nb.state.gridOpacity,
             rotationEnabled: nb.state.canvasRotationEnabled,
             snapToGrid: nb.state.snapToGrid,
+            snapGridSize: nb.state.snapGridSize,
           },
           // Same reason as the bookmarks above: the pane holds the whole
           // notebook, so its save has to write the whole notebook.

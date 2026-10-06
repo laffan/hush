@@ -285,7 +285,11 @@ export function createBaseExtensions(state, onChange, opts) {
     spellcheckClickHandler,
     buildFoldingExtension(),
     createFoldArrowPlugin(),
-    createPropertiesPlugin(state),
+    // Properties belong to a whole document. A fragment — a card, an
+    // outline panel, a Selection Focus slice — has no frontmatter of its
+    // own, and with properties shown the plugin offered every one of them
+    // an empty "Add property" row (Courier's card most visibly).
+    opts?.fragment ? [] : createPropertiesPlugin(state),
     createFocusModePlugin(state),
     // Privacy has to reach every doc surface on screen, not just the one
     // in `#editor-container`: a floating pane or a Zen overlay left
