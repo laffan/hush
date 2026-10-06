@@ -155,6 +155,12 @@ export interface TextShape extends ShapeBase {
   backgroundColor?: string;
   borderColor?: string;
   borderWidth?: number;
+  /** The colour of each `==highlight==` in the text, by its place among
+   *  them (the first `==…==` is 0); a missing or null entry paints the
+   *  default yellow (or its flag's colour). Set from the picker a click
+   *  on a highlight opens (ui/highlight-color-picker.ts). Canvas-only:
+   *  markdown has no way to say it, so it doesn't travel to a Doc. */
+  highlightColors?: (string | null)[];
   /** Per-shape overrides of the canvas-wide text style. Absent means
    *  "follow the canvas", which is every shape on an ordinary notebook;
    *  a proofread notebook seeds new text with its own (see

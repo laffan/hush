@@ -250,8 +250,8 @@ async function loadNotebookPane(pane) {
       splits: snapshot.splits,
       proof: snapshot.proof || null,
       bookmarks: snapshot.bookmarks,
+      flowEdges: snapshot.flowEdges,
     });
-    canvas.state.flowchart.deserialize(snapshot.flowEdges);
     // Per-notebook background ride-along (pattern / spacing / opacity).
     // Pane and main canvas pull from the same file so a bg pick from
     // either side sticks across reopens.

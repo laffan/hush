@@ -26,6 +26,8 @@ import { registerNotebookDropTarget } from "../pane/text-drag.js";
 // @ts-ignore — JS module, no type declaration file
 import { getNotebookCanvasPanes, focusAndCenterPaneById, scrollPaneToMatch } from "../pane/pane-manager.js";
 import { createDrawingLayer } from "./drawing/drawing-layer";
+import { installScrollGuard } from "./scroll-guard";
+import { createHighlightColorPicker } from "./ui/highlight-color-picker";
 import type { DrawingLayer } from "./drawing/drawing-layer";
 // PERF-HUD (temporary): tracer singleton — see perf-hud.ts.
 import { perf } from "./perf-hud";
@@ -256,6 +258,9 @@ export class NotesCanvas {
   private _cleanupInput: (() => void) | null = null;
   private _cleanupDropTarget: (() => void) | null = null;
   private _cleanupPaneListener: (() => void) | null = null;
+  /** Undoes a caret-follow scroll of a hidden-overflow box around the
+   *  canvas (scroll-guard.ts). */
+  private _cleanupScrollGuard: (() => void) | null = null;
   private _shelfPanel: HTMLElement | null = null;
   private _shelfResizer: HTMLElement | null = null;
   private _shelfRightInsetCleanup: (() => void) | null = null;
@@ -616,6 +621,7 @@ export class NotesCanvas {
     // Cards — the Doc's card component, over the canvas (card-layer.ts).
     container.appendChild(createCardLayer(this.state));
     container.appendChild(createTextEditor(this.state));
+    container.appendChild(createHighlightColorPicker(this.state));
     container.appendChild(createBrainstormInput(this.state));
     container.appendChild(createGrabPopup(this.state));
     container.appendChild(createReorderBanner(this.state));
@@ -671,8 +677,13 @@ export class NotesCanvas {
     }) as EventListener);
 
     // Track which notebook the user is currently interacting with so the
-    // shared document "copy" listener can route Cmd+C to the right one.
-    this._canvas.addEventListener("pointerdown", () => { lastActiveNotebook = this; }, true);
+    // shared document "copy" listener can route Cmd+C to the right one —
+    // and ⌘Z / ⌘⇧Z. On the container, not the <canvas>: in the draw tool
+    // the drawing layer's SVG sits over the canvas and takes the press,
+    // so drawing in a pane never made that pane the target and ⌘Z undid
+    // in whichever canvas was touched last.
+    this.container.addEventListener("pointerdown", () => { lastActiveNotebook = this; }, true);
+    this._cleanupScrollGuard = installScrollGuard(this.container);
     // Claim active-canvas status on mount so window-scoped clipboard
     // handlers route to this instance even before any pointerdown. If a
     // pane mounts later it will steal the slot on its first pointer
@@ -861,6 +872,12 @@ export class NotesCanvas {
       splits?: import("./types").Split[];
       proof?: import("./types").ProofMeta | null;
       bookmarks?: import("./types").NotebookBookmark[];
+      /** The saved flowchart edges. They have to land before
+       *  `initHistory` like everything else here: deserialized after it
+       *  (as every caller used to), the first checkpoint held no edges —
+       *  or the previous notebook's — and undoing back to the start
+       *  wiped every flowchart line. */
+      flowEdges?: import("./flowchart").FlowEdge[];
     },
   ) {
     // Splits and proofread metadata land before the shapes so the first
@@ -884,6 +901,7 @@ export class NotesCanvas {
       ? activeLayerId
       : topLayerId;
     this.state.shapes = shapes.map((s) => s.layerId ? s : ({ ...s, layerId: topLayerId }));
+    if (extras && "flowEdges" in extras) this.state.flowchart.deserialize(extras.flowEdges || []);
     this.state.initHistory();
     this.state.notify("layers");
     this.state.notify("activeLayerId");
@@ -1044,6 +1062,7 @@ export class NotesCanvas {
     if (this._cleanupInput) this._cleanupInput();
     if (this._cleanupDropTarget) this._cleanupDropTarget();
     if (this._cleanupPaneListener) { this._cleanupPaneListener(); this._cleanupPaneListener = null; }
+    if (this._cleanupScrollGuard) { this._cleanupScrollGuard(); this._cleanupScrollGuard = null; }
     if (this._shelfRightInsetCleanup) { this._shelfRightInsetCleanup(); this._shelfRightInsetCleanup = null; }
     if (this._drawingLayer) { this._drawingLayer.destroy(); this._drawingLayer = null; }
     if (this._proofRail) { this._proofRail.destroy(); this._proofRail = null; }

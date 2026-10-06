@@ -6,6 +6,12 @@ import { h } from "./dom-helpers";
 /** Minimum gap (in canvas px) between a brainstorm card's bounds and
  *  any neighbouring shape's bounds. */
 const BRAINSTORM_PADDING = 24;
+/** The input's footprint on screen (input + handle + close), for finding
+ *  its centre and keeping cards off it. */
+const INPUT_W = 258;
+const INPUT_H = 32;
+/** Gap kept between a placed card and the edge of the visible area. */
+const VIEW_MARGIN = 12;
 
 /**
  * Brainstorm mode: a persistent text input that stays at a click location.
@@ -14,7 +20,10 @@ const BRAINSTORM_PADDING = 24;
  */
 export function createBrainstormInput(state: DrawingState): HTMLElement {
   const container = h("div", {
-    style: { position: "absolute", zIndex: "250", display: "none", pointerEvents: "auto" },
+    // Above the cards (81) and bookmarks (82), under the toolbar band —
+    // the shelf on the right (87), the toolbar (85), the Overview (85) —
+    // and the floating panes (90). At 250 it covered the sidebar.
+    style: { position: "absolute", zIndex: "84", display: "none", pointerEvents: "auto" },
   });
 
   const inputRow = h("div", {
@@ -132,7 +141,11 @@ export function createBrainstormInput(state: DrawingState): HTMLElement {
         layerId: state.activeLayerId,
         createdAt: Date.now(),
       };
-      const pos = findBrainstormPosition(canvasOrigin, draft, state);
+      // The spiral turns about the input's centre, not its corner.
+      const left = parseFloat(container.style.left) || 0;
+      const top = parseFloat(container.style.top) || 0;
+      const centre = screenToCanvas({ x: left + INPUT_W / 2, y: top + INPUT_H / 2 }, state.camera);
+      const pos = findBrainstormPosition(centre, draft, state);
       draft.position = pos;
       state.shapes = [...state.shapes, draft];
       state.recordHistory();
@@ -238,9 +251,12 @@ export function createBrainstormInput(state: DrawingState): HTMLElement {
  *  3. Reject any candidate whose padded bbox intersects any existing
  *     shape's bbox (pocketed shapes excluded — they live in screen
  *     space, not the canvas).
- *  4. The very first card lands at the origin (the input's anchor)
- *     unless something is already there; ensures a fresh brainstorm
- *     drops its first card at the user's exact click point.
+ *  4. Candidates must land inside the part of the canvas on screen —
+ *     the canvas less the sidebar / shelf insets and docked panes. In a
+ *     small surface (a pane) the spiral's first ring already reaches past
+ *     the edges, and with any direction allowed most cards landed out of
+ *     sight. Only when the view has no room left does the search take
+ *     the first free spot anywhere.
  */
 function findBrainstormPosition(
   origin: Point,
@@ -248,6 +264,15 @@ function findBrainstormPosition(
   state: DrawingState,
 ): Point {
   const fontFamily = state.fontFamily;
+  const view = visibleRect(state);
+  const onScreen = (b: { minX: number; minY: number; maxX: number; maxY: number }) => {
+    if (!view) return true;
+    for (const p of [{ x: b.minX, y: b.minY }, { x: b.maxX, y: b.minY }, { x: b.minX, y: b.maxY }, { x: b.maxX, y: b.maxY }]) {
+      const s = canvasToScreen(p, state.camera);
+      if (s.x < view.left || s.x > view.right || s.y < view.top || s.y > view.bottom) return false;
+    }
+    return true;
+  };
   const otherBounds = state.shapes
     .filter((s) => !s.pocketed)
     .map((s) => getShapeBounds(s, fontFamily));
@@ -258,8 +283,8 @@ function findBrainstormPosition(
   // approximate footprint (200px input + 32px close button + a bit of
   // chrome ≈ 240×40 in screen px → divided by zoom for canvas px).
   const zoom = state.camera.zoom || 1;
-  const inputW = 240 / zoom;
-  const inputH = 40 / zoom;
+  const inputW = (INPUT_W + 8) / zoom;
+  const inputH = (INPUT_H + 8) / zoom;
   const inputBounds = {
     minX: origin.x - inputW / 2,
     minY: origin.y - inputH / 2,
@@ -274,9 +299,10 @@ function findBrainstormPosition(
   const w = sized.maxX - sized.minX;
   const h = sized.maxY - sized.minY;
 
-  const tryAt = (cx: number, cy: number): { pos: Point; ok: boolean } => {
+  const tryAt = (cx: number, cy: number, inView: boolean): { pos: Point; ok: boolean } => {
     const pos: Point = { x: cx - w / 2, y: cy - h / 2 };
     const candidate = { minX: pos.x, minY: pos.y, maxX: pos.x + w, maxY: pos.y + h };
+    if (inView && !onScreen(candidate)) return { pos, ok: false };
     const ok = !blockers.some((b) =>
       b.minX < candidate.maxX + BRAINSTORM_PADDING &&
       b.maxX > candidate.minX - BRAINSTORM_PADDING &&
@@ -295,23 +321,31 @@ function findBrainstormPosition(
   const minRadius = inputHalfDiag + cardHalfDiag + BRAINSTORM_PADDING;
   const maxRadius = Math.max(minRadius * 30, 4000);
   const radiusStep = Math.max(20, Math.min(40, Math.max(w, h) * 0.25));
-  for (let r = minRadius; r <= maxRadius; r += radiusStep) {
-    // ~28px arc length between samples → angleStep = 28/r radians.
-    // Clamped so very small radii don't degenerate into all-direction
-    // tries (and very large radii don't sample wastefully fine).
-    const angleStep = Math.max(0.06, Math.min(Math.PI / 6, 28 / r));
-    // Per-ring random phase + jitter so consecutive cards don't snap
-    // to the same compass direction once one ring is full. Pure
-    // determinism here would line them up like a clock face, which
-    // looks robotic; this gives the "scattered around" feel the user
-    // asked for while still following the spiral envelope.
-    const phase = Math.random() * Math.PI * 2;
-    for (let a = 0; a < Math.PI * 2; a += angleStep) {
-      const angle = phase + a;
-      const cx = origin.x + Math.cos(angle) * r;
-      const cy = origin.y + Math.sin(angle) * r;
-      const t = tryAt(cx, cy);
-      if (t.ok) return t.pos;
+  // Nothing in view is farther from the input than the view's diagonal.
+  const viewRadius = view ? Math.hypot(view.right - view.left, view.bottom - view.top) / zoom : maxRadius;
+  for (const inView of [true, false]) {
+    // In view the spiral starts at the input itself, so a small surface
+    // still gets its nearest free spots; off-screen it keeps clear of it.
+    const fromR = inView ? radiusStep : minRadius;
+    const toR = inView ? Math.min(maxRadius, viewRadius) : maxRadius;
+    for (let r = fromR; r <= toR; r += radiusStep) {
+      // ~28px arc length between samples → angleStep = 28/r radians.
+      // Clamped so very small radii don't degenerate into all-direction
+      // tries (and very large radii don't sample wastefully fine).
+      const angleStep = Math.max(0.06, Math.min(Math.PI / 6, 28 / r));
+      // Per-ring random phase + jitter so consecutive cards don't snap
+      // to the same compass direction once one ring is full. Pure
+      // determinism here would line them up like a clock face, which
+      // looks robotic; this gives the "scattered around" feel the user
+      // asked for while still following the spiral envelope.
+      const phase = Math.random() * Math.PI * 2;
+      for (let a = 0; a < Math.PI * 2; a += angleStep) {
+        const angle = phase + a;
+        const cx = origin.x + Math.cos(angle) * r;
+        const cy = origin.y + Math.sin(angle) * r;
+        const t = tryAt(cx, cy, inView);
+        if (t.ok) return t.pos;
+      }
     }
   }
 
@@ -325,3 +359,16 @@ function findBrainstormPosition(
   };
 }
 
+
+/** The part of the canvas on screen, in canvas-local px: the canvas
+ *  less the sidebar / shelf insets and any docked panes, pulled in by
+ *  VIEW_MARGIN. Null before the canvas is laid out. */
+function visibleRect(state: DrawingState): { left: number; top: number; right: number; bottom: number } | null {
+  const r = state.canvasEl?.getBoundingClientRect();
+  if (!r || r.width <= 0 || r.height <= 0) return null;
+  const left = (state.leftInset || 0) + VIEW_MARGIN;
+  const right = r.width - (state.rightInset || 0) - VIEW_MARGIN;
+  const top = (state.dockedTopHeight || 0) + VIEW_MARGIN;
+  const bottom = r.height - (state.dockedBottomHeight || 0) - VIEW_MARGIN;
+  return right > left && bottom > top ? { left, top, right, bottom } : null;
+}

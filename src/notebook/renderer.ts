@@ -302,7 +302,9 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       if (shape.type === "text" && shape.outline) drawOutlineShape(ctx, shape, theme, false, state.flagColors);
       else if (shape.type === "text") {
         if (backdropIds?.has(shape.id)) drawTextBackdrop(ctx, shape, state.fontFamily, backdropColor);
+        recordHighlights = true;
         drawTextShape(ctx, shape, theme, state.fontFamily, false, state.flagColors);
+        recordHighlights = false;
       }
       // Every file thumbnail casts the same subtle drop shadow, so a
       // Desktop reads as cards laid on a surface (stacked piles get it
@@ -679,7 +681,28 @@ export function resolveHighlightBg(flagName: string | undefined, flagColors: Rec
   return DEFAULT_HIGHLIGHT_BG;
 }
 
+/** A highlight's painted box in canvas space, with its index among the
+ *  shape's `==…==`. */
+export interface HighlightRect { index: number; x: number; y: number; w: number; h: number }
+
+/** Where each text shape's highlights were last painted — what a click
+ *  on one is tested against (ui/highlight-color-picker.ts). Recorded by
+ *  the paint itself, so the boxes are exactly the ones on screen, gutters
+ *  for quotes, tasks and lists included; keyed by the shape object, which
+ *  is replaced on every change. */
+export const highlightRects = new WeakMap<TextShape, HighlightRect[]>();
+/** Only the main pass records — the pocket, ghosts, exports and outline
+ *  rows paint the same shapes elsewhere, or other shapes entirely. */
+let recordHighlights = false;
+
+/** A highlight colour the user picked, as the translucent wash the
+ *  default yellow is. */
+export function highlightWash(color: string): string {
+  return color.startsWith("#") ? hexToRgba(color, 0.35) : color;
+}
+
 export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, theme: CanvasTheme, fontFamily: string, omitGlyphs = false, flagColors?: Record<string, string>) {
+  const rects: HighlightRect[] = [];
   const baseFontSize = shape.fontSize;
   // Per-shape face and weight win over the canvas's; absent means
   // "follow the canvas", which is every shape on an ordinary notebook.
@@ -824,10 +847,13 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
         ctx.fill();
         ctx.restore();
       } else if (run.highlight) {
+        const picked = run.highlightIndex !== undefined ? shape.highlightColors?.[run.highlightIndex] : null;
+        const w = ctx.measureText(run.text).width;
         ctx.save();
-        ctx.fillStyle = resolveHighlightBg(run.highlightFlag, flagColors);
-        ctx.fillRect(x, y, ctx.measureText(run.text).width, fontSize + 2);
+        ctx.fillStyle = picked ? highlightWash(picked) : resolveHighlightBg(run.highlightFlag, flagColors);
+        ctx.fillRect(x, y, w, fontSize + 2);
         ctx.restore();
+        if (run.highlightIndex !== undefined) rects.push({ index: run.highlightIndex, x, y, w, h: fontSize + 2 });
       }
       const isLinkish = !!(run.link || run.wikilink);
       ctx.fillStyle = run.youAreHere ? YAH_TAG_FG
@@ -852,6 +878,9 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
     y += lineH;
   }
   ctx.restore();
+  if (!recordHighlights) return;
+  if (rects.length) highlightRects.set(shape, rects);
+  else highlightRects.delete(shape);
 }
 
 /** A theme colour at a given alpha. Local rather than `hexToRgba`,

@@ -22,6 +22,10 @@ export interface TextRun {
    *  renderer (and shelf) resolve this against the user's flagColors
    *  setting; the field is just the tag, not the colour. */
   highlightFlag?: string;
+  /** Which `==…==` in the whole text this highlighted run belongs to
+   *  (0 for the first) — the key into `TextShape.highlightColors`.
+   *  Counted across lines by `parseText`. */
+  highlightIndex?: number;
   /** The literal `YOUAREHERE` marker — renders as a bright red rounded
    *  tag with white glyphs (see src/you-are-here.js for the feature). */
   youAreHere?: boolean;
@@ -136,6 +140,7 @@ function parseInlineFormatting(text: string, sizeScale: number): TextRun[] {
   const pattern = /(\[\[([^\[\]\n]+?)\]\]|\*\*(.+?)\*\*|\*(.+?)\*|_(.+?)_|\[([^\]]+)\]\(([^)]+)\)|==(.+?)==|(YOUAREHERE))/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
+  let highlights = 0; // `==…==` seen so far on this line
 
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > lastIndex) {
@@ -157,6 +162,7 @@ function parseInlineFormatting(text: string, sizeScale: number): TextRun[] {
       runs.push({ text: match[6], bold: false, italic: false, sizeScale, link: match[7] });
     } else if (match[8] !== undefined) {
       const inner = match[8];
+      const highlightIndex = highlights++;
       // Detect flag (`==NAME==` / `==NAME: body==`) before parsing
       // nested formatting — once recognised the flag tag rides every
       // emitted run so the renderer / shelf can colour them uniformly.
@@ -167,12 +173,12 @@ function parseInlineFormatting(text: string, sizeScale: number): TextRun[] {
         // Render `NAME` (always). When the flag has a colon we render
         // the colon plus the nested-parsed body so `==MISSING: please
         // **fix**==` paints "MISSING:" then italic/bold inside the body.
-        runs.push({ text: flag![1], bold: false, italic: false, sizeScale, highlight: true, highlightFlag: flagName });
+        runs.push({ text: flag![1], bold: false, italic: false, sizeScale, highlight: true, highlightFlag: flagName, highlightIndex });
         if (hasBody) {
-          runs.push({ text: ":", bold: false, italic: false, sizeScale, highlight: true, highlightFlag: flagName });
+          runs.push({ text: ":", bold: false, italic: false, sizeScale, highlight: true, highlightFlag: flagName, highlightIndex });
           const bodyRuns = parseInlineFormatting(flag![2], sizeScale);
           for (const r of bodyRuns) {
-            runs.push({ ...r, highlight: true, highlightFlag: flagName });
+            runs.push({ ...r, highlight: true, highlightFlag: flagName, highlightIndex });
           }
         }
       } else {
@@ -180,7 +186,7 @@ function parseInlineFormatting(text: string, sizeScale: number): TextRun[] {
         // [link](url) inside `==…==` survive.
         const innerRuns = parseInlineFormatting(inner, sizeScale);
         for (const r of innerRuns) {
-          runs.push({ ...r, highlight: true });
+          runs.push({ ...r, highlight: true, highlightIndex });
         }
       }
     } else if (match[9] !== undefined) {
@@ -214,9 +220,19 @@ export function parseText(
 ): ParsedLine[] {
   const rawLines = text.split("\n");
   const result: ParsedLine[] = [];
+  let highlightBase = 0; // `==…==` on the lines above
 
   for (const rawLine of rawLines) {
     const parsed = parseLine(rawLine);
+    // Each line numbers its highlights from 0; make them count through
+    // the whole text, as `TextShape.highlightColors` is keyed.
+    let lineHighlights = 0;
+    for (const run of parsed.runs) {
+      if (run.highlightIndex === undefined) continue;
+      lineHighlights = Math.max(lineHighlights, run.highlightIndex + 1);
+      run.highlightIndex += highlightBase;
+    }
+    highlightBase += lineHighlights;
 
     if (!constraintWidth || constraintWidth <= 0 || !baseFontSize || !measureFn) {
       result.push(parsed);
@@ -315,10 +331,10 @@ function tokensToRuns(tokens: { word: string; run: TextRun; trailingSpace: boole
     const t = tokens[i];
     const text = (i > 0 ? " " : "") + t.word;
     const last = result[result.length - 1];
-    if (last && last.bold === t.run.bold && last.italic === t.run.italic && last.link === t.run.link && last.wikilink === t.run.wikilink && last.highlight === t.run.highlight && last.highlightFlag === t.run.highlightFlag && last.youAreHere === t.run.youAreHere) {
+    if (last && last.bold === t.run.bold && last.italic === t.run.italic && last.link === t.run.link && last.wikilink === t.run.wikilink && last.highlight === t.run.highlight && last.highlightFlag === t.run.highlightFlag && last.highlightIndex === t.run.highlightIndex && last.youAreHere === t.run.youAreHere) {
       last.text += text;
     } else {
-      result.push({ text, bold: t.run.bold, italic: t.run.italic, sizeScale: t.run.sizeScale, link: t.run.link, wikilink: t.run.wikilink, highlight: t.run.highlight, highlightFlag: t.run.highlightFlag, youAreHere: t.run.youAreHere });
+      result.push({ text, bold: t.run.bold, italic: t.run.italic, sizeScale: t.run.sizeScale, link: t.run.link, wikilink: t.run.wikilink, highlight: t.run.highlight, highlightFlag: t.run.highlightFlag, highlightIndex: t.run.highlightIndex, youAreHere: t.run.youAreHere });
     }
   }
   return result;

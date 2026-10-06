@@ -277,6 +277,13 @@
   overflow: hidden;
   position: relative;
 }
+/* A notebook's box clips rather than hides: `clip` is not a scroll
+   container, so typing past the pane's edge in a text shape can't make
+   WebKit scroll the canvas sideways to follow the caret (see
+   notebook/scroll-guard.ts, which catches the boxes above this one). */
+.floating-pane-content:has(> canvas) {
+  overflow: clip;
+}
 
 /* Prevent inactive pane editors from receiving focus/input */
 .floating-pane:not(.active) .floating-pane-content {

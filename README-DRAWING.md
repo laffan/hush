@@ -153,7 +153,7 @@ text behind.
 
 ### Undo/redo
 
-Drawing actions flow into Hush's snapshot-based `UndoManager` — the same `⌘Z` stack as every other notebook action. Engine callbacks bridge mutations into `state.shapes` and call `state.recordHistory()`; the shim's `isDiffing()` lets callbacks fired *by* a state→engine reflection (undo restoring shapes → `removeStrokes` → `onStrokesRemoved`) skip recording, or an undo would clobber the redo stack. The 2-/3-finger taps call `state.undo()`/`redo()` directly. `engine/history.js` (the reference demo's command stack) is unwired, pending removal.
+Drawing actions flow into Hush's snapshot-based `UndoManager` — the same `⌘Z` stack as every other notebook action. Engine callbacks bridge mutations into `state.shapes` and call `state.recordHistory()`; the shim's `isDiffing()` lets callbacks fired *by* a state→engine reflection (undo restoring shapes → `removeStrokes` → `onStrokesRemoved`) skip recording, or an undo would clobber the redo stack. The 2-/3-finger taps call `state.undo()`/`redo()` directly — here while the draw tool has the SVG up; under the other tools `input-handler.ts` recognises the same taps on the canvas. `engine/history.js` (the reference demo's command stack) is unwired, pending removal.
 
 ## Development rules
 

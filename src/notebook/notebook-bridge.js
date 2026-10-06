@@ -178,8 +178,8 @@ async function _mountNotebookImpl(container, fileId, state) {
       splits: snapshot.splits,
       proof: snapshot.proof || null,
       bookmarks: snapshot.bookmarks,
+      flowEdges: snapshot.flowEdges,
     });
-    canvasInstance.state.flowchart.deserialize(snapshot.flowEdges);
     // Restore the saved pan / zoom so reopening a notebook lands the
     // user back where they were. Only applied on the initial mount —
     // sync pulls (`reloadNotebookShapes`) deliberately leave the camera

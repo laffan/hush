@@ -320,8 +320,8 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
         splits: snapshot.splits,
         proof: snapshot.proof || null,
         bookmarks: snapshot.bookmarks,
+        flowEdges: snapshot.flowEdges,
       });
-      canvas.state.flowchart.deserialize(snapshot.flowEdges);
       // The per-notebook background is content too — a proof's blank
       // page most of all. A column that ignored it showed the global
       // pattern, and its autosave then wrote the file without one.

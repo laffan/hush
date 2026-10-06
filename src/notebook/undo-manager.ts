@@ -79,6 +79,47 @@ function snapshot(cp: NotebookCheckpoint): NotebookCheckpoint {
   };
 }
 
+/** Two shapes hold the same content: the same object, or copies whose
+ *  own fields are all identical (`{ ...s, text }` with an unchanged text
+ *  keeps every nested reference). */
+function sameShape(a: Shape, b: Shape): boolean {
+  if (a === b) return true;
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  const ra = a as unknown as Record<string, unknown>;
+  const rb = b as unknown as Record<string, unknown>;
+  return ka.every((k) => ra[k] === rb[k]);
+}
+
+function sameRecords<T>(a: T[] | undefined, b: T[] | undefined): boolean {
+  const x = a || [], y = b || [];
+  if (x.length !== y.length) return false;
+  for (let i = 0; i < x.length; i++) {
+    const p = x[i] as unknown as Record<string, unknown>;
+    const q = y[i] as unknown as Record<string, unknown>;
+    if (p === q) continue;
+    const kp = Object.keys(p);
+    if (kp.length !== Object.keys(q).length || !kp.every((k) => p[k] === q[k])) return false;
+  }
+  return true;
+}
+
+/** A checkpoint that changes nothing against `prev`. Recording one put a
+ *  step on the stack that ⌘Z then spent doing nothing visible — opening
+ *  a text box and leaving it unchanged, a tap that commits nothing — so
+ *  undo read as broken, needing an extra press per no-op. */
+function unchanged(prev: NotebookCheckpoint, next: NotebookCheckpoint): boolean {
+  if (prev.shapes.length !== next.shapes.length) return false;
+  for (let i = 0; i < prev.shapes.length; i++) {
+    if (!sameShape(prev.shapes[i], next.shapes[i])) return false;
+  }
+  return prev.grab === next.grab
+    && sameRecords(prev.flowEdges, next.flowEdges)
+    && sameRecords(prev.layers, next.layers)
+    && sameRecords(prev.splits, next.splits)
+    && sameRecords(prev.bookmarks, next.bookmarks);
+}
+
 /**
  * Snapshot-based undo/redo manager.
  *
@@ -100,6 +141,8 @@ export class UndoManager {
 
   /** Record the state after a completed action (creates a new checkpoint). */
   record(checkpoint: NotebookCheckpoint) {
+    const current = this._history[this._index];
+    if (current && unchanged(current, checkpoint)) return;
     // Discard any redo entries past the current index
     this._history.splice(this._index + 1);
     this._history.push(snapshot(checkpoint));

@@ -493,30 +493,36 @@ export class FlowchartLayer<S extends FlowNode> {
    * and another going out on the same side draws them straight through
    * one another. Group every endpoint by (node, side), then fan each
    * group out along that side — incoming first, so it sits above (or
-   * left of) the outgoing one.
+   * left of) the outgoing one, and the rest in the order their other ends
+   * sit along that side. Fanned in the order the edges were made, a
+   * parent whose children had been rearranged kept its lines in the old
+   * order, and they crossed on the way to the boxes.
    */
   private edgeOffsets(byId: Map<string, S>): Map<string, { s: Pt; e: Pt }> {
     const out = new Map<string, { s: Pt; e: Pt }>();
     if (this.edges.length < 2) return out;
     // key = `${nodeId}\u0000${side}` → endpoints landing there.
-    const groups = new Map<string, { id: string; incoming: boolean; side: string }[]>();
-    const add = (key: string, v: { id: string; incoming: boolean; side: string }) => {
+    const groups = new Map<string, { id: string; incoming: boolean; side: string; far: Pt }[]>();
+    const add = (key: string, v: { id: string; incoming: boolean; side: string; far: Pt }) => {
       const list = groups.get(key);
       if (list) list.push(v); else groups.set(key, [v]);
     };
     for (const e of this.edges) {
       const a = byId.get(e.from), b = byId.get(e.to);
       if (!a || !b) continue;
-      const side = exitSide(this.geometry(this.cfg.getBounds(a), this.cfg.getBounds(b)));
+      const ab = this.cfg.getBounds(a), bb = this.cfg.getBounds(b);
+      const side = exitSide(this.geometry(ab, bb));
       const inSide = oppositeSide(side);
-      add(`${e.from}\u0000${side}`, { id: e.id, incoming: false, side });
-      add(`${e.to}\u0000${inSide}`, { id: e.id, incoming: true, side: inSide });
+      const centre = (x: FlowBounds): Pt => ({ x: (x.minX + x.maxX) / 2, y: (x.minY + x.maxY) / 2 });
+      add(`${e.from}\u0000${side}`, { id: e.id, incoming: false, side, far: centre(bb) });
+      add(`${e.to}\u0000${inSide}`, { id: e.id, incoming: true, side: inSide, far: centre(ab) });
     }
     const step = this.cfg.arrowWidth * 1.6 + 4;
     for (const list of groups.values()) {
       if (list.length < 2) continue;
-      list.sort((x, y) => Number(y.incoming) - Number(x.incoming));
       const axis = sideAxis(list[0].side);
+      const along = (p: Pt) => p.x * axis.x + p.y * axis.y;
+      list.sort((x, y) => (Number(y.incoming) - Number(x.incoming)) || (along(x.far) - along(y.far)));
       list.forEach((m, i) => {
         const d = (i - (list.length - 1) / 2) * step;
         const cur = out.get(m.id) || { s: { x: 0, y: 0 }, e: { x: 0, y: 0 } };

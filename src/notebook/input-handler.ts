@@ -9,6 +9,17 @@ import {
   handleCanvasPasteEvent, handleCanvasPasteShortcut, isClipboardOwner,
   releasePasteCatcher, writeClipboardText,
 } from "./canvas-paste";
+import { getActiveNotebookState } from "./notes-canvas";
+
+/** Whether `state`'s canvas is the one ⌘Z / ⌘⇧Z belong to: the canvas
+ *  last pressed on (or, with none, any). Each canvas listens on the
+ *  window, and the focus checks only rule out *floating panes* — so a
+ *  main canvas, a project gutter's canvases and a stack's columns all
+ *  took the same keystroke, each stepping its own history back. */
+function ownsHistoryKeys(state: DrawingState): boolean {
+  const active = getActiveNotebookState();
+  return !active || active === state;
+}
 
 /** Shortcut keys read from Hush settings (camelCase field names). */
 export interface NotebookShortcuts {
@@ -253,6 +264,40 @@ export function bindInputEvents(
     if (twoFingerActive && e.targetTouches.length < 2) twoFingerActive = false;
   });
 
+  // Two-finger tap → undo, three-finger tap → redo, under every tool.
+  // The drawing layer's recogniser (drawing/engine/gestures.js) only
+  // hears touches while the draw tool has its SVG over the canvas; under
+  // Select, Text or anything else the canvas gets them, and a two-finger
+  // tap was only the start of a pan — so the gesture did nothing there.
+  // A burst counts while every finger stays put and all are up again
+  // inside TAP_MAX_MS.
+  const TAP_MAX_MS = 350;
+  const TAP_SLOP2 = 10 * 10;
+  let tapBurst: { start: number; fingers: number; moved: boolean; at: Map<number, { x: number; y: number }> } | null = null;
+  on(canvas, "touchstart", (e) => {
+    if (!tapBurst) tapBurst = { start: performance.now(), fingers: 0, moved: false, at: new Map() };
+    for (const t of Array.from(e.changedTouches)) tapBurst.at.set(t.identifier, { x: t.clientX, y: t.clientY });
+    tapBurst.fingers = Math.max(tapBurst.fingers, e.targetTouches.length);
+  }, { passive: true });
+  on(canvas, "touchmove", (e) => {
+    if (!tapBurst || tapBurst.moved) return;
+    for (const t of Array.from(e.changedTouches)) {
+      const p = tapBurst.at.get(t.identifier);
+      if (p && (t.clientX - p.x) ** 2 + (t.clientY - p.y) ** 2 > TAP_SLOP2) { tapBurst.moved = true; break; }
+    }
+  }, { passive: true });
+  on(canvas, "touchend", (e) => {
+    if (!tapBurst || e.targetTouches.length > 0) return;
+    const burst = tapBurst;
+    tapBurst = null;
+    if (burst.moved || performance.now() - burst.start > TAP_MAX_MS) return;
+    if (burst.fingers === 2) state.undo();
+    else if (burst.fingers === 3) state.redo();
+  });
+  on(canvas, "touchcancel", (e) => {
+    if (e.targetTouches.length === 0) tapBurst = null;
+  });
+
   // Space-to-pan state. `spaceEnabledPan` tracks whether THIS keydown
   // is the one that flipped isPanning on — so a persistent pan from the
   // toolbar grab button survives a space tap-and-release.
@@ -365,8 +410,8 @@ export function bindInputEvents(
     if (matchesKey(e, sc.shortcutNbDelete)) { state.deleteSelected(); return; }
     if (matchesKey(e, sc.shortcutNbUngroup)) { e.preventDefault(); state.ungroupSelected(); return; }
     if (matchesKey(e, sc.shortcutNbGroup)) { e.preventDefault(); state.groupSelected(); return; }
-    if (matchesKey(e, sc.shortcutNbRedo)) { e.preventDefault(); state.redo(); return; }
-    if (matchesKey(e, sc.shortcutNbUndo)) { e.preventDefault(); state.undo(); return; }
+    if (matchesKey(e, sc.shortcutNbRedo)) { if (ownsHistoryKeys(state)) { e.preventDefault(); state.redo(); } return; }
+    if (matchesKey(e, sc.shortcutNbUndo)) { if (ownsHistoryKeys(state)) { e.preventDefault(); state.undo(); } return; }
     if (matchesKey(e, sc.shortcutNbResetZoom)) {
       e.preventDefault();
       // Reset zoom also squares up any two-finger canvas rotation —
@@ -425,7 +470,7 @@ export function bindInputEvents(
       return;
     }
     // Ctrl+Y as alternative redo (not customizable)
-    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === "y" || e.key === "Y")) { e.preventDefault(); state.redo(); }
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === "y" || e.key === "Y") && ownsHistoryKeys(state)) { e.preventDefault(); state.redo(); }
   }) as unknown as (e: HTMLElementEventMap["keydown"]) => void);
 
   on(window as unknown as HTMLElement, "keyup", ((e: KeyboardEvent) => {

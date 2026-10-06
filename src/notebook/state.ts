@@ -3758,7 +3758,7 @@ export class DrawingState extends EventTarget {
       }
     }
     return {
-      x: (inset + window.innerWidth) / 2,
+      x: (leftInset + window.innerWidth - rightInset) / 2,
       y: window.innerHeight / 2,
     };
   }
