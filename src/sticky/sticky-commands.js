@@ -9,11 +9,16 @@
  *     stickies with any text to its Inbox as a card (the CARDS notebook,
  *     cards/card-courier.js), in the same order, and closes it. An empty
  *     sticky is left where it is.
+ *   - **Convert Current Sticky to Card** does the same for the one desk or
+ *     document sticky being worked on (the active one): a desk sticky goes
+ *     to its desk's Inbox, a document sticky to the Inbox of the desk the
+ *     document is on.
  */
 import {
   addSticky, canAddFileSticky, canAddProjectSticky,
-  deskStickies, moveStickies, closeStickies,
+  deskStickies, moveStickies, closeStickies, currentSticky,
 } from "./sticky-notes.js";
+import { findNodeByFileId, findAncestorIds } from "../state/tree-helpers.js";
 import { HEADER_HEIGHT } from "./sticky-shared.js";
 
 const GRID_GAP = 16;
@@ -71,6 +76,47 @@ export async function convertDeskStickiesToCards(state) {
     + (left ? ` · ${left} couldn't be sent` : ""));
 }
 
+/** The desk a desk or document sticky belongs to, or null. A document
+ *  sticky's target is `<ctx>:<fileId>`; the file's top ancestor is its
+ *  desk. */
+function deskOfSticky(state, note) {
+  if (note.kind === "desk") return note.target || null;
+  if (note.kind !== "file" || !note.target) return null;
+  const fileId = note.target.slice(note.target.indexOf(":") + 1);
+  const node = findNodeByFileId(state.fileTree || [], fileId);
+  const path = node ? findAncestorIds(state.fileTree || [], node.id) : null;
+  const top = path?.[0] && (state.fileTree || []).find((n) => n.id === path[0]);
+  return top?.type === "desk" ? top.id : null;
+}
+
+/** The active sticky, when it is one this can convert. */
+function convertibleSticky(state) {
+  const note = currentSticky();
+  return note && deskOfSticky(state, note) ? note : null;
+}
+
+/** Send the active desk / document sticky to its desk's Inbox as a card. */
+export async function convertCurrentStickyToCard(state) {
+  const note = convertibleSticky(state);
+  if (!note) return;
+  const text = note.text.replace(/\s+$/, "");
+  if (!text.trim()) { void toast("This sticky is empty"); return; }
+  const { confirmLongCard } = await import("../cards/card-confirm.js");
+  if (!(await confirmLongCard(text))) return;
+  const { sendCardToInbox } = await import("../cards/card-courier.js");
+  const { specialNodeId } = await import("../state/state-desks.js");
+  const deskId = deskOfSticky(state, note);
+  const desk = (state.fileTree || []).find((n) => n.id === deskId);
+  try {
+    const home = await sendCardToInbox(state, text, null, specialNodeId("__inbox__", deskId));
+    closeStickies([note.id]);
+    void toast(`Sticky sent to ${desk?.name ? `${desk.name} / ` : ""}Inbox / ${home}`);
+  } catch (err) {
+    console.error("Convert sticky to card failed:", err);
+    void toast("Couldn't send the sticky to the Inbox");
+  }
+}
+
 export function buildStickyCommands({ icons }) {
   return [
     // Temporary reminders floating above every surface. File + project
@@ -91,6 +137,10 @@ export function buildStickyCommands({ icons }) {
       keywords: "grid tidy layout",
       hiddenIf: (s) => !hasDeskStickies(s),
       action: (s) => arrangeDeskStickies(s) },
+    { id: "sticky-current-to-card", section: "Sticky Notes", label: "Convert Current Sticky to Card", icon: icons.sticky, shortcutKey: null, ctx: "shared",
+      keywords: "inbox",
+      hiddenIf: (s) => !convertibleSticky(s),
+      action: (s) => convertCurrentStickyToCard(s) },
     { id: "sticky-desk-to-cards", section: "Sticky Notes", label: "Convert Desk Stickies to Cards", icon: icons.sticky, shortcutKey: null, ctx: "shared",
       keywords: "inbox",
       hiddenIf: (s) => !hasDeskStickies(s),

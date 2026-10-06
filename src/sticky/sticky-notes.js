@@ -110,9 +110,12 @@ export function initStickyNotes(state) {
   // defers to the one already showing the note (sticky-window-claims.js).
   void initStickyClaims({ refresh });
 
-  // Click anywhere outside a sticky drops the active highlight.
+  // Click anywhere outside a sticky drops the active highlight — except
+  // in the command palette or on its on-screen button (iPad), since the
+  // palette's "Convert Current Sticky to Card" acts on the active sticky
+  // and is itself reached by a click.
   window.addEventListener("pointerdown", (e) => {
-    if (e.target instanceof Element && e.target.closest(".sticky-note")) return;
+    if (e.target instanceof Element && e.target.closest(".sticky-note, .cmd-palette-overlay, .cmd-palette-button")) return;
     for (const [, n] of notes) n.el.classList.remove("active");
   }, true);
 }
@@ -543,6 +546,16 @@ export function deskStickies(deskId) {
     .filter((n) => n.kind === "desk" && n.target === deskId)
     .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
     .map((n) => ({ id: n.id, text: n.textarea ? n.textarea.value : (n.text || ""), width: n.width, height: n.height, collapsed: !!n.collapsed }));
+}
+
+/** The sticky being worked on — the active one, while it's on screen —
+ *  as `{ id, kind, target, text }`, or null. */
+export function currentSticky() {
+  for (const n of notes.values()) {
+    if (!n.el.classList.contains("active") || !n.el.getClientRects().length) continue;
+    return { id: n.id, kind: n.kind, target: n.target, text: n.textarea ? n.textarea.value : (n.text || "") };
+  }
+  return null;
 }
 
 /** Put notes at viewport positions: `[{ id, x, y }]`. */
