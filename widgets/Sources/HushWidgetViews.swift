@@ -6,8 +6,9 @@ import WidgetKit
 
 /// The shortest a row may be. Every size uses it, with the same type —
 /// a large widget is a taller list, not a bigger one. `FittedList` fits
-/// as many rows of this height as the space holds, then shares out what
-/// is left over between them, so the list always runs to the bottom.
+/// as many rows of this height as the space holds, then spreads the
+/// entries it shows over the whole height, so the list always runs to
+/// the bottom.
 let minRowHeight: CGFloat = 26
 
 /// "5 min. ago", "yesterday" — measured from when the entry is drawn.
@@ -42,11 +43,11 @@ struct WidgetTitle: View {
 }
 
 /// As many rows as fit the space left under the widget's header — no
-/// half rows — with a faint rule between them. When there are more
-/// entries than fit, the rows grow evenly to take up the remainder, so
-/// the last one meets the bottom edge instead of leaving up to a row's
-/// height empty below it; a short list keeps rows at `minRowHeight`,
-/// from the top.
+/// half rows — with a faint rule between them. Whatever entries are
+/// shown share the whole height evenly, so the list always runs to the
+/// bottom edge: more entries than fit, and the leftover is spread over
+/// the ones that do; fewer, and each gets more padding rather than the
+/// list stopping short.
 struct FittedList<Item: Identifiable, Row: View>: View {
   let items: [Item]
   @ViewBuilder let row: (Item) -> Row
@@ -55,9 +56,8 @@ struct FittedList<Item: Identifiable, Row: View>: View {
     GeometryReader { geo in
       let height = geo.size.height
       let fits = max(1, Int((height + 1) / minRowHeight))
-      let fills = items.count >= fits
-      let rowHeight = fills ? height / CGFloat(fits) : minRowHeight
       let shown = Array(items.prefix(fits).enumerated())
+      let rowHeight = height / CGFloat(max(1, shown.count))
       VStack(spacing: 0) {
         ForEach(shown, id: \.element.id) { index, item in
           row(item)
