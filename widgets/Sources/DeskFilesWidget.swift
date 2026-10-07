@@ -100,8 +100,8 @@ struct DeskFilesView: View {
         if desk.recent.isEmpty {
           EmptyNote(text: "Nothing opened on this desk yet.")
         } else {
-          FittedList(items: desk.recent, rowHeight: rowHeight(family)) { file in
-            FileLink(file: file, showsDetail: family != .systemSmall, compact: isCompact(family))
+          FittedList(items: desk.recent) { file in
+            FileLink(file: file, showsDetail: family != .systemSmall)
           }
         }
       } else {
@@ -124,21 +124,22 @@ struct DeskFilesView: View {
   private func header(_ desk: WidgetDesk) -> some View {
     if family == .systemSmall {
       VStack(alignment: .leading, spacing: 6) {
-        deskName(desk, font: .subheadline.weight(.semibold))
-        HStack(spacing: 6) { buttons(desk, width: nil, height: 24) }
+        deskName(desk)
+        HStack(spacing: 6) { buttons(desk, width: nil, height: 26) }
       }
     } else {
       HStack(alignment: .center, spacing: 6) {
-        deskName(desk, font: .headline)
-        buttons(desk, width: 28, height: 28)
+        deskName(desk)
+        buttons(desk, width: 28, height: 26)
       }
     }
   }
 
-  private func deskName(_ desk: WidgetDesk, font: Font) -> some View {
+  /// The same weight and size in every widget size.
+  private func deskName(_ desk: WidgetDesk) -> some View {
     Link(destination: HushLink.openDesk(desk.id)) {
       Text(desk.name)
-        .font(font)
+        .font(.subheadline.weight(.semibold))
         .lineLimit(1)
         .frame(maxWidth: .infinity, alignment: .leading)
     }

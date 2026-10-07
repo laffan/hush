@@ -4,20 +4,11 @@ import WidgetKit
 // Building blocks the three widgets share. Hush's own look: monochrome,
 // the system face, one line per entry, nothing louder than the names.
 
-/// One row's height. Fixed, so a list can work out how many rows its
-/// space holds (`FittedList`) instead of guessing a count per size: the
-/// same family is a different size on an iPhone, an iPad and the Mac.
-/// The air above and below the name is what separates the rows, with a
-/// hairline between them.
-func rowHeight(_ family: WidgetFamily) -> CGFloat {
-  family == .systemLarge ? 30 : 26
-}
-
-/// Small and medium widgets set their names a size down, so four or so
-/// rows fit under a title.
-func isCompact(_ family: WidgetFamily) -> Bool {
-  family != .systemLarge
-}
+/// The shortest a row may be. Every size uses it, with the same type —
+/// a large widget is a taller list, not a bigger one. `FittedList` fits
+/// as many rows of this height as the space holds, then shares out what
+/// is left over between them, so the list always runs to the bottom.
+let minRowHeight: CGFloat = 26
 
 /// "5 min. ago", "yesterday" — measured from when the entry is drawn.
 /// Not the live-ticking `Text(_:style: .relative)`, which reads
@@ -51,15 +42,21 @@ struct WidgetTitle: View {
 }
 
 /// As many rows as fit the space left under the widget's header — no
-/// half rows — each `rowHeight` tall, with a faint rule between them.
+/// half rows — with a faint rule between them. When there are more
+/// entries than fit, the rows grow evenly to take up the remainder, so
+/// the last one meets the bottom edge instead of leaving up to a row's
+/// height empty below it; a short list keeps rows at `minRowHeight`,
+/// from the top.
 struct FittedList<Item: Identifiable, Row: View>: View {
   let items: [Item]
-  let rowHeight: CGFloat
   @ViewBuilder let row: (Item) -> Row
 
   var body: some View {
     GeometryReader { geo in
-      let fits = max(0, Int((geo.size.height + 1) / rowHeight))
+      let height = geo.size.height
+      let fits = max(1, Int((height + 1) / minRowHeight))
+      let fills = items.count >= fits
+      let rowHeight = fills ? height / CGFloat(fits) : minRowHeight
       let shown = Array(items.prefix(fits).enumerated())
       VStack(spacing: 0) {
         ForEach(shown, id: \.element.id) { index, item in
@@ -91,7 +88,6 @@ struct EntryRow: View {
   var detail: String? = nil
   var date: Date? = nil
   var showsDetail = true
-  var compact = false
 
   var body: some View {
     HStack(spacing: 6) {
@@ -100,7 +96,7 @@ struct EntryRow: View {
         .foregroundStyle(.secondary)
         .frame(width: 14)
       Text(title)
-        .font(compact ? .footnote : .subheadline)
+        .font(.footnote)
         .lineLimit(1)
         .truncationMode(.tail)
       Spacer(minLength: 4)
@@ -128,13 +124,12 @@ struct FileLink: View {
   let file: WidgetFile
   var detail: String? = nil
   var showsDetail = true
-  var compact = false
 
   var body: some View {
     Link(destination: HushLink.openFile(file)) {
       EntryRow(
         symbol: HushGlyph.symbol(for: file.type), title: file.name,
-        detail: detail, date: file.openedDate, showsDetail: showsDetail, compact: compact)
+        detail: detail, date: file.openedDate, showsDetail: showsDetail)
     }
   }
 }

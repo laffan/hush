@@ -42,16 +42,16 @@ struct RecentDesksView: View {
       if desks.isEmpty {
         EmptyNote(text: "Open Hush to see your desks here.")
       } else {
-        FittedList(items: desks, rowHeight: rowHeight(family)) { desk in
+        FittedList(items: desks) { desk in
           Link(destination: HushLink.openDesk(desk.id)) {
             if family == .systemSmall {
-              EntryRow(symbol: HushGlyph.desk, title: desk.name, showsDetail: false, compact: true)
+              EntryRow(symbol: HushGlyph.desk, title: desk.name, showsDetail: false)
             } else {
               // Wider sizes say what was last open there.
               EntryRow(
                 symbol: HushGlyph.desk, title: desk.name,
                 detail: desk.recent.first?.name,
-                date: desk.openedDate, compact: isCompact(family))
+                date: desk.openedDate)
             }
           }
         }
@@ -89,12 +89,12 @@ struct RecentFilesView: View {
       if files.isEmpty {
         EmptyNote(text: "Files you open in Hush appear here.")
       } else {
-        FittedList(items: files, rowHeight: rowHeight(family)) { file in
+        FittedList(items: files) { file in
           // Across desks, the desk is the useful detail; a small widget
           // has room for the name only.
           FileLink(
             file: file, detail: file.deskName,
-            showsDetail: family != .systemSmall, compact: isCompact(family))
+            showsDetail: family != .systemSmall)
         }
       }
     }
