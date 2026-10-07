@@ -1,6 +1,7 @@
 /**
- * Midnight mode — turning it on and off, and keeping every window in
- * step. The model (what it paints, when it ends) is `midnight-mode.js`.
+ * Midnight mode — turning it on and off, choosing between it and the
+ * other three appearances, and keeping every window in step. The model
+ * (what it paints, when it ends) is `midnight-mode.js`.
  *
  * On: `settings.midnightUntil` is set to the next 8am and `style-changed`
  * repaints everything through the ordinary style pipeline, which reads
@@ -15,6 +16,7 @@
  * the app, which Rust handles by clearing the field at launch.
  */
 import { isMidnightActive, nextMidnightEnd, MIDNIGHT_FG } from "./midnight-mode.js";
+import { applyAppearance } from "../settings/settings-ui.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 
@@ -67,6 +69,42 @@ export function toggleMidnightMode(state) {
   return setMidnightMode(state, !isMidnightActive(state.settings));
 }
 
+/** The appearance the user has chosen, as one of four: `light`, `dark`,
+ *  `auto` (System) or `midnight`. Midnight is a fourth appearance that
+ *  happens to also take over the background and text colours, so it is
+ *  shown and chosen alongside the other three — and, like them, it is
+ *  app-wide: one setting, not a per-desk or per-style choice. */
+export function currentAppearanceChoice(settings) {
+  if (isMidnightActive(settings)) return "midnight";
+  return settings?.appearance || "auto";
+}
+
+/** Choose one of the four appearances. Every appearance control goes
+ *  through here (the palette's rows, the style editor's toggle), which
+ *  is what guarantees midnight mode never sits under a light appearance:
+ *  choosing Light, Dark or System always ends it, even when that
+ *  appearance is already the stored one — "Light" picked while the page
+ *  is midnight black is a request for light. Choosing Midnight leaves
+ *  the stored appearance alone, so the one underneath comes back when
+ *  it ends. */
+export async function chooseAppearance(state, choice) {
+  if (choice === "midnight") {
+    if (!isMidnightActive(state.settings)) await setMidnightMode(state, true);
+    return;
+  }
+  const midnight = isMidnightActive(state.settings);
+  if (!midnight && (state.settings?.appearance || "auto") === choice) return;
+  const patch = { appearance: choice };
+  if (midnight || state.settings?.midnightUntil != null) patch.midnightUntil = null;
+  const write = state.updateSettings(patch);
+  applyAppearance(choice);
+  paintedActive = false;
+  scheduleEnd(state);
+  state.emit("style-changed");
+  state.emit("theme-changed");
+  await write;
+}
+
 /** Wire midnight mode up for this window. Called once from main.js. */
 export function installMidnightMode(state) {
   document.documentElement.style.setProperty("--midnight-fg", MIDNIGHT_FG);
@@ -80,7 +118,8 @@ export function installMidnightMode(state) {
   // A stale end moment (the app was left open overnight in another
   // window that has since closed) is tidied away rather than carried.
   checkExpiry(state);
-  // A sibling window toggling it arrives as a settings merge.
+  // A sibling window toggling it — or choosing another appearance —
+  // arrives as a settings merge.
   state.on("remote-settings-merged", () => {
     if (isMidnightActive(state.settings) !== paintedActive) repaint(state);
     else scheduleEnd(state);

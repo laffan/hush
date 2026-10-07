@@ -69,7 +69,6 @@ import {
 import { buildDeskCommands } from "./command-palette-desk-commands.js";
 import { buildGoogleCommands } from "./command-palette-google-commands.js";
 import { buildStickyCommands } from "./sticky/sticky-commands.js";
-import { buildMidnightCommands } from "./midnight/midnight-commands.js";
 
 /** Resolve the editor view the fold commands should act on: the focused
  *  pane / stack column if one owns the active mode context, else the
@@ -323,7 +322,6 @@ function buildCommands(state) {
     // in the old sidebar list.
     ...buildUseStyleCommands(state),
     ...buildAppearanceCommands(state),
-    ...buildMidnightCommands(state),
     { id: "style-lock", section: "Styles", label: "Lock style to document", icon: icons.styles, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.currentFileId || !!getLockedStyleId(s),
       action: async (s) => { await setLockedStyleId(s, s.settings.activeStyleId || "__default__"); } },

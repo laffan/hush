@@ -11,19 +11,20 @@ import { openStyleModal } from "./style-modal.js";
 import { escAttr, escHtml, themeBackgrounds, themeForegrounds } from "./styles-panel-shared.js";
 import { resolveStyleForAppearance } from "./styles-panel.js";
 import { fontFallback } from "./style-modal-preview.js";
-import { applyAppearance } from "../settings/settings-ui.js";
 import appearanceLightRaw from "./sidebar_icons/appearance-light.svg?raw";
 import appearanceDarkRaw from "./sidebar_icons/appearance-dark.svg?raw";
 import appearanceAutoRaw from "./sidebar_icons/appearance-auto.svg?raw";
 import { isMidnightActive } from "../midnight/midnight-mode.js";
-import { setMidnightMode } from "../midnight/midnight-controller.js";
-import { MIDNIGHT_ICON } from "../midnight/midnight-commands.js";
+import { setMidnightMode, chooseAppearance, currentAppearanceChoice } from "../midnight/midnight-controller.js";
+import { MIDNIGHT_ICON } from "../midnight/midnight-icon.js";
 
 const APPEARANCE_ICONS = {
   light: appearanceLightRaw,
   dark: appearanceDarkRaw,
   auto: appearanceAutoRaw,
+  midnight: MIDNIGHT_ICON,
 };
+const APPEARANCE_LABELS = { light: "Light", dark: "Dark", auto: "System", midnight: "Midnight mode" };
 
 export function openStyleEditorModal(state) {
   const backdrop = document.createElement("div");
@@ -59,7 +60,9 @@ export function openStyleEditorModal(state) {
   function renderRail() {
     const listEl = backdrop.querySelector(".style-editor-rail-list");
     const styles = state.settings.styles || [];
-    const appearance = state.settings.appearance || "auto";
+    // Midnight mode is the fourth appearance: while it is on, its button
+    // is the lit one, not the stored light / dark / system underneath.
+    const appearance = currentAppearanceChoice(state.settings);
     const rows = [];
 
     // The Default row has no stored style object — synthesize one from the
@@ -116,9 +119,9 @@ export function openStyleEditorModal(state) {
       : "";
 
     const appEl = backdrop.querySelector(".style-editor-rail-appearance");
-    appEl.innerHTML = ["light", "dark", "auto"].map((mode) => {
+    appEl.innerHTML = ["light", "dark", "auto", "midnight"].map((mode) => {
       const active = appearance === mode ? " active" : "";
-      return `<button type="button" class="style-appearance-btn${active}" data-appearance="${mode}" aria-pressed="${appearance === mode}">${APPEARANCE_ICONS[mode]}</button>`;
+      return `<button type="button" class="style-appearance-btn${active}" data-appearance="${mode}" aria-pressed="${appearance === mode}" data-tooltip="${APPEARANCE_LABELS[mode]}">${APPEARANCE_ICONS[mode]}</button>`;
     }).join("");
   }
 
@@ -213,15 +216,14 @@ export function openStyleEditorModal(state) {
     renderRail();
   });
 
-  backdrop.querySelector(".style-editor-rail-appearance").addEventListener("click", (e) => {
+  backdrop.querySelector(".style-editor-rail-appearance").addEventListener("click", async (e) => {
     const btn = e.target.closest("button[data-appearance]");
     if (!btn) return;
     const mode = btn.dataset.appearance;
-    if (state.settings.appearance === mode) return;
-    state.updateSettings({ appearance: mode });
-    applyAppearance(mode);
-    state.emit("style-changed");
-    state.emit("theme-changed");
+    if (currentAppearanceChoice(state.settings) === mode) return;
+    // Light, Dark and System end midnight mode (it never sits under a
+    // light appearance); Midnight starts it. Same path as the palette.
+    await chooseAppearance(state, mode);
     renderRail();
     mountEditor();
   });

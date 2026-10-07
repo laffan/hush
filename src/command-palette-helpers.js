@@ -3,7 +3,8 @@
  * command-palette.js so that file stays under the 700-line cap.
  */
 import { findNodeByFileId, findParentOfNode, nearestAncestorProjectId } from "./state/tree-helpers.js";
-import { applyAppearance } from "./settings/settings-ui.js";
+import { chooseAppearance, currentAppearanceChoice } from "./midnight/midnight-controller.js";
+import { MIDNIGHT_ICON } from "./midnight/midnight-icon.js";
 import appearanceDarkRaw from "./sidebar/sidebar_icons/appearance-dark.svg?raw";
 import appearanceLightRaw from "./sidebar/sidebar_icons/appearance-light.svg?raw";
 import appearanceAutoRaw from "./sidebar/sidebar_icons/appearance-auto.svg?raw";
@@ -15,24 +16,24 @@ const _appearanceIcons = {
   auto: `<svg viewBox="0 0 24 24">${_appearanceInner(appearanceAutoRaw)}</svg>`,
 };
 
-/** Appearance switcher rows — mirrors the toggle on Edit Styles. */
+/** Appearance switcher rows — mirrors the toggle on Edit Styles. Four
+ *  appearances: Midnight mode is the fourth (dark, plus black and grey
+ *  over every style), so exactly one row carries the ✓, and choosing any
+ *  of the other three ends it (`chooseAppearance`). */
 export function buildAppearanceCommands(state) {
-  const current = state.settings?.appearance || "auto";
+  const current = currentAppearanceChoice(state.settings);
   const modes = [
     ["dark", "Dark appearance"],
     ["light", "Light Appearance"],
     ["auto", "System Appearance"],
+    ["midnight", "Midnight mode"],
   ];
   return modes.map(([id, label]) => ({
-    id: `appearance-${id}`, section: "Styles", label: `${label}${current === id ? " ✓" : ""}`,
-    icon: _appearanceIcons[id], shortcutKey: null, ctx: "shared",
-    action: (s) => {
-      if ((s.settings?.appearance || "auto") === id) return;
-      s.updateSettings({ appearance: id });
-      applyAppearance(id);
-      s.emit("style-changed");
-      s.emit("theme-changed");
-    },
+    id: id === "midnight" ? "midnight-mode" : `appearance-${id}`,
+    section: "Styles", label: `${label}${current === id ? " ✓" : ""}`,
+    keywords: id === "midnight" ? "appearance dark black night grey gray dim" : undefined,
+    icon: id === "midnight" ? MIDNIGHT_ICON : _appearanceIcons[id], shortcutKey: null, ctx: "shared",
+    action: (s) => { void chooseAppearance(s, id); },
   }));
 }
 
