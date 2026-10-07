@@ -75,6 +75,17 @@ async function handleUrl(state, url, coldConnect = false) {
     }
   } else if (url.startsWith("hushwriter://")) {
     try {
+      // A home screen widget tap acts in the window that received it,
+      // not in main: it opens or creates something the user expects to
+      // see, and on iPad main can be a window that isn't on screen. A
+      // sticky made there stays there (a note shows in one window at a
+      // time), so the tap appeared to do nothing. widget-links.js picks
+      // one window among those the link reaches, frontmost first.
+      const widgets = await import("../widgets/widget-links.js");
+      if (widgets.isWidgetUrl(url)) {
+        await widgets.handleWidgetUrl(state, url, coldConnect);
+        return;
+      }
       if ((await getCurrentWindowLabel()) === "main") {
         await importHushwriter(state, url, coldConnect);
         return;

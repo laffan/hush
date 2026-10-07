@@ -8,8 +8,12 @@
  *   hushwriter://widget?action=new-notebook&desk=<deskId>
  *   hushwriter://widget?action=new-sticky&desk=<deskId>
  *
- * They arrive through the deep-link router (main window only, like every
- * hushwriter:// request). Unlike a companion app's request, a widget's
+ * They arrive through the deep-link router, which — unlike a companion
+ * app's request, handled in the main window — hands a widget link to the
+ * window that received it: the tap is meant to put something in front
+ * of the user, and on iPad the main window may not be the one on screen.
+ * When the link reaches several windows, the frontmost acts (see
+ * `waitForTurn`). Unlike a companion app's request, a widget's
  * link is fixed — the same URL every time that button is tapped — so it
  * can't carry a nonce, and iPadOS delivers a link more than once (to
  * every window, again from a replayed `getCurrent()` after a webview
@@ -21,6 +25,7 @@
  * goes through.
  */
 import { isIOSTauri } from "../command-palette-helpers.js";
+import { logActivity } from "../activity-log.js";
 
 const ACTIONS = new Set(["open-desk", "open-file", "new-doc", "new-notebook", "new-sticky"]);
 const REPEAT_WINDOW_MS = 4000;
@@ -55,6 +60,27 @@ async function claim(url, cold) {
     } catch (_) { /* storage unavailable — proceed */ }
     return true;
   }
+}
+
+/** Let the frontmost window take the tap. The link can reach every
+ *  window, and the claim goes to whichever asks first, so a window waits
+ *  according to how far it is from the user's eye: focused, none;
+ *  on screen, a moment; hidden, longer. A hidden window still acts if no
+ *  visible one claimed the link — the app was in the background. */
+function waitForTurn() {
+  let delay = 0;
+  try {
+    if (document.visibilityState !== "visible") delay = 700;
+    else if (!document.hasFocus()) delay = 200;
+  } catch (_) { /* no document state — act at once */ }
+  return delay ? new Promise((r) => setTimeout(r, delay)) : Promise.resolve();
+}
+
+async function windowLabel() {
+  try {
+    const { getCurrentWindowLabel } = await import("../multi-window.js");
+    return await getCurrentWindowLabel();
+  } catch (_) { return null; }
 }
 
 /** Bring the (possibly tray-hidden) window forward. `setFocus()` is
@@ -109,7 +135,15 @@ async function openEntry(state, id, type) {
 export async function handleWidgetUrl(state, url, cold = false) {
   const req = parse(url);
   if (!req) return false;
-  if (!(await claim(url, cold))) return true;
+  await waitForTurn();
+  const label = await windowLabel();
+  if (!(await claim(url, cold))) {
+    logActivity("widgets", "info", `Widget tap: ${req.action} — handled by another delivery`, { window: label, cold });
+    return true;
+  }
+  // Every tap that acts is logged with the window that took it, so a tap
+  // that "did nothing" can be traced from Settings → Debug → Activity Log.
+  logActivity("widgets", "info", `Widget tap: ${req.action}`, { desk: req.desk, window: label, cold });
   await surfaceWindow();
 
   const deskId = req.desk || state.settings?.activeDeskId;
@@ -132,7 +166,12 @@ export async function handleWidgetUrl(state, url, cold = false) {
     // An empty desk sticky, focused for typing — what the palette's
     // desk sticky makes, on the desk the widget belongs to.
     const { addSticky } = await import("../sticky/sticky-notes.js");
-    addSticky(state, "desk", { target: deskId });
+    const note = addSticky(state, "desk", { target: deskId });
+    // The app is still coming forward when the note is made; a focus
+    // given then can be dropped, so it is given again once it has.
+    requestAnimationFrame(() => {
+      if (note?.textarea && document.activeElement !== note.textarea) note.textarea.focus();
+    });
   }
   return true;
 }

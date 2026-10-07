@@ -322,7 +322,8 @@ function fileStickiesFor(kind, fileId) {
 /** `opts` lets a caller other than the palette place the note: `target`
  *  picks the file ("doc:<id>") or desk it attaches to (Courier sends to
  *  any document or desk, not only the one on screen), `text` seeds it,
- *  and `focus: false` leaves the caret where it was. */
+ *  and `focus: false` leaves the caret where it was. Returns the note
+ *  (undefined when the scope has nothing to attach to). */
 export function addSticky(state, kind, opts = {}) {
   appState = appState || state;
   ensureContainer();
@@ -377,6 +378,7 @@ export function addSticky(state, kind, opts = {}) {
   repaintDesktop(); // shows on its thumbnail badge / on any Desktop pane
   schedulePersist();
   emitStickiesChanged();
+  return note;
 }
 
 /** Tell the app a sticky was added / removed / re-scoped so the files
