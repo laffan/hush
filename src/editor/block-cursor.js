@@ -1,6 +1,7 @@
 import { getActiveTheme } from "../themes/index.js";
 import { resolveStyleForAppearance } from "../sidebar/styles-panel.js";
 import { glowForAppearance, definesGlow, glowIntensity, definesIdleAnimation, cursorIdleAnimation } from "./cursor-options.js";
+import { isMidnightActive, effectiveAppearanceSetting, MIDNIGHT_COLORS } from "../midnight/midnight-mode.js";
 
 /** Resolve the cursor mode (system / block / underline / thick). New `cursorMode`
  *  field wins; fall back to the legacy `blockCursor` boolean. Style
@@ -26,7 +27,7 @@ function resolveCursorGlow(settings, style, mode, appearance) {
 
 /** The appearance actually on screen — `auto` resolved against the OS. */
 function effectiveAppearance(settings) {
-  const a = settings.appearance || "dark";
+  const a = effectiveAppearanceSetting(settings) || "dark";
   if (a !== "auto") return a;
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
@@ -54,7 +55,7 @@ export function resolveCursorPaint(settings) {
   if (settings.activeStyleId && settings.styles) {
     style = settings.styles.find(s => s.id === settings.activeStyleId) || null;
     if (style) {
-      const { colors } = resolveStyleForAppearance(style, settings.appearance);
+      const { colors } = resolveStyleForAppearance(style, effectiveAppearanceSetting(settings));
       const overrides = colors || style.colorOverrides || {};
       cursorOverride = overrides.cursor || null;
       lineIndicatorOverride = overrides.lineIndicator || null;
@@ -68,6 +69,13 @@ export function resolveCursorPaint(settings) {
     cursorOverride = def.cursor || null;
     lineIndicatorOverride = def.lineIndicator || null;
     glowOverride = def.cursorGlow || null;
+  }
+  // Midnight mode: the caret and the line indicator are the text grey,
+  // and a glow (if the style has one) is the caret's own colour.
+  if (isMidnightActive(settings)) {
+    cursorOverride = MIDNIGHT_COLORS.cursor;
+    lineIndicatorOverride = MIDNIGHT_COLORS.lineIndicator;
+    glowOverride = null;
   }
   const theme = getActiveTheme(settings);
   const fallbackCursor = (theme && theme.headingColor) || null;

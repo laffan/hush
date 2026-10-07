@@ -34,6 +34,7 @@ import { nuttyLight } from "./nutty-light.js";
 import { pokemonColor } from "./pokemon-color.js";
 import { softContrast } from "./soft-contrast.js";
 import { solsticeEstival } from "./solstice-estival.js";
+import { effectiveAppearanceSetting } from "../midnight/midnight-mode.js";
 
 export const themeList = [
   // Light themes — headingColor matches each theme's accent/keyword tones
@@ -82,7 +83,7 @@ export function getActiveTheme(settings) {
     if (style) {
       // New dual-mode style format
       if (style.lightThemeId || style.darkThemeId) {
-        let appearance = settings.appearance || "dark";
+        let appearance = effectiveAppearanceSetting(settings) || "dark";
         if (appearance === "auto") {
           appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
         }
@@ -96,7 +97,7 @@ export function getActiveTheme(settings) {
     }
   }
 
-  let appearance = settings.appearance || "dark";
+  let appearance = effectiveAppearanceSetting(settings) || "dark";
   if (appearance === "auto") {
     appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }

@@ -45,6 +45,7 @@ mod progress_diff;
 mod settings;
 mod snapshots;
 mod startup_trace;
+mod widgets;
 mod wikilinks;
 mod wire;
 pub mod typst_export;
@@ -126,9 +127,13 @@ pub fn run() {
     fs::create_dir_all(data_dir.join("files")).ok();
     fs::create_dir_all(data_dir.join("files").join("images")).ok();
 
-    let settings = startup_trace::record("load settings", || {
+    let mut settings = startup_trace::record("load settings", || {
         AppSettings::load(&data_dir).unwrap_or_default()
     });
+    // Midnight mode lasts until the app closes (or 8am): a fresh launch
+    // never inherits it. Cleared in memory only; the next settings write
+    // takes it off disk too.
+    settings.midnight_until = None;
 
     // One-shot migration from the flat store (files/*.json +
     // file_tree.json) into per-desk folders. Runs before any manager
@@ -210,6 +215,9 @@ pub fn run() {
         // (e.g. zotero-helper's "Send to Hush") instead of iPadOS
         // spawning a new scene for each one. No-op elsewhere.
         .plugin(tauri_plugin_scene_reuse::init())
+        // Home screen widgets: hands their snapshot to WidgetKit on iOS
+        // (widgets.rs drives it). No-op elsewhere, like the two above.
+        .plugin(tauri_plugin_hush_widgets::init())
         .manage(AppState {
             settings: Mutex::new(settings),
             file_manager: Mutex::new(file_manager),
@@ -417,6 +425,8 @@ pub fn run() {
             commands::settings::get_settings,
             commands::settings::save_settings,
             commands::settings::patch_settings,
+            widgets::publish_widget_snapshot,
+            widgets::claim_widget_link,
             commands::files::list_files,
             commands::files::rename_wikilinks,
             commands::files::load_file,

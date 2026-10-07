@@ -1,0 +1,60 @@
+/**
+ * Keeps the home screen widgets' snapshot current. Every window builds
+ * the snapshot (widget-snapshot.js) from what it knows and hands it to
+ * Rust (`publish_widget_snapshot`), which writes it into the App Group
+ * container and asks WidgetKit to reload — or does nothing at all on a
+ * platform or build without widgets.
+ *
+ * Republished, debounced, whenever something the widgets show could have
+ * changed: a file opened (activity stamped), the tree edited (a rename, a
+ * delete, a move to Trash), the desk list changed, a sibling window's
+ * settings merged in. A snapshot identical to the last one sent is not
+ * sent again, and Rust skips a write whose bytes match the file's.
+ */
+import { buildWidgetSnapshot } from "./widget-snapshot.js";
+import { noteRecentActivity, WIDGET_ACTIVITY_EVENT } from "./widget-activity.js";
+
+const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
+const PUBLISH_DELAY_MS = 1200;
+
+let timer = null;
+let lastSent = null;
+
+async function publishNow(state) {
+  timer = null;
+  let json;
+  try { json = JSON.stringify(buildWidgetSnapshot(state)); }
+  catch (e) { console.warn("widget snapshot failed:", e); return; }
+  if (json === lastSent) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("publish_widget_snapshot", { snapshot: json });
+    lastSent = json;
+  } catch (e) {
+    // An older binary without the command, or a platform without
+    // widgets; nothing to retry.
+    console.warn("publish_widget_snapshot failed:", e);
+  }
+}
+
+function schedule(state) {
+  if (timer) clearTimeout(timer);
+  timer = setTimeout(() => { void publishNow(state); }, PUBLISH_DELAY_MS);
+}
+
+/** Wire the publisher up for this window. Called once from main.js. */
+export function installWidgetPublisher(state) {
+  if (!IS_TAURI) return;
+  // Switching desks is a visit even before a file opens there.
+  state.on("active-desk-changed", (deskId) => noteRecentActivity(state, deskId));
+  const onChange = () => schedule(state);
+  for (const ev of [
+    WIDGET_ACTIVITY_EVENT, "files-changed", "desks-changed",
+    "active-desk-changed", "remote-settings-merged",
+  ]) state.on(ev, onChange);
+  // The desk this window opened on counts as visited, and the first
+  // snapshot of the session goes out once the tree has loaded.
+  const deskId = state.settings?.activeDeskId;
+  if (deskId) noteRecentActivity(state, deskId);
+  schedule(state);
+}

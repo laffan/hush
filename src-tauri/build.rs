@@ -44,8 +44,26 @@ fn stamp_build_info() {
     println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
 }
 
+/// macOS widgets (`macos-widgets` feature): compile the Swift bridge
+/// that writes the widget snapshot into the App Group container and
+/// reloads WidgetKit, and link it in. Host and target are both macOS
+/// for that build; an iOS build with the feature on (it does nothing
+/// there — the iOS half is tauri-plugin-hush-widgets) skips it.
+#[cfg(feature = "macos-widgets")]
+fn link_macos_widget_bridge() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        // WidgetKit is macOS 11+; the extension itself targets 14.
+        swift_rs::SwiftLinker::new("11.0")
+            .with_package("hush-widget-bridge", "./widget-bridge-macos/")
+            .link();
+    }
+    println!("cargo:rerun-if-env-changed=HUSH_MACOS_APP_GROUP");
+}
+
 fn main() {
     stamp_build_info();
+    #[cfg(feature = "macos-widgets")]
+    link_macos_widget_bridge();
 
     // Fix: swift-rs hardcodes a clang version in the library search path
     // (e.g. clang/17/lib/darwin) which may not match the installed Xcode.

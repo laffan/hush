@@ -116,6 +116,13 @@
      dialled in is still exactly --column-width — without it the
      scroller clipped the marks at the column edge. */
   --overlay-gutter: 28px;
+  /* Zen's text size stands in for the document's. Headings are sized
+     as multiples of --font-size (markdown-highlight.js#headingFontScale),
+     so without this they kept the main editor's absolute size while the
+     body text grew to Zen's — an H1 smaller than the prose around it.
+     Re-pointing the property here keeps every level in the proportion
+     it has in the main editor, as a floating pane's size override does. */
+  --font-size: var(--zen-font-size);
   /* Track the editor's --column-width so resizing in Zen matches the
      main editor. Capped at 100 % to keep narrow viewports tidy. */
   width: min(100%, calc(var(--column-width, 800px) + 2 * var(--overlay-gutter)));

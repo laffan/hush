@@ -126,6 +126,23 @@ export function isInboxItem(tree, item) {
   return isInboxId(findParentOfNode(tree, item.id)?.id);
 }
 
+/** Is this row a file kept in a desk's Archive — directly, or inside a
+ *  folder there? Archived files wear the Inbox's "last edited" line too
+ *  (never red: age is what an archive is for). A file inside an archived
+ *  *project* is left alone — it is a part of that project's text, and the
+ *  project's rows keep their own one-line shape. */
+export function isArchiveItem(tree, item) {
+  if (!item?.fileId) return false;
+  if (item.type !== "document" && item.type !== "notebook" && item.type !== "stack") return false;
+  let parent = findParentOfNode(tree, item.id);
+  while (parent) {
+    if (isArchiveId(parent.id)) return true;
+    if (parent.type !== "folder") return false;
+    parent = findParentOfNode(tree, parent.id);
+  }
+  return false;
+}
+
 /** "3 minutes ago" … "12 Mar" — the file's last edit, at the coarsest
  *  granularity that still says something. Recent enough to be about
  *  *this session* reads in relative terms; older than that and the date
@@ -143,14 +160,15 @@ function formatEditedAt(seconds) {
     : { day: "numeric", month: "short", year: "numeric" });
 }
 
-/** The stacked name + "last edited" line an Inbox row wears instead of a
- *  plain filename. Returns "" when the library listing has no mtime for
- *  this file — a PDF (whose bytes never go through `list_files`) or a
- *  file created this tick and not yet re-listed. */
-export function inboxNameHtml(state, item, nameHtml) {
+/** The stacked name + "last edited" line an Inbox (or Archive) row wears
+ *  instead of a plain filename. Returns "" when the library listing has
+ *  no mtime for this file — a PDF (whose bytes never go through
+ *  `list_files`) or a file created this tick and not yet re-listed.
+ *  `markStale` is the Inbox's week-old red; the Archive passes false. */
+export function inboxNameHtml(state, item, nameHtml, markStale = true) {
   const modified = state.files?.find((f) => f.id === item.fileId)?.modified;
   if (typeof modified !== "number" || !modified) return "";
-  const stale = (Math.floor(Date.now() / 1000) - modified) > INBOX_STALE_SECONDS;
+  const stale = markStale && (Math.floor(Date.now() / 1000) - modified) > INBOX_STALE_SECONDS;
   const when = escHtml(formatEditedAt(modified));
   return `<span class="tree-item-name tree-item-inbox">`
     + `<span class="tree-item-inbox-name">${nameHtml}</span>`

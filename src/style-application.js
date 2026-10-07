@@ -9,6 +9,7 @@ import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 import { resolveBackgroundLayersList, resolvePostLayersList } from "./sidebar/styles-panel-shared.js";
 import { themeBackgrounds, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 import { resolveHeadingColor } from "./editor/markdown-highlight.js";
+import { isMidnightActive, effectiveAppearanceSetting, MIDNIGHT_COLORS } from "./midnight/midnight-mode.js";
 
 // Tracks whether the post-layers module has ever been loaded this
 // session. We only `import()` it when a style with at least one enabled
@@ -20,8 +21,10 @@ function loadPostModule() {
   return _postModulePromise;
 }
 
-function syncPostLayersForStyle(style) {
-  const layers = resolvePostLayersList(style).filter(l => l && l.enabled !== false);
+function syncPostLayersForStyle(style, midnight = false) {
+  // Midnight mode takes the window down to black and grey: a tint, a
+  // glow or a translucent window would undo exactly that.
+  const layers = midnight ? [] : resolvePostLayersList(style).filter(l => l && l.enabled !== false);
   if (!layers.length) {
     // Only touch the subsystem if it's already been loaded this session —
     // otherwise importing it just to call unmount would defeat the whole
@@ -50,7 +53,10 @@ function loadBgLayersModule() {
  *  theme/style combinations, and a transparent backdrop makes every
  *  blend mode either a no-op or a black wash. */
 function syncBackgroundLayersForStyle(state, style, appearance, backdropColor) {
-  const layers = resolveBackgroundLayersList(style).filter(l => l && l.enabled !== false);
+  // Midnight mode's background is pure black, so nothing is drawn on it.
+  const layers = isMidnightActive(state.settings)
+    ? []
+    : resolveBackgroundLayersList(style).filter(l => l && l.enabled !== false);
   if (!layers.length) {
     if (_bgLayersModulePromise) {
       loadBgLayersModule().then(m => m.unmountBackgroundLayers()).catch(() => {});
@@ -105,24 +111,32 @@ function applyHeadingColorVar(state, style) {
 
 export function applyActiveStyle(state) {
   const styleId = state.settings.activeStyleId;
+  // Midnight mode keeps the style's fonts and sizes and replaces its
+  // colours: dark appearance, MIDNIGHT_COLORS over every override, no
+  // background or post layers. Everything below reads the appearance
+  // through `appearanceSetting` and the colours through the two
+  // override maps, so that is the whole of it.
+  const midnight = isMidnightActive(state.settings);
+  const appearanceSetting = effectiveAppearanceSetting(state.settings) || "dark";
+  document.documentElement.classList.toggle("midnight-mode", midnight);
   if (!styleId) {
     // Default style — use standard editor settings, then layer the
     // user's per-appearance Default-style colour overrides on top.
     // Resolve which palette to read first so we know whether each
     // override (bg/fg/cursor/selection) has a value or should fall
     // back to the resolved theme's stock colour.
-    let appearance = state.settings.appearance || "dark";
+    let appearance = appearanceSetting;
     if (appearance === "auto") {
       appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     }
-    const defaultColors = appearance === "dark"
+    const defaultColors = midnight ? MIDNIGHT_COLORS : appearance === "dark"
       ? (state.settings.defaultDarkColors || {})
       : (state.settings.defaultLightColors || {});
 
     document.body.classList.remove("style-active");
     const cmEditor = document.querySelector('.cm-editor');
     // Re-apply standard settings (theme + font + size live here)
-    applyAppearance(state.settings.appearance || "dark");
+    applyAppearance(appearanceSetting);
     applyFontFamily(state.settings.fontFamily);
     document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
     document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
@@ -191,7 +205,7 @@ export function applyActiveStyle(state) {
       postLayers: state.settings.postLayers,
       postProcessingEnabled: state.settings.postProcessingEnabled,
       shaderLayer: state.settings.shaderLayer,
-    });
+    }, midnight);
     // shaderLayer rides along so a legacy Default with the WebGL2 post
     // effect derives a webgl background layer (same as user styles).
     syncBackgroundLayersForStyle(
@@ -213,8 +227,11 @@ export function applyActiveStyle(state) {
 
   const style = (state.settings.styles || []).find(s => s.id === styleId);
   if (!style) return;
-  syncPostLayersForStyle(style);
-  let bgAppearance = state.settings.appearance || "dark";
+  syncPostLayersForStyle(style, midnight);
+  // A style never set the appearance itself; midnight mode has to, and
+  // leaving it has to put the user's own back.
+  applyAppearance(appearanceSetting);
+  let bgAppearance = appearanceSetting;
   if (bgAppearance === "auto") {
     bgAppearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
@@ -239,15 +256,15 @@ export function applyActiveStyle(state) {
   );
 
   // Resolve the correct color set for current appearance (light vs dark)
-  const { colors: resolvedColors } = resolveStyleForAppearance(style, state.settings.appearance);
+  const { colors: resolvedColors } = resolveStyleForAppearance(style, appearanceSetting);
   // Also support legacy single-mode colorOverrides
-  const overrides = resolvedColors || style.colorOverrides || {};
+  const overrides = midnight ? MIDNIGHT_COLORS : (resolvedColors || style.colorOverrides || {});
 
   const cmEditorEl = document.querySelector('.cm-editor');
   // Always update --bg to match the actual background (override or theme)
-  const { themeId: resolvedThemeId } = resolveStyleForAppearance(style, state.settings.appearance);
+  const { themeId: resolvedThemeId } = resolveStyleForAppearance(style, appearanceSetting);
   // Resolve appearance for the global-theme fallback (handles "auto").
-  let effAppearance = state.settings.appearance || "dark";
+  let effAppearance = appearanceSetting;
   if (effAppearance === "auto") {
     effAppearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
@@ -290,6 +307,10 @@ export function applyActiveStyle(state) {
   if (overrides.cursor) {
     document.documentElement.style.setProperty("--cursor", overrides.cursor);
     document.documentElement.style.setProperty("--style-cursor", overrides.cursor);
+  } else {
+    // Clear the previous style's (or midnight mode's) caret override, as
+    // the Default branch does — otherwise it outlives the switch.
+    document.documentElement.style.removeProperty("--style-cursor");
   }
   if (overrides.selection) {
     document.documentElement.style.setProperty("--selection", overrides.selection);

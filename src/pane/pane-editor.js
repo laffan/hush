@@ -20,6 +20,7 @@ import { themeBackgrounds } from "../theme-colors.js";
 import { hasAcceptableDragPayload, readDragText } from "../editor/file-drop.js";
 import { applyTypewriterPadding, repositionTypewriterBoundary } from "../editor/plugins/typewriter.js";
 import { createBottomRunway, refreshBottomRunway } from "../editor/plugins/bottom-runway.js";
+import { isMidnightActive, effectiveAppearanceSetting, MIDNIGHT_COLORS } from "../midnight/midnight-mode.js";
 
 /**
  * Create a CodeMirror editor suitable for a floating pane.
@@ -442,8 +443,10 @@ function applyStyleColorsToView(view, style, settings) {
   // wrapper's bg inline alongside the cm-editor's bg makes the
   // pane's title-bar background track the active style 1:1.
   const wrapper = root.closest(".floating-pane");
-  // Resolve the appearance, accounting for "auto".
-  let appearance = settings.appearance || "dark";
+  // Resolve the appearance, accounting for "auto" (and midnight mode,
+  // which is dark whatever the setting says).
+  const midnight = isMidnightActive(settings);
+  let appearance = effectiveAppearanceSetting(settings) || "dark";
   if (appearance === "auto") {
     appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
@@ -459,7 +462,7 @@ function applyStyleColorsToView(view, style, settings) {
   // the main editor but never reach panes.
   let themeId, overrides;
   if (style) {
-    const resolved = resolveStyleForAppearance(style, settings.appearance);
+    const resolved = resolveStyleForAppearance(style, appearance);
     themeId = resolved.themeId;
     overrides = resolved.colors || {};
   } else {
@@ -468,6 +471,8 @@ function applyStyleColorsToView(view, style, settings) {
       ? settings.defaultDarkColors
       : settings.defaultLightColors) || {};
   }
+  // Midnight mode paints its pair over a locked style's colours too.
+  if (midnight) overrides = MIDNIGHT_COLORS;
   const effectiveBg = overrides.bg || themeBackgrounds[themeId] || fallbackBg;
   if (overrides.bg) {
     root.style.backgroundColor = overrides.bg;

@@ -23,6 +23,7 @@ import { installActivityCapture, configureActivityLog, logActivity } from "./act
 import { installWindowDiagnostics, logWindowSnapshot } from "./window-diagnostics.js";
 import { getInitialFileFromHash, getInitialDeskFromHash, getCurrentWindowLabel } from "./multi-window.js";
 import { phase, phaseSync } from "./startup-trace.js";
+import { effectiveAppearanceSetting } from "./midnight/midnight-mode.js";
 
 /** Bring `AppState` up and paint the shell. Returns the live state. */
 export async function bootAppState(IS_TAURI) {
@@ -107,7 +108,7 @@ export async function bootAppState(IS_TAURI) {
     if (isIOS()) document.documentElement.classList.add("ios");
     if (isPhone()) document.documentElement.classList.add("phone");
 
-    applyAppearance(state.settings.appearance || "dark");
+    applyAppearance(effectiveAppearanceSetting(state.settings) || "dark");
     document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
     document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
     applyFontFamily(state.settings.fontFamily);

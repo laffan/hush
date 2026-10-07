@@ -32,6 +32,7 @@ import { setPinnedOutlineEditorFactory } from "./editor/plugins/outline-view.js"
 import { createPinnedOutlineEditor } from "./editor/outline-pinned-editor.js";
 import { initCards } from "./cards/cards-init.js";
 import { initOutlineCanvas } from "./outline/outline-canvas-element.js";
+import { isMidnightActive } from "./midnight/midnight-mode.js";
 
 // A pinned outline's panel holds a full doc surface built by the pane
 // editor factory; outline-view.js can't import that without closing an
@@ -267,6 +268,10 @@ async function init() {
   import("./sticky/sticky-notes.js").then(({ initStickyNotes }) => initStickyNotes(state));
   // Wall clock — "Toggle clock"; mounts only while switched on.
   import("./clock/wall-clock.js").then(({ initWallClock }) => initWallClock(state));
+  // Midnight mode — its 8am end, and sibling windows' toggles.
+  import("./midnight/midnight-controller.js").then(({ installMidnightMode }) => installMidnightMode(state));
+  // Home screen widgets — keeps their snapshot of recent desks and files current.
+  import("./widgets/widget-publish.js").then(({ installWidgetPublisher }) => installWidgetPublisher(state));
   // YOU ARE HERE — one marker per desk; save-pipeline detection +
   // one-per-desk enforcement (see src/you-are-here.js).
   import("./you-are-here.js").then(({ initYouAreHere }) => initYouAreHere(state));
@@ -606,6 +611,9 @@ async function init() {
   // Style preview (hover or live edit) — temporarily apply a style
   let previewActive = false;
   state.on("style-preview", (styleObj) => {
+    // Midnight mode holds every style to black and grey; a hover preview
+    // would light the page up in the style's colours mid-session.
+    if (isMidnightActive(state.settings)) return;
     previewActive = true;
     // Temporarily apply style overrides
     if (styleObj.fontFamily) applyFontFamily(styleObj.fontFamily);

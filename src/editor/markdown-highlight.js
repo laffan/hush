@@ -11,11 +11,14 @@ import { HighlightStyle } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { commentTag, commentMarkTag, highlightTag, highlightMarkTag } from "./markdown-extensions.js";
 import { getActiveTheme } from "../themes/index.js";
+import { isMidnightActive, MIDNIGHT_COLORS } from "../midnight/midnight-mode.js";
 
 // Resolve the header color override for the active style (or the Default
 // style — its colors live on `defaultLightColors`/`defaultDarkColors`),
 // honouring the current appearance including "auto".
 export function resolveHeaderColorOverride(state, activeStyle) {
+  // Midnight mode's headings are the text grey, whatever the style says.
+  if (isMidnightActive(state.settings)) return MIDNIGHT_COLORS.header;
   let mode = state.settings.appearance || "dark";
   if (mode === "auto") {
     mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";

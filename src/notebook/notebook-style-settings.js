@@ -7,6 +7,7 @@
  */
 
 import { resolveBackgroundLayersList } from "../sidebar/styles-panel-shared.js";
+import { isMidnightActive, effectiveAppearanceSetting, MIDNIGHT_COLORS } from "../midnight/midnight-mode.js";
 
 // Map Hush camelCase theme IDs to notebook kebab-case IDs.
 // Keys that are identical (amy, barf, bespin, cobalt, dracula, clouds) are
@@ -38,8 +39,8 @@ const HUSH_TO_NOTEBOOK_THEME = {
 export function resolveNotebookTheme(state) {
   const s = state.settings;
 
-  // Determine effective appearance
-  let appearance = s.appearance || "dark";
+  // Determine effective appearance (midnight mode is always dark)
+  let appearance = effectiveAppearanceSetting(s) || "dark";
   if (appearance === "auto") {
     appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
@@ -77,8 +78,9 @@ export function computeNotebookSettings(state, lockedStyleId) {
     }
   }
 
-  // Derive appearance from Hush settings
-  let appearance = s.appearance || "dark";
+  // Derive appearance from Hush settings (midnight mode is always dark)
+  const midnight = isMidnightActive(s);
+  let appearance = effectiveAppearanceSetting(s) || "dark";
   if (appearance === "auto") {
     appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
@@ -109,12 +111,14 @@ export function computeNotebookSettings(state, lockedStyleId) {
       // first enabled image layer (gradient / webgl layers are
       // editor-surface-only). Legacy styles' single backgroundImage
       // resolves through the same helper.
-      const layers = resolveBackgroundLayersList(style);
+      const layers = midnight ? [] : resolveBackgroundLayersList(style);
       styleBackgroundImage = layers.find((l) => l.type === "image" && l.enabled !== false && l.src) || null;
     }
   } else {
     bgColors = appearance === "dark" ? s.defaultDarkColors : s.defaultLightColors;
   }
+  // Midnight mode: black canvas, grey text, headings and links.
+  if (midnight) bgColors = MIDNIGHT_COLORS;
   // Resolve the background image's per-appearance opacity + invert so the
   // canvas matches the editor. Light/dark each carry their own opacity and
   // invert flag; the legacy single `opacity` is the fallback for both.

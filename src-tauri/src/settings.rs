@@ -621,6 +621,20 @@ pub struct AppSettings {
     #[serde(default)]
     pub clock: serde_json::Value,
 
+    // Midnight mode — the moment (epoch ms) it switches itself off: the
+    // first 8am after it was turned on. Shared by every window, and
+    // cleared at launch (`lib.rs::run`) so quitting the app ends it.
+    // See src/midnight/midnight-mode.js.
+    #[serde(default)]
+    pub midnight_until: Option<f64>,
+
+    // When each desk and file was last opened on this device —
+    // `{ desks: { id: ms }, files: { id: ms } }` — which orders the home
+    // screen widgets' recent desks and cross-desk recent files. Opaque;
+    // see src/widgets/widget-activity.js.
+    #[serde(default)]
+    pub recent_activity: serde_json::Value,
+
     // YOU ARE HERE marker registry — `{ deskId: { fileId, fileType,
     // shapeId?, offset? } }`, one marker per desk. Opaque to Rust; JS
     // owns detection and the one-per-desk enforcement.
@@ -853,6 +867,8 @@ impl Default for AppSettings {
             courier: serde_json::Value::Null,
             timer: serde_json::Value::Null,
             clock: serde_json::Value::Null,
+            midnight_until: None,
+            recent_activity: serde_json::Value::Null,
             you_are_here: serde_json::json!({}),
             panes_hidden_by_context: serde_json::json!({}),
             window_width: None, window_height: None, window_x: None, window_y: None,

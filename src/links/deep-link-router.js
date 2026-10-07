@@ -5,7 +5,9 @@
  *   file:// (or bare paths)   externally-opened .hushnote / .hushstack /
  *                             .hushproject / .md files (iPadOS open-with)
  *   hushwriter://             companion-app requests, e.g. zotero-helper's
- *                             "Send to Hush" (links/zotero-helper-import.js)
+ *                             "Send to Hush" (links/zotero-helper-import.js),
+ *                             and home screen widget taps
+ *                             (hushwriter://widget, widgets/widget-links.js)
  *
  * Google OAuth does NOT come through here — it uses a loopback HTTP
  * listener (commands/google_docs.rs) surfaced as the `oauth-callback`
@@ -23,7 +25,14 @@ import { fetchWindowList, getCurrentWindowLabel } from "../multi-window.js";
 
 const FORWARD_EVENT = "hushwriter-url";
 
-async function importHushwriter(state, url) {
+/** `cold` — the URL was waiting when this window booted (see handleUrl);
+ *  home screen widget links need to know, the companion imports don't. */
+async function importHushwriter(state, url, cold = false) {
+  const { isWidgetUrl, handleWidgetUrl } = await import("../widgets/widget-links.js");
+  if (isWidgetUrl(url)) {
+    await handleWidgetUrl(state, url, cold);
+    return;
+  }
   const { handleHushwriterUrl } = await import("./zotero-helper-import.js");
   await handleHushwriterUrl(state, url);
 }
@@ -67,13 +76,13 @@ async function handleUrl(state, url, coldConnect = false) {
   } else if (url.startsWith("hushwriter://")) {
     try {
       if ((await getCurrentWindowLabel()) === "main") {
-        await importHushwriter(state, url);
+        await importHushwriter(state, url, coldConnect);
         return;
       }
       // Secondary window. Hand the request to main when there is one;
       // otherwise this window is the only one who can do the work.
       if (!(await mainWindowExists())) {
-        await importHushwriter(state, url);
+        await importHushwriter(state, url, coldConnect);
         return;
       }
       const { emitTo } = await import("@tauri-apps/api/event");

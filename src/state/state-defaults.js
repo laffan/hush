@@ -117,6 +117,14 @@ export function createDefaultSettings() {
     // Wall clock: `{ visible, x, y, alarmAt }` (see src/clock/clock-store.js).
     // App-wide, so the toggle and position hold across desks.
     clock: null,
+    // Midnight mode: epoch ms at which it switches itself off (the first
+    // 8am after it was turned on), or null when off. Cleared by Rust at
+    // launch, so it never outlives the app (see src/midnight/).
+    midnightUntil: null,
+    // When each desk and file was last opened on this device:
+    // `{ desks: { [deskId]: ms }, files: { [fileId]: ms } }`. Orders the
+    // home screen widgets' recents (see src/widgets/). Per-device.
+    recentActivity: null,
     // YOU ARE HERE marker registry — one `{ fileId, fileType, shapeId?,
     // offset? }` entry per desk id (see src/you-are-here.js).
     youAreHere: {},

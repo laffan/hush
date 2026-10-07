@@ -4,6 +4,7 @@
  * derived from the active theme or style.
  */
 import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
+import { isMidnightActive, effectiveAppearanceSetting, MIDNIGHT_COLORS } from "./midnight/midnight-mode.js";
 
 // Chrome surfaces painted from the JS-only `--theme-bg` custom property.
 // On iOS WKWebView these do not repaint reliably when the app regains
@@ -83,7 +84,8 @@ export function hexLuminance(hex) {
  *  style's value mid-switch, which is how the sidebar used to lag one
  *  style behind the editor. */
 export function resolveEffectiveColors(settings) {
-  let appearance = settings.appearance || "dark";
+  const midnight = isMidnightActive(settings);
+  let appearance = effectiveAppearanceSetting(settings) || "dark";
   if (appearance === "auto") {
     appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
@@ -95,7 +97,7 @@ export function resolveEffectiveColors(settings) {
 
   let themeId, overrides;
   if (style) {
-    const { themeId: styleThemeId, colors } = resolveStyleForAppearance(style, settings.appearance);
+    const { themeId: styleThemeId, colors } = resolveStyleForAppearance(style, appearance);
     themeId = styleThemeId || style.themeId;
     overrides = colors || style.colorOverrides || {};
   } else {
@@ -104,6 +106,8 @@ export function resolveEffectiveColors(settings) {
       ? settings.defaultDarkColors
       : settings.defaultLightColors) || {};
   }
+  // Midnight mode paints its own pair over whatever the style chose.
+  if (midnight) overrides = MIDNIGHT_COLORS;
 
   return {
     appearance,

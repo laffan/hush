@@ -15,6 +15,9 @@ import { applyAppearance } from "../settings/settings-ui.js";
 import appearanceLightRaw from "./sidebar_icons/appearance-light.svg?raw";
 import appearanceDarkRaw from "./sidebar_icons/appearance-dark.svg?raw";
 import appearanceAutoRaw from "./sidebar_icons/appearance-auto.svg?raw";
+import { isMidnightActive } from "../midnight/midnight-mode.js";
+import { setMidnightMode } from "../midnight/midnight-controller.js";
+import { MIDNIGHT_ICON } from "../midnight/midnight-commands.js";
 
 const APPEARANCE_ICONS = {
   light: appearanceLightRaw,
@@ -31,6 +34,7 @@ export function openStyleEditorModal(state) {
       <div class="style-editor-body">
         <div class="style-editor-rail">
           <div class="style-editor-rail-title">Styles</div>
+          <div class="style-editor-rail-midnight"></div>
           <div class="style-editor-rail-list"></div>
           <button class="style-editor-rail-new" type="button">+ New Style</button>
           <button class="style-editor-rail-import" type="button">Import styles…</button>
@@ -102,6 +106,14 @@ export function openStyleEditorModal(state) {
       rows.push(rowHtml(st.id, st.name || "Untitled", selectedId === st.id, st));
     }
     listEl.innerHTML = rows.join("");
+
+    // Midnight mode paints over whichever style is chosen here, so while
+    // it is on the list says so — the one place someone would otherwise
+    // wonder why picking a style changes nothing on the page.
+    const midnightEl = backdrop.querySelector(".style-editor-rail-midnight");
+    midnightEl.innerHTML = isMidnightActive(state.settings)
+      ? `<div class="midnight-reminder">${MIDNIGHT_ICON}<span class="midnight-reminder-text">Midnight mode is on</span><button type="button" data-action="midnight-off">Turn off</button></div>`
+      : "";
 
     const appEl = backdrop.querySelector(".style-editor-rail-appearance");
     appEl.innerHTML = ["light", "dark", "auto"].map((mode) => {
@@ -179,6 +191,12 @@ export function openStyleEditorModal(state) {
     state.emit("style-changed");
     renderRail();
     mountEditor();
+  });
+
+  backdrop.querySelector(".style-editor-rail-midnight").addEventListener("click", async (e) => {
+    if (!e.target.closest("button[data-action=\"midnight-off\"]")) return;
+    await setMidnightMode(state, false);
+    renderRail();
   });
 
   backdrop.querySelector(".style-editor-rail-new").addEventListener("click", () => {

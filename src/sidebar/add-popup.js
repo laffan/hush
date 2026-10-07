@@ -19,7 +19,7 @@ export function mountAddPopup(state, anchorEl) {
   const popup = document.createElement("div");
   popup.className = "panel-add-popup";
   const localFolderBtn = IS_TAURI
-    ? `<button type="button" data-action="new-local-folder">${typeIcons.localSync}<span>Local Folder</span></button>`
+    ? `<button type="button" data-action="new-local-folder">${typeIcons.localSync}<span>Add Local Folder</span></button>`
     : "";
   // The desk-switcher's "Add desk" entry is hidden in the all-desks view,
   // so surface desk creation here instead.

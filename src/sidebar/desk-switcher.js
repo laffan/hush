@@ -13,7 +13,7 @@
  * to refresh in place; outside clicks dismiss the popover.
  */
 
-import { escHtml, DRAG_HANDLE_SVG, deskRatchetGlyph } from "./files-panel-shared.js";
+import { escHtml, DRAG_HANDLE_SVG, deskRatchetGlyph, LOCAL_HOUSE_PATHS } from "./files-panel-shared.js";
 import { isDesktopTauri } from "../command-palette-helpers.js";
 import { chevronSvg } from "../ui/chevron.js";
 
@@ -164,10 +164,10 @@ function deskRowHtml(d, activeId, canArchive, isLocal = false) {
   // Desks in Ratchet mode wear the ratchet glyph after their name.
   const ratchetGlyph = deskRatchetGlyph(_state, d.id);
   // Local desks (operating from a user-picked folder) wear a small
-  // outline-square glyph after the name — the same shape Local Folder
-  // mounts use in the files tree.
+  // house outline after the name — the same shape Local Folder mounts
+  // use in the files tree.
   const localGlyph = isLocal
-    ? `<svg viewBox="0 0 16 16" class="desk-switcher-local-glyph" data-tooltip="Local desk"><rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>`
+    ? `<svg viewBox="0 0 16 16" class="desk-switcher-local-glyph" data-tooltip="Local desk" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${LOCAL_HOUSE_PATHS}</svg>`
     : "";
   // A local desk is named by its folder, so renaming one renames the
   // folder too — which is something iOS won't let Hush do from in here

@@ -22,6 +22,7 @@
 
 import { pushDeskRecentFile } from "./recent-files.js";
 import { logActivity } from "../activity-log.js";
+import { noteRecentActivity } from "../widgets/widget-activity.js";
 
 const SPECIAL_KINDS = ["__inbox__", "__images__", "__pdfs__", "__archive__", "__trash__"];
 
@@ -469,6 +470,9 @@ export async function recordActiveDeskLastFile(state, fileId, type) {
   // per-desk, so hopping between desks doesn't evict either one's
   // history; each is capped so settings.json can't grow unbounded.
   if (fileId && desk) await pushDeskRecentFile(state, desk.id, fileId);
+  // …and stamp when, which the home screen widgets sort by (the MRU
+  // holds an order but no times). In memory now, written shortly.
+  if (desk) noteRecentActivity(state, desk.id, fileId || null);
 
   if (!desk) return;
   const meta = { ...(state.settings?.desksMeta || {}) };

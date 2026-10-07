@@ -41,6 +41,11 @@ export function computeNumberLabels(tree, isSkippable, isInbox) {
 }
 
 // SVG icons for the tree-item types
+/** The house outline that marks anything local — a Local Folder mount
+ *  in the tree, the Add menu's Add Local Folder, a local desk in the
+ *  desk switcher. Strokes only; the host sets colour and width. */
+export const LOCAL_HOUSE_PATHS = `<path d="M1.75 8 8 2.25 14.25 8" /><path d="M3.75 6.5V13.75h8.5V6.5" />`;
+
 export const typeIcons = {
   document: `<svg viewBox="0 0 16 16" class="tree-type-icon"><line x1="4" y1="4" x2="12" y2="4" /><line x1="4" y1="8" x2="12" y2="8" /><line x1="4" y1="12" x2="9" y2="12" /></svg>`,
   documentLocked: `<svg viewBox="0 0 16 16" class="tree-type-icon locked-style-icon"><line x1="4" y1="4" x2="12" y2="4" /><line x1="4" y1="8" x2="12" y2="8" /><line x1="4" y1="12" x2="9" y2="12" /><circle cx="13" cy="13" r="1.5" /></svg>`,
@@ -70,10 +75,10 @@ export const typeIcons = {
   // box, distinct from the trash can, for inactive docs and projects.
   archive: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="2" y="3" width="12" height="3.5" rx="0.5" /><path d="M3 6.5V13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6.5" /><line x1="6.5" y1="9" x2="9.5" y2="9" /></svg>`,
   flaggedFolder: `<svg viewBox="0 0 16 16" class="tree-type-icon"><path d="M3 10s1-1 3-1 4 2 6 2 3-1 3-1V2s-1 1-3 1-4-2-6-2-3 1-3 1z" /><line x1="3" y1="14" x2="3" y2="10" /></svg>`,
-  // Local Sync folder icon: a plain outline square — distinct from the
-  // plain folder (circle in the Add menu) and stripped of the line that
-  // used to bisect it.
-  localSync: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="2" y="2" width="12" height="12" /></svg>`,
+  // Local icon (Local Folder mounts, local desks): the outline of a
+  // house — a pitched roof over its walls. `LOCAL_HOUSE_PATHS` is the
+  // bare shape, shared with the desk switcher's local-desk glyph.
+  localSync: `<svg viewBox="0 0 16 16" class="tree-type-icon">${LOCAL_HOUSE_PATHS}</svg>`,
   pdf: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="3" y="1" width="10" height="14" rx="1" fill="none"/><line x1="5" y1="8" x2="11" y2="8" /></svg>`,
   pdfFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><rect x="3" y="1" width="10" height="14" rx="1" fill="none"/><line x1="5" y1="8" x2="11" y2="8" /></svg>`,
   stack: `<svg viewBox="0 0 16 16" class="tree-type-icon"><line x1="4" y1="2" x2="4" y2="14"/><line x1="8" y1="2" x2="8" y2="14"/><line x1="12" y1="2" x2="12" y2="14"/></svg>`,

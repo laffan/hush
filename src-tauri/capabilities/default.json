@@ -67,6 +67,7 @@
     "clipboard-manager:allow-write-text",
     "pencil:default",
     "icloud-folder:default",
-    "scene-reuse:default"
+    "scene-reuse:default",
+    "hush-widgets:default"
   ]
 }

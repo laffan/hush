@@ -10,6 +10,17 @@ crate-type = ["lib", "cdylib", "staticlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 chrono = "0.4"
+# Compiles widget-bridge-macos/ (the Swift half of macOS widgets) — only
+# pulled in by the `macos-widgets` feature below.
+swift-rs = { version = "1.0.8", features = ["build"], optional = true }
+
+[features]
+# macOS home screen widgets: write the snapshot into the App Group
+# container and reload WidgetKit through widget-bridge-macos/. Off by
+# default — it needs a team-prefixed App Group signed into the app and
+# the widget extension built and embedded beside it, which
+# scripts/macos-build-widgets.sh does (see widgets/README-WIDGETS.md).
+macos-widgets = ["dep:swift-rs"]
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
@@ -37,6 +48,7 @@ spellbook = "0.4"
 tauri-plugin-pencil = { path = "tauri-plugin-pencil" }
 tauri-plugin-icloud-folder = { path = "tauri-plugin-icloud-folder" }
 tauri-plugin-scene-reuse = { path = "tauri-plugin-scene-reuse" }
+tauri-plugin-hush-widgets = { path = "tauri-plugin-hush-widgets" }
 
 # Typst-backed PDF export pipeline (docs + projects). The compiler runs
 # in-process so the same code path serves desktop builds and the iOS

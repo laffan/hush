@@ -10,7 +10,7 @@ import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pan
 import { escHtml, showPromptModal, googleLinkBadgeHtml, computeNumberLabels, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
 import {
   isInboxId, isImagesId, isPdfsId, isTrashId, isAnySpecialId,
-  isInboxItem, inboxNameHtml,
+  isInboxItem, isArchiveItem, inboxNameHtml,
   visibleTopLevel, renderedDeskIdFor, commitRenderedChildren, isAllDesksMode, numberSkip, hasPairedGutter, getIcon,
   actionButtons, getPdfSync, buildPdfRowHtml,
   isItemActive,
@@ -221,8 +221,10 @@ export function createFilesPanel(container, state, hidePanel) {
           // Inbox rows carry their last-edit time under the filename —
           // the Inbox is a staging area, and how long something has been
           // sitting in it is the fact that decides what to do with it.
+          // Archive rows carry it too, without the Inbox's week-old red.
           const label = `${numPrefix}${escHtml(displayName)}`;
           const nameHtml = (isInboxItem(state.fileTree, item) && inboxNameHtml(state, item, label))
+            || (isArchiveItem(state.fileTree, item) && inboxNameHtml(state, item, label, false))
             || `<span class="tree-item-name">${label}</span>`;
           // A Desktop with content in it keeps its hover button in view.
           if (showsDesktopButton(state, item, inTrash)) row.classList.add("has-desktop-content");
