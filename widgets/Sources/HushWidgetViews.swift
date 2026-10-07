@@ -4,14 +4,19 @@ import WidgetKit
 // Building blocks the three widgets share. Hush's own look: monochrome,
 // the system face, one line per entry, nothing louder than the names.
 
-/// Row count per size. A small widget has room for its header and a
-/// couple of names; a large one for a column of them.
-func rowLimit(_ family: WidgetFamily, small: Int, medium: Int, large: Int) -> Int {
-  switch family {
-  case .systemSmall: return small
-  case .systemMedium: return medium
-  default: return large
-  }
+/// One row's height. Fixed, so a list can work out how many rows its
+/// space holds (`FittedList`) instead of guessing a count per size: the
+/// same family is a different size on an iPhone, an iPad and the Mac.
+/// The air above and below the name is what separates the rows, with a
+/// hairline between them.
+func rowHeight(_ family: WidgetFamily) -> CGFloat {
+  family == .systemLarge ? 30 : 26
+}
+
+/// Small and medium widgets set their names a size down, so four or so
+/// rows fit under a title.
+func isCompact(_ family: WidgetFamily) -> Bool {
+  family != .systemLarge
 }
 
 /// "5 min. ago", "yesterday" — measured from when the entry is drawn.
@@ -45,6 +50,40 @@ struct WidgetTitle: View {
   }
 }
 
+/// As many rows as fit the space left under the widget's header — no
+/// half rows — each `rowHeight` tall, with a faint rule between them.
+struct FittedList<Item: Identifiable, Row: View>: View {
+  let items: [Item]
+  let rowHeight: CGFloat
+  @ViewBuilder let row: (Item) -> Row
+
+  var body: some View {
+    GeometryReader { geo in
+      let fits = max(0, Int((geo.size.height + 1) / rowHeight))
+      let shown = Array(items.prefix(fits).enumerated())
+      VStack(spacing: 0) {
+        ForEach(shown, id: \.element.id) { index, item in
+          row(item)
+            .frame(height: rowHeight)
+            .overlay(alignment: .top) {
+              if index > 0 { RowDivider() }
+            }
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+  }
+}
+
+/// The hairline between two rows.
+struct RowDivider: View {
+  var body: some View {
+    Rectangle()
+      .fill(Color.primary.opacity(0.1))
+      .frame(height: 0.5)
+  }
+}
+
 /// One entry: glyph, name, and (when there is room) a trailing detail.
 struct EntryRow: View {
   let symbol: String
@@ -52,6 +91,7 @@ struct EntryRow: View {
   var detail: String? = nil
   var date: Date? = nil
   var showsDetail = true
+  var compact = false
 
   var body: some View {
     HStack(spacing: 6) {
@@ -60,7 +100,7 @@ struct EntryRow: View {
         .foregroundStyle(.secondary)
         .frame(width: 14)
       Text(title)
-        .font(.subheadline)
+        .font(compact ? .footnote : .subheadline)
         .lineLimit(1)
         .truncationMode(.tail)
       Spacer(minLength: 4)
@@ -78,6 +118,7 @@ struct EntryRow: View {
         }
       }
     }
+    .frame(maxHeight: .infinity)
     .contentShape(Rectangle())
   }
 }
@@ -87,38 +128,34 @@ struct FileLink: View {
   let file: WidgetFile
   var detail: String? = nil
   var showsDetail = true
+  var compact = false
 
   var body: some View {
     Link(destination: HushLink.openFile(file)) {
       EntryRow(
         symbol: HushGlyph.symbol(for: file.type), title: file.name,
-        detail: detail, date: file.openedDate, showsDetail: showsDetail)
+        detail: detail, date: file.openedDate, showsDetail: showsDetail, compact: compact)
     }
   }
 }
 
-/// The square icon button in the desk widget's header.
+/// An icon button in the desk widget's header — the glyph alone; where
+/// it sits says it makes something. Square by default; `width: nil`
+/// shares out a row (the small widget's button strip).
 struct ActionButton: View {
   let symbol: String
   let label: String
   let url: URL
-  /// The notebook glyph has no "plus" variant, so it wears a badge.
-  var badge = false
+  var width: CGFloat? = 28
+  var height: CGFloat = 28
 
   var body: some View {
     Link(destination: url) {
-      ZStack(alignment: .bottomTrailing) {
-        Image(systemName: symbol)
-          .font(.system(size: 14, weight: .regular))
-          .frame(width: 28, height: 28)
-        if badge {
-          Image(systemName: "plus.circle.fill")
-            .font(.system(size: 9, weight: .bold))
-            .offset(x: -3, y: -3)
-        }
-      }
-      .background(.quaternary, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-      .accessibilityLabel(label)
+      Image(systemName: symbol)
+        .font(.system(size: 14, weight: .regular))
+        .frame(minWidth: width ?? 0, maxWidth: width ?? .infinity, minHeight: height, maxHeight: height)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .accessibilityLabel(label)
     }
   }
 }

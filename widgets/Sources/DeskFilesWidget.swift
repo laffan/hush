@@ -2,9 +2,10 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
-// Desk Files: one desk's recent files, with New Doc and New Notebook at
-// the top. Which desk is the widget's own setting (edit the widget to
-// pick one); left unset it follows the most recently used desk.
+// Desk Files: one desk's recent files, with New Doc, New Notebook and
+// New Sticky at the top. Which desk is the widget's own setting (edit
+// the widget to pick one); left unset it follows the most recently used
+// desk.
 
 // MARK: - Choosing the desk
 
@@ -93,18 +94,16 @@ struct DeskFilesView: View {
   let entry: DeskFilesEntry
 
   var body: some View {
-    VStack(alignment: .leading, spacing: family == .systemLarge ? 9 : 7) {
+    VStack(alignment: .leading, spacing: 6) {
       if let desk = entry.desk {
         header(desk)
-        let limit = rowLimit(family, small: 2, medium: 2, large: 8)
         if desk.recent.isEmpty {
           EmptyNote(text: "Nothing opened on this desk yet.")
         } else {
-          ForEach(desk.recent.prefix(limit)) { file in
-            FileLink(file: file, showsDetail: family != .systemSmall)
+          FittedList(items: desk.recent, rowHeight: rowHeight(family)) { file in
+            FileLink(file: file, showsDetail: family != .systemSmall, compact: isCompact(family))
           }
         }
-        Spacer(minLength: 0)
       } else {
         WidgetTitle(text: "Desk", symbol: HushGlyph.desk)
         EmptyNote(text: entry.hasSnapshot
@@ -117,20 +116,45 @@ struct DeskFilesView: View {
     .hushWidgetBackground()
   }
 
-  /// The desk's name (which opens it) and the two create buttons.
+  /// The desk's name (which opens it) and the three create buttons — New
+  /// Doc, New Notebook, New Sticky (a desk sticky). Side by side where
+  /// there's room; on a small widget, a strip of its own under the name,
+  /// which three buttons and a name can't share at that width.
+  @ViewBuilder
   private func header(_ desk: WidgetDesk) -> some View {
-    HStack(alignment: .center, spacing: 6) {
-      Link(destination: HushLink.openDesk(desk.id)) {
-        Text(desk.name)
-          .font(.headline)
-          .lineLimit(1)
-          .frame(maxWidth: .infinity, alignment: .leading)
+    if family == .systemSmall {
+      VStack(alignment: .leading, spacing: 6) {
+        deskName(desk, font: .subheadline.weight(.semibold))
+        HStack(spacing: 6) { buttons(desk, width: nil, height: 24) }
       }
-      ActionButton(symbol: HushGlyph.newDoc, label: "New Doc", url: HushLink.newDoc(desk.id))
-      ActionButton(
-        symbol: HushGlyph.newNotebook, label: "New Notebook",
-        url: HushLink.newNotebook(desk.id), badge: true)
+    } else {
+      HStack(alignment: .center, spacing: 6) {
+        deskName(desk, font: .headline)
+        buttons(desk, width: 28, height: 28)
+      }
     }
+  }
+
+  private func deskName(_ desk: WidgetDesk, font: Font) -> some View {
+    Link(destination: HushLink.openDesk(desk.id)) {
+      Text(desk.name)
+        .font(font)
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+  }
+
+  @ViewBuilder
+  private func buttons(_ desk: WidgetDesk, width: CGFloat?, height: CGFloat) -> some View {
+    ActionButton(
+      symbol: HushGlyph.newDoc, label: "New Doc",
+      url: HushLink.newDoc(desk.id), width: width, height: height)
+    ActionButton(
+      symbol: HushGlyph.newNotebook, label: "New Notebook",
+      url: HushLink.newNotebook(desk.id), width: width, height: height)
+    ActionButton(
+      symbol: HushGlyph.newSticky, label: "New Sticky",
+      url: HushLink.newSticky(desk.id), width: width, height: height)
   }
 }
 
@@ -142,7 +166,7 @@ struct DeskFilesWidget: Widget {
       DeskFilesView(entry: entry)
     }
     .configurationDisplayName("Desk")
-    .description("One desk's recent files, with New Doc and New Notebook.")
+    .description("One desk's recent files, with New Doc, New Notebook and New Sticky.")
     .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
   }
 }

@@ -6,6 +6,7 @@
  *   hushwriter://widget?action=open-file&desk=<deskId>&file=<id>&type=<type>
  *   hushwriter://widget?action=new-doc&desk=<deskId>
  *   hushwriter://widget?action=new-notebook&desk=<deskId>
+ *   hushwriter://widget?action=new-sticky&desk=<deskId>
  *
  * They arrive through the deep-link router (main window only, like every
  * hushwriter:// request). Unlike a companion app's request, a widget's
@@ -21,7 +22,7 @@
  */
 import { isIOSTauri } from "../command-palette-helpers.js";
 
-const ACTIONS = new Set(["open-desk", "open-file", "new-doc", "new-notebook"]);
+const ACTIONS = new Set(["open-desk", "open-file", "new-doc", "new-notebook", "new-sticky"]);
 const REPEAT_WINDOW_MS = 4000;
 
 export function isWidgetUrl(url) {
@@ -127,6 +128,11 @@ export async function handleWidgetUrl(state, url, cold = false) {
     // The same name-first prompt every other New Notebook uses.
     const { promptNewNotebookName } = await import("../command-palette-pickers.js");
     promptNewNotebookName((name) => state.createNotebook(name));
+  } else if (req.action === "new-sticky") {
+    // An empty desk sticky, focused for typing — what the palette's
+    // desk sticky makes, on the desk the widget belongs to.
+    const { addSticky } = await import("../sticky/sticky-notes.js");
+    addSticky(state, "desk", { target: deskId });
   }
   return true;
 }

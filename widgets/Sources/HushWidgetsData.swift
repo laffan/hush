@@ -94,6 +94,10 @@ enum HushLink {
   static func newNotebook(_ deskId: String) -> URL {
     make("new-notebook", [("desk", deskId)])
   }
+
+  static func newSticky(_ deskId: String) -> URL {
+    make("new-sticky", [("desk", deskId)])
+  }
 }
 
 /// SF Symbols standing in for the sidebar's glyphs: lines for a
@@ -110,8 +114,9 @@ enum HushGlyph {
   }
 
   static let desk = "table.furniture"
-  static let newDoc = "doc.badge.plus"
+  static let newDoc = "doc.text"
   static let newNotebook = "circle.grid.3x3"
+  static let newSticky = "note.text"
 }
 
 /// Sample content for the widget gallery and for redacted placeholders.

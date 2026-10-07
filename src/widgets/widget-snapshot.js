@@ -26,10 +26,11 @@ import { getDeskRecentFileIds } from "../state/recent-files.js";
 import { getRecentActivity } from "./widget-activity.js";
 
 export const WIDGET_SNAPSHOT_VERSION = 1;
-/** Per desk: as many files as the large per-desk widget shows. */
-const DESK_FILES = 8;
-/** Across desks: as many as the large recent-files widget shows. */
-const RECENT_FILES = 10;
+/** Files per desk, and across desks. The widgets show as many rows as
+ *  their space holds — ten or so in a large one, more on an iPad or the
+ *  Mac — so the snapshot carries a few more than that. */
+const DESK_FILES = 12;
+const RECENT_FILES = 12;
 
 const TRASH_PREFIX = "__trash__";
 const FILE_TYPES = new Set(["document", "notebook", "stack", "pdf", "project"]);
