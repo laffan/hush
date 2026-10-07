@@ -19,7 +19,7 @@
 import { ViewPlugin, Decoration, WidgetType, EditorView } from "@codemirror/view";
 import { RangeSetBuilder, Annotation } from "@codemirror/state";
 import {
-  getImageDataUrl, parseAltAndCaption, isLocalImageRef, filenameFromUrl,
+  getImageDataUrl, peekImageDataUrl, parseAltAndCaption, isLocalImageRef, filenameFromUrl,
   IMAGE_MD_RE, urlFromMatch,
 } from "../../state/state-images.js";
 import { openImagePreviewModal } from "../image-preview.js";
@@ -27,6 +27,13 @@ import { isCmdHeld } from "../../cmd-button.js";
 
 // Broad match — we filter to local refs inside the builder.
 const IMAGE_RE = new RegExp(IMAGE_MD_RE.source, "g");
+/** The height each image last rendered at (wrapper, caption included),
+ *  by filename + context — a placeholder for the moment before a rebuilt
+ *  widget's picture is laid out. */
+const lastHeights = new Map();
+const heightKey = (filename, context) =>
+  `${context?.kind || ""}:${context?.folderId || ""}:${context?.baseDir || ""}/${filename}`;
+
 // Dispatched on files-changed to force the ViewPlugin to re-run
 // buildDecorations (no doc / selection change would otherwise trigger it).
 const imageTreeChanged = Annotation.define();
@@ -66,10 +73,37 @@ class ImageWidget extends WidgetType {
       wrapper.appendChild(cap);
     }
 
-    // Async load the data URL — toDOM must be sync.
+    // CodeMirror rebuilds a widget whenever the marks around it change —
+    // entering or leaving focus mode wraps the whole document in a new dim
+    // span — and a rebuilt image that waited for its async load sat at a
+    // line's height for a beat, then sprang back to full size: everything
+    // below it, caret included, jumped by the image's height. So the
+    // picture is set synchronously when it has been loaded before (an
+    // image already in the browser's memory lays out at full size on the
+    // spot), and the wrapper holds its last height until it loads.
+    const key = heightKey(this.filename, this.context);
+    const remember = () => {
+      wrapper.style.minHeight = "";
+      const h = wrapper.getBoundingClientRect().height;
+      if (h > 0) lastHeights.set(key, h);
+    };
+    img.addEventListener("load", remember);
+    img.addEventListener("error", () => { wrapper.style.minHeight = ""; });
+    const cached = peekImageDataUrl(this.filename, this.context);
+    if (cached) {
+      img.src = cached;
+      if (img.complete && img.naturalWidth > 0) requestAnimationFrame(remember);
+      else if (lastHeights.has(key)) wrapper.style.minHeight = `${lastHeights.get(key)}px`;
+      return wrapper;
+    }
+    if (lastHeights.has(key)) wrapper.style.minHeight = `${lastHeights.get(key)}px`;
+    // First load — toDOM must be sync, so the data URL arrives later.
     getImageDataUrl(this.filename, this.context).then((url) => {
       if (url) img.src = url;
-      else wrapper.classList.add("cm-hush-image-missing");
+      else {
+        wrapper.style.minHeight = "";
+        wrapper.classList.add("cm-hush-image-missing");
+      }
     });
     return wrapper;
   }

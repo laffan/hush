@@ -29,6 +29,14 @@ function cacheKeyFor(filename, context) {
   return filename;
 }
 
+/** The data URL already loaded for this image, or null — synchronously,
+ *  for a widget that has to have its picture the moment it is built (see
+ *  image-decorator.js). Never fetches. */
+export function peekImageDataUrl(filename, context) {
+  if (!filename) return null;
+  return dataUrlCache.get(cacheKeyFor(filename, context)) || null;
+}
+
 export function clearImageCache(filename) {
   if (!filename) { dataUrlCache.clear(); return; }
   // Drop every cache entry pointing at this filename — across global +
