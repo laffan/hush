@@ -7,7 +7,7 @@ import {
 import { screenToCanvas } from "./utils";
 import {
   handleCanvasPasteEvent, handleCanvasPasteShortcut, isClipboardOwner,
-  releasePasteCatcher, writeClipboardText,
+  releasePasteCatcher, writeCanvasClipboard,
 } from "./canvas-paste";
 import { getActiveNotebookState } from "./notes-canvas";
 
@@ -454,7 +454,7 @@ export function bindInputEvents(
       const payload = state.serializeSelection();
       if (!payload) return;
       e.preventDefault();
-      void writeClipboardText(payload);
+      void writeCanvasClipboard(payload);
       // Stash on the window so an immediate paste in the same session
       // round-trips even when the OS clipboard write was rejected.
       (window as any).__hushNotebookClipboard = payload;

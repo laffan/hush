@@ -47,7 +47,10 @@ import type { DrawingState } from "./state";
 import {
   cleanLineBreaks, extractTextFromDataTransfer, fileToDataUrl, getImageDimensions,
 } from "./external-content";
-import { tryDecode } from "./clipboard-format";
+import { tryDecode, type ClipboardEnvelope } from "./clipboard-format";
+import {
+  envelopeFromWoodsWhisper, readWoodsWhisperGraph, writeCanvasPasteboard,
+} from "./graph-pasteboard";
 import { getActiveNotebookState } from "./notes-canvas";
 import {
   writeText as tauriWriteText, readText as tauriReadText,
@@ -85,6 +88,14 @@ export async function writeClipboardText(text: string): Promise<void> {
     try { await tauriWriteText(text); return; } catch { /* fall through */ }
   }
   try { await navigator.clipboard.writeText(text); } catch { /* clipboard unavailable */ }
+}
+
+/** A canvas copy: on the Mac and the iPad natively, with Hush's own
+ *  pasteboard type beside the text so Woods Whisper can tell a flowchart
+ *  is there (graph-pasteboard.ts); as text everywhere else. */
+export async function writeCanvasClipboard(json: string): Promise<void> {
+  if (await writeCanvasPasteboard(json)) return;
+  await writeClipboardText(json);
 }
 
 async function readClipboardText(): Promise<string> {
@@ -255,6 +266,16 @@ function envelopeFrom(text: string) {
   return tryDecode(text) ?? (text ? null : tryDecode((window as unknown as { __hushNotebookClipboard?: string }).__hushNotebookClipboard ?? ""));
 }
 
+/** Cards copied in Woods Whisper, as an envelope. They travel under
+ *  its own pasteboard type, which neither route can see — the text
+ *  beside them is only their words — so they're asked after natively,
+ *  after Hush's own envelope and before the text is taken as text. */
+async function woodsWhisperEnvelope(state: DrawingState): Promise<ClipboardEnvelope | null> {
+  const json = await readWoodsWhisperGraph();
+  if (!json) return null;
+  return envelopeFromWoodsWhisper(json, { fontSize: state.fontSize, fontFamily: state.fontFamily });
+}
+
 /**
  * ⌘V on the canvas. Returns true when the caller should cancel the key.
  *
@@ -341,6 +362,14 @@ async function routeCanvasPaste(state: DrawingState, e: ClipboardEvent): Promise
     logActivity("paste", "info", "Canvas paste restored an in-app shape envelope");
     return;
   }
+  const cards = await woodsWhisperEnvelope(state);
+  if (cards) {
+    if (!claimPaste()) return;
+    state.pasteEnvelope(cards);
+    logActivity("paste", "info", "Canvas paste added Woods Whisper cards as a flowchart",
+      { shapes: cards.shapes.length });
+    return;
+  }
   if (files.length) {
     await addImageShape(state, files[0], "the event's own files");
     return;
@@ -395,6 +424,14 @@ async function asyncCanvasPaste(state: DrawingState): Promise<void> {
     if (!claimPaste()) return;
     state.pasteEnvelope(env);
     logActivity("paste", "info", "Canvas Cmd+V restored an in-app shape envelope");
+    return;
+  }
+  const cards = await woodsWhisperEnvelope(state);
+  if (cards) {
+    if (!claimPaste()) return;
+    state.pasteEnvelope(cards);
+    logActivity("paste", "info", "Canvas Cmd+V added Woods Whisper cards as a flowchart",
+      { shapes: cards.shapes.length });
     return;
   }
   if (text && text.trim()) {

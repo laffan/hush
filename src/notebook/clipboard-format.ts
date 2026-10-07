@@ -5,13 +5,18 @@
 //   {
 //     "schema": "canvas-clipboard@1",
 //     "shapes": [...],
-//     "flowEdges": [...]
+//     "flowEdges": [...],
+//     "bounds": { "<shape id>": { minX, minY, maxX, maxY } }   // optional
 //   }
 //
 // Field naming mirrors the in-memory Shape / FlowEdge types (camelCase).
 // Unknown fields are preserved on round-trip but not relied on.
+//
+// `bounds` is for readers that can't measure a shape themselves — Woods
+// Whisper places a card by its centre (graph-pasteboard.ts). Hush's own
+// paste ignores it.
 
-import type { Shape, Point } from "./types";
+import type { Shape, Point, Bounds } from "./types";
 import type { FlowEdge } from "./flowchart";
 import { generateId, getShapeBounds } from "./utils";
 
@@ -21,11 +26,14 @@ export interface ClipboardEnvelope {
   schema: typeof CLIPBOARD_SCHEMA;
   shapes: Shape[];
   flowEdges?: FlowEdge[];
+  bounds?: Record<string, Bounds>;
   // Forward compatibility: ignore unknown extras.
   [k: string]: unknown;
 }
 
-export function encodeSelection(shapes: Shape[], edges: FlowEdge[]): string {
+export function encodeSelection(
+  shapes: Shape[], edges: FlowEdge[], boundsOf?: (s: Shape) => Bounds | null,
+): string {
   const ids = new Set(shapes.map((s) => s.id));
   // Only carry edges whose endpoints are both in the copy set, so an orphan
   // edge never lands on the receiver.
@@ -35,6 +43,14 @@ export function encodeSelection(shapes: Shape[], edges: FlowEdge[]): string {
     shapes: shapes.map((s) => structuredClone(s)),
     flowEdges: carried.map((e) => ({ ...e })),
   };
+  if (boundsOf) {
+    const bounds: Record<string, Bounds> = {};
+    for (const s of shapes) {
+      const b = boundsOf(s);
+      if (b) bounds[s.id] = b;
+    }
+    if (Object.keys(bounds).length) env.bounds = bounds;
+  }
   return JSON.stringify(env);
 }
 

@@ -48,6 +48,7 @@ import { addCardShape, toggleCardCollapsed } from "./card-shape";
 import { CARD_HEADER_HEIGHT } from "../cards/card-model";
 import { titledAreaFollowers } from "./drag-area-title";
 import { snapMovedToGrid, snapResizeDelta } from "./grid-snap";
+import { wordsBounds } from "./graph-pasteboard";
 
 /**
  * A pinned outline is drawn against the frame, not the canvas, so its
@@ -3810,7 +3811,8 @@ export class DrawingState extends EventTarget {
     if (this.selectedIds.size === 0) return null;
     const selected = this.shapes.filter((s) => this.selectedIds.has(s.id));
     if (selected.length === 0) return null;
-    return encodeSelection(selected, this.flowchart.serialize());
+    return encodeSelection(selected, this.flowchart.serialize(),
+      (s) => (s.type === "text" ? wordsBounds(s, this.fontFamily) : null));
   }
 
   /** Paste a decoded `canvas-clipboard@1` envelope. Generates fresh ids

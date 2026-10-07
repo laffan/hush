@@ -36,7 +36,7 @@ const PDF_UTI: &str = "com.adobe.pdf";
 /// thread, inside `run_on_main_thread`, where it can't unwind — the
 /// clipboard button took the whole app down on iPad.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
-unsafe fn nsdata_bytes(data: *mut AnyObject) -> Option<Vec<u8>> {
+pub(super) unsafe fn nsdata_bytes(data: *mut AnyObject) -> Option<Vec<u8>> {
     if data.is_null() {
         return None;
     }

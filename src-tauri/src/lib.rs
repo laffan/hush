@@ -462,6 +462,8 @@ pub fn run() {
             commands::google_docs::clear_google_sync_log,
             commands::pdfs::save_pdf,
             commands::clipboard_pdf::read_clipboard_pdf,
+            commands::clipboard_graph::read_woods_whisper_graph,
+            commands::clipboard_graph::write_canvas_clipboard,
             commands::pdfs::load_pdf,
             commands::pdfs::delete_pdf,
             commands::pdfs::pdf_exists,

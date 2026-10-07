@@ -36,6 +36,7 @@ import { createBgSettingsFixedButton } from "./ui/bg-settings-fixed-button";
 import { createBookmarkLayer } from "./ui/bookmark-layer";
 import { createCardLayer } from "./ui/card-layer";
 import { createOutlineLayer } from "./ui/outline-layer";
+import { writeCanvasPasteboard } from "./graph-pasteboard";
 import { BOOKMARK_STAMP_CURSOR } from "../ui/bookmark-ui.js";
 
 /** Read the user's flag-colour map from Hush settings. Notebook text
@@ -1098,6 +1099,8 @@ export class NotesCanvas {
    * back into Hush or into Steiner. Synchronous setData via the copy
    * event is the reliable path on a non-editable canvas; the keydown
    * Cmd+C handler in input-handler.ts is a backstop with the same payload.
+   * The event can only write text, so the native write follows it to add
+   * Hush's own pasteboard type for Woods Whisper (graph-pasteboard.ts).
    */
   handleCopy(e: ClipboardEvent): boolean {
     const json = this.state.serializeSelection();
@@ -1106,6 +1109,7 @@ export class NotesCanvas {
     e.clipboardData.setData("text/plain", json);
     (window as unknown as { __hushNotebookClipboard?: string }).__hushNotebookClipboard = json;
     e.preventDefault();
+    void writeCanvasPasteboard(json);
     return true;
   }
 
