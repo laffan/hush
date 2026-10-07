@@ -2,10 +2,9 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
-// Desk Files: one desk's recent files, with New Doc, New Notebook and
-// New Sticky at the top. Which desk is the widget's own setting (edit
-// the widget to pick one); left unset it follows the most recently used
-// desk.
+// Desk Files: one desk's recent files, with New Doc and New Notebook at
+// the top. Which desk is the widget's own setting (edit the widget to
+// pick one); left unset it follows the most recently used desk.
 
 // MARK: - Choosing the desk
 
@@ -116,10 +115,10 @@ struct DeskFilesView: View {
     .hushWidgetBackground()
   }
 
-  /// The desk's name (which opens it) and the three create buttons — New
-  /// Doc, New Notebook, New Sticky (a desk sticky). Side by side where
-  /// there's room; on a small widget, a strip of its own under the name,
-  /// which three buttons and a name can't share at that width.
+  /// The desk's name (which opens it) and the two create buttons — New
+  /// Doc and New Notebook. Side by side where there's room; on a small
+  /// widget, a strip of their own under the name, which the buttons and
+  /// a name can't share at that width.
   @ViewBuilder
   private func header(_ desk: WidgetDesk) -> some View {
     if family == .systemSmall {
@@ -153,9 +152,6 @@ struct DeskFilesView: View {
     ActionButton(
       symbol: HushGlyph.newNotebook, label: "New Notebook",
       url: HushLink.newNotebook(desk.id), width: width, height: height)
-    ActionButton(
-      symbol: HushGlyph.newSticky, label: "New Sticky",
-      url: HushLink.newSticky(desk.id), width: width, height: height)
   }
 }
 
@@ -167,7 +163,7 @@ struct DeskFilesWidget: Widget {
       DeskFilesView(entry: entry)
     }
     .configurationDisplayName("Desk")
-    .description("One desk's recent files, with New Doc, New Notebook and New Sticky.")
+    .description("One desk's recent files, with New Doc and New Notebook.")
     .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
   }
 }

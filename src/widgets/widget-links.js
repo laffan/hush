@@ -6,7 +6,6 @@
  *   hushwriter://widget?action=open-file&desk=<deskId>&file=<id>&type=<type>
  *   hushwriter://widget?action=new-doc&desk=<deskId>
  *   hushwriter://widget?action=new-notebook&desk=<deskId>
- *   hushwriter://widget?action=new-sticky&desk=<deskId>
  *
  * They arrive through the deep-link router, which — unlike a companion
  * app's request, handled in the main window — hands a widget link to the
@@ -27,7 +26,7 @@
 import { isIOSTauri } from "../command-palette-helpers.js";
 import { logActivity } from "../activity-log.js";
 
-const ACTIONS = new Set(["open-desk", "open-file", "new-doc", "new-notebook", "new-sticky"]);
+const ACTIONS = new Set(["open-desk", "open-file", "new-doc", "new-notebook"]);
 const REPEAT_WINDOW_MS = 4000;
 
 export function isWidgetUrl(url) {
@@ -89,8 +88,8 @@ async function windowLabel() {
  *  desk's last file is installed, and before the rest of boot has
  *  finished opening, laying out and focusing things. Acting then, a
  *  desk switch waited out its full timeout for a restore that was never
- *  going to come, and a new sticky was buried or lost its focus to the
- *  boot's own. Bounded, in case boot never reports. */
+ *  going to come, stalling boot with it. Bounded, in case boot never
+ *  reports. */
 function whenAppReady(state, timeoutMs = 20000) {
   if (state.runtime?.appReady) return Promise.resolve();
   return new Promise((resolve) => {
@@ -180,23 +179,6 @@ export async function handleWidgetUrl(state, url, cold = false) {
     // The same name-first prompt every other New Notebook uses.
     const { promptNewNotebookName } = await import("../command-palette-pickers.js");
     promptNewNotebookName((name) => state.createNotebook(name));
-  } else if (req.action === "new-sticky") {
-    // An empty desk sticky, focused for typing — what the palette's
-    // desk sticky makes, on the desk the widget belongs to.
-    const { addSticky } = await import("../sticky/sticky-notes.js");
-    const note = addSticky(state, "desk", { target: deskId });
-    // The app is still coming forward when the note is made; a focus
-    // given then can be dropped (or taken by the editor settling in), so
-    // it is given again once it has — next frame, and once more shortly
-    // after, unless the user has started typing somewhere else.
-    const refocus = () => {
-      const a = document.activeElement;
-      if (!note?.textarea || a === note.textarea) return;
-      if (a && a !== document.body && !a.closest?.(".cm-editor")) return;
-      note.textarea.focus();
-    };
-    requestAnimationFrame(refocus);
-    setTimeout(refocus, 400);
   }
   return true;
 }
