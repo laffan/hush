@@ -12,7 +12,6 @@ import {
 } from "./pane-state.js";
 import { createPaneEditor, attachPaneTextDrop } from "./pane-editor.js";
 import { findLockedStyleForFile } from "./pane-locked-style.js";
-import { paneTemporaryStyle, paneBaseSettings } from "../state/temporary-style.js";
 export { findLockedStyleForFile };
 import { attachEditorTextDrag, attachNotebookTextShapeDrag, attachNotebookImageShapeDrag } from "./text-drag.js";
 import { countWords } from "../editor/plugins/word-count.js";
@@ -119,8 +118,8 @@ async function loadDocumentPane(pane) {
   // colour-override path (applyStyleColorsToView in pane-editor.js)
   // which is what makes panes track --bg / --fg overrides.
   if (editor.reconfigureTheme) {
-    const lockedStyleId = paneTemporaryStyle(pane.id) || (pane.localSync ? null : findLockedStyleForFile(pane.fileId));
-    editor.reconfigureTheme(paneBaseSettings(appState.settings), lockedStyleId);
+    const lockedStyleId = pane.localSync ? null : findLockedStyleForFile(pane.fileId);
+    editor.reconfigureTheme(appState.settings, lockedStyleId);
   }
 
   // Load file content — Local Sync panes read straight from disk via
@@ -234,7 +233,7 @@ async function loadNotebookPane(pane) {
   // Inherit the current Hush editor style (appearance/theme/font/grid) —
   // if the notebook has a locked style, that takes precedence.
   const lockedStyleId = findLockedStyleForFile(pane.fileId);
-  canvas.applySettings(computeNotebookSettings({ ...appState, settings: paneBaseSettings(appState.settings) }, lockedStyleId));
+  canvas.applySettings(computeNotebookSettings(appState, lockedStyleId));
 
   // Load shapes + layers + flowchart edges through the canonical
   // envelope decoder so panes match the main canvas's persistence.

@@ -21,7 +21,6 @@ import {
   enterNotebookGutterPicker, enterPaneCopyPicker,
   enterSendSelectedPicker, enterFilePicker, enterDeskPicker,
 } from "./command-palette-pickers.js";
-import { buildTemporaryStyleCommands } from "./command-palette-temp-style.js";
 import { addGutter, openGutter, closeGutter, gutterAddHidden, gutterOpenHidden, gutterCloseHidden } from "./project/gutter-commands.js";
 import { toggleModeOnContext, hasActiveDocSurface } from "./state/mode-context.js";
 import { deleteTreeNode } from "./state/state-tree.js";
@@ -322,7 +321,6 @@ function buildCommands(state) {
     // row writes the active style — same routing as clicking a style row
     // in the old sidebar list.
     ...buildUseStyleCommands(state),
-    ...buildTemporaryStyleCommands({ icons }),
     ...buildAppearanceCommands(state),
     { id: "style-lock", section: "Styles", label: "Lock style to document", icon: icons.styles, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.currentFileId || !!getLockedStyleId(s),

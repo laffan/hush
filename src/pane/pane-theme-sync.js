@@ -7,11 +7,6 @@
 
 import { panes, appState, setActivePaneId, getNotebookBridge } from "./pane-state.js";
 import { findLockedStyleForFile } from "./pane-content.js";
-import { paneTemporaryStyle, paneBaseSettings } from "../state/temporary-style.js";
-
-/** A pane's own style: its temporary one (Use Temporary Style, this
- *  session only), else its file's locked style. */
-const paneStyleId = (pane) => paneTemporaryStyle(pane.id) || findLockedStyleForFile(pane.fileId);
 
 /** Ratchet locks every pane editor — clicking into one shouldn't unlock
  *  the editor and let the user write outside the ratcheted document.
@@ -41,7 +36,7 @@ export async function previewPaneStyle(styleObj) {
   const synthSettings = { ...appState.settings, activeStyleId: styleObj.id, styles };
   let bridge = null;
   for (const [, pane] of panes) {
-    if (paneStyleId(pane)) continue;
+    if (findLockedStyleForFile(pane.fileId)) continue;
     if (pane.editor?.reconfigureTheme) {
       pane.editor.reconfigureTheme(synthSettings, null);
     }
@@ -60,17 +55,14 @@ export async function previewPaneStyle(styleObj) {
 export async function syncPaneThemes() {
   const { findNodeByFileId } = await import("../state/tree-helpers.js");
   let bridge = null;
-  // Unlocked panes take the session's style, less a temporary style the
-  // main editor is wearing (state/temporary-style.js).
-  const settings = paneBaseSettings(appState.settings);
   for (const [, pane] of panes) {
-    const lockedStyleId = paneStyleId(pane);
+    const lockedStyleId = findLockedStyleForFile(pane.fileId);
     if (pane.editor?.reconfigureTheme) {
-      pane.editor.reconfigureTheme(settings, lockedStyleId);
+      pane.editor.reconfigureTheme(appState.settings, lockedStyleId);
     }
     if (pane.notebook) {
       if (!bridge) bridge = await getNotebookBridge();
-      pane.notebook.applySettings(bridge.computeNotebookSettings({ ...appState, settings }, lockedStyleId));
+      pane.notebook.applySettings(bridge.computeNotebookSettings(appState, lockedStyleId));
       restoreNotebookPaneBackground(pane);
       if (pane.fileType === "desktop") await restoreDesktopPaneBackground(pane);
     }
