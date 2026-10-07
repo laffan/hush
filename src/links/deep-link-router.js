@@ -83,7 +83,10 @@ async function handleUrl(state, url, coldConnect = false) {
       // one window among those the link reaches, frontmost first.
       const widgets = await import("../widgets/widget-links.js");
       if (widgets.isWidgetUrl(url)) {
-        await widgets.handleWidgetUrl(state, url, coldConnect);
+        // Not awaited: a tap that launched the app arrives here from
+        // inside init(), and the handler waits for init to finish.
+        widgets.handleWidgetUrl(state, url, coldConnect)
+          .catch((e) => console.warn("widget link failed:", e));
         return;
       }
       if ((await getCurrentWindowLabel()) === "main") {

@@ -670,6 +670,10 @@ async function init() {
   import("./sync/desk-roots.js")
     .then((m) => m.installDeskRootsLifecycle(state))
     .catch((e) => console.warn("desk roots lifecycle failed:", e));
+  // Boot is done: every listener above is installed. Work that arrived
+  // during launch (a widget tap that opened the app) waits for this.
+  state.runtime.appReady = true;
+  state.emit("app-ready");
 }
 
 /** Take the boot splash down and close the startup trace. Deferred a frame

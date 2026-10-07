@@ -83,6 +83,23 @@ async function windowLabel() {
   } catch (_) { return null; }
 }
 
+/** Resolve once the app has finished booting (`app-ready`, emitted at
+ *  the end of main.js#init). A tap that launched the app is delivered
+ *  from inside init — before the desk-switch handler that restores a
+ *  desk's last file is installed, and before the rest of boot has
+ *  finished opening, laying out and focusing things. Acting then, a
+ *  desk switch waited out its full timeout for a restore that was never
+ *  going to come, and a new sticky was buried or lost its focus to the
+ *  boot's own. Bounded, in case boot never reports. */
+function whenAppReady(state, timeoutMs = 20000) {
+  if (state.runtime?.appReady) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => { state.off("app-ready", done); clearTimeout(t); resolve(); };
+    const t = setTimeout(done, timeoutMs);
+    state.on("app-ready", done);
+  });
+}
+
 /** Bring the (possibly tray-hidden) window forward. `setFocus()` is
  *  desktop-only: on iOS it asks for a new scene (README-TECHNICAL,
  *  "Never call setFocus() on iOS"). */
@@ -144,6 +161,7 @@ export async function handleWidgetUrl(state, url, cold = false) {
   // Every tap that acts is logged with the window that took it, so a tap
   // that "did nothing" can be traced from Settings → Debug → Activity Log.
   logActivity("widgets", "info", `Widget tap: ${req.action}`, { desk: req.desk, window: label, cold });
+  await whenAppReady(state);
   await surfaceWindow();
 
   const deskId = req.desk || state.settings?.activeDeskId;
@@ -168,10 +186,17 @@ export async function handleWidgetUrl(state, url, cold = false) {
     const { addSticky } = await import("../sticky/sticky-notes.js");
     const note = addSticky(state, "desk", { target: deskId });
     // The app is still coming forward when the note is made; a focus
-    // given then can be dropped, so it is given again once it has.
-    requestAnimationFrame(() => {
-      if (note?.textarea && document.activeElement !== note.textarea) note.textarea.focus();
-    });
+    // given then can be dropped (or taken by the editor settling in), so
+    // it is given again once it has — next frame, and once more shortly
+    // after, unless the user has started typing somewhere else.
+    const refocus = () => {
+      const a = document.activeElement;
+      if (!note?.textarea || a === note.textarea) return;
+      if (a && a !== document.body && !a.closest?.(".cm-editor")) return;
+      note.textarea.focus();
+    };
+    requestAnimationFrame(refocus);
+    setTimeout(refocus, 400);
   }
   return true;
 }
