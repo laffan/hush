@@ -14,8 +14,8 @@ import { IS_TAURI, tauriInvoke, appState } from "./pane-state.js";
 export async function loadPdfPane(pane) {
   const { createPdfViewer } = await import("../pdf/pdf-viewer.js");
   const { findNodeByFileId } = await import("../state/tree-helpers.js");
-  const node = findNodeByFileId(appState.fileTree, pane.fileId);
-  const zoteroAttKey = node?.zoteroAttKey || null;
+  const { zoteroAttKeyFor } = await import("../sync/pdf-sync.js");
+  const zoteroAttKey = zoteroAttKeyFor(pane.fileId, findNodeByFileId(appState.fileTree, pane.fileId));
 
   const viewer = createPdfViewer(pane._content, { mode: "pane", zoteroAttKey, fileId: pane.fileId });
   pane.pdfViewer = viewer;
@@ -97,6 +97,10 @@ export async function loadPdfPane(pane) {
   } catch (e) {
     console.error("Failed to load PDF pane annotations:", e);
   }
+  // The NOTES.md beside it in Zotero, as the shelf's Notes tab.
+  import("../zotero/zotero-notes.js")
+    .then((m) => m.showPdfNotes(viewer, pane.fileId, zoteroAttKey, appState.settings, () => pane.pdfViewer === viewer))
+    .catch(() => {});
 }
 
 export async function loadStackPane(pane) {

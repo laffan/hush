@@ -404,14 +404,86 @@ html.ios:not(.phone) .floating-pane.docked.docked-bottom .pdf-zoom-toolbar::afte
 
 .pdf-annot-shelf-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 8px;
   color: var(--fg);
   font-family: system-ui, -apple-system, sans-serif;
 }
+/* Annotations | Notes — shown in place of the "Annotations" title once
+   the PDF's Zotero entry turns out to hold a NOTES.md
+   (pdf-viewer-notes.js). The active tab reads as the title did. */
+.pdf-shelf-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: rgba(128, 128, 128, 0.1);
+}
+.pdf-shelf-tab {
+  padding: 3px 10px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  font: 500 12px system-ui, -apple-system, sans-serif;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.pdf-shelf-tab:hover { opacity: 0.85; }
+.pdf-shelf-tab.active {
+  opacity: 1;
+  font-weight: 600;
+  background: var(--bg, transparent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+/* With Notes showing, only the header (less Extract) and the notes. */
+.pdf-annot-shelf-content.notes-active > :not(.pdf-annot-shelf-header):not(.pdf-notes-body),
+.pdf-annot-shelf-content.notes-active .pdf-annot-shelf-extract {
+  display: none;
+}
+.pdf-notes-body { display: none; }
+.pdf-annot-shelf-content.notes-active .pdf-notes-body {
+  display: block;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  color: var(--fg);
+  font: 13px/1.5 system-ui, -apple-system, sans-serif;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+/* The renderer writes `margin:0` inline on every block (its first use is
+   pasting into Google Docs); the space between blocks comes back here. */
+.pdf-notes-body > * { margin: 0 0 8px !important; }
+.pdf-notes-body h1, .pdf-notes-body h2, .pdf-notes-body h3,
+.pdf-notes-body h4, .pdf-notes-body h5, .pdf-notes-body h6 {
+  font-size: 14px;
+  font-weight: 650;
+  margin-top: 14px !important;
+}
+.pdf-notes-body h1 { font-size: 16px; }
+.pdf-notes-body ul, .pdf-notes-body ol { padding-left: 18px; }
+.pdf-notes-body blockquote {
+  padding-left: 10px !important;
+  border-left: 2px solid rgba(128, 128, 128, 0.4);
+  opacity: 0.85;
+}
+.pdf-notes-body pre {
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: rgba(128, 128, 128, 0.1);
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+.pdf-notes-body a { color: inherit; text-decoration: underline; }
+.pdf-notes-body mark { color: #000; }
+.pdf-notes-body hr { border: none; border-top: 1px solid rgba(128, 128, 128, 0.3); }
+
 .pdf-annot-shelf-extract {
   margin-left: auto;
   padding: 3px 8px;

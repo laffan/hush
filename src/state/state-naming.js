@@ -13,12 +13,19 @@ import { stripFrontmatter } from "../editor/frontmatter.js";
 
 /** Pick the first content-bearing line as the doc's title. Skips blank
  *  lines, a leading metadata frontmatter block (properties are not a
- *  title), and `---Tab name---` markers — markers are structural, not
+ *  title), cards, and `---Tab name---` markers — markers are structural, not
  *  titles, so an imported GDoc whose first tab is `---Slow Show---`
  *  should not end up with `---Slow Show---` as its filename. */
 export function deriveName(content) {
   if (typeof content !== "string" || !content.trim()) return "Untitled";
+  // A card (`<<<` … `>>>` on lines of their own) sits beside the text,
+  // so its words are never the document's title — not even when the
+  // card's markdown comes first.
+  let inCard = false;
   for (const rawLine of stripFrontmatter(content).split("\n")) {
+    if (rawLine === "<<<") { inCard = true; continue; }
+    if (rawLine === ">>>") { inCard = false; continue; }
+    if (inCard) continue;
     const trimmed = rawLine.trim();
     if (!trimmed) continue;
     if (parseTabMarkerLine(trimmed)) continue;

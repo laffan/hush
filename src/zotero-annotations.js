@@ -285,18 +285,21 @@ export function mergeAnnotationLists(apiList, extractedList) {
 
 /**
  * Everything a viewer should list for a PDF: the Zotero attachment's
- * annotations (when there is a key and credentials), merged with any the
- * file has had extracted. Errors on the API side leave the extracted
+ * annotations (when there is a key — from the library's highlights file,
+ * the attachment's cache, or Zotero itself), merged with any the file
+ * has had extracted. Errors on the API side leave the extracted
  * half standing.
  */
 export async function loadPdfAnnotationList(fileId, attKey, settings, opts = {}) {
   const extracted = await getExtractedAnnotations(fileId);
   let api = [];
-  const userId = settings?.zoteroUserId;
-  const apiKey = settings?.zoteroApiKey;
-  if (attKey && userId && apiKey) {
-    try { api = (await getAnnotations(attKey, userId, apiKey, opts)).annotations; }
-    catch (e) { console.error("Failed to load Zotero annotations:", e); }
+  // No credentials check up front, as in the highlight browser: with
+  // the library's highlights downloaded the read is local and needs
+  // none, and getAnnotations says so when it does have to ask Zotero.
+  if (attKey) {
+    try {
+      api = (await getAnnotations(attKey, settings?.zoteroUserId || "", settings?.zoteroApiKey || "", opts)).annotations;
+    } catch (e) { console.error("Failed to load Zotero annotations:", e); }
   }
   return mergeAnnotationLists(api, extracted);
 }

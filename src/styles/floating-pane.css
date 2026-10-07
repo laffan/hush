@@ -619,6 +619,18 @@ html.ios:not(.phone) .floating-pane.docked.docked-bottom .floating-pane-titlebar
   top: 6px;
 }
 
+/* The pill floats over the content's top edge, so a docked Doc pane
+   starts its text below it: `--pane-top-inset` is the measured overlap
+   plus a little clearance (pane-dock.js#syncPaneChromeInset). Until it
+   has been measured, the fallback is the pill's usual reach. Padding on
+   the scroller, so the text scrolls up under the pill as before. */
+html.ios:not(.phone) .floating-pane.docked:not(.docked-bottom) .floating-pane-content .cm-scroller {
+  padding-top: max(8px, var(--pane-top-inset, calc(max(var(--ipad-safe-top, 0px), env(safe-area-inset-top, 0px)) + 46px)));
+}
+html.ios:not(.phone) .floating-pane.docked.docked-bottom .floating-pane-content .cm-scroller {
+  padding-top: max(8px, var(--pane-top-inset, 46px));
+}
+
 /* A pill shrink-wraps its contents, so the filename and the button
    cluster end up touching and the whole bar is covered by things that
    swallow a press — the title link opens the file, every button does

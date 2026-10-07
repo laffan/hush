@@ -41,9 +41,7 @@ export async function mountPdf(container, fileId, state) {
 
   container.innerHTML = "";
 
-  const { findNodeByFileId } = await import("../state/tree-helpers.js");
-  const node = findNodeByFileId(state.fileTree, fileId);
-  const zoteroAttKey = node?.zoteroAttKey || null;
+  const zoteroAttKey = await resolveAttKey(fileId, state);
 
   const viewer = createPdfViewer(container, { mode: "main", zoteroAttKey, fileId });
   currentViewer = viewer;
@@ -96,6 +94,7 @@ export async function mountPdf(container, fileId, state) {
   } catch {}
 
   await loadAnnotationsIfZotero(viewer, fileId, state);
+  void loadNotes(viewer, fileId, state);
 }
 
 export async function unmountPdf() {
@@ -121,19 +120,31 @@ export function getPdfInstance() {
 export async function refreshPdfAnnotations(state) {
   if (!currentViewer || !currentFileId) return;
   await loadAnnotationsIfZotero(currentViewer, currentFileId, state, true);
+  void loadNotes(currentViewer, currentFileId, state);
+}
+
+/** The NOTES.md beside the PDF in its Zotero entry, as the shelf's Notes
+ *  tab (zotero/zotero-notes.js). */
+async function loadNotes(viewer, fileId, state) {
+  try {
+    const { showPdfNotes } = await import("../zotero/zotero-notes.js");
+    await showPdfNotes(viewer, fileId, await resolveAttKey(fileId, state), state.settings,
+      () => currentViewer === viewer);
+  } catch (e) {
+    console.warn("Failed to load the PDF's notes:", e);
+  }
 }
 
 /** The Zotero attachment's annotations, plus any extracted from the file
  *  itself (Extract Annotations, on the shelf) — either half may be all
  *  there is. */
 async function loadAnnotationsIfZotero(viewer, fileId, state, forceRefresh = false) {
-  const { findNodeByFileId } = await import("../state/tree-helpers.js");
-  const node = findNodeByFileId(state.fileTree, fileId);
+  const attKey = await resolveAttKey(fileId, state);
 
   try {
     const { loadPdfAnnotationList } = await import("../zotero-annotations.js");
-    const annotations = await loadPdfAnnotationList(fileId, node?.zoteroAttKey, state.settings, { forceRefresh });
-    if (!annotations.length && !node?.zoteroAttKey) return;
+    const annotations = await loadPdfAnnotationList(fileId, attKey, state.settings, { forceRefresh });
+    if (!annotations.length && !attKey) return;
     viewer.setAnnotations(annotations);
     // Keep the shelf cover's baked-in annotation marks current with
     // what the viewer just loaded (first fetch or explicit refresh).
@@ -145,6 +156,14 @@ async function loadAnnotationsIfZotero(viewer, fileId, state, forceRefresh = fal
   } catch (e) {
     console.error("Failed to load PDF annotations:", e);
   }
+}
+
+/** The PDF's Zotero attachment key — the tree node's, else the PDF
+ *  registry's (pdf-sync.js#zoteroAttKeyFor). */
+async function resolveAttKey(fileId, state) {
+  const { findNodeByFileId } = await import("../state/tree-helpers.js");
+  const { zoteroAttKeyFor } = await import("../sync/pdf-sync.js");
+  return zoteroAttKeyFor(fileId, findNodeByFileId(state.fileTree, fileId));
 }
 
 function syncPdfInset(container) {

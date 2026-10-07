@@ -216,3 +216,58 @@ pub async fn fetch_zotero_annotations(
         .map_err(|e| e.to_string())?;
     Ok(serialized)
 }
+
+/// Fetch a text attachment's file — a `NOTES.md` stored beside a PDF in
+/// its Zotero entry — server-side (Zotero's `/file` 302s to S3, whose
+/// CORS rejects the webview), cache it under `zotero_notes/`, and return
+/// the text. Unlike PDFs it is fetched afresh every time: the notes are
+/// written while reading, and the cache is only the offline copy.
+#[tauri::command]
+pub async fn fetch_zotero_note_text(
+    state: State<'_, AppState>,
+    item_key: String,
+    user_id: String,
+    api_key: String,
+) -> Result<String, String> {
+    let url = format!(
+        "https://api.zotero.org/users/{}/items/{}/file",
+        user_id, item_key
+    );
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .get(&url)
+        .header("Zotero-API-Key", &api_key)
+        .header("Zotero-API-Version", "3")
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Notes download failed: {} {}", status, body));
+    }
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    state
+        .zotero_manager
+        .lock()
+        .unwrap()
+        .save_note_text(&item_key, &text)
+        .map_err(|e| e.to_string())?;
+    Ok(text)
+}
+
+/// The cached text of a notes attachment, or `None` when it was never
+/// fetched on this device.
+#[tauri::command]
+pub fn load_zotero_note_text(state: State<AppState>, item_key: String) -> Result<Option<String>, String> {
+    state
+        .zotero_manager
+        .lock()
+        .unwrap()
+        .load_note_text(&item_key)
+        .map_err(|e| e.to_string())
+}

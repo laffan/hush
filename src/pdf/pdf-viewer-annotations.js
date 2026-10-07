@@ -18,6 +18,8 @@
  *                                                annotations into the list; resolves to how many
  */
 
+import { attachNotesTab } from "./pdf-viewer-notes.js";
+
 /** Parse (and cache) the Zotero annotationPosition payload. Shared with
  *  the folded view (pdf-viewer-folds.js). */
 export function parseAnnotationPosition(annot) {
@@ -172,6 +174,10 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
   shelfContent.appendChild(shelfBody);
 
   shelf.appendChild(shelfContent);
+
+  // The Notes tab beside Annotations, once the PDF's Zotero entry turns
+  // out to hold a NOTES.md (pdf-viewer-notes.js).
+  const notesTab = attachNotesTab({ content: shelfContent, title: shelfTitle });
 
   // Left-edge resize strip, live only while the shelf is open (CSS).
   const shelfResize = document.createElement("div");
@@ -455,5 +461,6 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
     paintAnnotationsOnPage,
     /** Provide current annotations for suspend/resume snapshots */
     getAnnotations() { return annotations; },
+    setNotes: notesTab.setNotes,
   };
 }

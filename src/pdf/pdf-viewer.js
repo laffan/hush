@@ -663,6 +663,7 @@ export function createPdfViewer(container, opts = {}) {
     setZoteroAttKey,
     setToolbarInfo: (title, author) => applyToolbarInfo(toolbarInfo, title, author),
     toggleShelf: annotLayer.toggleShelf,
+    setNotes: annotLayer.setNotes,
     get element() { return root; },
   };
 }

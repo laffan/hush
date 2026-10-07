@@ -2,13 +2,15 @@
  * The command palette's Sticky Notes section: adding a sticky of each
  * scope, and two desk-wide actions —
  *
- *   - **Arrange Desk Stickies** lays the active desk's stickies out in a
- *     grid from the top left of the window, oldest first, each in a cell
- *     as big as the largest of them, as many columns as fit.
+ *   - **Arrange Desk Stickies** lays the active desk's stickies out in
+ *     columns from the top right of the window, oldest first: down the
+ *     rightmost column, then down the next one to its left, each in a
+ *     cell as big as the largest of them, as many rows as fit.
  *   - **Convert Desk Stickies to Cards** sends each of the active desk's
  *     stickies with any text to its Inbox as a card (the CARDS notebook,
- *     cards/card-courier.js), in the same order, and closes it. An empty
- *     sticky is left where it is.
+ *     cards/card-courier.js), in the same order, and closes it. The cards
+ *     start yellow, the sticky's own colour. An empty sticky is left where
+ *     it is.
  *   - **Convert Current Sticky to Card** does the same for the one desk or
  *     document sticky being worked on (the active one): a desk sticky goes
  *     to its desk's Inbox, a document sticky to the Inbox of the desk the
@@ -20,10 +22,14 @@ import {
 } from "./sticky-notes.js";
 import { findNodeByFileId, findAncestorIds } from "../state/tree-helpers.js";
 import { HEADER_HEIGHT } from "./sticky-shared.js";
+import { BOOKMARK_COLORS } from "../ui/bookmark-ui.js";
 
 const GRID_GAP = 16;
-const GRID_LEFT = 24;
+const GRID_RIGHT = 24;
 const GRID_TOP = 56;
+const GRID_BOTTOM = 24;
+// The card palette's yellow (the colour button's third swatch).
+const STICKY_CARD_COLOR = BOOKMARK_COLORS[2];
 
 const activeDeskId = (s) => s.getActiveDesk?.()?.id || null;
 const hasDeskStickies = (s) => { const id = activeDeskId(s); return !!id && deskStickies(id).length > 0; };
@@ -33,7 +39,7 @@ async function toast(message) {
   showImportToast(message, "info");
 }
 
-/** Lay the active desk's stickies out in a grid. */
+/** Lay the active desk's stickies out in columns from the top right. */
 export function arrangeDeskStickies(state) {
   const id = activeDeskId(state);
   if (!id) return;
@@ -41,12 +47,15 @@ export function arrangeDeskStickies(state) {
   if (!list.length) return;
   const cellW = Math.max(...list.map((n) => n.width));
   const cellH = Math.max(...list.map((n) => (n.collapsed ? HEADER_HEIGHT : n.height)));
-  const usable = window.innerWidth - GRID_LEFT * 2;
-  const columns = Math.max(1, Math.floor((usable + GRID_GAP) / (cellW + GRID_GAP)));
+  const usable = window.innerHeight - GRID_TOP - GRID_BOTTOM;
+  const rows = Math.max(1, Math.floor((usable + GRID_GAP) / (cellH + GRID_GAP)));
+  // Each sticky's right edge sits on its column's right edge, so a
+  // narrower one hugs the window side rather than the cell's left.
+  const right = window.innerWidth - GRID_RIGHT;
   moveStickies(list.map((n, i) => ({
     id: n.id,
-    x: GRID_LEFT + (i % columns) * (cellW + GRID_GAP),
-    y: GRID_TOP + Math.floor(i / columns) * (cellH + GRID_GAP),
+    x: right - Math.floor(i / rows) * (cellW + GRID_GAP) - n.width,
+    y: GRID_TOP + (i % rows) * (cellH + GRID_GAP),
   })));
 }
 
@@ -64,7 +73,7 @@ export async function convertDeskStickiesToCards(state) {
   try {
     // One at a time: each lands in the next free slot of the grid.
     for (const n of list) {
-      home = await sendCardToInbox(state, n.text.replace(/\s+$/, ""), null, inboxId);
+      home = await sendCardToInbox(state, n.text.replace(/\s+$/, ""), { bgColor: STICKY_CARD_COLOR }, inboxId);
       done.push(n.id);
     }
   } catch (err) {

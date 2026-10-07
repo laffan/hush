@@ -56,6 +56,16 @@ export function getPdfMeta(fileId) {
   return _registry?.items?.[fileId] || null;
 }
 
+/** The Zotero attachment a PDF is linked to: its tree node's key, else
+ *  the registry's. The two are written together, but a node adopted by
+ *  a folder reconcile (desk_scan.rs#new_node) is minted without one, so
+ *  every reader takes either — the shelf, the covers and the viewers
+ *  alike. A viewer that asked only the node lost the page highlights
+ *  the covers and the highlight browser still showed. */
+export function zoteroAttKeyFor(fileId, node) {
+  return node?.zoteroAttKey || getPdfMeta(fileId)?.zoteroAttKey || null;
+}
+
 export function getPdfDownloadProgress(fileId) {
   return _downloadProgress.get(fileId) ?? null;
 }

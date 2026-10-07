@@ -221,31 +221,35 @@ export function applyDockGeometry(pane) {
 const PILL_CLEARANCE = 8;
 
 /**
- * Tell a notebook pane's canvas how much of its own top edge the pane's
- * chrome is sitting on.
+ * Tell a pane's content how much of its own top edge the pane's chrome
+ * is sitting on.
  *
  * On iPad a docked pane wears its title as a pill floating *over* the
  * content (the full-width bar would land under the system menu band —
- * see floating-pane.css), and canvas chrome pinned to the top edge
- * would otherwise open underneath it. Measured rather than derived: the
- * overlap is however far the title bar's box reaches past the top of
- * the content box, which is zero for an in-flow title bar and follows
- * the pill wherever the CSS puts it, at whatever height its text wraps
- * to.
+ * see floating-pane.css), and anything at the content's top edge would
+ * otherwise sit underneath it. Measured rather than derived: the overlap
+ * is however far the title bar's box reaches past the top of the content
+ * box, which is zero for an in-flow title bar and follows the pill
+ * wherever the CSS puts it, at whatever height its text wraps to.
+ *
+ * Published two ways: `--pane-top-inset` on the pane element, which a
+ * docked Doc pane's scroller pads its top by (floating-pane.css), and
+ * `hostTopInset` on a notebook's canvas state for its top-pinned chrome.
+ * A pane that isn't laid out (hidden with its context) measures nothing
+ * and keeps what it had.
  */
 export function syncPaneChromeInset(pane) {
-  const canvas = pane?.notebook;
-  if (!canvas?.state) return;
-  const bar = pane.el?.querySelector(".floating-pane-titlebar");
-  const content = pane._content;
-  let inset = 0;
-  if (bar && content) {
-    const barRect = bar.getBoundingClientRect();
-    const contentRect = content.getBoundingClientRect();
-    const overlap = barRect.bottom - contentRect.top;
-    if (overlap > 0 && barRect.height) inset = Math.round(overlap + PILL_CLEARANCE);
-  }
-  if (canvas.state.hostTopInset === inset) return;
+  const bar = pane?.el?.querySelector(".floating-pane-titlebar");
+  const content = pane?._content;
+  if (!bar || !content) return;
+  const barRect = bar.getBoundingClientRect();
+  const contentRect = content.getBoundingClientRect();
+  if (!contentRect.height) return;
+  const overlap = barRect.bottom - contentRect.top;
+  const inset = overlap > 0 && barRect.height ? Math.round(overlap + PILL_CLEARANCE) : 0;
+  pane.el.style.setProperty("--pane-top-inset", inset + "px");
+  const canvas = pane.notebook;
+  if (!canvas?.state || canvas.state.hostTopInset === inset) return;
   canvas.state.hostTopInset = inset;
   canvas.state.notify("theme");
 }

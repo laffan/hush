@@ -5,7 +5,9 @@
  *   - **In a Doc** the selection is fenced as a card where it stands —
  *     `<<<` and `>>>` on lines of their own, so a selection in the middle
  *     of a line splits the line around the card. With no selection an
- *     empty card goes in at the caret, and its editor takes the keyboard.
+ *     empty card goes in beside the caret's line — its markdown on lines
+ *     of its own above that line, the text untouched — and its editor
+ *     takes the keyboard.
  *   - **On a canvas** each selected text shape becomes a card in place.
  *     With no text shape selected an empty card lands under the pointer
  *     (the middle of the view when the pointer is elsewhere), focused.
@@ -23,33 +25,31 @@ import { Transaction } from "@codemirror/state";
 import { cardEdit, insideCard } from "./card-facet.js";
 import { focusCardWhenBound } from "./card-doc-plugin.js";
 import { confirmLongCard } from "./card-confirm.js";
-import { serializeCard, isFenceLine } from "./card-model.ts";
+import { serializeCard, isFenceLine, cardInsertion } from "./card-model.ts";
 
 async function toast(message) {
   const { showImportToast } = await import("../editor/import-toast.js");
   showImportToast(message, "info");
 }
 
-/** An empty card at a Doc's caret, its editor focused. A caret in the
- *  middle of a line splits the line around the card. */
+/** An empty card beside the caret's line in a Doc, its editor focused.
+ *  The text is left exactly as it was: a Doc card sits beside the line
+ *  after its markdown, so the markdown goes in on lines of its own just
+ *  above the caret's line (`cardInsertion`, which also steps out of
+ *  frontmatter and code blocks) rather than splitting the line or
+ *  adding a blank one. */
 export function insertEmptyCard(view) {
   if (view.state.facet(insideCard)) return false;
   const doc = view.state.doc;
   const pos = view.state.selection.main.head;
-  const line = doc.lineAt(pos);
-  const blank = line.length === 0;
-  const from = pos;
-  const card = serializeCard("", null);
-  // A blank line takes the card; anywhere else it gets lines of its own.
-  // At the very end of the document it gets a line after it, so the
-  // caret has somewhere to go that isn't the card's edge.
-  const lead = pos === line.from ? "" : "\n";
-  const tail = blank && pos < doc.length ? "" : "\n";
-  const cardFrom = from + lead.length;
+  const { from, insert } = cardInsertion(doc, doc.lineAt(pos).from, serializeCard("", null));
+  // `insert` is the card's lines plus their break, or — appended at the
+  // very end of the document — a break and then the card's lines.
+  const cardFrom = insert.startsWith("\n") ? from + 1 : from;
   focusCardWhenBound(view, cardFrom);
   view.dispatch({
-    changes: { from, insert: lead + card + tail },
-    selection: { anchor: cardFrom + card.length + 1 },
+    changes: { from, insert },
+    selection: { anchor: from <= pos ? pos + insert.length : pos },
     annotations: [cardEdit.of(true), Transaction.userEvent.of("input.card")],
     scrollIntoView: true,
   });

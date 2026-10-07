@@ -469,8 +469,8 @@ async function mountPdfContent(contentEl, item, state, liveData) {
   try {
     const { createPdfViewer } = await import("../pdf/pdf-viewer.js");
     const { findNodeByFileId } = await import("../state/tree-helpers.js");
-    const node = findNodeByFileId(state.fileTree, item.fileId);
-    const zoteroAttKey = node?.zoteroAttKey || null;
+    const { zoteroAttKeyFor } = await import("../sync/pdf-sync.js");
+    const zoteroAttKey = zoteroAttKeyFor(item.fileId, findNodeByFileId(state.fileTree, item.fileId));
 
     const viewer = createPdfViewer(wrapper, { mode: "pane", zoteroAttKey, fileId: item.fileId });
 
@@ -507,6 +507,9 @@ async function mountPdfContent(contentEl, item, state, liveData) {
       const annotations = await loadPdfAnnotationList(item.fileId, zoteroAttKey, state.settings);
       if (annotations.length) viewer.setAnnotations(annotations);
     } catch (_) {}
+    import("../zotero/zotero-notes.js")
+      .then((m) => m.showPdfNotes(viewer, item.fileId, zoteroAttKey, state.settings, () => liveData.pdfViewer === viewer))
+      .catch(() => {});
 
     liveData.pdfViewer = viewer;
     liveData.cleanup = () => { if (viewer.destroy) viewer.destroy(); };

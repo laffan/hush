@@ -12,6 +12,7 @@ import {
 } from "./pane-state.js";
 import { createPaneEditor, attachPaneTextDrop } from "./pane-editor.js";
 import { findLockedStyleForFile } from "./pane-locked-style.js";
+import { paneTemporaryStyle, paneBaseSettings } from "../state/temporary-style.js";
 export { findLockedStyleForFile };
 import { attachEditorTextDrag, attachNotebookTextShapeDrag, attachNotebookImageShapeDrag } from "./text-drag.js";
 import { countWords } from "../editor/plugins/word-count.js";
@@ -101,6 +102,14 @@ async function loadDocumentPane(pane) {
     },
   });
   pane.editor = editor;
+  // A pane already docked when its document loads (restore at boot, or
+  // a file swapped into a docked pane) measures its pill now, so the
+  // text starts below it (pane-dock.js#syncPaneChromeInset).
+  if (pane.docked) {
+    requestAnimationFrame(() => {
+      import("./pane-dock.js").then((m) => m.syncPaneChromeInset(pane)).catch(() => {});
+    });
+  }
 
   // Apply the active style (or the locked style for this document) at
   // creation time so the pane opens with the right theme, font, AND
@@ -110,8 +119,8 @@ async function loadDocumentPane(pane) {
   // colour-override path (applyStyleColorsToView in pane-editor.js)
   // which is what makes panes track --bg / --fg overrides.
   if (editor.reconfigureTheme) {
-    const lockedStyleId = pane.localSync ? null : findLockedStyleForFile(pane.fileId);
-    editor.reconfigureTheme(appState.settings, lockedStyleId);
+    const lockedStyleId = paneTemporaryStyle(pane.id) || (pane.localSync ? null : findLockedStyleForFile(pane.fileId));
+    editor.reconfigureTheme(paneBaseSettings(appState.settings), lockedStyleId);
   }
 
   // Load file content — Local Sync panes read straight from disk via
@@ -225,7 +234,7 @@ async function loadNotebookPane(pane) {
   // Inherit the current Hush editor style (appearance/theme/font/grid) —
   // if the notebook has a locked style, that takes precedence.
   const lockedStyleId = findLockedStyleForFile(pane.fileId);
-  canvas.applySettings(computeNotebookSettings(appState, lockedStyleId));
+  canvas.applySettings(computeNotebookSettings({ ...appState, settings: paneBaseSettings(appState.settings) }, lockedStyleId));
 
   // Load shapes + layers + flowchart edges through the canonical
   // envelope decoder so panes match the main canvas's persistence.

@@ -126,6 +126,30 @@ impl ZoteroManager {
         }
         Ok(Some(fs::read_to_string(path)?))
     }
+
+    /// Save the text of a reading-notes attachment (a `NOTES.md` stored
+    /// beside a PDF in its Zotero entry), so a later open reads it
+    /// without the network. `{data_dir}/zotero_notes/{attKey}.md`.
+    pub fn save_note_text(&self, item_key: &str, text: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let safe = sanitize_key(item_key);
+        if safe.is_empty() {
+            return Err("zotero notes: empty key".into());
+        }
+        let dir = self.data_dir.join("zotero_notes");
+        fs::create_dir_all(&dir)?;
+        write_atomic_str(&dir.join(format!("{}.md", safe)), text)?;
+        Ok(())
+    }
+
+    /// The cached notes text for an attachment key, or `None`.
+    pub fn load_note_text(&self, item_key: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        let safe = sanitize_key(item_key);
+        let path = self.data_dir.join("zotero_notes").join(format!("{}.md", safe));
+        if safe.is_empty() || !path.exists() {
+            return Ok(None);
+        }
+        Ok(Some(fs::read_to_string(path)?))
+    }
 }
 
 fn sanitize_key(s: &str) -> String {

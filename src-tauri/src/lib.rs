@@ -485,6 +485,8 @@ pub fn run() {
             commands::zotero::save_zotero_annotations,
             commands::zotero::load_zotero_annotations,
             commands::zotero::fetch_zotero_annotations,
+            commands::zotero::fetch_zotero_note_text,
+            commands::zotero::load_zotero_note_text,
             commands::desks::desk_list_roots,
             commands::desks::desk_list_root_entries,
             commands::desks::desk_update_root_path,
