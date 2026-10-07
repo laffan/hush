@@ -13,12 +13,25 @@
  */
 import { buildWidgetSnapshot } from "./widget-snapshot.js";
 import { noteRecentActivity, WIDGET_ACTIVITY_EVENT } from "./widget-activity.js";
+import { logActivity } from "../activity-log.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 const PUBLISH_DELAY_MS = 1200;
 
 let timer = null;
 let lastSent = null;
+/** What the Activity Log last heard from the hand-off, so a failure that
+ *  repeats on every publish is logged once, not once a second. */
+let lastLogged = null;
+
+/** Log the hand-off's outcome when it changes — the only way to see,
+ *  from an iPad with no console, why a widget is sitting on its empty
+ *  state (a missing App Group, most likely). */
+function logOutcome(key, level, message, detail) {
+  if (key === lastLogged) return;
+  lastLogged = key;
+  logActivity("widgets", level, message, detail);
+}
 
 async function publishNow(state) {
   timer = null;
@@ -28,12 +41,20 @@ async function publishNow(state) {
   if (json === lastSent) return;
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("publish_widget_snapshot", { snapshot: json });
+    const written = await invoke("publish_widget_snapshot", { snapshot: json });
     lastSent = json;
+    if (written) {
+      const snap = JSON.parse(json);
+      logOutcome("ok", "info", "Widget snapshot published", {
+        desks: snap.desks.length, recentFiles: snap.recentFiles.length,
+      });
+    }
   } catch (e) {
-    // An older binary without the command, or a platform without
-    // widgets; nothing to retry.
-    console.warn("publish_widget_snapshot failed:", e);
+    // No App Group container, an older binary without the command, a
+    // write that failed. Logged, not retried until something changes.
+    const message = String(e?.message || e);
+    console.warn("publish_widget_snapshot failed:", message);
+    logOutcome(`err:${message}`, "error", "Widget snapshot not published", { error: message });
   }
 }
 

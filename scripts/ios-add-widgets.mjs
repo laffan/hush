@@ -19,12 +19,13 @@
  *   2. Gives the app and the extension the same App Group
  *      (HUSH_APP_GROUP), through which the app hands the widgets their
  *      snapshot (tauri-plugin-hush-widgets) — the extension's Info.plist
- *      carries it as `HushAppGroup`.
+ *      carries it as `HushAppGroup`. Both through `properties` in the
+ *      spec: XcodeGen rewrites entitlements files from them.
  *   3. Regenerates the Xcode project with `xcodegen`, then re-runs
  *      `pod install`, since regenerating drops the CocoaPods integration
  *      ios-add-mlkit-pod.mjs set up.
  */
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,6 +64,7 @@ let spec = original;
 // Drop anything an earlier run added, so the rest can assume a clean spec.
 spec = spec.replace(new RegExp(`^[ \\t]*${BEGIN}[\\s\\S]*?^[ \\t]*${END}[ \\t]*\\n?`, "gm"), "");
 spec = spec.replace(/^[ \t]*- target: HushWidgets[^\n]*\n/gm, "");
+spec = spec.replace(/^[ \t]*properties: \{.*\} # hush-widgets\n/gm, "");
 
 // The app target is the one Tauri names <app>_iOS.
 const appTargetMatch = spec.match(/^  ([A-Za-z0-9_-]+_iOS):\s*$/m);
@@ -121,43 +123,41 @@ const block = `
 `;
 spec = spec.replace(/\s*$/, "\n") + block;
 
+// 3. The app's own entitlements gain the App Group — in the spec, not in
+//    the file. XcodeGen *writes* every target's entitlements file from its
+//    `properties` on each generate, and the app target's entry names only
+//    the path, so a group added to the file by hand is wiped by the very
+//    `xcodegen generate` below: the app then has no container to write
+//    the snapshot into, and every widget sits at its empty state. (The
+//    first version of this script did exactly that.) Whatever the file
+//    already holds is carried into the properties so nothing else is
+//    lost, written as JSON — which YAML reads as a flow mapping.
+const entRel = `${appTarget}/${appTarget}.entitlements`;
+const entPath = resolve(appleDir, entRel);
+let entitlements = {};
+if (existsSync(entPath)) {
+  try {
+    entitlements = JSON.parse(execSync(`plutil -convert json -o - "${entPath}"`, { encoding: "utf8" }));
+  } catch {
+    console.warn(`Couldn't read ${entPath} with plutil; starting its entitlements from empty.`);
+  }
+}
+const groupsKey = "com.apple.security.application-groups";
+const groups = Array.isArray(entitlements[groupsKey]) ? entitlements[groupsKey] : [];
+if (!groups.includes(HUSH_APP_GROUP)) groups.push(HUSH_APP_GROUP);
+entitlements[groupsKey] = groups;
+const entPathRe = new RegExp(`^(    entitlements:\\s*\\n      path: ${entRel.replace(/[.]/g, "\\.")}[ \\t]*\\n)`, "m");
+if (!entPathRe.test(spec)) fail(`Couldn't find ${appTarget}'s entitlements entry (path: ${entRel}) in project.yml.`);
+if (new RegExp(`${entPathRe.source}      properties:`, "m").test(spec)) {
+  fail(`${appTarget}'s entitlements already declare properties in project.yml — add ${HUSH_APP_GROUP} to them by hand.`);
+}
+spec = spec.replace(entPathRe, `$1      properties: ${JSON.stringify(entitlements)} # hush-widgets\n`);
+
 if (spec !== original) {
   writeFileSync(specPath, spec);
   console.log(`Added the ${TARGET} extension to ${specPath}`);
 } else {
   console.log("project.yml already has the widget extension.");
-}
-
-// 3. The app's own entitlements gain the App Group. The spec only names
-//    the file (no properties), so XcodeGen leaves its contents alone —
-//    edit the plist itself, keeping whatever else it holds.
-const entPath = resolve(appleDir, `${appTarget}/${appTarget}.entitlements`);
-const EMPTY_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-</dict>
-</plist>
-`;
-let ent = existsSync(entPath) ? readFileSync(entPath, "utf8") : EMPTY_PLIST;
-if (!ent.includes(HUSH_APP_GROUP)) {
-  if (ent.includes("com.apple.security.application-groups")) {
-    // An App Group list already exists — add ours to it.
-    ent = ent.replace(
-      /(<key>com\.apple\.security\.application-groups<\/key>\s*<array>)/,
-      `$1\n\t\t<string>${HUSH_APP_GROUP}</string>`,
-    );
-  } else if (/<dict\s*\/>/.test(ent)) {
-    ent = ent.replace(/<dict\s*\/>/, `<dict>\n\t<key>com.apple.security.application-groups</key>\n\t<array>\n\t\t<string>${HUSH_APP_GROUP}</string>\n\t</array>\n</dict>`);
-  } else {
-    ent = ent.replace(
-      /<\/dict>\s*<\/plist>\s*$/,
-      `\t<key>com.apple.security.application-groups</key>\n\t<array>\n\t\t<string>${HUSH_APP_GROUP}</string>\n\t</array>\n</dict>\n</plist>\n`,
-    );
-  }
-  mkdirSync(dirname(entPath), { recursive: true });
-  writeFileSync(entPath, ent);
-  console.log(`Added ${HUSH_APP_GROUP} to ${entPath}`);
 }
 
 // 4. Regenerate the Xcode project, then put CocoaPods back on it.
