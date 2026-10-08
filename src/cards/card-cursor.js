@@ -7,6 +7,7 @@
  */
 import { EditorView } from "@codemirror/view";
 import { insideCard } from "./card-facet.js";
+import { linkReturn } from "./card-return.js";
 
 let last = null; // WeakRef<EditorView>
 
@@ -31,8 +32,10 @@ export function rememberedInsertPoint() {
   return view ? { view, pos: view.state.selection.main.head } : null;
 }
 
-/** Insert `text` at the remembered caret. False when there is none. */
-export function insertAtRememberedCursor(text) {
+/** Insert `text` at the remembered caret. False when there is none.
+ *  `back` (card-return.js) puts the card back where it came from when
+ *  the insertion is undone. */
+export function insertAtRememberedCursor(text, back = null) {
   const view = rememberedHostView();
   if (!view) return false;
   const head = view.state.selection.main.head;
@@ -41,6 +44,7 @@ export function insertAtRememberedCursor(text) {
     selection: { anchor: head + text.length },
     userEvent: "input.card",
   });
+  linkReturn(view, head, head + text.length, back);
   view.focus();
   return true;
 }

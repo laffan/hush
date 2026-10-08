@@ -375,7 +375,24 @@ export function updateColumnResizers(state) {
 
   function makeDraggable(el, isLeft) {
     let startX, startWidth;
+    let handedOn = false;
+    // The strip is 42px wide and takes the pointer while ⌘ is held —
+    // which is when a ⌘-press on a card means "pick it up" (cards/
+    // card-drop.js). A card in the right margin starts 10px past the
+    // text, under the strip, so that press resized the column instead.
+    // A press over a card goes to the card.
+    el.addEventListener("pointerdown", (e) => {
+      el.style.pointerEvents = "none";
+      const under = document.elementFromPoint(e.clientX, e.clientY);
+      el.style.pointerEvents = "";
+      handedOn = !!under?.closest(".hush-card");
+      if (!handedOn) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      under.dispatchEvent(new PointerEvent("pointerdown", e));
+    });
     el.addEventListener("mousedown", (e) => {
+      if (handedOn) { handedOn = false; e.preventDefault(); return; }
       e.preventDefault();
       startX = e.clientX;
       startWidth = state.settings.columnWidth;

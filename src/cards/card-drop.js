@@ -31,6 +31,7 @@ import { serializeCard, cardInsertion, withoutPosition, findCardsInDoc } from ".
 import { deliverCardToFile, screenToWorld } from "./card-transfer.js";
 import { sendCardToHome } from "./card-courier.js";
 import { docPlacement } from "./card-doc-float.js";
+import { linkReturn } from "./card-return.js";
 
 /** Whether a release lands cards as text: ⌘ (or Ctrl, or the touch
  *  bar's ⌘ pill) held. */
@@ -100,7 +101,7 @@ export function canvasWorld(nbState, canvasEl, x, y) {
  * where on the held card the pointer is, in card pixels. Resolves true
  * once they have landed.
  */
-export async function landCards(appState, target, cards, x, y, grab = { x: 16, y: 12 }) {
+export async function landCards(appState, target, cards, x, y, grab = { x: 16, y: 12 }, back = null) {
   if (!target || !cards.length) return false;
   if (target.kind === "cm") {
     // All beside the one line, where the held card goes; the float layer
@@ -108,10 +109,12 @@ export async function landCards(appState, target, cards, x, y, grab = { x: 16, y
     const place = docPlacement(target.view, x, y, grab, cards[0].meta);
     const at = { xPos: place.meta.xPos, yPos: place.meta.yPos };
     const text = cards.map((c) => serializeCard(c.body, { ...withoutPosition(c.meta), ...at })).join("\n");
+    const ins = cardInsertion(target.view.state.doc, place.pos, text);
     target.view.dispatch({
-      changes: cardInsertion(target.view.state.doc, place.pos, text),
+      changes: ins,
       annotations: [cardEdit.of(true), Transaction.userEvent.of("move.card")],
     });
+    linkReturn(target.view, ins.from, ins.from + ins.insert.length, back);
     return true;
   }
   if (target.kind === "nb") {
@@ -143,7 +146,7 @@ export async function landCards(appState, target, cards, x, y, grab = { x: 16, y
  * given, a blank line between two. Over a sidebar row they land as cards
  * after all. Resolves true once they have landed.
  */
-export async function landCardsAsText(appState, target, cards, x, y) {
+export async function landCardsAsText(appState, target, cards, x, y, back = null) {
   if (!target || !cards.length) return false;
   const text = cards.map((c) => c.body).join("\n\n");
   if (target.kind === "cm") {
@@ -155,6 +158,7 @@ export async function landCardsAsText(appState, target, cards, x, y) {
       annotations: [cardEdit.of(true), Transaction.userEvent.of("input.drop")],
       scrollIntoView: true,
     });
+    linkReturn(view, from, from + insert.length, back);
     view.focus();
     return true;
   }
@@ -162,7 +166,7 @@ export async function landCardsAsText(appState, target, cards, x, y) {
     target.state.addTextShapeAtPosition(text, canvasWorld(target.state, target.canvasEl, x, y));
     return true;
   }
-  return landCards(appState, target, cards, x, y);
+  return landCards(appState, target, cards, x, y, undefined, back);
 }
 
 /** Land one card ({ body, meta }); see `landCards`. */

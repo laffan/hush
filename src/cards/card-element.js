@@ -239,6 +239,21 @@ export function createCardElement(o) {
   // A mouse press on the header must not reach an editor underneath and
   // move its caret, or insert-at-cursor would insert at the header.
   header.addEventListener("mousedown", (e) => e.preventDefault());
+
+  // With ⌘ held the whole card is a handle, not only its header: a ⌘-
+  // press on its words picks it up (and a ⌘-drop lands them as text,
+  // card-drop.js) rather than putting a second caret in its editor. A
+  // link in the card still opens on ⌘-click; the buttons and the width
+  // handle keep their own presses. Taken at capture, ahead of the editor.
+  el.addEventListener("pointerdown", (e) => {
+    if (!o.onHeaderDown || e.button !== 0 || meta.collapsed) return;
+    if (!(e.metaKey || e.ctrlKey || window.__hushCmdHeld)) return;
+    const t = e.target instanceof Element ? e.target : null;
+    if (!t || t.closest("[data-act], .hush-card-resize, .hush-card-header, .cm-link-rendered, a")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    o.onHeaderDown(e);
+  }, true);
   header.addEventListener("dblclick", (e) => {
     if (e.target instanceof Element && e.target.closest("[data-act]")) return;
     e.preventDefault();

@@ -14,12 +14,13 @@ import { setCardEditorFactory, createCardElement } from "./card-element.js";
 import { startCardDrag } from "./card-drag.js";
 import { watchCanvasCardDrag } from "./card-canvas-drag.js";
 import { insertAtRememberedCursor } from "./card-cursor.js";
+import { canvasReturn } from "./card-return.js";
 import { publishNotebookCards } from "./card-index.js";
 import { watchEmptiedCardsHomes } from "./card-home-rescue.js";
 
 export function initCards() {
   setCardEditorFactory(createPaneEditor);
-  window.__hushCards = { createCardElement, startCardDrag, watchCanvasCardDrag, insertAtRememberedCursor, publishNotebookCards };
+  window.__hushCards = { createCardElement, startCardDrag, watchCanvasCardDrag, insertAtRememberedCursor, canvasReturn, publishNotebookCards };
   // A CARDS notebook losing its last card while it holds more than cards.
   watchEmptiedCardsHomes();
 }

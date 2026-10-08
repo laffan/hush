@@ -18,6 +18,7 @@
 
 import { resolveCardTarget, canvasWorld, landCards, landCardsAsText, dropsAsText } from "./card-drop.js";
 import { createDragFeedback } from "./card-drag-feedback.js";
+import { canvasReturn } from "./card-return.js";
 import { MOVE_THRESHOLD, cardDragActive } from "./card-drag.js";
 import { cardBox } from "../notebook/card-geometry.ts";
 
@@ -106,9 +107,11 @@ function follow(appState, state, down) {
     e.stopPropagation();
     state.cancelActiveInteraction();
     const { cards, grab, ids } = carry;
+    // Undoing the landing in a Doc puts the cards back here.
+    const back = t.kind === "cm" ? canvasReturn(state, ids) : null;
     const landing = asText
-      ? landCardsAsText(appState, t, [...cards].sort((a, b) => (a.dy - b.dy) || (a.dx - b.dx)), e.clientX, e.clientY)
-      : landCards(appState, t, cards, e.clientX, e.clientY, grab);
+      ? landCardsAsText(appState, t, [...cards].sort((a, b) => (a.dy - b.dy) || (a.dx - b.dx)), e.clientX, e.clientY, back)
+      : landCards(appState, t, cards, e.clientX, e.clientY, grab, back);
     void landing.then(async (ok) => {
       if (!ok) return;
       const { removeCardShapes } = await import("../notebook/card-shape.ts");

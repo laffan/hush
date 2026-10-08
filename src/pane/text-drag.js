@@ -15,6 +15,7 @@
 import { EditorView } from "@codemirror/view";
 import { isCmdHeld } from "../cmd-button.js";
 import { outlineFromFlowchart } from "../outline/outline-model.ts";
+import { canvasReturn, linkReturn } from "../cards/card-return.js";
 
 let active = null;
 
@@ -55,8 +56,11 @@ export function liveNotebookCanvases() {
  *   Called when the drag ends: `deleteSource` is true when the source
  *   should be removed (Shift was held at pointerup), `landed` whether
  *   anything was dropped.
+ * @param {{ restore(): void, take(): void }} [opts.back]  Cards carried
+ *   off a canvas: undoing their words' landing in a Doc puts them back
+ *   (cards/card-return.js).
  */
-export function startTextDrag({ text, shapes, anchorId, image, editorText, initialEvent, onDrop, onClickNoMove }) {
+export function startTextDrag({ text, shapes, anchorId, image, editorText, initialEvent, onDrop, onClickNoMove, back }) {
   // Normalise: derive the text payload from shapes when needed, ordered
   // top-to-bottom / left-to-right so CM drops land in reading order.
   const hasShapes = Array.isArray(shapes) && shapes.length > 0;
@@ -168,7 +172,8 @@ export function startTextDrag({ text, shapes, anchorId, image, editorText, initi
       if (image) {
         insertImageIntoEditor(target.view, image, e.clientX, e.clientY);
       } else {
-        insertIntoEditor(target.view, editorPayload, e.clientX, e.clientY);
+        const at = insertIntoEditor(target.view, editorPayload, e.clientX, e.clientY);
+        linkReturn(target.view, at, at + editorPayload.length, back);
       }
     } else if (target.kind === "nb") {
       if (image) {
@@ -273,6 +278,7 @@ export function attachNotebookTextShapeDrag(canvasEl, containerEl, state, helper
       anchorId: hit.id,
       editorText,
       initialEvent: e,
+      back: cardsOnly ? canvasReturn(state, shapes.map((s) => s.id)) : null,
       // Cmd+click (no drag) opens the shape's sole link even when the
       // precise hit-test missed (canvas geometry drifts on wrapped text).
       onClickNoMove: helpers.openSoleLink ? () => helpers.openSoleLink(hit, e.clientX, e.clientY, e.shiftKey) : null,
@@ -407,6 +413,7 @@ function insertIntoEditor(view, text, x, y) {
     selection: { anchor: pos + text.length },
   });
   view.focus();
+  return pos;
 }
 
 function screenToCanvasPt(state, canvasEl, clientX, clientY) {

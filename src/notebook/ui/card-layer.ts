@@ -51,7 +51,8 @@ interface CardsBridge {
   createCardElement(o: Record<string, unknown>): CardHandle;
   startCardDrag(o: Record<string, unknown>): void;
   watchCanvasCardDrag?(o: Record<string, unknown>): void;
-  insertAtRememberedCursor(text: string): boolean;
+  insertAtRememberedCursor(text: string, back?: unknown): boolean;
+  canvasReturn?(state: DrawingState, ids: string[]): unknown;
   publishNotebookCards(fileId: string, cards: { id: string; title: string; bgColor?: string }[], o?: { otherContent?: boolean }): void;
 }
 
@@ -137,8 +138,10 @@ export function createCardLayer(state: DrawingState): HTMLElement {
         else if (action === "delete") removeCardShape(state, id);
         else if (action === "insert") {
           // Into the document the keyboard was last in, if one is on
-          // screen; with none, the card turns back into text in place.
-          if (b.insertAtRememberedCursor(s.text)) removeCardShape(state, id);
+          // screen — undoing it there puts the card back here (cards/
+          // card-return.js); with none, the card turns back into text in
+          // place.
+          if (b.insertAtRememberedCursor(s.text, b.canvasReturn?.(state, [id]))) removeCardShape(state, id);
           else uncardShape(state, id);
         }
       },

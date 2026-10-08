@@ -30,10 +30,11 @@ import { Transaction } from "@codemirror/state";
 import { cardEdit } from "./card-facet.js";
 import { serializeCard, findCardsInDoc, cardInsertion, cardRemovalRange } from "./card-model.ts";
 import {
-  resolveCardTarget, canvasWorld, landCard, landCardsAsText, dropsAsText, textDropPos, cardTextInsertion,
+  resolveCardTarget, canvasWorld, landCards, landCardsAsText, dropsAsText, textDropPos, cardTextInsertion,
 } from "./card-drop.js";
 import { docPlacement } from "./card-doc-float.js";
 import { createDragFeedback } from "./card-drag-feedback.js";
+import { canvasReturn } from "./card-return.js";
 
 export const MOVE_THRESHOLD = 4;
 let active = null;
@@ -148,9 +149,11 @@ export function startCardDrag({ appState, body, meta, initialEvent, source }) {
       else moveWithinDoc(source, docPlacement(t.view, e.clientX, e.clientY, grab, meta), body);
       return;
     }
+    // A canvas card landing in a Doc comes back if that is undone there.
+    const back = src && t.kind === "cm" ? canvasReturn(src, [source.shapeId]) : null;
     const landing = asText
-      ? landCardsAsText(appState, t, [{ body, meta }], e.clientX, e.clientY)
-      : landCard(appState, t, { body, meta }, e.clientX, e.clientY, grab);
+      ? landCardsAsText(appState, t, [{ body, meta }], e.clientX, e.clientY, back)
+      : landCards(appState, t, [{ body, meta }], e.clientX, e.clientY, grab, back);
     void landing.then((ok) => { if (ok) removeFromSource(); }).catch(async (err) => {
       console.error("Card drop failed:", err);
       const { showImportToast } = await import("../editor/import-toast.js");

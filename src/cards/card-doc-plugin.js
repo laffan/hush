@@ -48,6 +48,7 @@ import { confirmLongCard } from "./card-confirm.js";
 import { CardAnchorWidget, createCardFloatLayer } from "./card-doc-float.js";
 import { findCardsInDoc, serializeCard, cardWordCount, cardRemovalRange, cardTitle, CARD_CONFIRM_WORDS } from "./card-model.ts";
 import { announceCardsChanged } from "./card-index.js";
+import { cardReturnWatcher } from "./card-return.js";
 import { programmaticChange } from "../editor/base-extensions.js";
 
 /** The app state, for widgets built inside the view. */
@@ -582,6 +583,7 @@ export function createCardPlugin(appState) {
     creationPrompt,
     cardRowsWatcher,
     cardCopyFilter,
+    cardReturnWatcher,
     noteHostView,
     Prec.highest(keymap.of([{ key: "Enter", run: enterBesideCard }])),
   ];
