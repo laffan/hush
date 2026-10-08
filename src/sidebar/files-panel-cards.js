@@ -13,7 +13,8 @@
  *   - onto an Inbox's or a project's row: into that container's CARDS
  *     notebook (made if it isn't there), the cards' common home;
  *   - out of the panel onto an editor or a canvas: it lands under the
- *     pointer (the line boundary in a Doc, the point on a canvas).
+ *     pointer (the line boundary in a Doc, the point on a canvas) — or,
+ *     let go with ⌘ held, as text there (cards/card-drop.js).
  *
  * Either way it leaves the file it was in (cards/card-transfer.js does
  * the reading and writing, live surface first, disk last). A click opens
@@ -261,11 +262,12 @@ export function dropCardOnRow(state, item, ev) {
   return true;
 }
 
-/** A card row dragged out of the panel onto an editor or a canvas. */
-export function dropCardOutside(state, item, x, y) {
+/** A card row dragged out of the panel onto an editor or a canvas; with
+ *  ⌘ held at the release its words land there as text. */
+export function dropCardOutside(state, item, x, y, ev) {
   void moveCard(state, item.cardRef, async (card) => {
-    const { dropCardAt } = await import("../cards/card-drop.js");
-    if (!(await dropCardAt(state, card, x, y))) throw new Error("Drop a card on a document or a canvas");
+    const { dropCardAt, dropsAsText } = await import("../cards/card-drop.js");
+    if (!(await dropCardAt(state, card, x, y, dropsAsText(ev)))) throw new Error("Drop a card on a document or a canvas");
   }).catch((e) => toast(e?.message || "The card couldn't be moved", "error"));
 }
 

@@ -617,7 +617,7 @@ html[data-theme="dark"] .sidebar-timer.break-now {
   border: none;
   border-radius: 50%;
   cursor: pointer;
-  opacity: 0.55;
+  opacity: var(--timer-ring-rest, 0.55);
   transition: opacity 0.15s ease;
   -webkit-appearance: none;
   appearance: none;
@@ -744,6 +744,26 @@ html[data-theme="dark"] .sidebar-timer.break-now {
   opacity: 1;
   color: var(--timer-alarm-red);
 }
+
+/* ---- On a dark page: white bars ----
+   On a dark or black page (`html.dark-surface`, set from the page's own
+   colour by theme-colors.js — midnight mode included) the bars a faint
+   share of the text colour leaves are grey on grey. They go white
+   instead: the session's bar and the ring's line full white over a
+   faint white track, and the ring rests brighter. The signals keep
+   their colours — the warmup's blue, a break's red box and disc, the
+   last minutes' red. */
+html.dark-surface .sidebar-timer-progress:not(.sidebar-timer-break-bar) {
+  background: rgba(255, 255, 255, 0.16);
+}
+html.dark-surface .sidebar-timer-progress:not(.sidebar-timer-break-bar) span { background: #fff; }
+html.dark-surface .sidebar-timer.lead-in-now .sidebar-timer-progress span { background: var(--timer-lead-blue); }
+html.dark-surface .sidebar-timer.break-now .sidebar-timer-progress:not(.sidebar-timer-break-bar) {
+  background: rgba(255, 255, 255, 0.3);
+}
+html.dark-surface .timer-ring { --timer-ring-rest: 0.8; }
+html.dark-surface .timer-ring-track { stroke: rgba(255, 255, 255, 0.2); }
+html.dark-surface .timer-ring-fill { stroke: #fff; }
 
 /* --timer-break-fill is the break red for surfaces carrying white type
    (the box, the ring's disc, the break toast): a shade deeper than the

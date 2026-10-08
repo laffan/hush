@@ -18,10 +18,11 @@ function onPointerDown(event) {
   const target = event.target.closest(".sl-item");
   if (!target || target.classList.contains("dragging")) return;
 
-  // Check canDrag before starting
+  // Check canDrag before starting (with the press, for a row that only
+  // a modified press may drag)
   const targetPathForCheck = parsePath(target.dataset.path);
   const itemForCheck = this._getItemAtPath(targetPathForCheck);
-  if (itemForCheck && !this.config.canDrag(itemForCheck)) return;
+  if (itemForCheck && !this.config.canDrag(itemForCheck, event)) return;
 
   const rect = target.getBoundingClientRect();
   const offsetX = event.clientX - rect.left;

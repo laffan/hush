@@ -199,7 +199,8 @@ export function formatClock(ms, { period = true } = {}) {
 }
 
 /** Where the ring was dragged to — `{ left, bottom }`, px from the
- *  window's left and bottom edges — or null for its default spot. Kept
+ *  window's left and bottom edges, with `vw` / `vh`, the size of that
+ *  window (timer-ring-drag.js) — or null for its default spot. Kept
  *  beside the timer rather than on it, so it outlives Delete / Start. */
 export function ringPosition(state) {
   const r = read(state).ring;

@@ -75,6 +75,7 @@ export const shortcutCategories = [
       { key: "shortcutStrikethrough", label: "Strikethrough" },
       { key: "shortcutInsertFootnote", label: "Insert footnote" },
       { key: "shortcutMakeCard", label: "Make a card from the selection (or an empty one)" },
+      { key: "shortcutCopyCard", label: "Make a card from a copy of the selection (or an empty one)" },
     ],
   },
   {

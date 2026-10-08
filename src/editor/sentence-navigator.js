@@ -505,46 +505,6 @@ export function selectToParagraphBelow(view) {
   return true;
 }
 
-// ===== Join lines (pull up) =====
-
-/** Remove the next line break, joining the current line with the line below. */
-export function joinLines(view) {
-  const doc = view.state.doc;
-  const head = view.state.selection.main.head;
-  const line = doc.lineAt(head);
-  if (line.number >= doc.lines) return true; // already last line
-  const nextLine = doc.line(line.number + 1);
-  // Replace the newline + any leading whitespace on the next line with a single space
-  const leadingWs = nextLine.text.match(/^\s*/)[0].length;
-  const from = line.to;            // end of current line (before \n)
-  const to = nextLine.from + leadingWs; // start of next line content
-  const insert = nextLine.text.trim().length > 0 ? " " : "";
-  view.dispatch({
-    changes: { from, to, insert },
-    selection: EditorSelection.cursor(from + insert.length),
-  });
-  return true;
-}
-
-/** Remove the previous line break, joining the current line with the line above. */
-export function joinLinesUp(view) {
-  const doc = view.state.doc;
-  const head = view.state.selection.main.head;
-  const line = doc.lineAt(head);
-  if (line.number <= 1) return true; // already first line
-  const prevLine = doc.line(line.number - 1);
-  // Replace the newline + any leading whitespace on the current line with a single space
-  const leadingWs = line.text.match(/^\s*/)[0].length;
-  const from = prevLine.to;          // end of previous line (before \n)
-  const to = line.from + leadingWs;  // start of current line content
-  const insert = line.text.trim().length > 0 ? " " : "";
-  view.dispatch({
-    changes: { from, to, insert },
-    selection: EditorSelection.cursor(from + insert.length),
-  });
-  return true;
-}
-
 /**
  * Open a new line below the current one and drop the cursor into it.
  *

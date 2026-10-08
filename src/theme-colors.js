@@ -165,6 +165,10 @@ export function updatePrivateBoxColor(state, overrideBg, overrideFg) {
     const b = parseInt(bg.slice(5, 7), 16);
     root.setProperty("--panel-bg", `rgba(${r}, ${g}, ${b}, 0.98)`);
     root.setProperty("--panel-border", isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)");
+    // Whether the page is dark by its actual colour, whatever the
+    // appearance says (a style can paint a dark page under Light): the
+    // timer draws its bars white on one (styles/timer.css).
+    document.documentElement.classList.toggle("dark-surface", isDark);
 
     // iOS: set background color directly on html/body to avoid safe-area
     // black bars caused by CSS variable resolution lag during transitions.

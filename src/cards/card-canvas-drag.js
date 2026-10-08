@@ -11,10 +11,12 @@
  * ghost of each follows the pointer; let go over a Doc, another canvas or
  * a document / notebook row in the sidebar, they land there and leave
  * this canvas. Let go anywhere else, the canvas finishes its drag as it
- * would have.
+ * would have. Let go with ⌘ held, they land as text, in reading order —
+ * this canvas included, where they turn into a text shape at the
+ * pointer (card-drop.js#landCardsAsText).
  */
 
-import { resolveCardTarget, canvasWorld, landCards } from "./card-drop.js";
+import { resolveCardTarget, canvasWorld, landCards, landCardsAsText, dropsAsText } from "./card-drop.js";
 import { createDragFeedback } from "./card-drag-feedback.js";
 import { MOVE_THRESHOLD, cardDragActive } from "./card-drag.js";
 import { cardBox } from "../notebook/card-geometry.ts";
@@ -87,7 +89,8 @@ function follow(appState, state, down) {
     }
     const t = resolveCardTarget(appState, e.clientX, e.clientY);
     const onHome = home(t);
-    carry.feedback.show(t, e.clientX, e.clientY, !onHome);
+    const asText = dropsAsText(e);
+    carry.feedback.show(t, e.clientX, e.clientY, !onHome || asText, asText);
     if (!onHome) e.stopPropagation();
   }
 
@@ -96,13 +99,17 @@ function follow(appState, state, down) {
     const t = carry ? resolveCardTarget(appState, e.clientX, e.clientY) : null;
     stop();
     if (!carry) return;
-    if (!t || home(t)) return;
+    const asText = dropsAsText(e);
+    if (!t || (home(t) && !asText)) return;
     // Theirs now: the canvas's drag ends without committing, and the
     // cards leave once they have landed.
     e.stopPropagation();
     state.cancelActiveInteraction();
     const { cards, grab, ids } = carry;
-    void landCards(appState, t, cards, e.clientX, e.clientY, grab).then(async (ok) => {
+    const landing = asText
+      ? landCardsAsText(appState, t, [...cards].sort((a, b) => (a.dy - b.dy) || (a.dx - b.dx)), e.clientX, e.clientY)
+      : landCards(appState, t, cards, e.clientX, e.clientY, grab);
+    void landing.then(async (ok) => {
       if (!ok) return;
       const { removeCardShapes } = await import("../notebook/card-shape.ts");
       removeCardShapes(state, ids);

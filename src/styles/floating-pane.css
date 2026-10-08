@@ -294,9 +294,21 @@
    and the freehand drawing layer's stacked canvases — strokes live inside
    `.notebook-drawing-wrapper`, which is a div, so the `:not(canvas)` rule
    used to wipe them when the pane lost focus). Scoped to containers that
-   have a canvas child (notebook panes) but not PDF viewers. */
-.floating-pane:not(.active) .floating-pane-content:has(canvas):not(:has(.pdf-viewer)) > :not(canvas):not(.notebook-drawing-wrapper) {
+   have a canvas child (notebook panes) but not PDF viewers. Cards and
+   outlines are content too: on screen they are DOM laid over the canvas,
+   which paints neither, so hiding their layers emptied a CARDS notebook
+   the moment its pane lost focus. */
+.floating-pane:not(.active) .floating-pane-content:has(canvas):not(:has(.pdf-viewer)) > :not(canvas):not(.notebook-drawing-wrapper):not(.nb-card-layer):not(.nb-outline-layer) {
   visibility: hidden;
+}
+
+/* Shown, but still only to look at: the parts of a card or an outline
+   that take the pointer (a selected card's buttons, a card being typed
+   in, an outline's checkboxes and grips) would otherwise answer through
+   the content box's `pointer-events: none` above. */
+.floating-pane:not(.active) .nb-card-layer *,
+.floating-pane:not(.active) .nb-outline-layer * {
+  pointer-events: none !important;
 }
 
 .floating-pane-content .cm-editor {

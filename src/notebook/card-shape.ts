@@ -10,7 +10,7 @@
 
 import type { DrawingState } from "./state";
 import type { Point, Shape, TextShape } from "./types";
-import { generateId } from "./utils";
+import { generateId, getShapeBounds } from "./utils";
 import { cardBounds } from "./card-geometry";
 import {
   cardSize, cardTitle, withoutPosition, CARD_DEFAULT_HEIGHT, CARD_DEFAULT_WIDTH, CARD_HEADER_HEIGHT, type CardMeta,
@@ -171,6 +171,25 @@ export function convertShapesToCards(state: DrawingState, ids: string[]): void {
   });
   state.recordHistory();
   state.notify("shapes");
+}
+
+/** Cards holding copies of text shapes' words (⌘⇧. on a canvas), each
+ *  beside its shape on the right, top edges level — one undo step. The
+ *  shapes are left as they are; the new cards are selected. */
+export function copyShapesToCards(state: DrawingState, ids: string[]): void {
+  const pick = new Set(ids);
+  const made: TextShape[] = [];
+  for (const s of state.shapes) {
+    if (!pick.has(s.id) || s.type !== "text" || s.card) continue;
+    const b = getShapeBounds(s);
+    made.push(makeCardShape(s.text, null, { x: b.maxX + GRID_GAP, y: b.minY }, s.layerId));
+  }
+  if (!made.length) return;
+  state.shapes = [...state.shapes, ...made];
+  state.selectedIds = new Set(made.map((s) => s.id));
+  state.recordHistory();
+  state.notify("shapes");
+  state.notify("selectedIds");
 }
 
 /** Turn a card back into ordinary text where it stands — insert-at-

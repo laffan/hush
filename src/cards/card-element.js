@@ -176,9 +176,12 @@ export function createCardElement(o) {
     { key: "Mod-Enter", run: () => { o.onSubmit?.(); return !!o.onSubmit; } },
   ]));
   // No typewriter in a card — it is a few lines tall and has no page to
-  // hold a line in the middle of.
+  // hold a line in the middle of. No sentence mask either: under focus
+  // mode a card fades as a whole, and comes back whole while it is
+  // being typed in (styles/focus-mode.css).
   const modeContext = Object.create(o.appState);
   modeContext.typewriterMode = false;
+  modeContext.focusMode = false;
   let editor = null;
   if (editorFactory) {
     editor = editorFactory(bodyEl, o.appState, null, {

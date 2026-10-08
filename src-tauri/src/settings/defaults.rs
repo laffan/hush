@@ -327,6 +327,10 @@ pub fn default_shortcut_insert_break_before() -> String {
 pub fn default_shortcut_make_card() -> String {
     "Mod+Shift+,".to_string()
 }
+/// A card from a copy of the selection, the text left as it was.
+pub fn default_shortcut_copy_card() -> String {
+    "Mod+Shift+.".to_string()
+}
 pub fn default_shortcut_jump_next_paragraph() -> String {
     "Mod+ArrowDown".to_string()
 }

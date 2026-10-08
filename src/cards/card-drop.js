@@ -14,6 +14,12 @@
  *
  * A card, and the editor inside one, is never a target itself — what it
  * sits on is.
+ *
+ * **Let go with ⌘ held, a card lands as text** — what its insert-at-
+ * cursor button does, at the spot under the pointer instead of the
+ * caret: in a Doc its words go in at the character there, on a canvas
+ * they become a plain text shape there, and the card itself is gone.
+ * (On a sidebar row it is still a card: a row has no spot to put words.)
  */
 
 import { EditorView } from "@codemirror/view";
@@ -21,10 +27,38 @@ import { Transaction } from "@codemirror/state";
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { liveNotebookCanvases } from "../pane/text-drag.js";
 import { cardEdit, insideCard } from "./card-facet.js";
-import { serializeCard, cardInsertion, withoutPosition } from "./card-model.ts";
+import { serializeCard, cardInsertion, withoutPosition, findCardsInDoc } from "./card-model.ts";
 import { deliverCardToFile, screenToWorld } from "./card-transfer.js";
 import { sendCardToHome } from "./card-courier.js";
 import { docPlacement } from "./card-doc-float.js";
+
+/** Whether a release lands cards as text: ⌘ (or Ctrl, or the touch
+ *  bar's ⌘ pill) held. */
+export function dropsAsText(e) {
+  return !!e && (e.metaKey || e.ctrlKey || !!window.__hushCmdHeld);
+}
+
+/** Where a card's words would go in a Doc dropped at (x, y): the
+ *  character under the pointer, else the nearest one. */
+export function textDropPos(view, x, y) {
+  const pos = view.posAtCoords({ x, y }) ?? view.posAtCoords({ x, y }, false);
+  return pos ?? view.state.selection.main.head;
+}
+
+/** The change that puts `text` into a Doc at `pos`, kept off the fence
+ *  lines of the cards in it: at a card's edge the words get a line of
+ *  their own, as typing there does (card-doc-plugin.js, the boundary
+ *  guard — which a `cardEdit` change doesn't pass through). */
+export function cardTextInsertion(doc, pos, text) {
+  const cards = findCardsInDoc(doc);
+  for (const c of cards) if (pos > c.from && pos < c.to) pos = c.to;
+  let insert = text;
+  for (const c of cards) {
+    if (pos === c.from) insert = `${insert}\n`;
+    if (pos === c.to) insert = `\n${insert}`;
+  }
+  return { from: pos, insert };
+}
 
 /** What is under the pointer that a card can land on, or null. */
 export function resolveCardTarget(appState, x, y) {
@@ -104,12 +138,41 @@ export async function landCards(appState, target, cards, x, y, grab = { x: 16, y
   return false;
 }
 
+/**
+ * Land `cards` on `target` as text (⌘ held — see above), in the order
+ * given, a blank line between two. Over a sidebar row they land as cards
+ * after all. Resolves true once they have landed.
+ */
+export async function landCardsAsText(appState, target, cards, x, y) {
+  if (!target || !cards.length) return false;
+  const text = cards.map((c) => c.body).join("\n\n");
+  if (target.kind === "cm") {
+    const view = target.view;
+    const { from, insert } = cardTextInsertion(view.state.doc, textDropPos(view, x, y), text);
+    view.dispatch({
+      changes: { from, insert },
+      selection: { anchor: from + insert.length },
+      annotations: [cardEdit.of(true), Transaction.userEvent.of("input.drop")],
+      scrollIntoView: true,
+    });
+    view.focus();
+    return true;
+  }
+  if (target.kind === "nb") {
+    target.state.addTextShapeAtPosition(text, canvasWorld(target.state, target.canvasEl, x, y));
+    return true;
+  }
+  return landCards(appState, target, cards, x, y);
+}
+
 /** Land one card ({ body, meta }); see `landCards`. */
 export function landCard(appState, target, card, x, y, grab) {
   return landCards(appState, target, [card], x, y, grab);
 }
 
-/** Resolve and land in one — a card row let go outside the sidebar. */
-export async function dropCardAt(appState, card, x, y) {
-  return landCard(appState, resolveCardTarget(appState, x, y), card, x, y);
+/** Resolve and land in one — a card row let go outside the sidebar;
+ *  `asText` lands it as words (⌘ held). */
+export async function dropCardAt(appState, card, x, y, asText = false) {
+  const target = resolveCardTarget(appState, x, y);
+  return asText ? landCardsAsText(appState, target, [card], x, y) : landCard(appState, target, card, x, y);
 }

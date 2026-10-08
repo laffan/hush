@@ -539,6 +539,34 @@ const cardRowsWatcher = EditorView.updateListener.of((u) => {
 });
 
 /**
+ * Copying (and cutting) text leaves the cards out. A selection that runs
+ * across a card takes in its markdown — the card is invisible in the
+ * text, so the fences, words and metadata would arrive wherever the copy
+ * is pasted as a card nobody chose to copy. Each whole card in the copied
+ * text goes, with one line break, so no blank line is left in its place.
+ * (A cut removes the text around a card and leaves the card where it
+ * was: the boundary guard above.)
+ */
+const cardCopyFilter = EditorView.clipboardOutputFilter.of((text, state) => {
+  const cards = state.field(cardField, false)?.cards;
+  if (!cards?.length || text.indexOf(">>>") < 0) return text;
+  const doc = state.doc;
+  let out = text;
+  for (const r of state.selection.ranges) {
+    for (const c of cards) {
+      // A caret's linewise copy takes its line, never a card's.
+      if (r.empty || c.from < r.from || c.to > r.to) continue;
+      const raw = doc.sliceString(c.from, c.to);
+      for (const piece of [`${raw}\n`, `\n${raw}`, raw]) {
+        const at = out.indexOf(piece);
+        if (at >= 0) { out = out.slice(0, at) + out.slice(at + piece.length); break; }
+      }
+    }
+  }
+  return out;
+});
+
+/**
  * The card extension for a doc surface. Rides both `editor.js`'s list and
  * `createBaseExtensions`, so a card is a card in the main editor, a pane,
  * a stack column, Zen and Courier's append editor alike.
@@ -553,6 +581,7 @@ export function createCardPlugin(appState) {
     boundaryGuard,
     creationPrompt,
     cardRowsWatcher,
+    cardCopyFilter,
     noteHostView,
     Prec.highest(keymap.of([{ key: "Enter", run: enterBesideCard }])),
   ];

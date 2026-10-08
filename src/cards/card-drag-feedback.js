@@ -1,13 +1,15 @@
 /**
  * What cards being carried show on their way: a ghost of each under the
  * pointer (as they sit relative to the one held), a line over a Doc's
- * text marking the line they will sit beside, and the sidebar row they
- * would go into outlined. Shared by the header drag (card-drag.js) and a
+ * text marking the line they will sit beside — or, dropping as text with
+ * ⌘ held, a caret at the character the words will go in at — and the
+ * sidebar row they would go into outlined. Shared by the header drag (card-drag.js) and a
  * canvas's own drag of cards carried off it (card-canvas-drag.js).
  */
 
 import { cardGhost } from "./card-element.js";
 import { docPlacement } from "./card-doc-float.js";
+import { textDropPos } from "./card-drop.js";
 
 /**
  * @param {{ body: string, meta: object, dx?: number, dy?: number }[]} cards
@@ -21,6 +23,7 @@ import { docPlacement } from "./card-doc-float.js";
 export function createDragFeedback(cards, grab, sources) {
   let ghosts = null;
   let dropLine = null;
+  let dropCaret = null;
   let hoverRow = null;
 
   function setGhosts(on, x, y) {
@@ -49,6 +52,18 @@ export function createDragFeedback(cards, grab, sources) {
     Object.assign(dropLine.style, { left: `${r.left}px`, width: `${r.width}px`, top: `${place.lineY - 1}px` });
   }
 
+  /** The caret a ⌘-drop's words would go in at. */
+  function setDropCaret(view, x, y) {
+    const c = view ? view.coordsAtPos(textDropPos(view, x, y)) : null;
+    if (!c) { dropCaret?.remove(); dropCaret = null; return; }
+    if (!dropCaret) {
+      dropCaret = document.createElement("div");
+      dropCaret.className = "hush-card-drop-caret";
+      document.body.appendChild(dropCaret);
+    }
+    Object.assign(dropCaret.style, { left: `${Math.round(c.left) - 1}px`, top: `${Math.round(c.top)}px`, height: `${Math.round(c.bottom - c.top)}px` });
+  }
+
   function setHoverRow(row) {
     if (row === hoverRow) return;
     hoverRow?.classList.remove("sl-drop-target-item");
@@ -58,19 +73,24 @@ export function createDragFeedback(cards, grab, sources) {
 
   return {
     /** Show what letting go at (x, y) over `target` would do; `ghost`
-     *  is whether the ghost stands in for the cards there. */
-    show(target, x, y, ghost) {
+     *  is whether the ghost stands in for the cards there, `asText`
+     *  whether they would land as words (⌘ held). */
+    show(target, x, y, ghost, asText = false) {
       setGhosts(ghost, x, y);
       // Over a Doc's text the line marks the line the cards will sit
-      // beside; over its margin the ghost already shows where.
-      const place = target?.kind === "cm" ? docPlacement(target.view, x, y, grab, cards[0].meta) : null;
+      // beside; over its margin the ghost already shows where. As text,
+      // a caret marks the character instead.
+      const doc = target?.kind === "cm";
+      const place = doc && !asText ? docPlacement(target.view, x, y, grab, cards[0].meta) : null;
       setDropLine(place?.overText ? target.view : null, place);
+      setDropCaret(doc && asText ? target.view : null, x, y);
       setHoverRow(target?.kind === "row" || target?.kind === "home" ? target.el : null);
     },
     clear() {
       ghosts?.forEach((g) => g.remove());
       ghosts = null;
       setDropLine(null);
+      setDropCaret(null);
       setHoverRow(null);
       for (const el of sources) el.classList.remove("dragging-source");
     },

@@ -19,12 +19,19 @@
  * canvas, or a document / notebook row in the sidebar, the card lands
  * there and leaves where it was — a Doc takes it beside a line as above, a canvas at the pointer, a sidebar row at the end of
  * the document or the middle of the notebook's view. Escape cancels.
+ *
+ * **With ⌘ held at the release the card lands as text** — its words at
+ * the spot under the pointer (card-drop.js#landCardsAsText), as its
+ * insert-at-cursor button would put them at the caret — and the card
+ * goes. While ⌘ is held a caret marks the spot in a Doc.
  */
 
 import { Transaction } from "@codemirror/state";
 import { cardEdit } from "./card-facet.js";
 import { serializeCard, findCardsInDoc, cardInsertion, cardRemovalRange } from "./card-model.ts";
-import { resolveCardTarget, canvasWorld, landCard } from "./card-drop.js";
+import {
+  resolveCardTarget, canvasWorld, landCard, landCardsAsText, dropsAsText, textDropPos, cardTextInsertion,
+} from "./card-drop.js";
 import { docPlacement } from "./card-doc-float.js";
 import { createDragFeedback } from "./card-drag-feedback.js";
 
@@ -64,11 +71,11 @@ export function startCardDrag({ appState, body, meta, initialEvent, source }) {
   const sourceBox = source.kind === "doc" ? source.wrap : cardEl;
   const feedback = createDragFeedback([{ body, meta }], grab, [sourceBox]);
 
-  function track(x, y) {
+  function track(x, y, asText) {
     target = resolveCardTarget(appState, x, y);
     const overOwnCanvas = !!src && target?.kind === "nb" && target.state === src;
     if (src && startWorld) {
-      if (overOwnCanvas) {
+      if (overOwnCanvas && !asText) {
         const w = canvasWorld(src, srcCanvas, x, y);
         src.updateExternalMove(w.x - startWorld.x, w.y - startWorld.y);
       } else {
@@ -76,7 +83,7 @@ export function startCardDrag({ appState, body, meta, initialEvent, source }) {
         src.updateExternalMove(0, 0);
       }
     }
-    feedback.show(target, x, y, !overOwnCanvas);
+    feedback.show(target, x, y, !overOwnCanvas || asText, asText);
   }
 
   function begin() {
@@ -99,7 +106,7 @@ export function startCardDrag({ appState, body, meta, initialEvent, source }) {
       begin();
     }
     e.preventDefault();
-    track(e.clientX, e.clientY);
+    track(e.clientX, e.clientY, dropsAsText(e));
   }
 
   function cleanup() {
@@ -128,17 +135,23 @@ export function startCardDrag({ appState, body, meta, initialEvent, source }) {
 
   function onUp(e) {
     if (!moved) { cleanup(); return; }
-    track(e.clientX, e.clientY);
+    const asText = dropsAsText(e);
+    track(e.clientX, e.clientY, asText);
     const t = target;
     const overOwnCanvas = !!src && t?.kind === "nb" && t.state === src;
-    if (liveMoving) src.endExternalMove(!overOwnCanvas);
+    // As text, the card doesn't move on its own canvas: it is replaced.
+    if (liveMoving) src.endExternalMove(asText || !overOwnCanvas);
     cleanup();
-    if (!t || overOwnCanvas) return;
+    if (!t || (overOwnCanvas && !asText)) return;
     if (source.kind === "doc" && t.kind === "cm" && t.view === source.view) {
-      moveWithinDoc(source, docPlacement(t.view, e.clientX, e.clientY, grab, meta), body);
+      if (asText) textWithinDoc(source, textDropPos(t.view, e.clientX, e.clientY), body);
+      else moveWithinDoc(source, docPlacement(t.view, e.clientX, e.clientY, grab, meta), body);
       return;
     }
-    void landCard(appState, t, { body, meta }, e.clientX, e.clientY, grab).then((ok) => { if (ok) removeFromSource(); }).catch(async (err) => {
+    const landing = asText
+      ? landCardsAsText(appState, t, [{ body, meta }], e.clientX, e.clientY)
+      : landCard(appState, t, { body, meta }, e.clientX, e.clientY, grab);
+    void landing.then((ok) => { if (ok) removeFromSource(); }).catch(async (err) => {
       console.error("Card drop failed:", err);
       const { showImportToast } = await import("../editor/import-toast.js");
       showImportToast(err?.message || "The card couldn't be moved", "error");
@@ -179,6 +192,25 @@ function locateSource(source, body) {
 function moveWithinDoc(source, place, body) {
   const span = locateSource(source, body);
   if (span && place) relocateCard(source.view, span, place.pos, place.meta);
+}
+
+/** A card let go with ⌘ held in its own Doc: its words go in at `pos`
+ *  and the card leaves, in one transaction (one undo step) — the insert-
+ *  at-cursor button's edit, at the spot it was dropped on. */
+function textWithinDoc(source, pos, body) {
+  const span = locateSource(source, body);
+  if (!span) return;
+  const view = source.view;
+  const doc = view.state.doc;
+  const annotations = [cardEdit.of(true), Transaction.userEvent.of("input.drop")];
+  if (pos >= span.from && pos <= span.to) {
+    view.dispatch({ changes: { from: span.from, to: span.to, insert: body }, selection: { anchor: span.from + body.length }, annotations });
+  } else {
+    const ins = cardTextInsertion(doc, pos, body);
+    const changes = view.state.changes([ins, { ...cardRemovalRange(doc, span), insert: "" }]);
+    view.dispatch({ changes, selection: { anchor: changes.mapPos(ins.from, 1) }, annotations, scrollIntoView: true });
+  }
+  view.focus();
 }
 
 /** Move a card's markdown to sit beside the line at `pos`, carrying

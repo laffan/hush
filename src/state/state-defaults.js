@@ -265,6 +265,8 @@ export function createDefaultSettings() {
     shortcutInsertBreakBefore: "Mod+Shift+Enter",
     // The selection becomes a card (cards/card-commands.js).
     shortcutMakeCard: "Mod+Shift+,",
+    // …or a copy of it, the text left as it was.
+    shortcutCopyCard: "Mod+Shift+.",
     shortcutJumpNextParagraph: "Mod+ArrowDown",
     shortcutJumpPrevParagraph: "Mod+ArrowUp",
     shortcutZotero: "Mod+Shift+I",

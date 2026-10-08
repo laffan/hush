@@ -21,6 +21,7 @@
 import {
   getClock, moveClock, setClockAlarm, nextMinuteMark, ALARM_LEAD_MS, ALARM_STALE_MS,
 } from "./clock-store.js";
+import { fitSpot, onScreenChange, windowSize } from "../ui/keep-on-screen.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -142,18 +143,19 @@ export function initWallClock(state) {
     tick = setTimeout(loop, 1000 - (Date.now() % 1000));
   }
 
-  /** Where the clock sits: the stored spot held inside the window, or
-   *  the stylesheet's corner while it has never been moved. */
-  function place(x, y) {
+  /** Where the clock sits: the stored spot, kept in its corner of a
+   *  window of another size and held inside this one (a turned iPad, a
+   *  smaller display — ui/keep-on-screen.js), or the stylesheet's corner
+   *  while it has never been moved. `spot` is `{ x, y, vw?, vh? }`. */
+  function place(spot) {
     const { style } = face.el;
-    if (x == null || y == null) {
+    if (spot.x == null || spot.y == null) {
       style.left = style.top = style.right = "";
       return;
     }
-    const maxX = Math.max(EDGE, window.innerWidth - SIZE - EDGE);
-    const maxY = Math.max(EDGE, window.innerHeight - SIZE - EDGE);
-    style.left = `${Math.min(Math.max(x, EDGE), maxX)}px`;
-    style.top = `${Math.min(Math.max(y, EDGE), maxY)}px`;
+    const { x, y } = fitSpot(spot, SIZE, SIZE, EDGE);
+    style.left = `${x}px`;
+    style.top = `${y}px`;
     style.right = "auto";
   }
 
@@ -250,7 +252,7 @@ export function initWallClock(state) {
       face.el.classList.add("dragging");
       setHover(-1);
     }
-    place(press.left + dx, press.top + dy);
+    place({ x: press.left + dx, y: press.top + dy });
   }
 
   function onUp(e) {
@@ -260,7 +262,7 @@ export function initWallClock(state) {
     face.el.classList.remove("dragging");
     if (p.dragging) {
       const r = face.el.getBoundingClientRect();
-      void moveClock(state, Math.round(r.left), Math.round(r.top));
+      void moveClock(state, Math.round(r.left), Math.round(r.top), windowSize());
     } else if (e.type === "pointerup" && p.mark >= 0) {
       const minute = p.mark * (60 / MARKS);
       void setClockAlarm(state, p.mark === armedMark(getClock(state)) ? null : nextMinuteMark(minute));
@@ -284,7 +286,7 @@ export function initWallClock(state) {
     clock = next;
     if (!clock.visible) { teardown(); return; }
     if (!face) mount();
-    if (!press?.dragging) place(clock.x, clock.y);
+    if (!press?.dragging) place(clock);
     if (ringingAt != null && clock.alarmAt !== ringingAt) stopRinging();
     armMark(armed, false);
     armed = armedMark(clock);
@@ -302,8 +304,8 @@ export function initWallClock(state) {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") render();
   });
-  window.addEventListener("resize", () => {
-    if (face && !press?.dragging) place(clock.x, clock.y);
+  onScreenChange(() => {
+    if (face && !press?.dragging) place(clock);
   });
   // A sibling window's toggle, drag or alarm arrives as a settings merge,
   // which emits `settings-changed` too.

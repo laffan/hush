@@ -1,6 +1,10 @@
 /**
  * ⌘⇧, (`shortcutMakeCard`): make a card of what is selected — or, with
- * nothing selected, an empty card to type into.
+ * nothing selected, an empty card to type into. ⌘⇧. (`shortcutCopyCard`)
+ * is its pair, `<` and `>`: the card is made from a copy of the
+ * selection and the text stays as it was — a draft line kept while a
+ * revision is tried in the margin. With nothing selected it, too, makes
+ * an empty card.
  *
  *   - **In a Doc** the selection is fenced as a card where it stands —
  *     `<<<` and `>>>` on lines of their own, so a selection in the middle
@@ -53,6 +57,36 @@ export function insertEmptyCard(view) {
     annotations: [cardEdit.of(true), Transaction.userEvent.of("input.card")],
     scrollIntoView: true,
   });
+  return true;
+}
+
+/** A card holding a copy of a Doc's selection, beside the selection's
+ *  first line; the text is left exactly as it was. */
+export function copySelectionToCard(view) {
+  if (view.state.facet(insideCard)) return false;
+  const sel = view.state.selection.main;
+  if (sel.empty) return insertEmptyCard(view);
+  const doc = view.state.doc;
+  const text = doc.sliceString(sel.from, sel.to).replace(/\n+$/, "").trim();
+  if (!text) return false;
+  if (text.split("\n").some(isFenceLine)) {
+    void toast("A card can't hold another card");
+    return true;
+  }
+  const make = () => {
+    if (view.state.doc !== doc) return; // changed while the question was up
+    const { from, insert } = cardInsertion(doc, doc.lineAt(sel.from).from, serializeCard(text, null));
+    const changes = view.state.changes({ from, insert });
+    view.dispatch({
+      changes,
+      // The selection stays on the words it was on.
+      selection: view.state.selection.map(changes, 1),
+      annotations: [cardEdit.of(true), Transaction.userEvent.of("input.card")],
+      scrollIntoView: true,
+    });
+    view.focus();
+  };
+  void confirmLongCard(text).then((ok) => { if (ok) make(); else view.focus(); });
   return true;
 }
 
@@ -126,9 +160,10 @@ async function addEmptyCardOnCanvas(st, cs) {
   st.notify("shapes");
 }
 
-/** Turn a canvas's selected text shapes into cards; with none selected,
- *  add an empty one. */
-async function makeCardsOnCanvas() {
+/** Turn a canvas's selected text shapes into cards — or, with `copy`,
+ *  add a card holding each one's words beside it and leave the shape be;
+ *  with none selected, add an empty card. */
+async function makeCardsOnCanvas(copy) {
   const st = await activeCanvasState();
   if (!st) return;
   const cs = await import("../notebook/card-shape.ts");
@@ -139,14 +174,25 @@ async function makeCardsOnCanvas() {
   }
   const longest = picked.reduce((a, s) => (s.text.length > a.length ? s.text : a), "");
   if (!(await confirmLongCard(longest))) return;
-  cs.convertShapesToCards(st, picked.map((s) => s.id));
+  if (copy) cs.copyShapesToCards(st, picked.map((s) => s.id));
+  else cs.convertShapesToCards(st, picked.map((s) => s.id));
 }
 
-/** The command behind the shortcut (editor/commands.js). */
-export function makeCardCommand(state, view) {
-  if (view && view.hasFocus) return makeCardFromSelection(view);
+function canvasCommand(copy) {
   const canvasShowing = document.body.classList.contains("notebook-mode") || !!document.querySelector(".floating-pane.active canvas");
   if (!canvasShowing) return false;
-  void makeCardsOnCanvas();
+  void makeCardsOnCanvas(copy);
   return true;
+}
+
+/** The command behind ⌘⇧, (editor/commands.js). */
+export function makeCardCommand(state, view) {
+  if (view && view.hasFocus) return makeCardFromSelection(view);
+  return canvasCommand(false);
+}
+
+/** The command behind ⌘⇧. — the same, from a copy of the selection. */
+export function copyCardCommand(state, view) {
+  if (view && view.hasFocus) return copySelectionToCard(view);
+  return canvasCommand(true);
 }

@@ -112,6 +112,9 @@ export function createFilesPanel(container, state, hidePanel) {
       // Card rows move between files, not around the tree: their drops
       // are onDropExternal's and onDragOutside's (files-panel-cards.js).
       if (isCardItem(draggedItem) || isCardItem(targetItem)) return false;
+      // A cards notebook stays pinned to the top of its container: it
+      // leaves the panel only as a pane (⌘-drag, canDrag below).
+      if (isCardsHome(draggedItem)) return false;
       // Images stay inside the Images folder; desks can't nest
       // (root-level drops only).
       if (draggedItem.type === "image") return !!targetItem && isImagesId(targetItem.id);
@@ -135,10 +138,12 @@ export function createFilesPanel(container, state, hidePanel) {
       if (targetItem.type === "project") return ["document", "notebook", "stack", "project"].includes(draggedItem.type);
       return false;
     },
-    canDrag: (item) => {
+    canDrag: (item, ev) => {
       if (isTabMarkerItem(item) || isHeadingItem(item)) return false;
-      // A container's cards notebook is pinned to its top (tree-helpers.js).
-      if (isCardsHome(item)) return false;
+      // A container's cards notebook is pinned to its top (tree-helpers.js):
+      // it moves only when ⌘ is held, which carries it out as a pane, the
+      // way any notebook goes; canDrop gives it nowhere in the list.
+      if (isCardsHome(item)) return !!ev && (ev.metaKey || ev.ctrlKey || !!window.__hushCmdHeld);
       // In the all-desks view, desk rows are reorderable; everywhere else
       // the desk container itself stays put.
       if (item.type === "desk") return isAllDesksMode(state);
@@ -251,6 +256,8 @@ export function createFilesPanel(container, state, hidePanel) {
     },
 
     onClick: (item, event) => {
+      // A cards notebook's row opens through its own listener.
+      if (isCardsHome(item)) return;
       if (isCardItem(item)) {
         if (state.selectedDocIds.length) state.clearSelectedDocs();
         void openCard(state, item);
@@ -294,7 +301,7 @@ export function createFilesPanel(container, state, hidePanel) {
       }
     },
 
-    onDropExternal: (item, ev) => (isCardItem(item) ? dropCardOnRow(state, item, ev) : onLocalDropExternal(state, item, ev)), // a card onto a file row; anything else onto a Local Sync folder → move to disk
+    onDropExternal: (item, ev) => (isCardItem(item) ? dropCardOnRow(state, item, ev) : !isCardsHome(item) && onLocalDropExternal(state, item, ev)), // a card onto a file row; anything else onto a Local Sync folder → move to disk
     onDragStart: (item) => { if (isCardItem(item)) stopCardHover = trackCardRowHover(); },
     onCollapseChange: (ids) => {
       state.updateSettings({ collapsedFolderIds: noteCardFolds(ids) }); // persist folder open/closed state (rows holding cards: files-panel-cards.js)
@@ -311,7 +318,7 @@ export function createFilesPanel(container, state, hidePanel) {
     forceDragOutside: (item) => item && (item.type === "image" || isCardItem(item)),
 
     onDragOutside: (item, clientX, clientY, pointerEvent) => {
-      if (isCardItem(item)) { dropCardOutside(state, item, clientX, clientY); return; }
+      if (isCardItem(item)) { dropCardOutside(state, item, clientX, clientY, pointerEvent); return; }
       if (item.type === "image" && item.fileId) {
         import("../pane/text-drag.js").then(({ dropSidebarImageAt }) => {
           dropSidebarImageAt(item.fileId, clientX, clientY);

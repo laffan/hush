@@ -8,7 +8,9 @@
  * — with blank lines between). Over a registered notebook canvas a
  * multi-shape payload lands as separate text shapes whose relative
  * positions are preserved, anchored at the drop point. Holding Shift at
- * drop deletes the source.
+ * drop deletes the source. A card carried this way (⌘-drag on a canvas)
+ * lands as plain text and always leaves — what its insert-at-cursor
+ * button does, at the drop point (cards/card-drop.js).
  */
 import { EditorView } from "@codemirror/view";
 import { isCmdHeld } from "../cmd-button.js";
@@ -49,9 +51,10 @@ export function liveNotebookCanvases() {
  * @param {string}   [opts.anchorId]      The shape id under the cursor at drag start — used
  *                                        as the origin when replaying relative positions.
  * @param {PointerEvent} opts.initialEvent
- * @param {(deleteSource: boolean) => void} [opts.onDrop]
- *   Called after a successful drop, with `true` when the source should be
- *   removed (Shift was held at pointerup).
+ * @param {(deleteSource: boolean, landed: boolean) => void} [opts.onDrop]
+ *   Called when the drag ends: `deleteSource` is true when the source
+ *   should be removed (Shift was held at pointerup), `landed` whether
+ *   anything was dropped.
  */
 export function startTextDrag({ text, shapes, anchorId, image, editorText, initialEvent, onDrop, onClickNoMove }) {
   // Normalise: derive the text payload from shapes when needed, ordered
@@ -154,7 +157,7 @@ export function startTextDrag({ text, shapes, anchorId, image, editorText, initi
     cleanup();
     // No movement = a click, not a drag: let the caller open the sole link.
     if (!moved && onClickNoMove) { onClickNoMove(); return; }
-    if (!target) { if (onDrop) onDrop(false); return; }
+    if (!target) { if (onDrop) onDrop(false, false); return; }
 
     // If the drop landed inside a floating pane, activate that pane first
     // so its editor becomes editable and focused. The pane's own
@@ -178,7 +181,7 @@ export function startTextDrag({ text, shapes, anchorId, image, editorText, initi
         insertTextIntoNotebook(target.state, target.canvasEl, joined, e.clientX, e.clientY);
       }
     }
-    if (onDrop) onDrop(deleteSource);
+    if (onDrop) onDrop(deleteSource, true);
   }
 
   window.addEventListener("pointermove", onMove, true);
@@ -259,6 +262,9 @@ export function attachNotebookTextShapeDrag(canvasEl, containerEl, state, helper
       }
     }
 
+    // Cards only: they arrive as plain text and leave the canvas.
+    const cardsOnly = shapes.every((s) => s.card);
+
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
@@ -270,8 +276,8 @@ export function attachNotebookTextShapeDrag(canvasEl, containerEl, state, helper
       // Cmd+click (no drag) opens the shape's sole link even when the
       // precise hit-test missed (canvas geometry drifts on wrapped text).
       onClickNoMove: helpers.openSoleLink ? () => helpers.openSoleLink(hit, e.clientX, e.clientY, e.shiftKey) : null,
-      onDrop: (deleteSource) => {
-        if (!deleteSource) return;
+      onDrop: (deleteSource, landed) => {
+        if (!deleteSource && !(cardsOnly && landed)) return;
         const ids = new Set(shapes.map((s) => s.id));
         state.shapes = state.shapes.filter((s) => !ids.has(s.id));
         state.selectedIds = new Set();
@@ -351,6 +357,7 @@ function cloneShapePayload(s) {
     fontSize: s.fontSize,
     color: s.color,
     backgroundColor: s.backgroundColor,
+    card: !!s.card,
   };
 }
 
@@ -431,9 +438,10 @@ function insertShapesIntoNotebook(state, canvasEl, shapes, anchorId, clientX, cl
       y: dropPt.y + (s.position.y - anchor.position.y),
     },
     text: s.text || "",
-    fontSize: s.fontSize != null ? s.fontSize : 18,
+    // A card has its own type and width; as text it takes the canvas's.
+    fontSize: s.card ? state.fontSize : s.fontSize != null ? s.fontSize : 18,
     color: s.color || "#000000",
-    width: s.width,
+    width: s.card ? state.maxTextWidth : s.width,
     ...(s.backgroundColor ? { backgroundColor: s.backgroundColor } : {}),
   }));
   state.shapes = [...state.shapes, ...newShapes];

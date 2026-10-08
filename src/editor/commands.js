@@ -25,9 +25,10 @@ import {
   reduceSentenceSelection, shiftSelectionToNextSentence,
   shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack,
   deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence,
-  jumpToPrevParagraph, jumpToNextParagraph, joinLines, joinLinesUp, selectParagraph,
+  jumpToPrevParagraph, jumpToNextParagraph, selectParagraph,
   selectToParagraphAbove, selectToParagraphBelow, insertBreakAfter, insertBreakBefore,
 } from "./sentence-navigator.js";
+import { joinLines, joinLinesUp } from "./join-lines.js";
 import { deleteSentence } from "./sentence-delete.js";
 import { selectSentenceOrParenthetical } from "./sentence-parenthetical.js";
 import {
@@ -39,7 +40,7 @@ import { openShuffleEditor } from "./shuffle-editor.js";
 import { toggleWordCount } from "./plugins/word-count.js";
 import { getActiveModeContext, toggleModeOnContext } from "../state/mode-context.js";
 import { setInstanceHighlightsEffect, findAllOccurrences } from "./select-instance-highlight.js";
-import { makeCardCommand } from "../cards/card-commands.js";
+import { makeCardCommand, copyCardCommand } from "../cards/card-commands.js";
 
 /** Hunt for an editor surface whose active selection is non-empty and
  *  return a payload the Selection Focus overlay can mount a fresh
@@ -335,6 +336,8 @@ export function buildEditorCommands() {
     // A Doc's selection, or a canvas's selected text shapes — see
     // cards/card-commands.js for why the focus test lives there.
     shortcutMakeCard: (state, view) => makeCardCommand(state, view),
+    // ⌘⇧, 's pair: a card from a copy of the selection, the text left be.
+    shortcutCopyCard: (state, view) => copyCardCommand(state, view),
   };
 }
 

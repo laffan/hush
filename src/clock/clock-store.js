@@ -2,12 +2,14 @@
  * Wall clock — the model. It lives in `settings.clock` (opaque to Rust —
  * see `clock` on `AppSettings`):
  *
- *   { visible: boolean, x: number | null, y: number | null, alarmAt: number | null }
+ *   { visible: boolean, x: number | null, y: number | null, vw?, vh?, alarmAt: number | null }
  *
  * Settings are app-wide rather than per desk, so the clock stays on — and
  * where it was dragged to — across a desk switch, and every window reads
  * the same one. `x` / `y` are its top-left in viewport px; null leaves it
- * in its default corner.
+ * in its default corner. `vw` / `vh` are the size of the window it was
+ * put down in, which keeps it in its corner of a window of another size
+ * (ui/keep-on-screen.js).
  *
  * `alarmAt` is an absolute time: the next moment the minute hand reaches
  * the marker that was clicked. Holding the moment rather than the marker
@@ -32,6 +34,8 @@ export function getClock(state) {
     visible: !!o.visible,
     x: Number.isFinite(o.x) ? o.x : null,
     y: Number.isFinite(o.y) ? o.y : null,
+    vw: Number.isFinite(o.vw) ? o.vw : null,
+    vh: Number.isFinite(o.vh) ? o.vh : null,
     alarmAt: Number.isFinite(o.alarmAt) ? o.alarmAt : null,
   };
 }
@@ -45,8 +49,8 @@ export function toggleClock(state) {
   return write(state, { visible: !getClock(state).visible });
 }
 
-export function moveClock(state, x, y) {
-  return write(state, { x, y });
+export function moveClock(state, x, y, size) {
+  return write(state, { x, y, vw: size?.vw ?? null, vh: size?.vh ?? null });
 }
 
 /** One alarm at a time: setting one replaces any other; null clears it. */
