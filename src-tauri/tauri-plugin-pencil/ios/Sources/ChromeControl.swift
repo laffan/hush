@@ -207,7 +207,8 @@ enum ChromeControl {
         setPeekInset(root, window: window, true)
     }
 
-    private static func webView(in view: UIView) -> WKWebView? {
+    /// The WKWebView under `view`, if any — nil for system windows.
+    static func webView(in view: UIView) -> WKWebView? {
         if let web = view as? WKWebView { return web }
         for sub in view.subviews {
             if let web = webView(in: sub) { return web }

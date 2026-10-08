@@ -3,7 +3,7 @@ import Tauri
 import UIKit
 import WebKit
 
-// Pencil plugin — two responsibilities:
+// Pencil plugin — three responsibilities:
 //
 //  1. (iPad) Forward the Apple Pencil 2nd-gen / Pencil Pro hardware double-tap
 //     into a Tauri plugin event. We attach `UIPencilInteraction`
@@ -19,6 +19,10 @@ import WebKit
 //  2. Hide the status bar while a window is full screen, and bring it
 //     back — window controls and all — while the pointer sits in the
 //     top-left corner. See ChromeControl.swift.
+//
+//  3. Make each window's web view first responder while a hardware
+//     keyboard is attached, so shortcuts reach the page before anything
+//     has been tapped. See KeyboardFocus.swift.
 
 class PencilPlugin: Plugin {
     private var pencilInteraction: UIPencilInteraction?
@@ -32,6 +36,8 @@ class PencilPlugin: Plugin {
         self.pencilInteraction = interaction
 
         ChromeControl.install()
+        KeyboardFocus.install()
+        DispatchQueue.main.async { KeyboardFocus.claimAtLoad(webview) }
 
         NSLog("[PencilPlugin] handlers installed")
 

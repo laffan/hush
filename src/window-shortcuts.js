@@ -18,6 +18,12 @@ import { isPaneActive } from "./pane/pane-manager.js";
  * shortcuts fire without an extra click. macOS `focus` lands before the
  * WebView is first-responder (rAF defers past it); iOS doesn't always
  * fire `focus`, so `visibilitychange` is the reliable signal there.
+ *
+ * This only picks *which element* has focus. On iPad a programmatic
+ * `focus()` can't make the web view first responder, and without that
+ * no hardware key reaches the page at all — the native side claims it
+ * (tauri-plugin-pencil's KeyboardFocus.swift), and the page's `focus`
+ * event that claim fires is what runs this.
  */
 export function installActivationFocus(state, notebookContainer) {
   notebookContainer.setAttribute("tabindex", "-1");
