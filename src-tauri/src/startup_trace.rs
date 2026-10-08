@@ -12,6 +12,7 @@
 //! fail the operation it measures — same rule as the activity log.
 
 use serde::Serialize;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
@@ -70,6 +71,18 @@ pub fn record<T>(name: &str, f: impl FnOnce() -> T) -> T {
         list.push(phase);
     }
     out
+}
+
+/// `record`, but only on the first call that passes `armed` — for a step
+/// inside a command the frontend calls at boot and again later (a refresh
+/// re-runs `list_files`), where only the launch belongs in the table.
+/// Declare `armed` as a `static AtomicBool::new(true)` per step.
+pub fn record_first<T>(armed: &AtomicBool, name: &str, f: impl FnOnce() -> T) -> T {
+    if armed.swap(false, Ordering::Relaxed) {
+        record(name, f)
+    } else {
+        f()
+    }
 }
 
 /// The trace so far.

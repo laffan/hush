@@ -19,6 +19,31 @@ import { loadPaneContent } from "./pane-content.js";
 import { applyPaneFontSize } from "./pane-size-popover.js";
 
 let _persistTimer = null;
+
+// Panes that are saved but not built. A pane is only turned into DOM,
+// an editor and a loaded file when its context is the one on screen
+// (its owning doc / notebook / PDF / stack / Desktop is open, or it is
+// pinned) and that context's panes aren't hidden. Every other entry of
+// `settings.persistedPanes` waits here in its serialized form until
+// `wakeDormantPanes` is asked for its context.
+//
+// Restore used to build the whole list — every pane of every document
+// on every desk — visible, one after another, and only hide the
+// strangers once the last had loaded. That was a pile of other desks'
+// panes on screen for the length of the restore, and a launch cost that
+// grew with the number of panes anywhere in the library.
+//
+// `_waking` holds the records between leaving `_dormant` and joining the
+// live `panes` map, so a persist that lands mid-restore still writes
+// them back.
+let _dormant = [];
+let _waking = [];
+
+/** Would the serialized pane `s` be on screen in context `ctx`? Mirrors
+ *  the participation rule in pane-manager's `onContextChange`. */
+function participates(s, ctx) {
+  return !!s.pinned || (s.ownerContext || "") === ctx;
+}
 // Suppression depth — incremented by `applyRemotePanes` while it's
 // merging incoming pane state, decremented when done. Prevents the
 // apply path from re-uploading the same payload it just consumed.
@@ -120,7 +145,45 @@ export function serializePanes() {
         : null,
     });
   }
+  // Live panes first: the History journal zips this array against the
+  // live Map by index. The panes not built yet ride along unchanged so
+  // a persist never drops them.
+  for (const s of _waking) serialized.push(s);
+  for (const s of _dormant) serialized.push(s);
   return serialized;
+}
+
+/** Serialized panes that aren't built yet, owned by `contextId`. */
+export function dormantPanesForContext(contextId) {
+  return [..._waking, ..._dormant].filter((s) => (s.ownerContext || "") === contextId);
+}
+
+/** Is any unbuilt pane waiting to appear in `ctx`? */
+export function hasDormantPanesFor(ctx) {
+  return _dormant.some((s) => participates(s, ctx));
+}
+
+/** Forget the unbuilt panes owned by `contextId` (Clear panes). Returns
+ *  how many were dropped. */
+export function dropDormantPanes(contextId) {
+  const before = _dormant.length;
+  _dormant = _dormant.filter((s) => (s.ownerContext || "") !== contextId);
+  const n = before - _dormant.length;
+  if (n) schedulePersist();
+  return n;
+}
+
+/** Build the unbuilt panes that belong on screen in `ctx`. Returns how
+ *  many were taken off the dormant list (the caller re-runs the
+ *  visibility pass when it's non-zero). `force` builds them even when
+ *  `ctx` isn't on screen or is hidden — for callers that need the live
+ *  panes themselves (Copy panes). */
+export async function wakeDormantPanes(deps, ctx, { force = false } = {}) {
+  const due = _dormant.filter((s) => participates(s, ctx));
+  if (!due.length) return 0;
+  _dormant = _dormant.filter((s) => !due.includes(s));
+  await materialize(deps, due, force);
+  return due.length;
 }
 
 export function persistPanesNow() {
@@ -130,16 +193,51 @@ export function persistPanesNow() {
   appState.updateSettings({ persistedPanes: serialized });
 }
 
+/** Restore a pane layout: build the panes that belong on screen now and
+ *  park the rest as dormant records (see `_dormant`). `deps` carries
+ *  pane-manager's DOM builder and context helpers — injected rather
+ *  than imported to keep this module out of a cycle with it. */
 export async function restorePanes(deps, listOverride) {
-  const { buildPaneDOM, onContextChange } = deps;
+  const { onContextChange, getCurrentContext, isContextHidden } = deps;
   if (!appState) return;
   // `listOverride` lets the History journal rebuild a recorded pane set
   // mid-session; without it this is the boot path reading settings.
   const list = listOverride || appState.settings?.persistedPanes;
+  // Whatever was waiting belonged to the layout being replaced; a
+  // journal entry carries its own dormant panes in `list`.
+  _dormant = [];
   if (!Array.isArray(list) || list.length === 0) { onContextChange(); return; }
 
+  const ctx = getCurrentContext();
+  const hidden = isContextHidden(ctx);
+  const now = [];
   for (const s of list) {
     if (!s || !s.fileId || !s.fileType) continue;
+    if (!hidden && participates(s, ctx)) now.push(s);
+    else _dormant.push(s);
+  }
+  await materialize(deps, now, false);
+
+  // Hide panes that don't belong in the current context and start sync
+  // for those that do.
+  onContextChange();
+}
+
+/** Turn serialized records into live panes, in order. */
+async function materialize(deps, records, force) {
+  const { buildPaneDOM, getCurrentContext, isContextHidden } = deps;
+  _waking.push(...records);
+  // Imported once, up front, so each record moves from `_waking` into
+  // the live map with no await in between — a persist can't miss it.
+  const { findNodeByFileId } = await import("../state/tree-helpers.js");
+  for (const s of records) {
+    const w = _waking.indexOf(s);
+    if (w >= 0) _waking.splice(w, 1);
+    // The user may have switched documents while the panes ahead of
+    // this one loaded; one that no longer belongs on screen goes back
+    // to waiting rather than being built hidden.
+    const ctxNow = getCurrentContext();
+    if (!force && (!participates(s, ctxNow) || isContextHidden(ctxNow))) { _dormant.push(s); continue; }
 
     // Local Sync panes are validated against the persisted mount list —
     // if the user removed the mount while the app was closed, drop the
@@ -155,19 +253,16 @@ export async function restorePanes(deps, listOverride) {
       const stillMounted = folders.some((f) => f.id === s.localSync.folderId);
       if (!stillMounted) continue;
     } else if (s.fileType === "pdf") {
-      const { findNodeByFileId } = await import("../state/tree-helpers.js");
       const node = findNodeByFileId(appState.fileTree, s.fileId);
       if (!node) continue;
       resolvedName = node.name || s.fileName || "PDF";
     } else if (s.fileType === "stack") {
-      const { findNodeByFileId } = await import("../state/tree-helpers.js");
       const node = findNodeByFileId(appState.fileTree, s.fileId);
       if (!node) continue;
       resolvedName = node.name || s.fileName || "Stack";
     } else {
       const file = (appState.files || []).find((f) => f.id === s.fileId);
       if (!file) continue;
-      const { findNodeByFileId } = await import("../state/tree-helpers.js");
       const node = findNodeByFileId(appState.fileTree, s.fileId);
       resolvedName = node?.name || s.fileName || file.name || "Untitled";
     }
@@ -284,8 +379,4 @@ export async function restorePanes(deps, listOverride) {
       dockPane(pane, pane.dockEdge);
     }
   }
-
-  // Hide panes that don't belong in the current context and start sync
-  // for those that do.
-  onContextChange();
 }

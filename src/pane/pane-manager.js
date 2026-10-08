@@ -20,7 +20,10 @@ import {
   loadPaneContent, savePaneContent, autosaveAllPanes,
   syncAllPaneWordCounts,
 } from "./pane-content.js";
-import { schedulePersist, restorePanes as _restorePanes } from "./pane-persistence.js";
+import {
+  schedulePersist, restorePanes as _restorePanes,
+  wakeDormantPanes, hasDormantPanesFor, dropDormantPanes, dormantPanesForContext,
+} from "./pane-persistence.js";
 import { startCanvasSync, startScrollSync, startPdfScrollSync, stopAttachSync, anchorPaneToPdf, startStackPinSync, anchorPaneToStackItem, stopStackPinSync } from "./pane-attach-sync.js";
 import { buildPaneDOM as _buildPaneDOM } from "./pane-toolbar.js";
 import {
@@ -33,15 +36,24 @@ import { syncPaneRatchetLock, previewPaneStyle, syncPaneThemes } from "./pane-th
 import { installPaneHoverFocus } from "./pane-hover-focus.js";
 import { closePaneOverview } from "./pane-overview.js";
 
-// Inject local DOM-builder + context handler (avoids pane-persistence → pane-manager cycle).
-const restorePanes = () => _restorePanes({ buildPaneDOM, onContextChange });
+// Inject local DOM-builder + context helpers (avoids pane-persistence → pane-manager cycle).
+const restoreDeps = { buildPaneDOM, onContextChange, getCurrentContext, isContextHidden };
+const restorePanes = () => _restorePanes(restoreDeps);
 
 /** Rebuild the pane set from a serialized layout (History journal
  *  restore). Callers close the existing panes first; this re-hydrates
  *  the recorded ones and re-persists the result as the live layout. */
 export async function restorePanesFromList(list) {
-  await _restorePanes({ buildPaneDOM, onContextChange }, Array.isArray(list) ? list : []);
+  await _restorePanes(restoreDeps, Array.isArray(list) ? list : []);
   schedulePersist();
+}
+
+/** Build the saved-but-unbuilt panes of `ctx` (see `_dormant` in
+ *  pane-persistence.js), then re-run the visibility pass over them. */
+async function wakeContext(ctx, opts) {
+  const n = await wakeDormantPanes(restoreDeps, ctx, opts);
+  if (n) onContextChange();
+  return n;
 }
 
 /** Emit a pane-activity breadcrumb for the History journal. Fire-and-
@@ -123,6 +135,15 @@ function getCurrentContext() {
   return "";
 }
 
+/** True when `ctx`'s panes are kept off screen: the context's **Hide
+ *  panes** flag, or a phone viewport, which is too narrow for floating
+ *  panes — the latter forced without touching the persisted map (which
+ *  persists to disk to other devices, where panes are still wanted). */
+function isContextHidden(ctx) {
+  if (document.documentElement.classList.contains("phone")) return true;
+  return !!(appState?.settings?.panesHiddenByContext || {})[ctx];
+}
+
 /** Hide non-pinned panes that don't belong to the new context; show ones that do.
  *  When the active context is marked hidden via `panesHiddenByContext`,
  *  every pane that would normally participate in it (owned or pinned)
@@ -130,12 +151,13 @@ function getCurrentContext() {
  *  flag and re-runs this pass. */
 function onContextChange() {
   const ctx = getCurrentContext();
-  const hiddenMap = appState?.settings?.panesHiddenByContext || {};
-  // Phone viewports are too narrow for floating panes — force-hide every
-  // context without touching the persisted map (which persists to disk
-  // to other devices, where panes are still wanted).
-  const phone = document.documentElement.classList.contains("phone");
-  const ctxHidden = phone || !!hiddenMap[ctx];
+  const ctxHidden = isContextHidden(ctx);
+  // Panes saved for this context but never built this session (they
+  // belonged to another document at launch) are built now; the pass
+  // re-runs once they exist.
+  if (!ctxHidden && hasDormantPanesFor(ctx)) {
+    wakeContext(ctx).catch((e) => console.error("Pane restore failed:", e));
+  }
   for (const [, pane] of panes) {
     const participatesInCtx = pane.pinned || pane.ownerContext === ctx;
     if (ctxHidden && participatesInCtx) {
@@ -282,6 +304,8 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
   // De-dupe per (fileId, ownerContext) unless the caller explicitly opted in.
   if (!opts.allowDuplicate) {
     const ctx = opts.ownerContext || getCurrentContext();
+    // A saved pane for this file may not have been built yet.
+    if (ctx === getCurrentContext() && !isContextHidden(ctx)) await wakeContext(ctx);
     for (const [, p] of panes) {
       if (p.fileId === fileId && p.ownerContext === ctx) { focusPane(p.id); return; }
     }
@@ -503,6 +527,18 @@ export function getPanesForContext(contextId) {
       gutter: !!p.gutter,
     });
   }
+  // Saved panes not built yet (another document's, or a hidden
+  // context's) still count; they have no live id to focus.
+  for (const s of dormantPanesForContext(contextId)) {
+    out.push({
+      id: null,
+      fileId: s.fileId,
+      fileName: s.fileName || "Untitled",
+      fileType: s.fileType,
+      pinned: !!s.pinned,
+      gutter: !!s.gutter,
+    });
+  }
   return out;
 }
 
@@ -512,7 +548,7 @@ export function clearPanesForContext(contextId) {
   const victims = [];
   for (const [id, p] of panes) if (p.ownerContext === contextId) victims.push(id);
   for (const id of victims) closePane(id);
-  return victims.length;
+  return victims.length + dropDormantPanes(contextId);
 }
 
 /** Re-create every pane currently owned by `sourceContextId` under
@@ -521,6 +557,9 @@ export function clearPanesForContext(contextId) {
  *  alone — the copies stack onto whatever is already there. */
 export async function copyPanesBetweenContexts(sourceContextId, targetContextId) {
   if (!sourceContextId || !targetContextId || sourceContextId === targetContextId) return 0;
+  // The source's panes may still be saved-only (a hidden context's are
+  // never built); build them so there's something to copy.
+  await wakeContext(sourceContextId, { force: true });
   const originals = [];
   for (const [, p] of panes) if (p.ownerContext === sourceContextId) originals.push(p);
   let n = 0;

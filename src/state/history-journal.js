@@ -110,11 +110,13 @@ async function fillWorkspaceDetail(entry) {
     ]);
     entry.state.panes = serializePanes();
     // Stamp each serialized pane with whether it was actually on screen
-    // at this moment. The pane Map keeps every context's panes alive
-    // (hidden with display:none when their document isn't open), so
-    // without this the preview would draw every pane from every
-    // document into every snapshot. Zip by index — serializePanes walks
-    // the same Map in the same tick, so order matches.
+    // at this moment. The list carries every context's panes — live ones
+    // hidden with display:none when their document isn't open, and the
+    // not-yet-built ones after them — so without this the preview would
+    // draw every pane from every document into every snapshot. Zip by
+    // index — serializePanes walks the same Map first, in the same tick,
+    // so order matches; the unbuilt tail has no live pane and reads as
+    // not visible.
     const live = [...paneState.panes.values()];
     entry.state.panes.forEach((sp, i) => {
       const p = live[i];

@@ -21,7 +21,7 @@
  */
 import { panes, activePaneId, appState, GUTTER_Z, TITLEBAR_HEIGHT, zForPane } from "../pane/pane-state.js";
 import { stopAttachSync } from "../pane/pane-attach-sync.js";
-import { schedulePersist } from "../pane/pane-persistence.js";
+import { schedulePersist, dormantPanesForContext } from "../pane/pane-persistence.js";
 import { dockPane, undockPane, applyDockGeometry } from "../pane/pane-dock.js";
 
 /** Read the cm-scroller's vertical padding so the gutter pane can sit
@@ -55,7 +55,8 @@ function docHasGutter() {
   for (const [, p] of panes) {
     if (p.gutter && p.ownerContext === ctx) return true;
   }
-  return false;
+  // A hidden doc's gutter is saved but not built.
+  return dormantPanesForContext(ctx).some((s) => s.gutter);
 }
 
 export function canUseActivePaneAsGutter() {

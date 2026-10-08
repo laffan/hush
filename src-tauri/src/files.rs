@@ -196,7 +196,12 @@ impl FileManager {
     ///
     /// See README-TECHNICAL, "Startup".
     pub fn list_files(&self) -> Result<Vec<FileSummary>, Box<dyn std::error::Error>> {
-        let (indexed, staged) = self.store.list_ids();
+        static TRACE_IDS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+        let (indexed, staged) = crate::startup_trace::record_first(
+            &TRACE_IDS,
+            "list_files · find desks + parse their indexes",
+            || self.store.list_ids(),
+        );
         let mut entries = Vec::new();
         for (id, desk_id, rel) in indexed {
             // Read straight from the (desk, rel) list_ids already

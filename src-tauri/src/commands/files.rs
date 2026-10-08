@@ -1,5 +1,8 @@
 use serde::Serialize;
+use std::sync::atomic::AtomicBool;
 use tauri::State;
+
+use crate::startup_trace::record_first;
 
 use crate::{AppState, FileEntry, FileSummary, TreeNode};
 
@@ -8,7 +11,16 @@ use crate::{AppState, FileEntry, FileSummary, TreeNode};
 // not main-thread work. Notebooks, stacks and images no longer have their
 // bytes opened at all — see `FileManager::list_files`.
 pub async fn list_files(state: State<'_, AppState>) -> Result<Vec<FileSummary>, String> {
-    state.file_manager.lock().unwrap().list_files().map_err(|e| e.to_string())
+    // The launch's call is split in the native startup trace: time spent
+    // queued behind another command holding the file manager, then the
+    // listing itself (which records its index walk separately).
+    static TRACE_LOCK: AtomicBool = AtomicBool::new(true);
+    static TRACE_LIST: AtomicBool = AtomicBool::new(true);
+    let fm = record_first(&TRACE_LOCK, "list_files · wait for file manager", || {
+        state.file_manager.lock().unwrap()
+    });
+    record_first(&TRACE_LIST, "list_files · whole listing", || fm.list_files())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
