@@ -56,25 +56,14 @@
   <link rel="stylesheet" href="/src/styles/main.css" />
 </head>
 <body>
-  <!-- The menu-bar mark, scaled to 200 px on its long edge. The rounded
-       square is drawn once and the three text rules are cut out of it with
-       a mask, so the shape reads the same on any backdrop. Geometry is
-       taken from src-tauri/icons/tray-icon@2x.png at a 44-unit grid. -->
+  <!-- The startup mark, drawn from icons/startup-screen.svg: five text
+       rules on a 300-unit grid, filled solid. The source file paints them
+       near-black (#231f20), which would vanish on the splash's black
+       ground, so the fill here is the same warm off-white the previous
+       mark used. -->
   <div id="hush-splash">
-    <svg viewBox="0 0 44 44" aria-hidden="true" focusable="false">
-      <defs>
-        <mask id="hush-splash-cut">
-          <rect width="44" height="44" rx="8" fill="#fff" />
-          <g fill="#000">
-            <rect x="8" y="10" width="11" height="5" />
-            <rect x="22" y="10" width="14" height="5" />
-            <rect x="8" y="19.5" width="13" height="5" />
-            <rect x="25" y="19.5" width="10" height="5" />
-            <rect x="8" y="29" width="25" height="5" />
-          </g>
-        </mask>
-      </defs>
-      <rect width="44" height="44" rx="8" fill="#edeae3" mask="url(#hush-splash-cut)" />
+    <svg viewBox="0 0 300 300" aria-hidden="true" focusable="false">
+      <path fill="#edeae3" d="M55.4,65.8h75.8v39.2H55.4v-39.2ZM55.4,130.7h91.7v39.2H55.4v-39.2ZM225,234.2H55.4v-39.2h169.6v39.2ZM240.5,169.9h-75.8v-39.2h75.8v39.2ZM244.6,105h-97.4v-39.2h97.4v39.2Z" />
     </svg>
   </div>
   <script>
