@@ -306,17 +306,6 @@
   z-index: var(--z-drag-ghost);
 }
 
-/* Where a card let go with ⌘ held puts its words: a caret in the drop
-   colour at the character under the pointer (card-drag-feedback.js). */
-.hush-card-drop-caret {
-  position: fixed;
-  width: 2px;
-  background: var(--card-drop, #4a90e2);
-  border-radius: 1px;
-  pointer-events: none;
-  z-index: var(--z-drag-ghost);
-}
-
 /* ── On a canvas (notebook/ui/card-layer.ts) ───────────────────────
  * A card on a canvas is a text object: the canvas under it takes every
  * press (select, drag, group, resize handles), so the card lets them

@@ -256,11 +256,8 @@ export function createCardElement(o) {
     const at = (o.insertPoint || rememberedInsertPoint)();
     const c = at ? at.view.coordsAtPos(at.pos) : null;
     if (!c) return;
-    mark = document.createElement("div");
-    mark.className = "hush-card-insert-mark";
-    mark.innerHTML = ICONS.mark;
-    mark.style.transform = `translate(${Math.round(c.left)}px, ${Math.round(c.top)}px)`;
-    document.body.appendChild(mark);
+    mark = createInsertMark();
+    placeInsertMark(mark, c);
   }
   insertBtn?.addEventListener("pointerenter", () => markInsertPoint(true));
   insertBtn?.addEventListener("pointerleave", () => markInsertPoint(false));
@@ -332,6 +329,23 @@ export function createCardElement(o) {
       el.remove();
     },
   };
+}
+
+/** The red arrow that marks where a card's words will go — over the
+ *  insert-at-cursor point while the pointer is on that button, and over
+ *  the drop point while a card is carried with ⌘ held
+ *  (card-drag-feedback.js). Mounted on <body>. */
+export function createInsertMark() {
+  const mark = document.createElement("div");
+  mark.className = "hush-card-insert-mark";
+  mark.innerHTML = ICONS.mark;
+  document.body.appendChild(mark);
+  return mark;
+}
+
+/** Point the arrow at `coords` (a `coordsAtPos` rect). */
+export function placeInsertMark(mark, coords) {
+  mark.style.transform = `translate(${Math.round(coords.left)}px, ${Math.round(coords.top)}px)`;
 }
 
 /** A static copy of a card element for a drag ghost: same size and

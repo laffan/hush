@@ -23,7 +23,7 @@
  * **With ⌘ held at the release the card lands as text** — its words at
  * the spot under the pointer (card-drop.js#landCardsAsText), as its
  * insert-at-cursor button would put them at the caret — and the card
- * goes. While ⌘ is held a caret marks the spot in a Doc.
+ * goes. While ⌘ is held, insert-at-cursor's red arrow marks the spot in a Doc.
  */
 
 import { Transaction } from "@codemirror/state";
