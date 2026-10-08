@@ -29,6 +29,7 @@ pub mod markdown;
 pub mod notes;
 pub mod preprocess;
 pub mod styles;
+pub mod tables;
 pub mod world;
 
 use serde::Deserialize;
@@ -351,6 +352,18 @@ mod tests {
         assert!(body.contains("align: (left, center, right,)"), "{body}");
         assert!(body.contains("table.header("), "{body}");
         compiles(&body).expect("table compiles");
+    }
+
+    /// A table resized in the editor (dashes totalling 100 in its
+    /// delimiter row) prints at those proportions; a hand-typed row
+    /// keeps content-sized columns.
+    #[test]
+    fn table_keeps_its_widths() {
+        let md = "| Year | Title | Link |\n|--------|------------------------------------------------------------------|--------------------------|\n| 1980 | Lakoff | https://doi.org/10.3758/BF03197611 |\n\n| a | b |\n|------|-------|\n| 1 | 2 |";
+        let body = markdown::to_typst(md, markdown::CitationMode::Strip, &std::collections::HashSet::new());
+        assert!(body.contains("columns: (8fr, 66fr, 26fr,)"), "{body}");
+        assert!(body.contains("columns: 2"), "{body}");
+        compiles(&body).expect("sized table compiles");
     }
 
     /// The Typst behaviour the code-block fencing rule is built on: a

@@ -14,133 +14,63 @@
  * version used, minus viewportChanged (a state field can't see the
  * viewport, and the line scan is cheap).
  *
- * Cells render the inline formatting the extended-syntax guide allows in
- * tables — `code`, links, emphasis — plus Hush's ~~strike~~ and
- * ==highlight==; `&#124;` shows a literal pipe. Links paint as link-
- * coloured text only for now (following them, and a cell/row/column
- * editing UI, come later — today you edit by clicking into the source).
+ * Siblings: table-model.js (finding tables, the delimiter row and the
+ * widths it carries), table-cells.js (what a cell shows — formatting and
+ * links), table-resize.js (dragging a column border).
+ *
+ * Widths: a table whose delimiter row carries none is laid out by its
+ * content — the browser's auto table layout, which gives a column of
+ * years its four digits and the prose columns the rest. It used to be
+ * the long URLs that wrecked it: one unbreakable word as wide as itself,
+ * so the table overflowed sideways. Cells now draw a bare URL as a short
+ * capped label (table-cells.js). A table that carries widths is laid out
+ * at them, across the whole text column.
+ *
+ * Links in cells open on ⌘-click (Ctrl elsewhere), as links in the text
+ * do; a plain click goes into the source, as it does for the rest of
+ * the table.
  */
 import { EditorView, Decoration, WidgetType } from "@codemirror/view";
 import { StateField, RangeSetBuilder } from "@codemirror/state";
+import {
+  findTables, tableAtLine, splitCells, parseAligns, parseWidths, cellOffset,
+} from "./table-model.js";
+import { inlineCellHtml } from "./table-cells.js";
+import { attachColumnResize, applyColumnWidths } from "./table-resize.js";
+import { openUrl, hasModifier } from "./link-decorator.js";
 
-// A GFM delimiter row: pipe-separated cells of `:?-+:?`, with optional
-// surrounding whitespace and optional leading / trailing pipes. Requiring
-// a pipe (checked separately) keeps a bare `---` thematic break out.
-const DELIM_RE = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
-
-function hasUnescapedPipe(text) {
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === "|" && text[i - 1] !== "\\") return true;
+/** ⌘-click on a link in a cell opens it. On `pointerdown`, like the
+ *  editor's own link widgets: the gesture's first event, ahead of the
+ *  caret placement that would swap the table for its source. */
+function openCellLink(e) {
+  const link = e.target.closest?.("[data-link-url], [data-wikilink]");
+  if (!link || !hasModifier(e)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (link.dataset.wikilink) {
+    window.__hushOpenWikilink?.(link.dataset.wikilink);
+    return;
   }
-  return false;
-}
-
-// Split a table row into trimmed cell strings: drop a single leading and
-// trailing unescaped pipe, then split on the remaining unescaped pipes
-// (an escaped `\|` becomes a literal pipe inside the cell).
-function splitCells(text) {
-  let t = text.trim();
-  if (t.startsWith("|")) t = t.slice(1);
-  if (t.endsWith("|") && t[t.length - 2] !== "\\") t = t.slice(0, -1);
-  const cells = [];
-  let cur = "";
-  for (let i = 0; i < t.length; i++) {
-    const ch = t[i];
-    if (ch === "\\" && t[i + 1] === "|") { cur += "|"; i++; continue; }
-    if (ch === "|") { cells.push(cur.trim()); cur = ""; continue; }
-    cur += ch;
-  }
-  cells.push(cur.trim());
-  return cells;
-}
-
-// Per-column alignment from the delimiter row's `:` markers.
-function parseAligns(delimText) {
-  return splitCells(delimText).map((c) => {
-    const left = c.startsWith(":");
-    const right = c.endsWith(":");
-    if (left && right) return "center";
-    if (right) return "right";
-    if (left) return "left";
-    return "";
-  });
-}
-
-// Locate every pipe-table block in the document: a header line containing
-// a pipe, immediately followed by a delimiter row, then any run of
-// pipe-bearing body lines. Returns spans in document order.
-function findTables(doc) {
-  const tables = [];
-  let i = 1;
-  while (i <= doc.lines) {
-    const header = doc.line(i);
-    const isHeader = hasUnescapedPipe(header.text)
-      && !DELIM_RE.test(header.text)
-      && i + 1 <= doc.lines;
-    if (isHeader) {
-      const delim = doc.line(i + 1);
-      if (hasUnescapedPipe(delim.text) && DELIM_RE.test(delim.text)) {
-        let last = i + 1;
-        for (let j = i + 2; j <= doc.lines; j++) {
-          const body = doc.line(j);
-          if (body.text.trim() === "" || !hasUnescapedPipe(body.text)) break;
-          last = j;
-        }
-        const bodyTexts = [];
-        for (let k = i + 2; k <= last; k++) bodyTexts.push(doc.line(k).text);
-        tables.push({
-          from: header.from,
-          to: doc.line(last).to,
-          headerText: header.text,
-          delimText: delim.text,
-          bodyTexts,
-        });
-        i = last + 1;
-        continue;
-      }
-    }
-    i++;
-  }
-  return tables;
-}
-
-function escHtml(s) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-// Basic inline markdown inside a cell. Everything is HTML-escaped first;
-// code spans are stashed so their contents dodge the emphasis passes, and
-// links resolve before emphasis so a URL's underscores can't italicise.
-function inlineCellHtml(raw) {
-  let s = escHtml(raw.replace(/&#124;/g, "|"));
-  const stash = [];
-  const put = (html) => { stash.push(html); return `\u0000${stash.length - 1}\u0000`; };
-  s = s.replace(/`([^`]+)`/g, (_, c) => put(`<code>${c}</code>`));
-  s = s.replace(/\[([^\]]+)\]\(([^)]*)\)/g, `<span class="cm-md-table-link">$1</span>`);
-  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  s = s.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-  s = s.replace(/(^|\s)_([^_]+)_(?=\s|$)/g, "$1<em>$2</em>");
-  s = s.replace(/~~([^~]+)~~/g, "<s>$1</s>");
-  s = s.replace(/==([^=]+)==/g, "<mark>$1</mark>");
-  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => stash[+i]);
+  const r = link.getBoundingClientRect();
+  openUrl(link.dataset.linkUrl, { left: r.left, top: r.top, bottom: r.bottom });
 }
 
 class TableWidget extends WidgetType {
-  constructor(headerCells, aligns, bodyRows, from) {
+  constructor(headerCells, aligns, widths, bodyRows, from) {
     super();
     this.headerCells = headerCells;
     this.aligns = aligns;
+    this.widths = widths;
     this.bodyRows = bodyRows;
     this.from = from;
-    this._key = JSON.stringify([headerCells, aligns, bodyRows]);
+    this._key = JSON.stringify([headerCells, aligns, widths, bodyRows]);
   }
 
   eq(other) {
     return this.from === other.from && this._key === other._key;
   }
 
-  toDOM() {
+  toDOM(view) {
     const cols = this.headerCells.length;
     const wrap = document.createElement("div");
     wrap.className = "cm-md-table-wrap";
@@ -148,6 +78,9 @@ class TableWidget extends WidgetType {
 
     const table = document.createElement("table");
     table.className = "cm-md-table";
+    const colgroup = document.createElement("colgroup");
+    for (let idx = 0; idx < cols; idx++) colgroup.appendChild(document.createElement("col"));
+    table.appendChild(colgroup);
 
     const thead = document.createElement("thead");
     const htr = document.createElement("tr");
@@ -155,6 +88,13 @@ class TableWidget extends WidgetType {
       const th = document.createElement("th");
       th.innerHTML = inlineCellHtml(text);
       if (this.aligns[idx]) th.style.textAlign = this.aligns[idx];
+      if (idx < cols - 1) {
+        const grip = document.createElement("span");
+        grip.className = "cm-md-table-resizer";
+        grip.dataset.col = String(idx);
+        grip.title = "Drag to resize · press twice to fit to content";
+        th.appendChild(grip);
+      }
       htr.appendChild(th);
     });
     thead.appendChild(htr);
@@ -173,6 +113,10 @@ class TableWidget extends WidgetType {
     }
     table.appendChild(tbody);
     wrap.appendChild(table);
+
+    applyColumnWidths(table, this.widths);
+    wrap.addEventListener("pointerdown", openCellLink);
+    if (cols > 1) attachColumnResize(view, wrap, table, this.widths);
     return wrap;
   }
 
@@ -194,17 +138,33 @@ function buildDecorations(state) {
     if (inside) continue;
     const headerCells = splitCells(t.headerText);
     const aligns = parseAligns(t.delimText);
+    const widths = parseWidths(t.delimText, headerCells.length);
     const bodyRows = t.bodyTexts.map(splitCells);
     builder.add(
       t.from,
       t.to,
       Decoration.replace({
-        widget: new TableWidget(headerCells, aligns, bodyRows, t.from),
+        widget: new TableWidget(headerCells, aligns, widths, bodyRows, t.from),
         block: true,
       }),
     );
   }
   return builder.finish();
+}
+
+/** Where in the source a click on `target` should put the caret: the
+ *  start of the clicked cell's text, or the table's start. */
+function clickedCellPos(doc, from, target) {
+  const start = Math.min(from, doc.length);
+  const cell = target.closest?.("td, th");
+  if (!cell) return start;
+  const t = tableAtLine(doc, doc.lineAt(start).number);
+  if (!t || t.from !== start) return start;
+  const tr = cell.parentElement;
+  const row = tr.parentElement.tagName === "THEAD" ? 0 : tr.sectionRowIndex + 2;
+  const line = doc.line(doc.lineAt(start).number + row);
+  if (line.to > t.to) return start;
+  return line.from + cellOffset(line.text, cell.cellIndex);
 }
 
 export function createTableRendererPlugin() {
@@ -217,17 +177,20 @@ export function createTableRendererPlugin() {
     provide: (f) => EditorView.decorations.from(f),
   });
 
-  // Click a rendered table → drop the caret at its start, which reveals
-  // the raw source (the span now overlaps the selection) for editing.
+  // Click a rendered table → drop the caret into the source of the cell
+  // that was clicked (the table's start, off a cell), which reveals the
+  // raw source (the span now overlaps the selection) for editing.
   const clickHandler = EditorView.domEventHandlers({
     mousedown(e, view) {
       const wrap = e.target?.closest?.(".cm-md-table-wrap");
       if (!wrap) return false;
+      // A column grip's press is the resize's (table-resize.js).
+      if (e.target.closest(".cm-md-table-resizer")) return true;
       const from = parseInt(wrap.dataset.tableFrom, 10);
       if (!Number.isFinite(from)) return false;
       e.preventDefault();
       view.focus();
-      view.dispatch({ selection: { anchor: Math.min(from, view.state.doc.length) } });
+      view.dispatch({ selection: { anchor: clickedCellPos(view.state.doc, from, e.target) } });
       return true;
     },
   });

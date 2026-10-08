@@ -828,7 +828,13 @@ body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection
    "Never put vertical margin on a CM block"). */
 .cm-md-table-wrap {
   padding: 0.5em 0;
-  max-width: 100%;
+  /* Width 0, stretched to the column by min-width: a table too wide for
+     a narrow pane scrolls sideways inside the wrapper. Sized by its
+     content, the wrapper pushed the editor's own content wider instead,
+     and the whole document scrolled sideways with it. */
+  box-sizing: border-box;
+  width: 0;
+  min-width: 100%;
   overflow-x: auto;
   cursor: text;
 }
@@ -837,6 +843,22 @@ body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection
   font: inherit;
   color: inherit;
   line-height: 1.4;
+  /* The editor's line wrapping sets `overflow-wrap: anywhere` on the
+     content, and a table inherits it — under which every word's minimum
+     width is one letter, so the layout starved a short column down to
+     one: a "1980" stacked a digit a line. `break-word` still breaks a
+     word too long for its cell but leaves the words' widths alone. */
+  overflow-wrap: break-word;
+  word-break: normal;
+  white-space: normal;
+}
+/* Widths from the delimiter row (table-model.js): percentages of the
+   column, the table across all of it. Still the auto layout, not
+   `fixed`, so no column goes narrower than its longest word — at whole-
+   percent widths a fixed layout broke a year in the middle when its
+   column came out a pixel short. */
+.cm-md-table.cm-md-table-sized {
+  width: 100%;
 }
 .cm-md-table th,
 .cm-md-table td {
@@ -846,10 +868,45 @@ body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection
   vertical-align: top;
 }
 .cm-md-table th {
+  position: relative;
   font-weight: 600;
   background: color-mix(in srgb, var(--style-fg, var(--fg)) 8%, transparent);
 }
-/* Inline formatting inside cells (see inlineCellHtml in table-renderer.js). */
+/* Column grips (table-resize.js): a strip over each inner border of the
+   header, reaching down the whole table (`--cm-md-table-h`, measured on
+   pointer entry). Invisible until the pointer is on one. */
+.cm-md-table-resizer {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  width: 9px;
+  height: var(--cm-md-table-h, 100%);
+  cursor: col-resize;
+  z-index: 1;
+  touch-action: none;
+}
+.cm-md-table-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--link, currentColor);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.cm-md-table-resizer:hover::after,
+.cm-md-table-resizer.active::after {
+  opacity: 0.55;
+}
+.cm-md-table-resizing,
+.cm-md-table-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+/* Inline formatting inside cells (see table-cells.js). */
 .cm-md-table code {
   font-family: "Fira Code", "Consolas", monospace;
   font-size: 0.9em;
@@ -859,7 +916,32 @@ body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection
 }
 .cm-md-table .cm-md-table-link {
   text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--link, currentColor) 45%, transparent);
+  text-underline-offset: 2px;
   color: var(--link, currentColor);
+}
+/* A bare URL: one line, cut short. The cap is absolute in a content-
+   sized table, since that is what its column's minimum is measured
+   from (a percentage would measure as the whole URL). */
+.cm-md-table .cm-md-table-url {
+  display: inline-block;
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+}
+.cm-md-table.cm-md-table-sized .cm-md-table-url {
+  /* Contributes nothing to the column's minimum (width 0) and fills
+     whatever width the column was given (min-width 100%), so a sized
+     column can be dragged narrower than the label and cuts it there. */
+  width: 0;
+  min-width: 100%;
+  max-width: none;
+}
+.cm-md-table .cm-md-table-image {
+  font-style: italic;
+  opacity: 0.7;
 }
 .cm-md-table mark {
   background: color-mix(in srgb, #ffe066 55%, transparent);

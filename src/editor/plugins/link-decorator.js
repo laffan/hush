@@ -153,7 +153,7 @@ const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 // still well below any deliberate re-open cadence for the same URL.
 let _lastOpen = { url: null, t: 0 };
 
-async function openUrl(url, anchor) {
+export async function openUrl(url, anchor) {
   const now = Date.now();
   if (url === _lastOpen.url && now - _lastOpen.t < 600) return;
   _lastOpen = { url, t: now };
@@ -240,7 +240,7 @@ if (isIOS()) {
   window.addEventListener("blur", () => { _modifierHeld = false; });
 }
 
-function hasModifier(e) {
+export function hasModifier(e) {
   // `_modifierHeld` tracks a real (hardware) Cmd/Ctrl on iOS. The
   // touch-mode ⌘ pill instead exposes `window.__hushCmdHeld` (its
   // synthetic Meta keydown is dispatched on `window`, so a `document`

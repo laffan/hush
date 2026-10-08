@@ -67,10 +67,16 @@ pub fn to_typst(
     // pass after the markdown has been converted.
     let with_sentinels = preprocess_cites(&cleaned);
 
-    let parser = Parser::new_ext(&with_sentinels, opts);
+    let parser = Parser::new_ext(&with_sentinels, opts).into_offset_iter();
     let mut emitter = Emitter::new(available_images);
     let mut out = String::with_capacity(with_sentinels.len() + 128);
-    for event in parser {
+    for (event, range) in parser {
+        // A table's column widths are in its source, which the events
+        // don't carry (see tables.rs).
+        if let Event::Start(Tag::Table(aligns)) = &event {
+            let src = with_sentinels.get(range).unwrap_or("");
+            emitter.table_widths = super::tables::explicit_widths(src, aligns.len());
+        }
         emitter.handle(event, &mut out);
     }
     let out = expand_cite_sentinels(&out, &cite_mode);
@@ -134,6 +140,8 @@ struct Emitter<'a> {
     /// Inside a table's header row (its cells are bold, and sit inside
     /// `table.header(…)`).
     in_table_head: bool,
+    /// The widths the next table's delimiter row carries, if any.
+    table_widths: Option<Vec<usize>>,
 }
 
 #[derive(Clone, Copy)]
@@ -169,6 +177,7 @@ impl<'a> Emitter<'a> {
             code_lang: None,
             available_images,
             in_table_head: false,
+            table_widths: None,
         }
     }
 
@@ -308,7 +317,8 @@ impl<'a> Emitter<'a> {
             }
             // `columns` must be the count: `columns: auto` is *one*
             // auto-sized column, which stacked every cell of the table
-            // down the page. The header row goes in `table.header` (it
+            // down the page. A table resized in the editor carries its
+            // widths instead (tables.rs). The header row goes in `table.header` (it
             // repeats when a table breaks across pages) and is set bold,
             // as the editor's table renderer draws it.
             Tag::Table(aligns) => {
@@ -320,9 +330,10 @@ impl<'a> Emitter<'a> {
                         Alignment::Left | Alignment::None => "left",
                     })
                     .collect();
+                let widths = self.table_widths.take();
                 out.push_str(&format!(
                     "\n#table(\n  columns: {},\n  align: ({},),\n  stroke: 0.5pt + luma(170),\n  inset: (x: 0.6em, y: 0.45em),\n",
-                    aligns.len().max(1),
+                    super::tables::columns_arg(widths.as_deref(), aligns.len()),
                     align.join(", "),
                 ));
             }
