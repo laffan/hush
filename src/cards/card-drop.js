@@ -39,6 +39,12 @@ export function dropsAsText(e) {
   return !!e && (e.metaKey || e.ctrlKey || !!window.__hushCmdHeld);
 }
 
+/** ⌘⇧ at the release: the card's words land as text and the card itself
+ *  stays where it was — a copy of its words rather than the card. */
+export function dropKeepsCard(e) {
+  return dropsAsText(e) && !!e.shiftKey;
+}
+
 /** Where a card's words would go in a Doc dropped at (x, y): the
  *  character under the pointer, else the nearest one. */
 export function textDropPos(view, x, y) {

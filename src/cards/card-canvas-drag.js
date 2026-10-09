@@ -13,10 +13,11 @@
  * this canvas. Let go anywhere else, the canvas finishes its drag as it
  * would have. Let go with ⌘ held, they land as text, in reading order —
  * this canvas included, where they turn into a text shape at the
- * pointer (card-drop.js#landCardsAsText).
+ * pointer (card-drop.js#landCardsAsText). With ⌘⇧ the words land the
+ * same way and the cards stay where they were.
  */
 
-import { resolveCardTarget, canvasWorld, landCards, landCardsAsText, dropsAsText } from "./card-drop.js";
+import { resolveCardTarget, canvasWorld, landCards, landCardsAsText, dropsAsText, dropKeepsCard } from "./card-drop.js";
 import { createDragFeedback } from "./card-drag-feedback.js";
 import { canvasReturn } from "./card-return.js";
 import { MOVE_THRESHOLD, cardDragActive } from "./card-drag.js";
@@ -101,19 +102,20 @@ function follow(appState, state, down) {
     stop();
     if (!carry) return;
     const asText = dropsAsText(e);
+    const keep = asText && dropKeepsCard(e);
     if (!t || (home(t) && !asText)) return;
     // Theirs now: the canvas's drag ends without committing, and the
-    // cards leave once they have landed.
+    // cards leave once they have landed — or, with ⌘⇧, stay.
     e.stopPropagation();
     state.cancelActiveInteraction();
     const { cards, grab, ids } = carry;
     // Undoing the landing in a Doc puts the cards back here.
-    const back = t.kind === "cm" ? canvasReturn(state, ids) : null;
+    const back = t.kind === "cm" && !keep ? canvasReturn(state, ids) : null;
     const landing = asText
       ? landCardsAsText(appState, t, [...cards].sort((a, b) => (a.dy - b.dy) || (a.dx - b.dx)), e.clientX, e.clientY, back)
       : landCards(appState, t, cards, e.clientX, e.clientY, grab, back);
     void landing.then(async (ok) => {
-      if (!ok) return;
+      if (!ok || keep) return;
       const { removeCardShapes } = await import("../notebook/card-shape.ts");
       removeCardShapes(state, ids);
     }).catch(async (err) => {

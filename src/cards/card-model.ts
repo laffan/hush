@@ -238,6 +238,15 @@ export function cardTitle(body: string): string {
   return "Empty card";
 }
 
+/** The card's row in the sidebar: all of its words on one line, its
+ *  markdown dropped — the row's CSS crops it to the width there is. Held
+ *  to a length no sidebar shows, since a notebook's are stored in the
+ *  per-device index. */
+export function cardPreview(body: string): string {
+  const text = (body || "").split("\n").map((l) => plainLine(l).trim()).filter(Boolean).join(" ").replace(/\s+/g, " ");
+  return text ? text.slice(0, 240) : "Empty card";
+}
+
 /** True when `text` is a single card and nothing else (whitespace
  *  aside) — what a paste or a drop has to be to arrive as a card. */
 export function parseWholeCard(text: string): { body: string; meta: CardMeta } | null {

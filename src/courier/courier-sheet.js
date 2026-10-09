@@ -7,8 +7,8 @@
  * Two columns. The left chooses: **Sticky**, **Append** or **Card**
  * across the top; a sticky adds a second row — Document, Desk, Global —
  * and then the search over documents or desks (a global sticky needs
- * none; a card picks the desk whose Inbox it goes to, the active desk
- * unless another is chosen). The right is the thing itself, written in place: a
+ * none; a card picks the desk whose Inbox it goes to — the last one a
+ * card went to, else the active desk). The right is the thing itself, written in place: a
  * sticky note (the real sticky markup and palette) whose text you type
  * straight into, the end of the target document with a live editor after
  * it (courier-append-editor.js), or a card — the same card component
@@ -26,7 +26,7 @@
 
 import { MODES, STICKY_SCOPES, buildLocations, matchesFilter } from "./courier-destinations.js";
 import { deliver, readDocumentText } from "./courier-send.js";
-import { lastMode, lastScope, lastLocation, rememberSend, slotFor } from "./courier-store.js";
+import { lastMode, lastScope, lastLocation, lastCardMeta, rememberSend, slotFor } from "./courier-store.js";
 import { mountAppendEditor, documentTail } from "./courier-append-editor.js";
 import { ctxIconFor, DEFAULT_FONT } from "../sticky/sticky-shared.js";
 
@@ -93,7 +93,7 @@ export function openCourier(state) {
   let stickyText = null;     // the sticky's textarea while it's mounted
   let appendEditor = null;   // the append editor while it's mounted
   let cardEl = null;         // the card (cards/card-element.js) while it's mounted
-  let cardMeta = {};         // its colour, kept across a mode switch
+  let cardMeta = lastCardMeta(state); // its colour — the last card's to begin with
   let surfaceKey = null;     // what the mounted surface was built for
   const docText = new Map(); // fileId → text, for the append surface
 
@@ -281,8 +281,9 @@ export function openCourier(state) {
     filterEl.value = "";
     filterEl.placeholder = (mode === "sticky" && scope === "desk") || mode === "card" ? "Search desks…" : "Search documents…";
     rows = searchable ? buildLocations(state, mode, scope) : [];
-    // A card starts on the active desk (first in the list) every time.
-    const remembered = mode === "card" ? null : lastLocation(state, slotFor(mode, scope));
+    // Every list reopens on its last pick; with none (or a desk since
+    // archived) a card starts on the active desk, first in the list.
+    const remembered = lastLocation(state, slotFor(mode, scope));
     selectedKey = rows.some((r) => r.key === remembered) ? remembered : null;
     renderList();
   }
@@ -311,7 +312,7 @@ export function openCourier(state) {
         }
       }
       const label = await deliver(state, { mode, scope, location, cardMeta }, text);
-      rememberSend(state, mode, mode === "sticky" ? scope : null, location?.key || null);
+      rememberSend(state, mode, mode === "sticky" ? scope : null, location?.key || null, cardMeta);
       close();
       const { showImportToast } = await import("../editor/import-toast.js");
       showImportToast(label, "info");

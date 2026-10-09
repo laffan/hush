@@ -138,6 +138,41 @@ fn prune_thins_old_buckets_but_keeps_recent_snapshots() {
 }
 
 #[test]
+fn major_versions_survive_the_decay_and_can_be_unmarked() {
+    let dir = tmp();
+    seed_desk(dir.path());
+    let mgr = SnapshotManager::new(dir.path());
+
+    // Three snapshots in one old minute-bucket; the oldest is marked major.
+    let versions = dir.path().join("desks/d1/.hush/versions/f1");
+    fs::create_dir_all(&versions).unwrap();
+    let now = now_ms();
+    let old_base = ((now - 60 * 60 * 1000) / 60_000) * 60_000;
+    for i in 0..3 {
+        let ms = old_base + i * 1000;
+        fs::write(versions.join(format!("{}-dev.snap", ms)), format!("old{}", i)).unwrap();
+    }
+    mgr.set_snapshot_major("f1", old_base, true).unwrap();
+    assert!(versions.join(format!("{}-dev-major.snap", old_base)).exists());
+
+    let born_major = mgr.create_snapshot_marked("f1", "fresh", true).unwrap();
+    let entries = mgr.get_snapshots("f1").unwrap();
+    // fresh (major) + the bucket's newest survivor + the major old0.
+    assert_eq!(entries.len(), 3);
+    assert!(entries.iter().any(|e| e.content == "old0" && e.major));
+    assert!(entries.iter().any(|e| e.content == "old2" && !e.major));
+    assert!(entries.iter().any(|e| e.id == born_major && e.major));
+    assert!(mgr.get_snapshot(old_base).unwrap().major);
+
+    // Unmarked, it goes back to the policy at the next prune.
+    mgr.set_snapshot_major("f1", old_base, false).unwrap();
+    mgr.create_snapshot("f1", "fresh2").unwrap();
+    let entries = mgr.get_snapshots("f1").unwrap();
+    assert!(!entries.iter().any(|e| e.content == "old0"));
+    assert!(mgr.set_snapshot_major("f1", 42, true).is_err());
+}
+
+#[test]
 fn cross_desk_move_carries_version_history() {
     let dir = tmp();
     let store = seed_desk(dir.path());

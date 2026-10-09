@@ -308,6 +308,17 @@ export function createCardElement(o) {
     grip.addEventListener("pointercancel", up);
   });
 
+  function releaseTextSelection() {
+    const view = editor?.view;
+    if (view) {
+      const sel = view.state.selection;
+      if (sel.ranges.some((r) => !r.empty)) view.dispatch({ selection: { anchor: sel.main.head } });
+      if (view.hasFocus) view.contentDOM.blur();
+    }
+    const dom = window.getSelection?.();
+    if (dom?.rangeCount && dom.anchorNode && el.contains(dom.anchorNode)) dom.removeAllRanges();
+  }
+
   return {
     el,
     get view() { return editor?.view || null; },
@@ -327,7 +338,14 @@ export function createCardElement(o) {
       meta = { ...(next || {}) };
       paintMeta();
     },
-    setSelected(on) { el.classList.toggle("selected", !!on); },
+    /** A canvas card's selection state. Deselected, it first lets go of
+     *  any text selected in it — the editor's range collapses to its
+     *  head and the page's own selection leaves the card — so a range
+     *  isn't left stranded in a card nobody is working in. */
+    setSelected(on) {
+      if (!on && el.classList.contains("selected")) releaseTextSelection();
+      el.classList.toggle("selected", !!on);
+    },
     hasFocus: () => !!editor?.view.hasFocus,
     focus(atEnd = true) {
       if (!editor) return;

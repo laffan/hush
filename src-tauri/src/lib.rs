@@ -458,6 +458,7 @@ pub fn run() {
             commands::snapshots::create_snapshot,
             commands::snapshots::get_snapshots,
             commands::snapshots::get_snapshot,
+            commands::snapshots::set_snapshot_major,
             commands::snapshots::delete_document_snapshots,
             commands::google_docs::start_google_oauth_listener,
             commands::google_docs::exchange_google_token,

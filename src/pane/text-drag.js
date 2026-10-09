@@ -9,8 +9,10 @@
  * multi-shape payload lands as separate text shapes whose relative
  * positions are preserved, anchored at the drop point. Holding Shift at
  * drop deletes the source. A card carried this way (⌘-drag on a canvas)
- * lands as plain text and always leaves — what its insert-at-cursor
- * button does, at the drop point (cards/card-drop.js).
+ * lands as plain text and leaves — what its insert-at-cursor button
+ * does, at the drop point (cards/card-drop.js) — unless Shift is held at
+ * the drop (⌘⇧), which leaves the card where it was: for cards Shift
+ * means keep, the other way round.
  */
 import { EditorView } from "@codemirror/view";
 import { isCmdHeld } from "../cmd-button.js";
@@ -54,13 +56,15 @@ export function liveNotebookCanvases() {
  * @param {PointerEvent} opts.initialEvent
  * @param {(deleteSource: boolean, landed: boolean) => void} [opts.onDrop]
  *   Called when the drag ends: `deleteSource` is true when the source
- *   should be removed (Shift was held at pointerup), `landed` whether
- *   anything was dropped.
+ *   should be removed (Shift was held at pointerup — for `cards`, when
+ *   it wasn't), `landed` whether anything was dropped.
+ * @param {boolean} [opts.cards]  The payload is cards only: it leaves its
+ *   canvas on landing, and Shift keeps it instead.
  * @param {{ restore(): void, take(): void }} [opts.back]  Cards carried
  *   off a canvas: undoing their words' landing in a Doc puts them back
  *   (cards/card-return.js).
  */
-export function startTextDrag({ text, shapes, anchorId, image, editorText, initialEvent, onDrop, onClickNoMove, back }) {
+export function startTextDrag({ text, shapes, anchorId, image, editorText, initialEvent, onDrop, onClickNoMove, back, cards = false }) {
   // Normalise: derive the text payload from shapes when needed, ordered
   // top-to-bottom / left-to-right so CM drops land in reading order.
   const hasShapes = Array.isArray(shapes) && shapes.length > 0;
@@ -98,8 +102,11 @@ export function startTextDrag({ text, shapes, anchorId, image, editorText, initi
   ghost.style.top = initialEvent.clientY + 12 + "px";
   document.documentElement.appendChild(ghost);
 
+  // Whether a drop with Shift in this state takes the source away. iPad
+  // has no Shift modifier → a text drag defaults to move, not copy.
+  const removes = (shift) => (cards ? !shift : shift || document.documentElement.classList.contains("ios"));
   let shiftHeld = !!initialEvent.shiftKey;
-  updateGhostMode(ghost, shiftHeld);
+  updateGhostMode(ghost, removes(shiftHeld));
 
   const startX = initialEvent.clientX;
   const startY = initialEvent.clientY;
@@ -124,7 +131,7 @@ export function startTextDrag({ text, shapes, anchorId, image, editorText, initi
     ghost.style.top = e.clientY + 12 + "px";
     if (e.shiftKey !== shiftHeld) {
       shiftHeld = e.shiftKey;
-      updateGhostMode(ghost, shiftHeld);
+      updateGhostMode(ghost, removes(shiftHeld));
     }
     // Highlight the pane currently under the cursor (if any).
     const target = findDropTarget(e.clientX, e.clientY);
@@ -135,7 +142,7 @@ export function startTextDrag({ text, shapes, anchorId, image, editorText, initi
   function onKey(e) {
     if (e.shiftKey !== shiftHeld) {
       shiftHeld = e.shiftKey;
-      updateGhostMode(ghost, shiftHeld);
+      updateGhostMode(ghost, removes(shiftHeld));
     }
   }
 
@@ -151,8 +158,7 @@ export function startTextDrag({ text, shapes, anchorId, image, editorText, initi
   }
 
   function onUp(e) {
-    // iPad has no Shift modifier → default a text drag to move, not copy.
-    const deleteSource = shiftHeld || e.shiftKey || document.documentElement.classList.contains("ios");
+    const deleteSource = removes(shiftHeld || e.shiftKey);
     // Resolve the drop target BEFORE cleanup, since cleanup removes the
     // body.text-drag-active class that re-enables pointer-events on
     // inactive panes — otherwise elementFromPoint returns something behind
@@ -173,7 +179,8 @@ export function startTextDrag({ text, shapes, anchorId, image, editorText, initi
         insertImageIntoEditor(target.view, image, e.clientX, e.clientY);
       } else {
         const at = insertIntoEditor(target.view, editorPayload, e.clientX, e.clientY);
-        linkReturn(target.view, at, at + editorPayload.length, back);
+        // A source that stays has nothing to come back on undo.
+        linkReturn(target.view, at, at + editorPayload.length, deleteSource ? back : null);
       }
     } else if (target.kind === "nb") {
       if (image) {
@@ -205,7 +212,8 @@ export function isTextDragging() {
  * shape starts a drag with that shape's text; if multiple text shapes are
  * selected and the click lands on one of them, the whole selection is
  * carried (with relative positions preserved for notebook drops). Shift
- * at drop deletes the source shape(s).
+ * at drop deletes the source shape(s) — cards the other way round: they
+ * leave on landing, and Shift keeps them.
  *
  * @param {HTMLCanvasElement} canvasEl
  * @param {HTMLElement} containerEl Ancestor of canvasEl.
@@ -267,7 +275,8 @@ export function attachNotebookTextShapeDrag(canvasEl, containerEl, state, helper
       }
     }
 
-    // Cards only: they arrive as plain text and leave the canvas.
+    // Cards only: they arrive as plain text and leave the canvas — or,
+    // with Shift held at the drop, stay (startTextDrag's `cards`).
     const cardsOnly = shapes.every((s) => s.card);
 
     e.preventDefault();
@@ -278,12 +287,13 @@ export function attachNotebookTextShapeDrag(canvasEl, containerEl, state, helper
       anchorId: hit.id,
       editorText,
       initialEvent: e,
+      cards: cardsOnly,
       back: cardsOnly ? canvasReturn(state, shapes.map((s) => s.id)) : null,
       // Cmd+click (no drag) opens the shape's sole link even when the
       // precise hit-test missed (canvas geometry drifts on wrapped text).
       onClickNoMove: helpers.openSoleLink ? () => helpers.openSoleLink(hit, e.clientX, e.clientY, e.shiftKey) : null,
       onDrop: (deleteSource, landed) => {
-        if (!deleteSource && !(cardsOnly && landed)) return;
+        if (!deleteSource || !landed) return;
         const ids = new Set(shapes.map((s) => s.id));
         state.shapes = state.shapes.filter((s) => !ids.has(s.id));
         state.selectedIds = new Set();

@@ -1,5 +1,5 @@
 /**
- * Desk-scoped (and cross-desk: Courier and the Inbox's cards, the focus timer, the wall clock, writing progress) command palette entries — split out of
+ * Desk-scoped (and cross-desk: Courier and cards, the focus timer, the wall clock, writing progress) command palette entries — split out of
  * `command-palette-commands.js` to keep that file under the 700-line cap.
  *
  * `buildDeskCommands(ctx)` returns the same command descriptors
@@ -14,6 +14,7 @@ import { toggleDeskRatchet } from "./state/state-modes.js";
 import { getTimer, isTimerRunning, deleteTimer } from "./timer/timer-store.js";
 import { toggleClock } from "./clock/clock-store.js";
 import { hasCardsToSend, sendSurfaceCardsToInbox } from "./cards/card-inbox.js";
+import { hasSelectedCards, copySelectedCards } from "./cards/card-copy.js";
 import { currentProjectNode } from "./progress/progress-data.js";
 
 // Stopwatch — a round face with a crown and a single hand.
@@ -154,6 +155,11 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
       keywords: "cards CARDS notebook inbox collect move",
       hiddenIf: (s) => !hasCardsToSend(s),
       action: (s) => { void sendSurfaceCardsToInbox(s); } },
+    // The words of the cards selected on a canvas, for pasting elsewhere.
+    { id: "copy-card-content", section: "Create", label: "Copy card content", icon: icons.sticky, shortcutKey: null, ctx: "shared",
+      keywords: "cards clipboard text copy selected",
+      hiddenIf: (s) => !hasSelectedCards(s),
+      action: (s) => { void copySelectedCards(s); } },
     // Focus timer — one at a time, shared by every desk, so `shared`
     // context. Start is hidden while one runs (Delete first); a finished
     // timer can simply be replaced. Delete sits with the turn-offs at the

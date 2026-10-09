@@ -3,6 +3,7 @@
  */
 
 import { buildCreatedNote } from "./versions-created-note.js";
+import { buildMajorStar } from "./versions-major.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -131,7 +132,7 @@ async function loadSnapshots(container, state) {
   renderSnapshotList(container, state);
 }
 
-function getActiveDocumentId(state) {
+export function getActiveDocumentId(state) {
   if (state.currentNotebookFileId) return state.currentNotebookFileId;
   // Projects and Local Folder docs snapshot under synthetic keys — the
   // same mapping the auto-snapshot pipeline writes (state-snapshots.js).
@@ -202,6 +203,8 @@ function renderSnapshotList(container, state) {
 
     li.appendChild(primary);
     li.appendChild(relative);
+    li.appendChild(buildMajorStar(snap, getActiveDocumentId(state)));
+    li.classList.toggle("major", !!snap.major);
 
     li.addEventListener("mouseenter", () => {
       hoverSnapshot(snap, state);

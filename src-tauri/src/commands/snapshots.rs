@@ -12,9 +12,23 @@ pub async fn create_snapshot(
     state: State<'_, AppState>,
     document_id: String,
     content: String,
+    major: Option<bool>,
 ) -> Result<i64, String> {
     state.snapshot_manager.lock().unwrap()
-        .create_snapshot(&document_id, &content)
+        .create_snapshot_marked(&document_id, &content, major.unwrap_or(false))
+        .map_err(|e| e.to_string())
+}
+
+/// Mark or unmark a snapshot as a major version (kept out of the decay).
+#[tauri::command]
+pub fn set_snapshot_major(
+    state: State<AppState>,
+    document_id: String,
+    id: i64,
+    major: bool,
+) -> Result<(), String> {
+    state.snapshot_manager.lock().unwrap()
+        .set_snapshot_major(&document_id, id, major)
         .map_err(|e| e.to_string())
 }
 

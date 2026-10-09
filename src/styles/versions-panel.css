@@ -427,3 +427,57 @@
 .version-restore-btn:active {
   background: rgba(128, 128, 128, 0.25);
 }
+
+/* Major versions (versions-major.js): a star at the row's right, outlined
+   while the pointer is on the row, filled once the version is marked. */
+.versions-list li {
+  position: relative;
+  padding-right: 34px;
+}
+
+.version-major-star {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  padding: 2px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--sidebar-fg);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.version-major-star svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.versions-list li:hover .version-major-star,
+.version-major-star:focus-visible {
+  opacity: 0.8;
+}
+
+.version-major-star:hover {
+  opacity: 1;
+}
+
+.version-major-star.on {
+  opacity: 1;
+  color: var(--fg);
+}
+
+.version-major-star.on svg {
+  fill: currentColor;
+}
+
+@media (hover: none) {
+  .version-major-star { opacity: 0.45; }
+}

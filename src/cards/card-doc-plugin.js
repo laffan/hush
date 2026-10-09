@@ -46,7 +46,7 @@ import { startCardDrag, relocateCard } from "./card-drag.js";
 import { noteHostView } from "./card-cursor.js";
 import { confirmLongCard } from "./card-confirm.js";
 import { CardAnchorWidget, createCardFloatLayer } from "./card-doc-float.js";
-import { findCardsInDoc, serializeCard, cardWordCount, cardRemovalRange, cardTitle, CARD_CONFIRM_WORDS } from "./card-model.ts";
+import { findCardsInDoc, serializeCard, cardWordCount, cardRemovalRange, cardPreview, CARD_CONFIRM_WORDS } from "./card-model.ts";
 import { announceCardsChanged } from "./card-index.js";
 import { cardReturnWatcher } from "./card-return.js";
 import { programmaticChange } from "../editor/base-extensions.js";
@@ -524,19 +524,22 @@ function unmakeCard(view, body, fence) {
   view.dispatch({ changes: { ...range, insert: "" }, annotations: [cardEdit.of(true), Transaction.userEvent.of("delete.card")] });
 }
 
-/** What the sidebar shows of a surface's cards: their names and colours. */
-function rowsKey(value) {
-  return (value?.cards || []).map((c) => `${cardTitle(c.body)}\u0000${c.meta.bgColor || ""}`).join("\n");
+/** What the sidebar shows of a surface's cards: how many, their colours
+ *  and — with `words` — their words. */
+function rowsKey(value, words) {
+  return (value?.cards || []).map((c) => `${words ? cardPreview(c.body) : ""}\u0000${c.meta.bgColor || ""}`).join("\n");
 }
 
 /** The sidebar lists a Doc's cards (sidebar/files-panel-cards.js), read
  *  from whichever surface shows the Doc: tell it when what it would show
- *  changes — a card made, moved away, renamed by its first line. */
+ *  changes — a card made, moved away, or its words changed. */
 const cardRowsWatcher = EditorView.updateListener.of((u) => {
   if (!u.docChanged || u.state.facet(insideCard)) return;
   const a = u.startState.field(cardField, false);
   const b = u.state.field(cardField, false);
-  if (a !== b && rowsKey(a) !== rowsKey(b)) announceCardsChanged();
+  if (a === b) return;
+  if (rowsKey(a, false) !== rowsKey(b, false)) announceCardsChanged();
+  else if (rowsKey(a, true) !== rowsKey(b, true)) announceCardsChanged({ textOnly: true });
 });
 
 /**

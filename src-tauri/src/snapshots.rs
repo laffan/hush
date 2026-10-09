@@ -16,6 +16,12 @@
 //! 5 min, then 1/min to 2 h, 1/10 min to 24 h, 1/hour to 7 days,
 //! 1/day beyond.
 //!
+//! A **major** version is one the user marked to keep: the same file
+//! renamed to `<createdAtMs>-<deviceId>-major.snap`, so the mark is the
+//! filename — it travels with the desk like the snapshot itself, needs no
+//! sidecar two devices could contend over, and the decay policy simply
+//! never selects it.
+//!
 //! Snapshots for a file that hasn't been placed in a desk yet (staged
 //! ids) land under `desks/.versions-unplaced/<fileId>/`; reads aggregate
 //! across every desk plus that fallback, so history survives moves.
@@ -36,6 +42,9 @@ pub struct SnapshotEntry {
     pub document_id: String,
     pub content: String,
     pub created_at: i64, // unix seconds (display granularity)
+    /// Marked by the user as a major version — exempt from the decay.
+    #[serde(default)]
+    pub major: bool,
 }
 
 pub struct SnapshotManager {
@@ -95,21 +104,53 @@ impl SnapshotManager {
     }
 
     pub fn create_snapshot(&self, document_id: &str, content: &str) -> Result<i64, BoxError> {
+        self.create_snapshot_marked(document_id, content, false)
+    }
+
+    /// `create_snapshot`, optionally born a major version.
+    pub fn create_snapshot_marked(&self, document_id: &str, content: &str, major: bool) -> Result<i64, BoxError> {
         let dir = self.write_dir(document_id);
         fs::create_dir_all(&dir)?;
         // Milliseconds as the id; bump until unique within this doc's dir
-        // (a doc can snapshot twice in one tick).
+        // (a doc can snapshot twice in one tick) — under either name.
         let mut ms = now_ms();
         loop {
-            let path = dir.join(format!("{}-{}.snap", ms, self.device_id));
-            if !path.exists() {
-                write_atomic(&path, content.as_bytes())?;
+            let plain = dir.join(snap_name(ms, &self.device_id, false));
+            let marked = dir.join(snap_name(ms, &self.device_id, true));
+            if !plain.exists() && !marked.exists() {
+                write_atomic(if major { &marked } else { &plain }, content.as_bytes())?;
                 break;
             }
             ms += 1;
         }
         self.prune_dir(&dir);
         Ok(ms)
+    }
+
+    /// Mark or unmark one of a document's snapshots as a major version, by
+    /// renaming its file. Unmarking hands it back to the decay policy at
+    /// the next prune.
+    pub fn set_snapshot_major(&self, document_id: &str, id: i64, major: bool) -> Result<(), BoxError> {
+        for dir in self.read_dirs(document_id) {
+            for (path, ms) in list_snaps(&dir) {
+                if ms != id {
+                    continue;
+                }
+                if is_major(&path) == major {
+                    return Ok(());
+                }
+                let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                let base = stem.strip_suffix(MAJOR_SUFFIX).unwrap_or(stem);
+                let target = dir.join(if major {
+                    format!("{}{}.snap", base, MAJOR_SUFFIX)
+                } else {
+                    format!("{}.snap", base)
+                });
+                fs::rename(&path, &target)?;
+                return Ok(());
+            }
+        }
+        Err(format!("snapshot not found: {}", id).into())
     }
 
     /// Every snapshot of a document as `(path, createdAtMs)`, oldest
@@ -135,6 +176,7 @@ impl SnapshotManager {
                     document_id: document_id.to_string(),
                     content,
                     created_at: ms / 1000,
+                    major: is_major(&path),
                 });
             }
         }
@@ -188,7 +230,8 @@ impl SnapshotManager {
     /// Thin one document's snapshot directory per the decay policy.
     /// Returns how many snapshots were removed.
     fn prune_dir(&self, dir: &Path) -> u64 {
-        let mut snaps: Vec<(PathBuf, i64)> = list_snaps(dir);
+        // Major versions are the user's to keep; the policy never sees them.
+        let mut snaps: Vec<(PathBuf, i64)> = list_snaps(dir).into_iter().filter(|(p, _)| !is_major(p)).collect();
         // Newest first, timestamps in seconds for the window math.
         snaps.sort_by(|a, b| b.1.cmp(&a.1));
         let secs: Vec<(usize, i64)> = snaps
@@ -243,6 +286,18 @@ fn thin_window(entries: &[(usize, i64)], window_start: i64, window_end: i64, buc
     doomed
 }
 
+const MAJOR_SUFFIX: &str = "-major";
+
+fn snap_name(ms: i64, device_id: &str, major: bool) -> String {
+    format!("{}-{}{}.snap", ms, device_id, if major { MAJOR_SUFFIX } else { "" })
+}
+
+fn is_major(path: &Path) -> bool {
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .is_some_and(|s| s.ends_with(MAJOR_SUFFIX))
+}
+
 /// `(path, createdAtMs)` for every `.snap` in a directory.
 fn list_snaps(dir: &Path) -> Vec<(PathBuf, i64)> {
     let mut out = Vec::new();
@@ -275,6 +330,7 @@ fn find_snap_in(root: &Path, id: i64) -> Option<SnapshotEntry> {
                     document_id: doc_dir.file_name().to_string_lossy().into_owned(),
                     content,
                     created_at: ms / 1000,
+                    major: is_major(&path),
                 });
             }
         }

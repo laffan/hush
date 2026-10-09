@@ -385,7 +385,7 @@ async function copyDocsToClipboard(docRows, btn) {
 /** The clipboard plugin first (NSPasteboard directly — no permission
  *  prompt, and no need for the click's transient activation, which the
  *  reads above may already have spent), then the browser API. */
-async function writeClipboardText(text) {
+export async function writeClipboardText(text) {
   if (window.__TAURI_INTERNALS__) {
     try {
       const { writeText } = await import("@tauri-apps/plugin-clipboard-manager");

@@ -183,7 +183,7 @@ Desk-scoped preferences ride inside the desk so a handed-off folder feels like t
 
 ## Versions (`snapshots.rs`)
 
-One file per snapshot, stored inside the desk: `.hush/versions/<fileId>/<createdAtMs>-<deviceId>.snap`, plain bytes, append-only. The device-id suffix means two devices writing into a shared folder never contend over one filename. Staged files snapshot under `desks/.versions-unplaced/`; reads aggregate across every desk plus that fallback; cross-desk moves carry the version directory along. Decay policy (applied on create + a startup sweep): keep all for 30 min, then 1/min to 2 h, 1/10 min to 24 h, 1/hour to 7 days, 1/day beyond.
+One file per snapshot, stored inside the desk: `.hush/versions/<fileId>/<createdAtMs>-<deviceId>.snap`, plain bytes, append-only. A **major version** is the same file renamed `<createdAtMs>-<deviceId>-major.snap` (`set_snapshot_major`, or `create_snapshot` with `major: true`): the mark is the filename, so it syncs with the desk and needs no sidecar two devices could contend over, and the decay policy leaves such files out entirely — unmarking one hands it back to the policy at the next prune. The device-id suffix means two devices writing into a shared folder never contend over one filename. Staged files snapshot under `desks/.versions-unplaced/`; reads aggregate across every desk plus that fallback; cross-desk moves carry the version directory along. Decay policy (applied on create + a startup sweep): keep all for 30 min, then 1/min to 2 h, 1/10 min to 24 h, 1/hour to 7 days, 1/day beyond.
 
 ## Archives & recovery snapshots
 

@@ -1,7 +1,7 @@
 /**
  * Cards in the files sidebar — each document and notebook lists the
- * cards inside it as sub-documents, named by the first three words of
- * the card's first line.
+ * cards inside it as sub-documents, named by the card's words on one
+ * line, cropped to the sidebar's width.
  *
  * Like tab markers and heading rows (files-panel-tabs.js), the rows are
  * synthetic: injected just before SortableList builds the DOM, stripped
@@ -28,7 +28,7 @@
  * on this device.
  */
 
-import { findCards, cardTitle } from "../cards/card-model.ts";
+import { findCards, cardPreview } from "../cards/card-model.ts";
 import { notebookCards, notebookCardsKnown, CARD_INDEX_EVENT } from "../cards/card-index.js";
 import { readDocContent, openDocAtTab } from "./files-panel-tabs.js";
 import { findNodeByFileId } from "../state/tree-helpers.js";
@@ -54,7 +54,7 @@ function cardRowsFor(state, node) {
     return findCards(docText(state, node.fileId)).map((c) => ({
       id: `card:${node.id}:${c.index}`,
       type: "card",
-      name: cardTitle(c.body),
+      name: cardPreview(c.body),
       fileId: node.fileId,
       cardRef: { fileId: node.fileId, kind: "doc", index: c.index, body: c.body },
       bgColor: typeof c.meta.bgColor === "string" ? c.meta.bgColor : "",
@@ -218,12 +218,12 @@ async function toast(message, kind = "info") {
 
 /** Move the card a row stands for: read it, land it, then take it out
  *  of where it was — in that order, so a failed landing loses nothing. */
-async function moveCard(state, ref, land) {
+async function moveCard(state, ref, land, { keep = false } = {}) {
   const { readCardRef, removeCardRef } = await import("../cards/card-transfer.js");
   const card = await readCardRef(state, ref);
   if (!card) { await toast("That card has moved — try again", "error"); return; }
   await land(card);
-  await removeCardRef(state, ref);
+  if (!keep) await removeCardRef(state, ref);
 }
 
 /** The Inbox or project whose own row is under (x, y), if one is. */
@@ -263,12 +263,12 @@ export function dropCardOnRow(state, item, ev) {
 }
 
 /** A card row dragged out of the panel onto an editor or a canvas; with
- *  ⌘ held at the release its words land there as text. */
+ *  ⌘ held at the release its words land there as text, and with ⌘⇧ they
+ *  do and the card stays where it was. */
 export function dropCardOutside(state, item, x, y, ev) {
-  void moveCard(state, item.cardRef, async (card) => {
-    const { dropCardAt, dropsAsText } = await import("../cards/card-drop.js");
+  void import("../cards/card-drop.js").then(({ dropCardAt, dropsAsText, dropKeepsCard }) => moveCard(state, item.cardRef, async (card) => {
     if (!(await dropCardAt(state, card, x, y, dropsAsText(ev)))) throw new Error("Drop a card on a document or a canvas");
-  }).catch((e) => toast(e?.message || "The card couldn't be moved", "error"));
+  }, { keep: dropKeepsCard(ev) })).catch((e) => toast(e?.message || "The card couldn't be moved", "error"));
 }
 
 /** While a card row is dragged, outline the document / notebook / Inbox /

@@ -35,7 +35,11 @@ function save() {
 }
 
 let pending = false;
+let textTimer = 0;
+const TEXT_SETTLE_MS = 300;
 function announce() {
+  // A sooner announcement carries a text-only one still waiting.
+  if (textTimer) { clearTimeout(textTimer); textTimer = 0; save(); }
   if (pending) return;
   pending = true;
   queueMicrotask(() => {
@@ -44,10 +48,25 @@ function announce() {
   });
 }
 
+/** Only a card's words changed. A row shows all of them, so this is
+ *  every keystroke typed into a card: the sidebar catches up once the
+ *  typing pauses rather than re-rendering per key. */
+function announceText() {
+  if (textTimer) clearTimeout(textTimer);
+  textTimer = setTimeout(() => { textTimer = 0; save(); announce(); }, TEXT_SETTLE_MS);
+}
+
 /** A Doc's cards changed where it is open (cards/card-doc-plugin.js):
- *  the sidebar re-reads them from its text. */
-export function announceCardsChanged() {
-  announce();
+ *  the sidebar re-reads them from its text. `textOnly`: the same cards,
+ *  only their words changed. */
+export function announceCardsChanged({ textOnly = false } = {}) {
+  if (textOnly) announceText();
+  else announce();
+}
+
+/** The same cards in the same order and colours — only words differ. */
+function sameCards(a, b) {
+  return a.length === b.length && a.every((c, i) => c.id === b[i].id && (c.bgColor || "") === (b[i].bgColor || ""));
 }
 
 /** `otherContent`: the notebook holds something besides its cards
@@ -59,6 +78,7 @@ export function publishNotebookCards(fileId, cards, { otherContent = false } = {
   if (prev && JSON.stringify(prev) === JSON.stringify(next)) return;
   if (!prev && !next.length) return;
   index = { ...index, [fileId]: next };
+  if (prev && sameCards(prev, next)) { announceText(); return; }
   save();
   announce();
   if (prev?.length && !next.length && otherContent) {

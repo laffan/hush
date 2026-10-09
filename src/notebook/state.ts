@@ -324,6 +324,12 @@ export class DrawingState extends EventTarget {
    *  absorb its *own* height and push its toolbar to the ceiling) and
    *  must not apply window safe-area insets — its edges are interior. */
   paneHosted = false;
+  /** True when the host around this canvas scrolls sideways itself — a
+   *  stack column, whose stack is one horizontal scroller. Only then does
+   *  a horizontal-dominant wheel belong to the host; a floating or docked
+   *  pane has nothing sideways to scroll, so the canvas pans there as it
+   *  does full-window. */
+  hostScrollsX = false;
   /** The notebook file this canvas shows, set by whoever mounts it (the
    *  bridge, a pane). Pins build their `hush-pin://` links from it; null
    *  on surfaces with no file of their own (a Desktop). */
@@ -2819,12 +2825,13 @@ export class DrawingState extends EventTarget {
 
   handleWheel(e: WheelEvent) {
     // A horizontal-dominant scroll belongs to the host when this canvas
-    // is one column of something scrollable — a stack, a pane. On the
-    // main canvas there is no host to give it to, so it pans instead.
+    // is one column of something that scrolls sideways — a stack. A
+    // floating or docked pane has no such host (bubbling there left the
+    // canvas vertical-only), so it pans, as the main canvas does.
     // Shift is exempt: it means "pin this canvas to its current axis",
     // and the platform's deltaY→deltaX remap would otherwise hand every
     // shift-held vertical swipe straight to the host.
-    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && !e.shiftKey && !this.gutterScrollDOM && this.paneHosted) return;
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && !e.shiftKey && !this.gutterScrollDOM && this.hostScrollsX) return;
     e.preventDefault();
     if (!this.canvasEl) return;
     // Gutter mode: redirect the wheel into the host doc's scroller so

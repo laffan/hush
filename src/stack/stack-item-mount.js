@@ -301,6 +301,8 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
     // shrinks via the pane-dock CSS vars — mirroring the global dock
     // footprints here would double-apply them.
     canvas.state.paneHosted = true;
+    // The stack scrolls sideways, so a horizontal swipe is the stack's.
+    canvas.state.hostScrollsX = true;
     canvas.applySettings(computeNotebookSettings(state, null));
 
     let fileContent = null;

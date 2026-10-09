@@ -13,7 +13,7 @@ import type { Point, Shape, TextShape } from "./types";
 import { generateId, getShapeBounds } from "./utils";
 import { cardBounds } from "./card-geometry";
 import {
-  cardSize, cardTitle, withoutPosition, CARD_DEFAULT_HEIGHT, CARD_DEFAULT_WIDTH, CARD_HEADER_HEIGHT, type CardMeta,
+  cardSize, cardPreview, withoutPosition, CARD_DEFAULT_HEIGHT, CARD_DEFAULT_WIDTH, CARD_HEADER_HEIGHT, type CardMeta,
 } from "../cards/card-model";
 
 export function isCardShape(s: Shape | null | undefined): s is TextShape {
@@ -217,7 +217,7 @@ export function cardIndexOf(shapes: Shape[]): { id: string; title: string; bgCol
   return shapes
     .filter(isCardShape)
     .sort((a, b) => (a.position.y - b.position.y) || (a.position.x - b.position.x))
-    .map((s) => ({ id: s.id, title: cardTitle(s.text), bgColor: (s.cardMeta?.bgColor as string) || undefined }));
+    .map((s) => ({ id: s.id, title: cardPreview(s.text), bgColor: (s.cardMeta?.bgColor as string) || undefined }));
 }
 
 /** Whether a notebook holds anything but cards — ink, text, images, a
