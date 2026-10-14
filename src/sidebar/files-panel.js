@@ -176,7 +176,7 @@ export function createFilesPanel(container, state, hidePanel) {
           if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
         });
       }
-      const icon = getIcon(item);
+      const icon = getIcon(item, state);
       const isActive = isItemActive(item, state);
       const inTrash = state.isInTrash(item.id);
       const _p = item.type === "document" ? findParentOfNode(state.fileTree, item.id) : null;
@@ -459,6 +459,8 @@ function dispatchRowAction(action, nodeId, opts) {
       storedState.saveFileTree();
       storedState.emit("files-changed");
     }
+  } else if (action === "change-icon") {
+    import("./change-icon.js").then((m) => m.changeNodeIcon(storedState, nodeId));
   } else if (action === "set-color") {
     const node = findNode(storedState.fileTree, nodeId);
     if (node) {

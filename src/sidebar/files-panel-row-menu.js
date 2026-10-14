@@ -147,6 +147,7 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
     return [
       { action: "set-active-desk", label: "Set as Active" },
       { action: "rename-desk", label: "Rename" },
+      { action: "change-icon", label: "Change icon" },
       // Archive, not Delete: the desk is zipped into an internal archive
       // and can be brought back as a new desk at any time (see
       // sidebar/desk-archive.js).
@@ -209,6 +210,12 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   }
   if (!(isSpecial || isPdf || (isDoc && !docRenameable))) {
     entries.push({ action: "rename", label: "Rename" });
+  }
+  // A tiny-icons glyph in place of the stock folder / triangle
+  // (sidebar/change-icon.js). Not the specials: their glyphs say what
+  // they are.
+  if (!isSpecial && isContainer && !item?.pdfFolder) {
+    entries.push({ action: "change-icon", label: "Change icon" });
   }
   if (isDoc && inProject) {
     entries.push({ action: "use-as-note", label: item?.useAsNote ? "Stop using as note" : "Use as note" });

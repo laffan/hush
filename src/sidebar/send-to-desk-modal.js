@@ -205,6 +205,7 @@ async function cloneSubtree(state, node) {
       name: (node.name || "Untitled"),
       children: [],
       flagged: false,
+      ...(node.icon ? { icon: node.icon } : {}),
     };
     for (const child of (node.children || [])) {
       if (child.type === "image") continue;

@@ -59,6 +59,7 @@ export async function createProjectFromEnvelope(state, envelope, parentId = null
 
   if (envelope?.showNumbers) projectNode.showNumbers = true;
   if (envelope?.bgColor) projectNode.bgColor = envelope.bgColor;
+  if (envelope?.icon) projectNode.icon = envelope.icon;
   if (envelope?.flagged) projectNode.flagged = true;
   normalizeProjectChildren([projectNode]);
 

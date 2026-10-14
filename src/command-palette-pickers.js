@@ -23,6 +23,7 @@ import { typeIcons, leafIcon, deskRatchetGlyph } from "./sidebar/files-panel-sha
 import { collectFileLeaves, activeDeskSubtree } from "./command-palette-helpers.js";
 import { getDeskRecentFileIds } from "./state/recent-files.js";
 import deskRaw from "./sidebar/sidebar_icons/desk.svg?raw";
+import { customIconSvg, deskIconName } from "./ui/custom-icons.js";
 
 /** Pane lands centred on its (x,y) anchor — pre-shift by half the
  *  default pane size so the click-point coordinate (returned by
@@ -145,7 +146,8 @@ export function enterDeskPicker(palette, state) {
   const items = desks.map((d) => ({
     id: "desk-pick-" + d.id,
     label: (d.name || "Untitled desk") + (d.id === activeId ? "  (current)" : ""),
-    icon: deskRaw,
+    // A desk with a custom icon is picked by it, as the switcher shows it.
+    icon: customIconSvg(deskIconName(state, d.id)) || deskRaw,
     // Desks in Ratchet mode are marked here too — switching desks is
     // exactly when you want to know which ones are forward-only.
     labelSuffix: deskRatchetGlyph(state, d.id),

@@ -16,6 +16,7 @@
 import { escHtml, DRAG_HANDLE_SVG, deskRatchetGlyph, LOCAL_HOUSE_PATHS } from "./files-panel-shared.js";
 import { isDesktopTauri } from "../command-palette-helpers.js";
 import { chevronSvg } from "../ui/chevron.js";
+import { customIconSvg, deskIconName } from "../ui/custom-icons.js";
 
 let _state = null;
 let _container = null;
@@ -74,15 +75,19 @@ function detachListeners() {
 function render() {
   if (!_container || !_state) return;
   const desks = _state.settings?.desks || [];
-  // Hidden when there's nothing to switch (single desk) or when the
-  // all-desks panel view is active (the desk rows there replace it).
-  if (desks.length < 2 || _state.settings?.deskDisplayMode === "all") {
+  const active = desks.find((d) => d.id === _state.settings.activeDeskId);
+  // A desk with a custom icon shows the icon in the corner in place of
+  // its name (sidebar/change-icon.js) — and shows it even as the only
+  // desk, since there the icon is the one place the choice is visible.
+  const iconName = active ? deskIconName(_state, active.id) : null;
+  // Hidden when there's nothing to switch (single desk, no icon) or when
+  // the all-desks panel view is active (the desk rows there replace it).
+  if ((desks.length < 2 && !iconName) || _state.settings?.deskDisplayMode === "all") {
     _container.style.display = "none";
     _container.innerHTML = "";
     return;
   }
   _container.style.display = "";
-  const active = desks.find((d) => d.id === _state.settings.activeDeskId);
   const label = active?.name || "Desk";
   // Update the header in place rather than nuking _container.innerHTML
   // — that would destroy any open popover (and the rename input inside
@@ -94,12 +99,27 @@ function render() {
     header = document.createElement("button");
     header.className = "desk-switcher-header";
     header.type = "button";
-    header.innerHTML = `<span class="desk-switcher-title"><span class="desk-switcher-name"></span><span class="desk-switcher-ratchet"></span></span><span class="desk-switcher-caret">${CHEVRON}</span>`;
+    header.innerHTML = `<span class="desk-switcher-title"><span class="desk-switcher-icon"></span><span class="desk-switcher-name"></span><span class="desk-switcher-ratchet"></span></span><span class="desk-switcher-caret">${CHEVRON}</span>`;
     header.addEventListener("click", togglePopover);
     _container.insertBefore(header, _container.firstChild);
   }
   const nameSpan = header.querySelector(".desk-switcher-name");
   if (nameSpan && nameSpan.textContent !== label) nameSpan.textContent = label;
+  const iconSpan = header.querySelector(".desk-switcher-icon");
+  if (iconSpan && iconSpan.dataset.icon !== (iconName || "")) {
+    iconSpan.dataset.icon = iconName || "";
+    iconSpan.innerHTML = iconName ? customIconSvg(iconName) : "";
+  }
+  header.classList.toggle("has-icon", !!iconName);
+  // The name leaves the corner with an icon there, so it rides the
+  // button as its tooltip and accessible name instead.
+  if (iconName) {
+    header.dataset.tooltip = label;
+    header.setAttribute("aria-label", label);
+  } else {
+    delete header.dataset.tooltip;
+    header.removeAttribute("aria-label");
+  }
   // Ratchet badge for the desk the header is showing — the mode is
   // persistent, so the closed switcher has to carry it too.
   const ratchetSpan = header.querySelector(".desk-switcher-ratchet");

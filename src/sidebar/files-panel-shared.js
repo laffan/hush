@@ -6,6 +6,7 @@
  */
 
 import { isProjectSupplementary } from "../state/tree-helpers.js";
+import { customIconSvg } from "../ui/custom-icons.js";
 
 /**
  * Build outline-number labels (keyed by node id) for every row inside a
@@ -101,6 +102,12 @@ export const typeIcons = {
  *  stock dot grid.
  */
 export function leafIcon(item) {
+  // A project wearing a custom icon (sidebar/change-icon.js) — never a
+  // desk special, which is project-typed but keeps its own glyph.
+  if (item.type === "project" && item.icon && !String(item.id || "").startsWith("__")) {
+    const custom = customIconSvg(item.icon, "tree-custom-icon" + (item.flagged ? " flagged-icon" : ""));
+    if (custom) return custom;
+  }
   // A project's gutter notebook reads as an attachment of the doc it
   // sits directly beneath — its icon is the notebook dot-grid bracketed
   // by a vertical rule on each side.

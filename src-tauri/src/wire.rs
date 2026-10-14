@@ -74,6 +74,12 @@ pub struct TreeNode {
     // cascade; absent on most nodes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bg_color: Option<String>,
+    // Folder / project — a custom sidebar icon, by name: one of the
+    // tiny-icons set (src/assets/tiny-icons/, the file name without
+    // `.svg`). Absent means the stock glyph. Desks keep theirs in
+    // `.hushdesk` meta instead (`icon`), beside the style choice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
     // Project-only — when true, the sidebar prefixes child rows with
     // outline numbers (decimals for nested projects).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]

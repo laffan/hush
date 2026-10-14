@@ -1,0 +1,147 @@
+/* ===== Custom icons (tiny-icons) =====
+   A desk, folder or project can wear an icon from the tiny-icons set
+   (src/ui/custom-icons.js). The set is drawn on a 15 × 15 grid with a
+   1-unit stroke and is crisp at 15 px and whole multiples of it, so
+   every size below is one of those, and the stroke is left at 1 unit:
+   1 px at 15 px, 2 px at 30 px. */
+
+.custom-icon {
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Sidebar row: drawn at its native 15 px but laid out in the stock
+   glyphs' 12 px slot (the negative margin), so a row with a custom icon
+   lines its name up with every other row. */
+.tree-custom-icon {
+  width: 15px;
+  height: 15px;
+  margin: -1.5px;
+}
+
+/* A flag fills the stock folder and project glyphs; an outline icon has
+   nothing to fill, so a flagged one draws heavier instead. */
+.tree-custom-icon.flagged-icon { stroke-width: 1.5; }
+
+/* Desk switcher: the icon stands in the corner in place of the desk's
+   name — 30 px, so its strokes are 2 px, near the weight of the bold
+   18 px name it replaces. The name stays the button's tooltip and label. */
+.desk-switcher-icon {
+  display: inline-flex;
+  align-items: center;
+}
+.desk-switcher-icon:empty { display: none; }
+.desk-switcher-icon .custom-icon {
+  width: 30px;
+  height: 30px;
+}
+.desk-switcher-header.has-icon .desk-switcher-name { display: none; }
+
+/* ----- The picker (ui/icon-picker-modal.js) ----- */
+
+.tree-delete-modal.icon-picker-modal {
+  max-width: 404px;
+}
+
+.icon-picker-subject {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  font-size: 14px;
+  font-weight: 500;
+  min-width: 0;
+}
+.icon-picker-subject-icon {
+  display: inline-flex;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+}
+.icon-picker-subject-icon svg {
+  width: 30px;
+  height: 30px;
+}
+/* The stock glyphs are drawn on 16- and 24-unit grids; thin their
+   strokes at this size so they sit at the 2 px a custom icon draws at. */
+.icon-picker-subject-icon .tree-type-icon { stroke-width: 1.07; }
+.icon-picker-subject-icon .desk-icon { stroke: currentColor; fill: none; stroke-width: 1.6; }
+.icon-picker-subject-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-picker-search.tree-prompt-modal-input { margin-bottom: 10px; }
+
+.icon-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 2px;
+  max-height: min(44vh, 360px);
+  overflow-y: auto;
+  margin-bottom: 14px;
+}
+
+.icon-picker-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.icon-picker-cell[hidden] { display: none; }
+.icon-picker-cell .icon-picker-glyph {
+  width: 30px;
+  height: 30px;
+}
+@media (hover: hover) {
+  .icon-picker-cell:hover { background: rgba(128, 128, 128, 0.14); }
+}
+.icon-picker-cell:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--fg) 60%, transparent);
+}
+.icon-picker-cell.active {
+  background: rgba(128, 128, 128, 0.18);
+  border-color: var(--panel-border, rgba(128, 128, 128, 0.4));
+}
+
+.icon-picker-empty {
+  font-size: 12px;
+  opacity: 0.6;
+  margin: -6px 0 14px;
+}
+
+.tree-delete-modal-btns.icon-picker-btns { justify-content: space-between; }
+
+.tree-delete-modal-btns button.icon-picker-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tree-delete-modal-btns button.icon-picker-reset:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.icon-picker-reset-icon {
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+}
+.icon-picker-reset-icon svg {
+  width: 15px;
+  height: 15px;
+}
+.icon-picker-reset-icon .desk-icon { stroke: currentColor; fill: none; stroke-width: 1.6; }

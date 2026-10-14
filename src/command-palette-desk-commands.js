@@ -39,6 +39,12 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
       hiddenIf: (s) => !multiDesk(s),
       keepOpen: true,
       action: (s, p) => enterDeskPicker(p, s) },
+    // A tiny-icons glyph the desk switcher shows in place of the desk's
+    // name; the picker's Reset puts the name back (sidebar/change-icon.js).
+    { id: "desk-icon", section: "Desks", label: "Change Desk Icon", icon: icons.desk, shortcutKey: null, ctx: "shared",
+      keywords: "desk icon glyph symbol emblem picture",
+      hiddenIf: (s) => !s.getActiveDesk?.(),
+      action: async (s) => (await import("./sidebar/change-icon.js")).changeDeskIcon(s) },
     // Forks Internal / Local before anything else — a local desk is
     // named by the folder it lands in, so the two branches ask for
     // different things. See sidebar/new-desk-flow.js.

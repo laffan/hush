@@ -15,7 +15,7 @@
  * The envelope:
  *   {
  *     format: "hushproject", version: 1,
- *     name, showNumbers?, flagged?, bgColor?,
+ *     name, showNumbers?, flagged?, bgColor?, icon?,
  *     children: [
  *       { type: "document", name, path: "docs/0.md", useAsNote? },
  *       { type: "notebook", name, path: "notebooks/0.hushnote", gutter? },
@@ -28,7 +28,7 @@
  *
  * Both pack and unpack speak a single normalized in-memory shape so the
  * caller never has to know about the zip layout:
- *   { name, showNumbers, flagged, bgColor, children: [
+ *   { name, showNumbers, flagged, bgColor, icon, children: [
  *       { type, name, content, useAsNote?, gutter? } ] }
  * where `content` is the Markdown string (documents), the internal notebook
  * JSON string (notebooks — the same string the canvas reads), or the stack
@@ -49,7 +49,7 @@ function stemFor(name, i) {
  * Pack a normalized project descriptor into a .hushproject zip (Uint8Array).
  *
  * @param {{ name?: string, showNumbers?: boolean, flagged?: boolean,
- *           bgColor?: string,
+ *           bgColor?: string, icon?: string,
  *           children?: Array<{ type: string, name?: string, content?: string,
  *                              useAsNote?: boolean, gutter?: boolean }> }} project
  * @returns {Promise<Uint8Array>}
@@ -93,6 +93,7 @@ export async function packProject(project) {
     ...(project?.showNumbers ? { showNumbers: true } : {}),
     ...(project?.flagged ? { flagged: true } : {}),
     ...(project?.bgColor ? { bgColor: project.bgColor } : {}),
+    ...(project?.icon ? { icon: project.icon } : {}),
     children: manifest,
   };
   zip.file("data.json", JSON.stringify(envelope, null, 2));
@@ -106,13 +107,13 @@ export async function packProject(project) {
  *
  * @param {ArrayBuffer|Uint8Array} zipData
  * @returns {Promise<{ name: string, showNumbers: boolean, flagged: boolean,
- *                     bgColor: string|null,
+ *                     bgColor: string|null, icon: string|null,
  *                     children: Array<{ type: string, name: string,
  *                       content: string, useAsNote?: boolean,
  *                       gutter?: boolean }> }>}
  */
 export async function unpackProject(zipData) {
-  const empty = { name: "Untitled Project", showNumbers: false, flagged: false, bgColor: null, children: [] };
+  const empty = { name: "Untitled Project", showNumbers: false, flagged: false, bgColor: null, icon: null, children: [] };
   const zip = await JSZip.loadAsync(zipData);
   const dataFile = zip.file("data.json");
   if (!dataFile) return empty;
@@ -152,6 +153,7 @@ export async function unpackProject(zipData) {
     showNumbers: !!envelope.showNumbers,
     flagged: !!envelope.flagged,
     bgColor: envelope.bgColor || null,
+    icon: envelope.icon || null,
     children,
   };
 }

@@ -12,6 +12,7 @@ import { typeIcons, leafIcon, escHtml } from "./files-panel-shared.js";
 import { renderRowMenuButton, renderFlagOnlyMenuButton } from "./files-panel-row-menu.js";
 import { isTabMarkerItem } from "./files-panel-tabs.js";
 import { isHeadingItem } from "./files-panel-headings.js";
+import { customIconSvg, deskIconName } from "../ui/custom-icons.js";
 
 // Per-desk specials: `<kind>:<deskId>`; bare ids only surface for the
 // one boot tick before `migrateLegacyTreeIfNeeded` runs.
@@ -176,7 +177,21 @@ export function inboxNameHtml(state, item, nameHtml, markStale = true) {
     + `</span>`;
 }
 
-export function getIcon(item) {
+/** A desk's or folder's chosen tiny-icons glyph, or "" when it has none
+ *  (or names one the set no longer has). Desks keep theirs in desk meta,
+ *  so they need `state`; a folder carries `icon`. A project's is
+ *  `leafIcon`'s, so the palette's pickers show it too. */
+function customRowIcon(item, state) {
+  const name = item.type === "desk" ? deskIconName(state, item.id)
+    : item.type === "folder" && !isAnySpecialId(item.id) && !item.pdfFolder ? item.icon
+    : null;
+  if (!name) return "";
+  return customIconSvg(name, "tree-custom-icon" + (item.flagged && item.type !== "desk" ? " flagged-icon" : ""));
+}
+
+export function getIcon(item, state) {
+  const custom = customRowIcon(item, state);
+  if (custom) return custom;
   if (item.type === "desk") return typeIcons.desk;
   if (isInboxId(item.id)) return typeIcons.inbox;
   if (isImagesId(item.id)) return typeIcons.images;

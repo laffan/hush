@@ -45,6 +45,7 @@ export async function collectProjectDescriptor(state, projectNode) {
     showNumbers: !!projectNode.showNumbers,
     flagged: !!projectNode.flagged,
     bgColor: projectNode.bgColor || null,
+    icon: projectNode.icon || null,
     children,
   };
 }

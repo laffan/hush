@@ -110,6 +110,14 @@
   stroke-linejoin: round;
 }
 
+/* A custom (tiny-icons) glyph — a project's or a desk's — at its native
+   15 px and 1 px stroke rather than the stock glyphs' 18 px / 1.5. */
+.cmd-palette-icon .custom-icon {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1;
+}
+
 .cmd-palette-label {
   flex: 1;
   font-size: 13px;

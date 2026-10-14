@@ -19,7 +19,7 @@
  */
 
 import { findNode, removeNode } from "./tree-helpers.js";
-import { specialNodeId, isSpecialNodeId, parseSpecialNodeId, ensureDeskSpecials, seedNewArchivesCollapsed } from "./state-desks.js";
+import { specialNodeId, isSpecialNodeId, parseSpecialNodeId, ensureDeskSpecials, seedNewArchivesCollapsed, setDeskIcon } from "./state-desks.js";
 
 function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -82,6 +82,10 @@ export async function convertFolderToDesk(state, folderId) {
   const desks = [...(state.settings.desks || []), { id: deskId, name: deskName, createdAt }];
   await state.updateSettings({ desks });
   await state.saveFileTree();
+  // A folder's custom icon becomes the desk's (desks keep theirs in
+  // portable meta, not on the node) — after the save, so the desk's
+  // `.hushdesk` exists for the write-through.
+  if (folder.icon) await setDeskIcon(state, deskId, folder.icon);
   state.emit("desks-changed");
   state.emit("files-changed");
 }
@@ -148,6 +152,7 @@ export async function collapseDeskToFolder(state, deskId) {
   const folder = {
     id: uid(), type: "folder", name: desk.name || "Untitled desk",
     children: [], flagged: !!desk.flagged, createdAt: desk.createdAt,
+    ...(state.settings?.desksMeta?.[deskId]?.icon ? { icon: state.settings.desksMeta[deskId].icon } : {}),
   };
   for (const c of (desk.children || [])) {
     if (!c) continue;

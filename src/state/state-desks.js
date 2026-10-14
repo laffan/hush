@@ -546,6 +546,18 @@ export async function setDeskRatchet(state, on, deskId) {
   mirrorDeskMeta(state, id);
 }
 
+/** Set (a tiny-icons name) or clear (null) a desk's custom icon — the
+ *  glyph the desk switcher shows in place of the desk's name. Lives in
+ *  `desksMeta` and rides the desk's `.hushdesk` like the style choice. */
+export async function setDeskIcon(state, deskId, icon) {
+  if (!deskId) return;
+  const meta = { ...(state.settings?.desksMeta || {}) };
+  meta[deskId] = { ...(meta[deskId] || {}), icon: icon || null };
+  await state.updateSettings({ desksMeta: meta });
+  mirrorDeskMeta(state, deskId);
+  state.emit("desks-changed");
+}
+
 /** Read the active desk's saved global style id. Falls back to the
  *  legacy top-level `settings.globalStyleId` when no per-desk choice
  *  exists yet (first run after the per-desk migration). */
