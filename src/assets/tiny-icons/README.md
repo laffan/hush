@@ -2,7 +2,7 @@
 
 The icon set behind **Change icon** (desks, folders and projects), vendored
 from [laffan/tiny-icons](https://github.com/laffan/tiny-icons) at commit
-`e0186b8` — the `icons/` folder, one SVG per icon, copied as-is.
+`f3bf466` — the `icons/` folder, one SVG per icon, copied as-is.
 
 Every file is stroke-only on a 15 × 15 grid (`stroke="currentColor"`,
 `stroke-width="1"`). `src/ui/custom-icons.js` reads this folder at build
@@ -13,5 +13,8 @@ name — `node.icon` on a folder or project, `desksMeta[deskId].icon` on a
 desk — so **renaming or removing a file here orphans the nodes that use
 it**; they fall back to their default glyph rather than breaking.
 
-To update: copy the upstream `icons/*.svg` over this folder. Nothing else
-needs to change — new icons appear in the picker on the next build.
+To update: delete the `.svg` files here and copy the upstream `icons/*.svg`
+in (copying over the top would keep icons upstream has since removed), then
+give every new icon a row of search words in `src/ui/custom-icon-keywords.js`
+and drop the rows of removed ones. New icons appear in the picker on the next
+build; one without a row is still found by its name.
