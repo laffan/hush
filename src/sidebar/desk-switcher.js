@@ -16,7 +16,7 @@
 import { escHtml, DRAG_HANDLE_SVG, deskRatchetGlyph, LOCAL_HOUSE_PATHS } from "./files-panel-shared.js";
 import { isDesktopTauri } from "../command-palette-helpers.js";
 import { chevronSvg } from "../ui/chevron.js";
-import { customIconSvg, deskIconName } from "../ui/custom-icons.js";
+import { customIconSvg, deskIconName, deskShowsName } from "../ui/custom-icons.js";
 
 let _state = null;
 let _container = null;
@@ -111,9 +111,12 @@ function render() {
     iconSpan.innerHTML = iconName ? customIconSvg(iconName) : "";
   }
   header.classList.toggle("has-icon", !!iconName);
-  // The name leaves the corner with an icon there, so it rides the
-  // button as its tooltip and accessible name instead.
-  if (iconName) {
+  // An icon replaces the name unless the desk asks for both ("View Desk
+  // Name" in the palette). With the name gone it rides the button as
+  // its tooltip and accessible name instead.
+  const hideName = !!iconName && !deskShowsName(_state, active.id);
+  header.classList.toggle("name-hidden", hideName);
+  if (hideName) {
     header.dataset.tooltip = label;
     header.setAttribute("aria-label", label);
   } else {
@@ -174,11 +177,15 @@ function buildPopoverBody(state) {
   const wrap = document.createElement("div");
   wrap.className = "desk-switcher-popover-body";
   const roots = _state?.deskRoots || {};
-  wrap.innerHTML = desks.map((d) => deskRowHtml(d, activeId, canArchive, !!roots[d.id])).join("") + addRowHtml();
+  // Desks with a custom icon wear it before their name. Once any desk
+  // has one, every row keeps the slot, so the names stay in a column.
+  const iconSlots = desks.some((d) => deskIconName(state, d.id));
+  wrap.classList.toggle("has-icons", iconSlots);
+  wrap.innerHTML = desks.map((d) => deskRowHtml(d, activeId, canArchive, !!roots[d.id], iconSlots)).join("") + addRowHtml(iconSlots);
   return wrap;
 }
 
-function deskRowHtml(d, activeId, canArchive, isLocal = false) {
+function deskRowHtml(d, activeId, canArchive, isLocal = false, iconSlot = false) {
   const isActive = d.id === activeId;
   const mark = isActive ? CHECK : "";
   // Desks in Ratchet mode wear the ratchet glyph after their name.
@@ -204,16 +211,16 @@ function deskRowHtml(d, activeId, canArchive, isLocal = false) {
   return `<div class="desk-switcher-row${isActive ? " active" : ""}" data-desk-id="${d.id}">
     <button class="desk-switcher-row-pick" type="button" data-action="pick">
       <span class="desk-switcher-row-mark">${mark}</span>
-      <span class="desk-switcher-row-name">${escHtml(d.name || "Untitled desk")}</span>${ratchetGlyph}${localGlyph}
+      ${iconSlot ? `<span class="desk-switcher-row-icon">${customIconSvg(deskIconName(_state, d.id))}</span>` : ""}<span class="desk-switcher-row-name">${escHtml(d.name || "Untitled desk")}</span>${ratchetGlyph}${localGlyph}
     </button>
     <span class="desk-switcher-row-actions">${handle}${pencilBtn}${archiveBtn}</span>
   </div>`;
 }
 
-function addRowHtml() {
+function addRowHtml(iconSlot = false) {
   return `<button class="desk-switcher-row desk-switcher-add" type="button" data-action="add">
     <span class="desk-switcher-row-mark">${PLUS}</span>
-    <span class="desk-switcher-row-name">Add desk</span>
+    ${iconSlot ? `<span class="desk-switcher-row-icon"></span>` : ""}<span class="desk-switcher-row-name">Add desk</span>
   </button>`;
 }
 

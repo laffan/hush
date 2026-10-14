@@ -39,7 +39,23 @@
   width: 30px;
   height: 30px;
 }
-.desk-switcher-header.has-icon .desk-switcher-name { display: none; }
+.desk-switcher-header.name-hidden .desk-switcher-name { display: none; }
+/* "View Desk Name": the name follows the icon. */
+.desk-switcher-header.has-icon:not(.name-hidden) .desk-switcher-icon { margin-right: 8px; }
+
+/* The dropdown: a desk's icon before its name, at row size. The slot is
+   kept (empty) on every row once any desk has an icon, Add desk
+   included, so the names line up. */
+.desk-switcher-row-icon {
+  display: inline-flex;
+  flex: 0 0 15px;
+  width: 15px;
+  height: 15px;
+}
+.desk-switcher-row-icon .custom-icon {
+  width: 15px;
+  height: 15px;
+}
 
 /* ----- The picker (ui/icon-picker-modal.js) ----- */
 

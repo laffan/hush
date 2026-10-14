@@ -9,7 +9,8 @@
  * desk picker, and the "which node is open right now" resolver.
  */
 
-import { getDeskRatchet } from "./state/state-desks.js";
+import { getDeskRatchet, setDeskShowName } from "./state/state-desks.js";
+import { deskIconName, deskShowsName } from "./ui/custom-icons.js";
 import { toggleDeskRatchet } from "./state/state-modes.js";
 import { getTimer, isTimerRunning, deleteTimer } from "./timer/timer-store.js";
 import { toggleClock } from "./clock/clock-store.js";
@@ -45,6 +46,17 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
       keywords: "desk icon glyph symbol emblem picture",
       hiddenIf: (s) => !s.getActiveDesk?.(),
       action: async (s) => (await import("./sidebar/change-icon.js")).changeDeskIcon(s) },
+    // With an icon in the corner the desk's name is hidden by default;
+    // this puts it back beside the icon, and takes it away again. One
+    // row whose label reads the current state, like Desk ratchet.
+    { id: "desk-name-toggle", section: "Desks", icon: icons.desk, shortcutKey: null, ctx: "shared",
+      label: deskShowsName(state, state.getActiveDesk?.()?.id) ? "Hide Desk Name" : "View Desk Name",
+      keywords: "desk name icon show label title corner switcher",
+      hiddenIf: (s) => !deskIconName(s, s.getActiveDesk?.()?.id),
+      action: (s) => {
+        const id = s.getActiveDesk?.()?.id;
+        if (id) void setDeskShowName(s, id, !deskShowsName(s, id));
+      } },
     // Forks Internal / Local before anything else — a local desk is
     // named by the folder it lands in, so the two branches ask for
     // different things. See sidebar/new-desk-flow.js.

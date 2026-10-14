@@ -11,11 +11,12 @@
  * Same shell as the sidebar's prompt modals (`.tree-delete-modal`), with
  * a search field over a grid of the whole set drawn at 30 px — the size
  * the desk switcher shows a desk's icon at. Typing filters the grid by
- * name; Enter takes the first icon still showing.
+ * name and by each icon's search words, best match first; Enter takes
+ * the first icon still showing.
  */
 
 import { escHtml } from "../sidebar/files-panel-shared.js";
-import { CUSTOM_ICON_NAMES, customIconSvg, customIconLabel, isCustomIcon } from "./custom-icons.js";
+import { CUSTOM_ICON_NAMES, customIconSvg, customIconLabel, isCustomIcon, searchCustomIcons } from "./custom-icons.js";
 
 /**
  * @param {{ title: string, subject: string, current: string|null,
@@ -43,7 +44,7 @@ export function openIconPicker({ title, subject, current, defaultIcon, onPick })
       <span class="icon-picker-subject-icon">${active ? customIconSvg(active, "icon-picker-subject-glyph") : defaultIcon}</span>
       <span class="icon-picker-subject-name">${escHtml(subject)}</span>
     </div>
-    <input class="tree-prompt-modal-input icon-picker-search" type="text" placeholder="Search icons"
+    <input class="tree-prompt-modal-input icon-picker-search" type="text" placeholder="Search by name or idea — pen, sea, night…"
            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
     <div class="icon-picker-grid" role="listbox" aria-label="Icons">${cells}</div>
     <div class="icon-picker-empty" hidden>No icon matches.</div>
@@ -84,16 +85,16 @@ export function openIconPicker({ title, subject, current, defaultIcon, onPick })
     if (cell) choose(cell.dataset.icon);
   });
 
-  // Matches on the label ("soda can"), so a space or a hyphen both work.
+  // Matches names and each icon's search words (custom-icon-keywords.js)
+  // and lays the hits out best first, so Enter takes the likeliest one.
+  const cellByName = new Map([...grid.children].map((c) => [c.dataset.icon, c]));
   search.addEventListener("input", () => {
-    const q = search.value.trim().toLowerCase().replace(/-/g, " ");
-    let shown = 0;
-    for (const cell of grid.children) {
-      const hit = !q || cell.dataset.icon.replace(/-/g, " ").includes(q);
-      cell.hidden = !hit;
-      if (hit) shown += 1;
-    }
-    empty.hidden = shown > 0;
+    const hits = searchCustomIcons(search.value);
+    const shown = new Set(hits);
+    for (const [name, cell] of cellByName) cell.hidden = !shown.has(name);
+    for (const name of hits) grid.appendChild(cellByName.get(name));
+    grid.scrollTop = 0;
+    empty.hidden = hits.length > 0;
   });
   search.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;

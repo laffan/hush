@@ -1,6 +1,7 @@
 /**
  * Portable per-desk metadata — style choice, Ratchet mode, last-open
- * file, custom icon, desk stickies — mirrored into each desk's `.hushdesk` "meta"
+ * file, custom icon (and whether its name shows beside it), desk
+ * stickies — mirrored into each desk's `.hushdesk` "meta"
  * object so the preferences ride along when a desk is handed off to
  * another install or synced through a shared folder.
  *
@@ -49,6 +50,7 @@ function payloadFor(state, deskId) {
     lastFileId: meta.lastFileId ?? null,
     lastFileType: meta.lastFileType ?? null,
     icon: meta.icon ?? null,
+    showName: !!meta.showName,
     stickies: deskStickies(state, deskId),
   };
 }
@@ -98,6 +100,7 @@ export async function pullDeskMeta(state, deskId) {
   if ("lastFileId" in meta) next.lastFileId = meta.lastFileId ?? null;
   if ("lastFileType" in meta) next.lastFileType = meta.lastFileType ?? null;
   if ("icon" in meta) next.icon = meta.icon ?? null;
+  if ("showName" in meta) next.showName = !!meta.showName;
   if (JSON.stringify(next) !== JSON.stringify(current)) {
     patch.desksMeta = { ...(state.settings?.desksMeta || {}), [deskId]: next };
   }

@@ -6,7 +6,7 @@
 //!
 //! - **`.hushdesk` `meta` object** — the desk-scoped preferences that
 //!   used to live in app-wide `settings.desksMeta` plus desk-scoped
-//!   sticky notes: `{ styleId, ratchet, lastFileId, lastFileType, icon, stickies }`.
+//!   sticky notes: `{ styleId, ratchet, lastFileId, lastFileType, icon, showName, stickies }`.
 //!   The JS side write-throughs on change and pulls (disk wins) at boot
 //!   and after every reconcile, so handing a desk to another install
 //!   carries its style choice, last-open file, and stickies along.

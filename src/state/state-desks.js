@@ -558,6 +558,18 @@ export async function setDeskIcon(state, deskId, icon) {
   state.emit("desks-changed");
 }
 
+/** Show (true) or hide (false) a desk's name beside its custom icon in
+ *  the desk switcher. Only meaningful while the desk has an icon; the
+ *  choice is kept if the icon is reset, for the next one. */
+export async function setDeskShowName(state, deskId, show) {
+  if (!deskId) return;
+  const meta = { ...(state.settings?.desksMeta || {}) };
+  meta[deskId] = { ...(meta[deskId] || {}), showName: !!show };
+  await state.updateSettings({ desksMeta: meta });
+  mirrorDeskMeta(state, deskId);
+  state.emit("desks-changed");
+}
+
 /** Read the active desk's saved global style id. Falls back to the
  *  legacy top-level `settings.globalStyleId` when no per-desk choice
  *  exists yet (first run after the per-desk migration). */
