@@ -17,15 +17,16 @@ export function isIOS() {
   return /Mac/i.test(platform) && tp > 0;
 }
 
-/** Detect a phone-sized screen — iPhone explicitly, or any iOS device with
- *  a short viewport. iPads in portrait sit around 810 px on the short
- *  axis; iPhones max out around 430 px. The 600 px threshold sits well
- *  between the two and only activates the phone-only layout adjustments
- *  for the narrow form factor — iPads keep their existing chrome. */
+/** Detect the phone form factor — iPhone / iPod by user agent. WKWebView
+ *  on an iPhone always says so; an iPad says "iPad" or "Macintosh".
+ *  Deliberately not the viewport: an iPad window can be narrowed (or
+ *  floated) well under 600 px, and `html.phone` is applied once at boot,
+ *  so a window that launched small kept the phone layout — a full-width
+ *  sidebar, the palette pill at bottom right, panes hidden — after it
+ *  was made full screen again. A narrow iPad window keeps the iPad
+ *  chrome, as a narrow Mac window keeps the Mac's. */
 export function isPhone() {
-  if (/iPhone|iPod/.test(navigator.userAgent || "")) return true;
-  if (!isIOS()) return false;
-  return Math.min(window.innerWidth, window.innerHeight) < 600;
+  return /iPhone|iPod/.test(navigator.userAgent || "");
 }
 
 let settingsModal = null;
