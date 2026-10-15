@@ -25,6 +25,7 @@
 
 import { parseAnnotationPosition } from "./pdf-viewer-annotations.js";
 import { drawAnnotationsOnPage, loadPdfAnnotations } from "./pdf-annot-raster.js";
+import { getPdfjs, PDFJS_ASSETS } from "./pdfjs-loader.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -43,17 +44,6 @@ async function tauriInvoke(cmd, args) {
   return invoke(cmd, args);
 }
 
-let pdfjsPromise = null;
-async function getPdfjs() {
-  if (pdfjsPromise) return pdfjsPromise;
-  pdfjsPromise = (async () => {
-    const pdfjs = await import("pdfjs-dist/build/pdf.mjs");
-    const workerUrl = (await import("pdfjs-dist/build/pdf.worker.mjs?url")).default;
-    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-    return pdfjs;
-  })();
-  return pdfjsPromise;
-}
 
 // fileId -> object URL for this session. Object URLs are kept for the
 // app's lifetime — covers are small and the shelf re-uses them across
@@ -91,7 +81,7 @@ export async function renderCoverFromPdfBytes(bytes, annots = []) {
   // the caller can still save/reuse the original bytes.
   const data = new Uint8Array(bytes);
   const pdfjs = await getPdfjs();
-  const doc = await pdfjs.getDocument({ data }).promise;
+  const doc = await pdfjs.getDocument({ data, ...PDFJS_ASSETS }).promise;
   try {
     const page = await doc.getPage(1);
     const baseViewport = page.getViewport({ scale: 1 });

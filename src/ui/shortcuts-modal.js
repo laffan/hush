@@ -5,7 +5,7 @@
  * Opened from the command palette ("Show Shortcuts"). The list is
  * sectioned in a fixed order:
  *
- *   1. Filetype-specific (Notebook tools, PDF zoom, doc modes…)
+ *   1. Filetype-specific (Notebook tools, PDF view keys, doc modes…)
  *   2. Editor shortcuts   (Editing + Formatting — the CodeMirror surface)
  *   3. Panes & Panels     (sidebar / outline / shelf toggles)
  *   4. App-wide           (everything global — fullscreen, find, desks…)
@@ -76,9 +76,14 @@ const APP_EXTRAS = [
 ];
 
 const PDF_EXTRAS = [
+  { label: "Find in the PDF", value: "Mod+F" },
+  { label: "Next / previous match (in Find)", value: "Enter" },
+  { label: "Next page (as well as the key above)", value: "ArrowDown" },
+  { label: "Previous page (as well as the key above)", value: "ArrowUp" },
   { label: "Zoom in", value: "Mod+=" },
   { label: "Zoom out", value: "Mod+-" },
   { label: "Reset zoom (fit)", value: "Mod+0" },
+  { label: "Reading crop (hold over the pages, drag an edge)", value: "Mod" },
 ];
 
 function catShortcuts(name) {
@@ -147,7 +152,7 @@ function buildSections(state) {
     sections.push({ title: "Notebook", items: catItems("Notebooks") });
     sections.push(editorSection("Editor (text shapes)"));
   } else if (filetype === "pdf") {
-    sections.push({ title: "PDF", items: staticItems(PDF_EXTRAS) });
+    sections.push({ title: "PDF", items: [...catItems("PDF"), ...staticItems(PDF_EXTRAS)] });
   } else if (filetype === "stack") {
     // Columns are full doc/notebook editors — surface the editor set.
     sections.push(editorSection("Editor (columns)"));

@@ -1,203 +1,182 @@
 /**
  * Folded view for the PDF viewer — collapses the document down to just
- * the regions that carry annotations ("folds"). Each fold shows the
- * full page width (so the text stays readable) but only extends a line
- * or two above and below the annotation itself.
+ * the regions that carry annotations ("folds"). Each fold shows the full
+ * page width (so the text stays readable) but only a line or two above
+ * and below the annotation; a corner toggle opens it to its whole page,
+ * a bookmark button beside it bookmarks the page, and a filter popup
+ * (pdf-viewer-fold-filter.js) picks which (type, colour) pairs make
+ * folds. The filter starts on every annotation there is, and follows
+ * the annotations until it is changed by hand; a filter set by hand is
+ * kept with the PDF (pdf-viewer-view-state.js).
  *
- * - Folds are lazy-rendered via IntersectionObserver, mirroring the
- *   main viewer's page rendering. Each fold owns a full-page canvas
- *   clipped by its wrapper, so the hover toggle can reveal the whole
- *   page without a re-render.
- * - A corner toggle (visible on fold hover) temporarily expands the
- *   fold to the full page; clicking again collapses it back.
- * - A filter popup (toolbar funnel button) picks which annotation
- *   type + colour combinations produce folds. Default: red handwriting
- *   (ink) and red highlights.
+ * Scrolling folds has to cost about what scrolling pages does, though a
+ * screen of folds touches many more pages. So a fold draws only its own
+ * strip of the page (the whole page once it is opened), renders queue
+ * up nearest-first under the page renderer's concurrency limit, a strip
+ * is kept until it is well out of view (scrolling back doesn't redraw),
+ * and a fold's text layer is laid only when a pointer reaches it.
+ *
+ * Reading in the folded view for an hour must cost no more than reading
+ * in it for a minute. So what a fold leaves behind is let go as it goes
+ * out of reach: its raster, its text layer (only the last few laid are
+ * kept), and what pdf.js holds for its page (the parsed page and its
+ * decoded images, which pdf.js keeps until told to clean up — for a
+ * scanned book, megabytes a page). Pages start at page 1's size until
+ * they are drawn; the pages that fold are sized together up front, so a
+ * document whose pages differ (a JSTOR cover makes it every page) is
+ * rebuilt once, not once per page as each fold meets its real size.
+ *
+ * One fold is open at a time: opening one closes the other at once,
+ * keeping the one opened where it is on screen. A rebuild (the filter
+ * or the zoom changed, the annotations refreshed) keeps the open page
+ * open and the view where it was; entering and leaving the folded view
+ * keep the reader's place (pdf-viewer.js, through `centerOn` /
+ * `centerPlace`).
  */
-
-import { parseAnnotationPosition, paintAnnotationsInto, pdfPointToViewport } from "./pdf-viewer-annotations.js";
+import { parseAnnotationPosition } from "./pdf-viewer-annotations.js";
+import { drawAnnotations } from "./pdf-annot-raster.js";
 import { attachFoldBookmarkButton } from "./pdf-bookmarks.js";
-import { capRenderScale } from "./pdf-viewer-render.js";
-
-const FOLD_PAD = 28;   // page units (~2 text lines) above/below the annotation
-const MERGE_GAP = 16;  // merge folds whose padded regions come this close
+import { capRenderScale, MAX_CONCURRENT_RENDERS, releaseCanvas } from "./pdf-viewer-render.js";
+import { renderTextLayer } from "./pdf-viewer-text.js";
+import { createFoldFilterPopup } from "./pdf-viewer-fold-filter.js";
+import {
+  annotationExtent, availableCombos, computeFolds, defaultFilter, foldedPages,
+} from "./pdf-viewer-fold-specs.js";
 
 const EXPAND_ICON = `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6 L8 2.5 L12 6"/><path d="M4 10 L8 13.5 L12 10"/></svg>`;
 const COLLAPSE_ICON = `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5 L8 6 L12 2.5"/><path d="M4 13.5 L8 10 L12 13.5"/></svg>`;
 
-const TYPE_LABELS = {
-  highlight: "Highlights",
-  underline: "Underlines",
-  ink: "Handwriting",
-  note: "Notes",
-  image: "Areas",
-};
-const TYPE_ORDER = ["highlight", "underline", "ink", "note", "image"];
+/** Strips are dropped only this far out of view, so a short scroll back
+ *  finds them still drawn. */
+const KEEP_MARGIN = "1500px";
+/** Text layers kept at once. Each is the whole page's words, one element
+ *  apiece, and on a touch screen every fold a scroll starts on gets one;
+ *  the oldest go first. */
+const MAX_TEXT_LAYERS = 6;
+/** How long after a fold lets go before its page's pdf.js data does. */
+const RELEASE_DELAY_MS = 1000;
 
-/** Zotero red is #ff6666; accept the red family without catching
- *  orange (#f19837) or magenta (#e56eee). */
-function isRed(color) {
-  const m = /^#?([0-9a-f]{6})$/i.exec((color || "").trim());
-  if (!m) return false;
-  const v = parseInt(m[1], 16);
-  const r = v >> 16, g = (v >> 8) & 0xff, b = v & 0xff;
-  return r >= 180 && g < 140 && b < 140;
+/** Adopt a page's real size; pages are seeded from page 1's until they
+ *  are drawn. True when it differed. */
+function adoptRealViewport(p, page) {
+  if (p.realViewport) return false;
+  const vp1 = page.getViewport({ scale: 1 });
+  const differed = Math.abs(vp1.width - p.viewport.width) > 0.5 || Math.abs(vp1.height - p.viewport.height) > 0.5;
+  p.realViewport = true;
+  p.viewport = vp1;
+  return differed;
 }
 
 /**
  * @param {HTMLElement} scrollArea  The viewer's scroll container
- * @param {object}      viewer      Live viewer state / helpers
- * @param {function}    viewer.getPages          () => pages[]
- * @param {function}    viewer.getPdfDoc         () => pdfjs document | null
- * @param {function}    viewer.getAnnotations    () => normalized annotations[]
- * @param {function}    viewer.getEffectiveZoom  () => number (vertical-fit scale while folded)
- * @param {function}    viewer.isDestroyed       () => boolean
- * @param {function}    viewer.getFileId         () => Hush fileId | null (bookmark button)
+ * @param {object}      env
+ * @param {function}    env.getPages          () => pages[]
+ * @param {function}    env.getPdfDoc         () => pdfjs document | null
+ * @param {function}    env.getAnnotations    () => normalized annotations[]
+ * @param {function}    env.getEffectiveZoom  () => number (vertical-fit scale while folded)
+ * @param {function}    env.isDestroyed       () => boolean
+ * @param {function}    env.getFileId         () => Hush fileId | null (bookmark button)
+ * @param {function}    [env.onFilterChange]  () => void — the filter was changed by hand
  */
-export function createFoldLayer(scrollArea, viewer) {
+export function createFoldLayer(scrollArea, env) {
   let enabled = false;
   let folds = [];
   let observer = null;
+  let keeper = null;
+  let queue = [];
+  let running = 0;
   let emptyMsg = null;
-
   let filter = null;            // Set of "type:color" keys; null = defaults not seeded
-  let filterCustomized = false; // user has touched the filter — stop re-seeding defaults
-  let popup = null;
-  let filterBtnRef = null;
-  let hostRef = null;
-
+  let filterCustomized = false; // changed by hand — stop following the annotations
   let lastScale = null;
-  let lastAnnRef = null;
   let lastFilterSig = null;
-
-  // ── Filter ─────────────────────────────────────────────────────────
-  function comboKey(a) {
-    return `${a.type}:${(a.color || "").toLowerCase()}`;
-  }
-
-  /** Distinct (type, color) combos among positioned annotations. */
-  function availableCombos() {
-    const map = new Map();
-    for (const a of viewer.getAnnotations()) {
-      const pos = parseAnnotationPosition(a);
-      if (!pos || typeof pos.pageIndex !== "number") continue;
-      const key = comboKey(a);
-      const entry = map.get(key) || { type: a.type, color: (a.color || "").toLowerCase(), count: 0 };
-      entry.count++;
-      map.set(key, entry);
-    }
-    return map;
-  }
+  // Folds with a text layer, oldest first.
+  let texted = [];
+  // Pages pdf.js has parsed for a fold, not yet told to let go.
+  const touched = new Set();
+  let releaseTimer = 0;
+  let rebuildTimer = 0;
 
   function ensureFilter() {
-    if (filter) return;
-    filter = new Set();
-    for (const [key, c] of availableCombos()) {
-      if ((c.type === "ink" || c.type === "highlight") && isRed(c.color)) filter.add(key);
-    }
+    if (!filter) filter = defaultFilter(availableCombos(env.getAnnotations()));
+    return filter;
   }
+  const filterSig = () => [...ensureFilter()].sort().join(",");
 
-  function matchesFilter(a) {
-    return filter.has(comboKey(a));
-  }
-
-  function filterSig() {
-    return [...filter].sort().join(",");
-  }
-
-  // ── Fold geometry ──────────────────────────────────────────────────
-  /** Vertical extent of an annotation in top-based page units, or null.
-   *  Points map through the viewport transform (pdfPointToViewport) so
-   *  crop-box origins / page rotation can't shift the fold regions off
-   *  the annotations they're built around. */
-  function annotationExtent(annot, viewport) {
-    const pos = parseAnnotationPosition(annot);
-    if (!pos) return null;
-    let top = Infinity, bottom = -Infinity;
-    const take = (x, y) => {
-      const [, vy] = pdfPointToViewport(viewport, x, y);
-      top = Math.min(top, vy);
-      bottom = Math.max(bottom, vy);
-    };
-    if (Array.isArray(pos.rects)) {
-      for (const r of pos.rects) {
-        if (!Array.isArray(r) || r.length < 4) continue;
-        take(r[0], r[1]);
-        take(r[2], r[3]);
-      }
-    }
-    if (Array.isArray(pos.paths)) {
-      for (const path of pos.paths) {
-        if (!Array.isArray(path)) continue;
-        for (let i = 1; i < path.length; i += 2) {
-          take(path[i - 1], path[i]);
-        }
-      }
-    }
-    if (top === Infinity) return null;
-    return { top, bottom };
-  }
-
-  /** Padded, per-page-merged fold intervals for the active filter. */
-  function computeFolds() {
-    ensureFilter();
-    const pages = viewer.getPages();
-    const byPage = new Map();
-    for (const a of viewer.getAnnotations()) {
-      if (!matchesFilter(a)) continue;
-      const pos = parseAnnotationPosition(a);
-      if (!pos || typeof pos.pageIndex !== "number") continue;
-      const p = pages[pos.pageIndex];
-      if (!p?.viewport) continue;
-      const ext = annotationExtent(a, p.viewport);
-      if (!ext) continue;
-      const list = byPage.get(pos.pageIndex) || [];
-      list.push({
-        top: Math.max(0, ext.top - FOLD_PAD),
-        bottom: Math.min(p.viewport.height, ext.bottom + FOLD_PAD),
-      });
-      byPage.set(pos.pageIndex, list);
-    }
-    const out = [];
-    for (const idx of [...byPage.keys()].sort((a, b) => a - b)) {
-      const list = byPage.get(idx).sort((a, b) => a.top - b.top);
-      let cur = null;
-      for (const iv of list) {
-        if (cur && iv.top <= cur.bottom + MERGE_GAP) {
-          cur.bottom = Math.max(cur.bottom, iv.bottom);
-        } else {
-          cur = { pageIndex: idx, top: iv.top, bottom: iv.bottom };
-          out.push(cur);
-        }
-      }
-    }
-    return out;
-  }
-
-  // ── DOM build / teardown ───────────────────────────────────────────
   function teardownDom() {
-    if (observer) { observer.disconnect(); observer = null; }
-    for (const f of folds) f.wrapper.remove();
+    observer?.disconnect();
+    observer = null;
+    keeper?.disconnect();
+    keeper = null;
+    queue = [];
+    for (const f of folds) {
+      f.inner.querySelectorAll("canvas").forEach(releaseCanvas);
+      f.wrapper.remove();
+    }
     folds = [];
-    if (emptyMsg) { emptyMsg.remove(); emptyMsg = null; }
+    texted = [];
+    emptyMsg?.remove();
+    emptyMsg = null;
+    scheduleRelease();
+  }
+
+  /** Tell pdf.js to let go of the pages no fold is drawing or about to
+   *  draw (all of them, with `all`: leaving the folded view). A drawn
+   *  raster doesn't need the parsed page, only drawing it again does. */
+  function releasePages(all = false) {
+    clearTimeout(releaseTimer);
+    releaseTimer = 0;
+    const pdfDoc = env.getPdfDoc();
+    for (const idx of [...touched]) {
+      const busy = !all && folds.some((f) => f.pageIndex === idx
+        && (f.rendering || queue.includes(f) || (f.rendered && f.wrapper.isConnected)));
+      if (busy) continue;
+      touched.delete(idx);
+      // Deferred by pdf.js while a render of the page is still running.
+      pdfDoc?.getPage(idx + 1).then((page) => page.cleanup()).catch(() => {});
+    }
+  }
+  function scheduleRelease() {
+    if (releaseTimer || !touched.size) return;
+    releaseTimer = setTimeout(() => { releaseTimer = 0; releasePages(); }, RELEASE_DELAY_MS);
+  }
+
+  /** Rebuild once, soon — however many folds learn their page's real
+   *  size in the meantime. */
+  function scheduleRebuild() {
+    if (rebuildTimer) return;
+    rebuildTimer = setTimeout(() => { rebuildTimer = 0; refresh(true); }, 0);
+  }
+
+  /** Learn the real size of every page that folds, all at once. */
+  function sizeFoldPages() {
+    const pdfDoc = env.getPdfDoc();
+    const pages = env.getPages();
+    if (!pdfDoc) return;
+    const todo = [...foldedPages(env.getAnnotations(), ensureFilter())].filter((i) => pages[i] && !pages[i].realViewport);
+    if (!todo.length) return;
+    Promise.all(todo.map((i) => pdfDoc.getPage(i + 1)
+      .then((page) => env.getPages() === pages && adoptRealViewport(pages[i], page))
+      .catch(() => false)))
+      .then((differed) => {
+        if (differed.some(Boolean) && enabled && env.getPdfDoc() === pdfDoc) scheduleRebuild();
+      });
   }
 
   function build() {
     teardownDom();
-    const scale = viewer.getEffectiveZoom();
-    const pages = viewer.getPages();
-    const specs = computeFolds();
-
+    const scale = env.getEffectiveZoom();
+    const pages = env.getPages();
+    const specs = computeFolds(env.getAnnotations(), pages, ensureFilter());
     if (!specs.length) {
       emptyMsg = document.createElement("div");
       emptyMsg.className = "pdf-fold-empty";
-      emptyMsg.textContent = viewer.getAnnotations().length
+      emptyMsg.textContent = env.getAnnotations().length
         ? "No annotations match the current filter."
         : "No annotations to fold.";
       scrollArea.appendChild(emptyMsg);
       return;
     }
-
     for (const spec of specs) {
       const p = pages[spec.pageIndex];
       const cssW = Math.round(p.viewport.width * scale);
@@ -208,143 +187,268 @@ export function createFoldLayer(scrollArea, viewer) {
       wrapper.className = "pdf-fold-wrapper";
       wrapper.style.width = `${cssW}px`;
       wrapper.style.height = `${foldCssH}px`;
-
       const inner = document.createElement("div");
       inner.className = "pdf-fold-page";
       inner.style.width = `${cssW}px`;
       inner.style.height = `${pageCssH}px`;
       inner.style.top = `-${Math.round(spec.top * scale)}px`;
       wrapper.appendChild(inner);
-
       const label = document.createElement("span");
       label.className = "pdf-fold-page-label";
       label.textContent = `p. ${spec.pageIndex + 1}`;
       wrapper.appendChild(label);
-
       const toggle = document.createElement("button");
+      toggle.type = "button";
       toggle.className = "pdf-fold-toggle";
       toggle.title = "Reveal full page";
       toggle.innerHTML = EXPAND_ICON;
       wrapper.appendChild(toggle);
-
       // Bookmark button rides beside the expand toggle (same hover
       // reveal) so folded reading can drop a deep link without leaving
       // the mode.
-      attachFoldBookmarkButton(wrapper, spec.pageIndex + 1, viewer.getFileId);
+      attachFoldBookmarkButton(wrapper, spec.pageIndex + 1, env.getFileId);
 
       const fold = {
-        ...spec, wrapper, inner, toggle, scale,
-        cssW, pageCssH, foldCssH,
-        rendered: false, rendering: false, expanded: false, canvas: null,
+        ...spec, wrapper, inner, toggle, scale, cssW, pageCssH, foldCssH,
+        rendered: false, rendering: false, expanded: false, full: false, text: false,
       };
       toggle.addEventListener("click", (e) => {
         e.stopPropagation();
         toggleExpand(fold);
       });
       wrapper.dataset.foldIndex = String(folds.length);
+      wrapper.dataset.pageIndex = String(spec.pageIndex);
       scrollArea.appendChild(wrapper);
       folds.push(fold);
     }
-
     setupObserver();
   }
 
+  /** Open a fold to its whole page, or close it back to its strip.
+   *  `instant` skips the height animation (a rebuild re-opening one). */
+  function setExpanded(fold, on, instant = false) {
+    if (fold.expanded === on) return;
+    fold.expanded = on;
+    if (instant) fold.wrapper.style.transition = "none";
+    fold.wrapper.classList.toggle("pdf-fold-expanded", on);
+    fold.wrapper.style.height = `${on ? fold.pageCssH : fold.foldCssH}px`;
+    fold.inner.style.top = on ? "0px" : `-${Math.round(fold.top * fold.scale)}px`;
+    fold.toggle.title = on ? "Collapse to fold" : "Reveal full page";
+    fold.toggle.innerHTML = on ? COLLAPSE_ICON : EXPAND_ICON;
+    if (instant) {
+      void fold.wrapper.offsetHeight; // apply it before the transition returns
+      fold.wrapper.style.transition = "";
+    }
+    // Opened, the strip's raster is redrawn as the whole page (the strip
+    // stays up until the page replaces it).
+    if (on && !fold.full) {
+      fold.rendered = false;
+      request(fold, true);
+    }
+  }
+
+  /** The corner button. One page is open at a time: opening this one
+   *  closes the other at once, keeping this one where it is on screen
+   *  (an open page above it would otherwise pull it up). */
   function toggleExpand(fold) {
-    fold.expanded = !fold.expanded;
-    fold.wrapper.classList.toggle("pdf-fold-expanded", fold.expanded);
-    fold.wrapper.style.height = `${fold.expanded ? fold.pageCssH : fold.foldCssH}px`;
-    fold.inner.style.top = fold.expanded ? "0px" : `-${Math.round(fold.top * fold.scale)}px`;
-    fold.toggle.title = fold.expanded ? "Collapse to fold" : "Reveal full page";
-    fold.toggle.innerHTML = fold.expanded ? COLLAPSE_ICON : EXPAND_ICON;
+    if (fold.expanded) { setExpanded(fold, false); return; }
+    const other = folds.find((f) => f.expanded);
+    if (other) {
+      const before = fold.wrapper.getBoundingClientRect().top;
+      setExpanded(other, false, true);
+      scrollArea.scrollTop += fold.wrapper.getBoundingClientRect().top - before;
+    }
+    setExpanded(fold, true);
+  }
+
+  /** Entering the folded view: centre the fold nearest a place on the
+   *  pages (a page and a fraction down it), reading the document as one
+   *  run of pages — on that very place when the fold shows it, else on
+   *  the fold's middle. */
+  function centerOn(place) {
+    const pages = env.getPages();
+    const heightOf = (i) => pages[i]?.viewport.height || 1;
+    const want = place.pageIndex + place.frac;
+    let best = null;
+    let bestDist = Infinity;
+    for (const f of folds) {
+      const h = heightOf(f.pageIndex);
+      const d = Math.max(0, f.pageIndex + f.top / h - want, want - (f.pageIndex + f.bottom / h));
+      if (d < bestDist) { best = f; bestDist = d; }
+    }
+    if (!best) return;
+    const y = bestDist === 0 ? place.frac * heightOf(best.pageIndex) : (best.top + best.bottom) / 2;
+    const ar = scrollArea.getBoundingClientRect();
+    const page = best.inner.getBoundingClientRect();
+    scrollArea.scrollTop += page.top + y * best.scale - (ar.top + scrollArea.clientHeight / 2);
+  }
+
+  /** The place at the view's vertical centre, as a page and a fraction
+   *  down it — on the fold there, or the nearest one, kept to the part
+   *  of its page that fold shows. For leaving the folded view without
+   *  losing the place. */
+  function centerPlace() {
+    if (!folds.length) return null;
+    const ar = scrollArea.getBoundingClientRect();
+    const mid = ar.top + scrollArea.clientHeight / 2;
+    let best = null;
+    let bestDist = Infinity;
+    for (const f of folds) {
+      const r = f.wrapper.getBoundingClientRect();
+      const d = mid < r.top ? r.top - mid : mid > r.bottom ? mid - r.bottom : 0;
+      if (d < bestDist) { best = f; bestDist = d; }
+      if (r.top > mid && d > bestDist) break;
+    }
+    if (!best) return null;
+    const w = best.wrapper.getBoundingClientRect();
+    const page = best.inner.getBoundingClientRect();
+    if (!page.height) return null;
+    const y = Math.max(w.top, Math.min(w.bottom, mid));
+    return { pageIndex: best.pageIndex, frac: (y - page.top) / page.height };
   }
 
   // ── Rendering ──────────────────────────────────────────────────────
-  function setupObserver() {
-    observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        const idx = parseInt(entry.target.dataset.foldIndex, 10);
-        if (isNaN(idx) || !folds[idx]) continue;
-        if (!entry.isIntersecting) {
-          // Each fold holds a *full-page* canvas (clipped by its
-          // wrapper), so scrolled-away folds are dropped to keep memory
-          // bounded — mirroring the main view's page eviction. Expanded
-          // folds stay: the user explicitly opened those.
-          if (folds[idx].rendered && !folds[idx].expanded) clearFold(folds[idx]);
-          continue;
-        }
-        renderFold(folds[idx]);
-        if (folds[idx - 1]) renderFold(folds[idx - 1]);
-        if (folds[idx + 1]) renderFold(folds[idx + 1]);
-      }
-    }, { root: scrollArea, rootMargin: "300px" });
-    for (const f of folds) observer.observe(f.wrapper);
+  /** Queue a fold's render; `first` puts it at the head of the queue. */
+  function request(fold, first = false) {
+    if (fold.rendered || fold.rendering || queue.includes(fold)) return;
+    if (first) queue.unshift(fold);
+    else queue.push(fold);
+    pump();
+  }
+  function pump() {
+    while (running < MAX_CONCURRENT_RENDERS && queue.length) {
+      const f = queue.shift();
+      if (f.rendered || f.rendering || !f.wrapper.isConnected) continue;
+      running++;
+      renderFold(f).finally(() => { running--; pump(); });
+    }
   }
 
-  function clearFold(fold) {
-    fold.inner.innerHTML = "";
-    fold.canvas = null;
-    fold.rendered = false;
+  /** Drop a fold's raster and text (it has gone well out of view). */
+  function drop(f) {
+    queue = queue.filter((q) => q !== f);
+    if (!f.rendered || f.expanded) return;
+    f.inner.querySelectorAll("canvas").forEach(releaseCanvas);
+    f.inner.innerHTML = "";
+    f.rendered = false;
+    f.full = false;
+    f.text = false;
+    texted = texted.filter((t) => t !== f);
+    scheduleRelease();
+  }
+
+  /** Lay the fold's text layer, for selecting — on the first pointer
+   *  over it (a mouse hovers before it presses; a finger's long press
+   *  takes longer than this does). */
+  function ensureText(f) {
+    if (f.text || !f.rendered) return;
+    f.text = true;
+    texted.push(f);
+    // Let the oldest go — not the open page's, nor one the selection is in.
+    const sel = window.getSelection();
+    for (const old of texted.slice(0, Math.max(0, texted.length - MAX_TEXT_LAYERS))) {
+      const layer = old.inner.querySelector(".textLayer");
+      if (old.expanded || (layer && sel?.anchorNode && layer.contains(sel.anchorNode))) continue;
+      layer?.remove();
+      old.text = false;
+      texted = texted.filter((t) => t !== old);
+    }
+    const pdfDoc = env.getPdfDoc();
+    if (!pdfDoc) return;
+    pdfDoc.getPage(f.pageIndex + 1)
+      .then((page) => renderTextLayer(f.inner, page, f.scale, () => f.text && f.wrapper.isConnected))
+      .catch(() => { f.text = false; });
+  }
+  const onPointer = (e) => {
+    if (!enabled) return;
+    const w = e.target instanceof Element ? e.target.closest(".pdf-fold-wrapper") : null;
+    const f = w ? folds[Number(w.dataset.foldIndex)] : undefined;
+    if (f) ensureText(f);
+  };
+  scrollArea.addEventListener("pointerover", onPointer);
+  scrollArea.addEventListener("pointerdown", onPointer, true);
+
+  function setupObserver() {
+    // Near the view: draw (the fold itself first, then its neighbours).
+    observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const idx = Number(entry.target.dataset.foldIndex);
+        const f = folds[idx];
+        if (!f) continue;
+        request(f, true);
+        for (const g of [folds[idx + 1], folds[idx - 1]]) if (g) request(g);
+      }
+    }, { root: scrollArea, rootMargin: "300px" });
+    // Well out of view: let go. An open page stays — the reader opened it.
+    keeper = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const f = folds[Number(entry.target.dataset.foldIndex)];
+        if (f && !entry.isIntersecting) drop(f);
+      }
+    }, { root: scrollArea, rootMargin: KEEP_MARGIN });
+    for (const f of folds) {
+      observer.observe(f.wrapper);
+      keeper.observe(f.wrapper);
+    }
   }
 
   async function renderFold(fold) {
-    if (fold.rendered || fold.rendering || !enabled || viewer.isDestroyed()) return;
-    const pdfDoc = viewer.getPdfDoc();
+    if (fold.rendered || fold.rendering || !enabled || env.isDestroyed()) return;
+    const pdfDoc = env.getPdfDoc();
     if (!pdfDoc) return;
     fold.rendering = true;
     try {
       const page = await pdfDoc.getPage(fold.pageIndex + 1);
-      if (!enabled || viewer.isDestroyed() || !fold.wrapper.isConnected) return;
-      // Pages are seeded from page 1's dimensions until first render
-      // (see pdf-viewer-render.js); adopt the real ones here so fold
-      // geometry on odd-sized pages corrects itself.
-      const p = viewer.getPages()[fold.pageIndex];
-      if (p && !p.realViewport) {
-        const vp1 = page.getViewport({ scale: 1 });
-        const differed = Math.abs(vp1.width - p.viewport.width) > 0.5
-          || Math.abs(vp1.height - p.viewport.height) > 0.5;
-        p.realViewport = true;
-        p.viewport = vp1;
-        if (differed) { queueMicrotask(() => refresh(true)); return; }
-      }
+      if (!enabled || env.isDestroyed() || !fold.wrapper.isConnected) return;
+      // A page sizeFoldPages hasn't reached yet: its folds are placed for
+      // page 1's size, so they are rebuilt (once, for all of them).
+      const p = env.getPages()[fold.pageIndex];
+      if (p && adoptRealViewport(p, page)) { scheduleRebuild(); return; }
+      touched.add(fold.pageIndex);
+      // The strip in view, or the whole page when open — a strip is a few
+      // lines, and drawing all of the page for it is most of what made
+      // scrolling folds slow.
+      const full = fold.expanded;
       const dpr = window.devicePixelRatio || 1;
-      const viewport = page.getViewport({
-        scale: capRenderScale(fold.scale * dpr, page.getViewport({ scale: 1 })) });
+      const k = capRenderScale(fold.scale * dpr, page.getViewport({ scale: 1 }));
+      const top = full ? 0 : fold.top;
+      const cssH = full ? fold.pageCssH : fold.foldCssH;
+      const viewport = page.getViewport({ scale: k, offsetY: -Math.round(top * k) });
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(viewport.width);
-      canvas.height = Math.round(viewport.height);
-      canvas.className = "pdf-page-canvas";
+      canvas.height = Math.max(1, Math.round((cssH / fold.scale) * k));
+      canvas.className = "pdf-page-canvas pdf-fold-canvas";
+      canvas.style.top = `${Math.round(top * fold.scale)}px`;
       canvas.style.width = `${fold.cssW}px`;
-      canvas.style.height = `${fold.pageCssH}px`;
-      await page.render({ canvas, viewport, background: "#ffffff" }).promise;
-      if (!enabled || viewer.isDestroyed() || !fold.wrapper.isConnected) return;
-      fold.inner.innerHTML = "";
-      fold.inner.appendChild(canvas);
-      fold.canvas = canvas;
-      paintFoldAnnotations(fold);
+      canvas.style.height = `${cssH}px`;
+      try {
+        await page.render({ canvas, viewport, background: "#ffffff" }).promise;
+      } catch (e) {
+        releaseCanvas(canvas);
+        throw e;
+      }
+      if (!enabled || env.isDestroyed() || !fold.wrapper.isConnected || full !== fold.expanded) {
+        releaseCanvas(canvas);
+        if (full !== fold.expanded && enabled) queueMicrotask(() => request(fold, true));
+        return;
+      }
+      // Every annotation on the page, not only the filtered ones, so an
+      // opened page reads exactly like the normal view.
+      const ctx = canvas.getContext("2d");
+      if (ctx) drawAnnotations(ctx, viewport, env.getAnnotations(), fold.pageIndex);
+      // Only the raster is replaced: a text layer already laid stays.
+      fold.inner.querySelectorAll("canvas").forEach((c) => { releaseCanvas(c); c.remove(); });
+      fold.inner.insertBefore(canvas, fold.inner.firstChild);
       fold.rendered = true;
+      fold.full = full;
+      // A pointer already resting on it gets its text now.
+      if (fold.wrapper.matches(":hover")) ensureText(fold);
     } catch (e) {
       console.error(`Failed to render fold on page ${fold.pageIndex + 1}:`, e);
     } finally {
       fold.rendering = false;
     }
-  }
-
-  /** All annotations on the fold's page — not just the filtered ones —
-   *  so the revealed page slice reads exactly like the normal view. */
-  function paintFoldAnnotations(fold) {
-    const p = viewer.getPages()[fold.pageIndex];
-    if (!p?.viewport) return;
-    const pageAnnots = viewer.getAnnotations().filter((a) => {
-      const pos = parseAnnotationPosition(a);
-      return pos && pos.pageIndex === fold.pageIndex;
-    });
-    if (!pageAnnots.length) return;
-    const layer = document.createElement("div");
-    layer.className = "pdf-annot-layer";
-    const scaleX = fold.cssW / p.viewport.width;
-    const scaleY = fold.pageCssH / p.viewport.height;
-    paintAnnotationsInto(layer, pageAnnots, p.viewport, scaleX, scaleY);
-    if (layer.children.length) fold.inner.appendChild(layer);
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────
@@ -353,17 +457,23 @@ export function createFoldLayer(scrollArea, viewer) {
     return emptyMsg ? emptyMsg.isConnected : false;
   }
 
+  /** Rebuild when the zoom or the filter changed (a changed annotation
+   *  list forces its own rebuild, onAnnotationsChanged), so a resize
+   *  alone rebuilds nothing. */
   function refresh(force = false) {
     if (!enabled) return;
-    ensureFilter();
-    const scale = viewer.getEffectiveZoom();
-    const annRef = viewer.getAnnotations();
-    const fsig = filterSig();
-    if (!force && scale === lastScale && annRef === lastAnnRef && fsig === lastFilterSig && domAlive()) return;
+    const scale = env.getEffectiveZoom();
+    const sig = filterSig();
+    if (!force && scale === lastScale && sig === lastFilterSig && domAlive()) return;
     lastScale = scale;
-    lastAnnRef = annRef;
-    lastFilterSig = fsig;
+    lastFilterSig = sig;
+    const openPage = folds.find((f) => f.expanded)?.pageIndex ?? null;
+    const anchor = viewAnchor();
     build();
+    const reopen = openPage === null ? undefined : folds.find((f) => f.pageIndex === openPage);
+    if (reopen) setExpanded(reopen, true, true);
+    if (anchor) restoreAnchor(anchor);
+    sizeFoldPages();
   }
 
   function enable() {
@@ -373,195 +483,155 @@ export function createFoldLayer(scrollArea, viewer) {
 
   function disable() {
     enabled = false;
-    closePopup();
+    popup.close();
+    clearTimeout(rebuildTimer);
+    rebuildTimer = 0;
     teardownDom();
+    releasePages(true);
     lastScale = null;
-    lastAnnRef = null;
     lastFilterSig = null;
   }
 
   function onAnnotationsChanged() {
-    // Re-seed the default filter from the fresh annotation set unless
-    // the user has explicitly customized it.
+    // Follow the fresh annotation set unless the filter was set by hand.
     if (!filterCustomized) filter = null;
     if (enabled) refresh(true);
   }
 
-  // ── Navigation helpers ─────────────────────────────────────────────
+  // ── Navigation ─────────────────────────────────────────────────────
   /** Scroll to the fold containing (or nearest to) an annotation.
    *  Returns true when handled — the shelf falls back otherwise. */
   function scrollToAnnotation(annot) {
     if (!enabled || !folds.length) return false;
     const pos = parseAnnotationPosition(annot);
     if (!pos || typeof pos.pageIndex !== "number") return false;
-    const p = viewer.getPages()[pos.pageIndex];
-    const ext = p?.viewport ? annotationExtent(annot, p.viewport.height) : null;
-
+    const p = env.getPages()[pos.pageIndex];
+    const ext = p?.viewport ? annotationExtent(annot, p.viewport) : null;
     let best = null;
     for (const f of folds) {
       if (f.pageIndex !== pos.pageIndex) continue;
       if (!best) best = f;
       if (ext && ext.top >= f.top - 1 && ext.top <= f.bottom + 1) { best = f; break; }
     }
-    // Annotation's page has no fold (filtered out) — land on the
-    // nearest following fold so the folded view doesn't jump to 0.
+    // Filtered out: land on the nearest following fold instead of 0.
     if (!best) best = folds.find((f) => f.pageIndex >= pos.pageIndex) || folds[folds.length - 1];
-    scrollArea.scrollTo({
-      top: Math.max(0, best.wrapper.offsetTop - scrollArea.clientHeight / 3),
-      behavior: "smooth",
-    });
+    scrollArea.scrollTo({ top: Math.max(0, best.wrapper.offsetTop - scrollArea.clientHeight / 3), behavior: "smooth" });
     return true;
   }
 
   function goToPage(n) {
     if (!folds.length) return;
-    const idx = n - 1;
-    const target = folds.find((f) => f.pageIndex >= idx) || folds[folds.length - 1];
+    const target = folds.find((f) => f.pageIndex >= n - 1) || folds[folds.length - 1];
     target.wrapper.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  /** Where the view starts: the first fold reaching into it (by its page,
+   *  its top and its place among its page's folds) and how far into it
+   *  (negative in the gap above it). */
+  function viewAnchor() {
+    const top = scrollArea.scrollTop;
+    let nth = 0;
+    for (let i = 0; i < folds.length; i++) {
+      const f = folds[i];
+      nth = i > 0 && folds[i - 1].pageIndex === f.pageIndex ? nth + 1 : 0;
+      const h = f.wrapper.offsetHeight;
+      if (f.wrapper.offsetTop + h > top && h) {
+        return { pageIndex: f.pageIndex, top: f.top, nth, frac: (top - f.wrapper.offsetTop) / h };
+      }
+    }
+    return null;
+  }
+
+  /** Scroll back to a place `viewAnchor` gave — the same fold (by its
+   *  top, else by its place among its page's folds: the top moves when
+   *  the page's real size arrives), else the next one on or after its
+   *  page. False while there are no folds. */
+  function restoreAnchor(a) {
+    if (!folds.length) return false;
+    const onPage = folds.filter((x) => x.pageIndex === a.pageIndex);
+    const f = onPage.find((x) => Math.abs(x.top - a.top) < 1)
+      ?? (a.nth != null ? onPage[Math.min(a.nth, onPage.length - 1)] : undefined)
+      ?? folds.find((x) => x.pageIndex >= a.pageIndex)
+      ?? folds[folds.length - 1];
+    const frac = Math.max(-0.5, Math.min(1, a.frac));
+    scrollArea.scrollTop = Math.max(0, f.wrapper.offsetTop + frac * f.wrapper.offsetHeight);
+    return true;
   }
 
   function getCurrentPage() {
     if (!folds.length) return 1;
     const mid = scrollArea.scrollTop + scrollArea.clientHeight / 2;
     let cur = folds[0].pageIndex + 1;
-    for (const f of folds) {
-      if (f.wrapper.offsetTop <= mid) cur = f.pageIndex + 1;
-    }
+    for (const f of folds) if (f.wrapper.offsetTop <= mid) cur = f.pageIndex + 1;
     return cur;
   }
 
-  /** Paint visible folds into the suspend snapshot canvas. */
+  /** The folds' elements, in reading order (the keyboard's fold steps). */
+  function foldElements() {
+    return folds.map((f) => f.wrapper);
+  }
+
+  /** Paint visible folds into the suspend snapshot canvas. Each fold's
+   *  raster is its strip, placed where the strip sits on the page. */
   function drawSnapshot(ctx, w, h) {
     const areaRect = scrollArea.getBoundingClientRect();
     for (const f of folds) {
-      if (!f.canvas) continue;
+      const canvas = f.inner.querySelector("canvas");
+      if (!canvas || !f.rendered) continue;
       const rect = f.wrapper.getBoundingClientRect();
       const dx = rect.left - areaRect.left;
       const dy = rect.top - areaRect.top;
       if (dy + rect.height < 0 || dy > h) continue;
       const innerTop = parseFloat(f.inner.style.top) || 0;
+      const canvasTop = parseFloat(canvas.style.top) || 0;
       ctx.save();
       ctx.beginPath();
       ctx.rect(dx, dy, rect.width, rect.height);
       ctx.clip();
-      ctx.drawImage(f.canvas, dx, dy + innerTop, f.cssW, f.pageCssH);
+      ctx.drawImage(canvas, dx, dy + innerTop + canvasTop, f.cssW, parseFloat(canvas.style.height) || rect.height);
       ctx.restore();
     }
   }
 
-  // ── Filter popup ───────────────────────────────────────────────────
-  function attachFilterUI(filterBtn, host) {
-    filterBtnRef = filterBtn;
-    hostRef = host;
-    filterBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (popup) closePopup();
-      else openPopup();
-    });
+  /** The filter, when it was changed by hand (else it follows the
+   *  annotations), and setting it so. */
+  const getFilter = () => (filterCustomized && filter ? [...filter] : null);
+  function setFilter(keys) {
+    filter = new Set(keys);
+    filterCustomized = true;
   }
 
-  function onDocPointerDown(e) {
-    if (!popup) return;
-    if (popup.contains(e.target) || filterBtnRef?.contains(e.target)) return;
-    closePopup();
-  }
-  function onDocKeydown(e) {
-    if (e.key === "Escape") closePopup();
-  }
-
-  function openPopup() {
-    if (!hostRef || !filterBtnRef) return;
-    ensureFilter();
-    popup = document.createElement("div");
-    popup.className = "pdf-fold-filter-popup";
-
-    const title = document.createElement("div");
-    title.className = "pdf-fold-filter-title";
-    title.textContent = "Fold annotations";
-    popup.appendChild(title);
-
-    const combos = [...availableCombos().entries()].sort((a, b) => {
-      const ta = TYPE_ORDER.indexOf(a[1].type);
-      const tb = TYPE_ORDER.indexOf(b[1].type);
-      if (ta !== tb) return (ta === -1 ? 99 : ta) - (tb === -1 ? 99 : tb);
-      return a[1].color < b[1].color ? -1 : 1;
-    });
-
-    if (!combos.length) {
-      const empty = document.createElement("div");
-      empty.className = "pdf-fold-filter-empty";
-      empty.textContent = "No annotations yet";
-      popup.appendChild(empty);
-    }
-
-    for (const [key, c] of combos) {
-      const row = document.createElement("label");
-      row.className = "pdf-fold-filter-row";
-
-      const check = document.createElement("input");
-      check.type = "checkbox";
-      check.checked = filter.has(key);
-      check.addEventListener("change", () => {
-        filterCustomized = true;
-        if (check.checked) filter.add(key);
-        else filter.delete(key);
-        refresh(true);
-      });
-      row.appendChild(check);
-
-      const swatch = document.createElement("span");
-      swatch.className = "pdf-fold-filter-swatch";
-      swatch.style.background = c.color || "#ffff00";
-      row.appendChild(swatch);
-
-      const text = document.createElement("span");
-      text.textContent = TYPE_LABELS[c.type] || c.type;
-      row.appendChild(text);
-
-      const count = document.createElement("span");
-      count.className = "pdf-fold-filter-count";
-      count.textContent = String(c.count);
-      row.appendChild(count);
-
-      popup.appendChild(row);
-    }
-
-    hostRef.appendChild(popup);
-    // Anchor above the toolbar, aligned to the filter button, clamped
-    // so a narrow pane / stack column can't clip the right edge.
-    const btnRect = filterBtnRef.getBoundingClientRect();
-    const hostRect = hostRef.getBoundingClientRect();
-    let left = btnRect.left - hostRect.left - 8;
-    left = Math.max(8, Math.min(left, hostRect.width - popup.offsetWidth - 8));
-    popup.style.left = `${left}px`;
-
-    document.addEventListener("pointerdown", onDocPointerDown, true);
-    document.addEventListener("keydown", onDocKeydown, true);
-  }
-
-  function closePopup() {
-    if (!popup) return;
-    popup.remove();
-    popup = null;
-    document.removeEventListener("pointerdown", onDocPointerDown, true);
-    document.removeEventListener("keydown", onDocKeydown, true);
-  }
-
-  function destroy() {
-    disable();
-  }
+  const popup = createFoldFilterPopup({
+    combos: () => availableCombos(env.getAnnotations()),
+    active: ensureFilter,
+    toggle: (key, on) => {
+      const active = ensureFilter();
+      filterCustomized = true;
+      if (on) active.add(key);
+      else active.delete(key);
+      refresh(true);
+      env.onFilterChange?.();
+    },
+  });
 
   return {
     enable,
     disable,
     refresh,
     onAnnotationsChanged,
-    attachFilterUI,
+    attachFilterUI: popup.attach,
     scrollToAnnotation,
     goToPage,
     getCurrentPage,
+    viewAnchor,
+    restoreAnchor,
+    centerOn,
+    centerPlace,
+    foldElements,
+    getFilter,
+    setFilter,
     drawSnapshot,
-    destroy,
+    destroy: disable,
     isEnabled: () => enabled,
   };
 }

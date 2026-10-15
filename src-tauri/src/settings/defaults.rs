@@ -404,6 +404,21 @@ pub fn default_nb_reset_zoom() -> String { "Mod+0".to_string() }
 pub fn default_nb_split() -> String { "S".to_string() }
 pub fn default_nb_grab() -> String { "G".to_string() }
 
+pub fn default_pdf_thumbnails() -> String { "G".to_string() }
+pub fn default_pdf_outline() -> String { "O".to_string() }
+pub fn default_pdf_folded() -> String { "F".to_string() }
+pub fn default_pdf_fold_filters() -> String { "Shift+F".to_string() }
+pub fn default_pdf_expand_fold() -> String { "E".to_string() }
+pub fn default_pdf_horizontal() -> String { "Z".to_string() }
+pub fn default_pdf_vertical() -> String { "V".to_string() }
+pub fn default_pdf_fit1() -> String { "1".to_string() }
+pub fn default_pdf_fit2() -> String { "2".to_string() }
+pub fn default_pdf_fit3() -> String { "3".to_string() }
+pub fn default_pdf_paged() -> String { "P".to_string() }
+pub fn default_pdf_continuous() -> String { "C".to_string() }
+pub fn default_pdf_next_page() -> String { "ArrowRight".to_string() }
+pub fn default_pdf_prev_page() -> String { "ArrowLeft".to_string() }
+
 pub fn default_proofread_disabled_rules() -> Vec<String> {
     // LongSentences — verbosity warnings tend to be aesthetic noise for
     // longform writing. Every other curated rule starts on; the user can

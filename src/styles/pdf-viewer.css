@@ -17,6 +17,9 @@
   flex-direction: row;
   min-height: 0;
   overflow: hidden;
+  /* The thumbnail grid, the find bar and an overlaid outline sit over
+     this, leaving the toolbar usable. */
+  position: relative;
 }
 
 /* ===== Scroll area ===== */
@@ -35,6 +38,7 @@
   min-height: 0;
   min-width: 0;
 }
+.pdf-scroll-area:focus { outline: none; }
 
 /* Fit-width: single column, pages fill available width.
    justify-content must revert to flex-start here: in a column flex the
@@ -102,6 +106,7 @@
   top: 0; left: 0;
   width: 100%; height: 100%;
   pointer-events: none;
+  z-index: 2; /* over the text layer */
 }
 .pdf-link {
   position: absolute;
@@ -171,10 +176,13 @@
 @keyframes pdf-spin { to { transform: rotate(360deg); } }
 
 /* ===== Bottom toolbar ===== */
+/* Sections (thumbnails; outline, bookmarks, find; fit; scroll; paged /
+   continuous; folding; zoom) sit 14px apart; inside one, its controls
+   are tight. */
 .pdf-zoom-toolbar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 14px;
   padding: 6px 12px;
   border-top: 1px solid var(--panel-border);
   background: var(--panel-bg, var(--bg));
@@ -314,27 +322,6 @@ html.ios:not(.phone) .floating-pane.docked.docked-bottom .pdf-zoom-toolbar::afte
   transition: opacity 0.15s;
 }
 .pdf-zotero-link:hover { opacity: 1; text-decoration: underline; }
-
-/* ===== Annotation overlays (on pages) ===== */
-.pdf-annot-layer {
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  pointer-events: none;
-}
-.pdf-annot-highlight {
-  position: absolute;
-  opacity: 0.3;
-  mix-blend-mode: multiply;
-  border-radius: 1px;
-  pointer-events: none;
-}
-.pdf-annot-ink {
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  pointer-events: none;
-}
 
 /* ===== Annotation shelf (in-flow right panel) ===== */
 .pdf-annot-shelf {
@@ -661,11 +648,8 @@ html.ios:not(.phone) .floating-pane.docked.docked-bottom .pdf-zoom-toolbar::afte
   font-family: system-ui, -apple-system, sans-serif;
   pointer-events: none;
 }
-/* First in the toolbar row, with a little air before the rest. */
-.pdf-zoom-toolbar > .pdf-thumbnail-btn {
-  margin-right: 8px;
-}
-.pdf-thumbnail-btn.active {
+.pdf-thumbnail-btn.active,
+.pdf-outline-btn.active {
   background: rgba(128, 128, 128, 0.22);
   border-color: rgba(128, 128, 128, 0.4);
 }
@@ -697,6 +681,12 @@ html.ios:not(.phone) .floating-pane.docked.docked-bottom .pdf-zoom-toolbar::afte
   background: #f5f5f5;
 }
 .pdf-fold-page .pdf-page-canvas { display: block; }
+/* A fold's raster is its strip of the page (or all of it, opened),
+   placed where that strip sits on the page. */
+.pdf-fold-page .pdf-fold-canvas {
+  position: absolute;
+  left: 0;
+}
 
 /* Page label chip (hover) */
 .pdf-fold-page-label {

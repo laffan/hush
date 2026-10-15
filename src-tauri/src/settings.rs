@@ -597,6 +597,37 @@ pub struct AppSettings {
     #[serde(default = "default_nb_grab")]
     pub shortcut_nb_grab: String,
 
+    // PDF viewer shortcuts (bare keys while a PDF has the keyboard —
+    // src/pdf/pdf-viewer-keys.js)
+    #[serde(default = "default_pdf_thumbnails")]
+    pub shortcut_pdf_thumbnails: String,
+    #[serde(default = "default_pdf_outline")]
+    pub shortcut_pdf_outline: String,
+    #[serde(default = "default_pdf_folded")]
+    pub shortcut_pdf_folded: String,
+    #[serde(default = "default_pdf_fold_filters")]
+    pub shortcut_pdf_fold_filters: String,
+    #[serde(default = "default_pdf_expand_fold")]
+    pub shortcut_pdf_expand_fold: String,
+    #[serde(default = "default_pdf_horizontal")]
+    pub shortcut_pdf_horizontal: String,
+    #[serde(default = "default_pdf_vertical")]
+    pub shortcut_pdf_vertical: String,
+    #[serde(default = "default_pdf_fit1")]
+    pub shortcut_pdf_fit1: String,
+    #[serde(default = "default_pdf_fit2")]
+    pub shortcut_pdf_fit2: String,
+    #[serde(default = "default_pdf_fit3")]
+    pub shortcut_pdf_fit3: String,
+    #[serde(default = "default_pdf_paged")]
+    pub shortcut_pdf_paged: String,
+    #[serde(default = "default_pdf_continuous")]
+    pub shortcut_pdf_continuous: String,
+    #[serde(default = "default_pdf_next_page")]
+    pub shortcut_pdf_next_page: String,
+    #[serde(default = "default_pdf_prev_page")]
+    pub shortcut_pdf_prev_page: String,
+
     // Persisted panes — restored on app open. Shape is opaque to Rust;
     // JS serializes/deserializes the list of pane objects.
     #[serde(default)]
@@ -924,6 +955,20 @@ impl Default for AppSettings {
             shortcut_nb_reset_zoom: default_nb_reset_zoom(),
             shortcut_nb_split: default_nb_split(),
             shortcut_nb_grab: default_nb_grab(),
+            shortcut_pdf_thumbnails: default_pdf_thumbnails(),
+            shortcut_pdf_outline: default_pdf_outline(),
+            shortcut_pdf_folded: default_pdf_folded(),
+            shortcut_pdf_fold_filters: default_pdf_fold_filters(),
+            shortcut_pdf_expand_fold: default_pdf_expand_fold(),
+            shortcut_pdf_horizontal: default_pdf_horizontal(),
+            shortcut_pdf_vertical: default_pdf_vertical(),
+            shortcut_pdf_fit1: default_pdf_fit1(),
+            shortcut_pdf_fit2: default_pdf_fit2(),
+            shortcut_pdf_fit3: default_pdf_fit3(),
+            shortcut_pdf_paged: default_pdf_paged(),
+            shortcut_pdf_continuous: default_pdf_continuous(),
+            shortcut_pdf_next_page: default_pdf_next_page(),
+            shortcut_pdf_prev_page: default_pdf_prev_page(),
             data_dir: PathBuf::new(),
         }
     }

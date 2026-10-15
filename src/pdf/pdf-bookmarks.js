@@ -261,11 +261,17 @@ export function attachPageHoverButtons(wrapper, pageNum, { zoteroAttKey, fileId 
   }
 
   if (!zBtn && !bmBtn) return;
+  // Each button shows with the pointer within 100px of its corner —
+  // measured from the button, which sits 8px in from the corner of what
+  // is shown of the page (a reading crop moves it in; pdf-bookmarks.css).
+  const near = (b, e, bottom) => {
+    const r = b.getBoundingClientRect();
+    const dy = bottom ? r.bottom + 8 - e.clientY : e.clientY - (r.top - 8);
+    return r.right + 8 - e.clientX < 100 && dy < 100 && dy > -8;
+  };
   wrapper.addEventListener("mousemove", (e) => {
-    const r = wrapper.getBoundingClientRect();
-    const nearRight = (r.right - e.clientX) < 100;
-    if (zBtn) zBtn.classList.toggle("visible", nearRight && (r.bottom - e.clientY) < 100);
-    if (bmBtn) bmBtn.classList.toggle("visible", nearRight && (e.clientY - r.top) < 100);
+    if (zBtn) zBtn.classList.toggle("visible", near(zBtn, e, true));
+    if (bmBtn) bmBtn.classList.toggle("visible", near(bmBtn, e, false));
   });
   wrapper.addEventListener("mouseleave", () => {
     zBtn?.classList.remove("visible");
@@ -301,6 +307,9 @@ export function attachPageClipBookmarks(wrapper, pageNum, { fileId }) {
     if (target?.closest?.(".pdf-clip-mark, .pdf-page-bookmark-btn, .pdf-page-zotero-btn, .pdf-link-layer")) return false;
     const r = wrapper.getBoundingClientRect();
     if (!r.width || !r.height) return false;
+    // A double-click on the text layer also selects a word; the clip is
+    // what was asked for.
+    window.getSelection()?.removeAllRanges();
     openBookmarkEditor({
       anchor: pointAnchor(clientX, clientY),
       fileId,

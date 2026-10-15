@@ -1,40 +1,47 @@
 /**
- * Baking Zotero annotations into a rasterized PDF page.
+ * Zotero's annotations, painted into a rasterized PDF page.
  *
  * Zotero annotations are **not** in the PDF file. They are child items of
  * the attachment, fetched from the Zotero API and cached locally
- * (`zotero-annotations.js`), and the viewer paints them as a DOM overlay
- * over each rendered page (`pdf-viewer-annotations.js`). So anything that
- * rasterizes a page through pdfjs and expects the marks to come along —
- * a shelf cover, a proofread notebook — gets a clean, unannotated page
- * unless it paints them itself. This module is that painter, in canvas
- * form, shared so the two bakers can't drift apart.
+ * (`zotero-annotations.js`), so nothing pdf.js draws includes them. This
+ * is the one painter for every raster that should show them: the
+ * viewer's pages, the folded view's strips, the thumbnail grid, a shelf
+ * cover, a proofread notebook — so a highlight that shows in one shows
+ * in all of them, and a baked page reads like the viewer.
  *
- * Geometry matches the overlay exactly: positions are raw PDF user space,
- * and `viewport.convertToViewportPoint` is what honours a non-(0,0)
- * CropBox origin and any page `/Rotate`. A plain `y → height − y` flip
- * paints every mark offset by the crop origin on such documents — right
- * relative to each other, wrong against the page.
+ * Geometry: positions are raw PDF user space, and
+ * `viewport.convertToViewportPoint` is what honours a non-(0,0) CropBox
+ * origin and any page `/Rotate` (and, for a fold's strip, the viewport's
+ * vertical offset). A plain `y → height − y` flip paints every mark
+ * offset by the crop origin on such documents — right relative to each
+ * other, wrong against the page.
  */
 
 import { parseAnnotationPosition } from "./pdf-viewer-annotations.js";
 
-/** Highlight fill alpha. Matches `.pdf-annot-highlight`'s opacity. */
+/** Highlights are drawn the way a highlighter marks paper: multiplied
+ *  into the page, so the words stay black under the colour. */
 const HIGHLIGHT_ALPHA = 0.3;
+
+const box = (viewport, r) => {
+  const [ax, ay] = viewport.convertToViewportPoint(r[0], r[1]);
+  const [bx, by] = viewport.convertToViewportPoint(r[2], r[3]);
+  return { x: Math.min(ax, bx), y: Math.min(ay, by), w: Math.abs(bx - ax), h: Math.abs(by - ay) };
+};
 
 /**
  * Paint every annotation belonging to `pageIndex` (0-based, as Zotero
  * stores it) into `ctx`.
  *
- * `viewport` must be the same one the page was rendered with, so its
+ * `viewport` must be the one the page was rendered with, so its
  * `convertToViewportPoint` lands in the canvas's own pixel space, and
- * `scale` is that viewport's scale — ink line width tracks it so a
- * stroke is the same visual weight at any raster size.
+ * `scale` is that viewport's scale — line widths track it, so a mark is
+ * the same visual weight at any raster size.
  *
- * Non-ink annotations with rects (highlight, underline, note, image) all
- * paint as translucent blocks. That is what the viewer shows, and a
- * baked page that disagrees with the viewer is worse than one that
- * renders an underline a little too generously.
+ * Each type is drawn as itself: a highlight multiplied in, an underline
+ * as a rule under its words, an area or a text box outlined (the figure
+ * inside stays as it is), a note as its marker, ink at the pen width
+ * Zotero recorded.
  */
 export function drawAnnotationsOnPage(ctx, viewport, scale, annots, pageIndex = 0) {
   if (!ctx || !annots || !annots.length) return;
@@ -42,44 +49,73 @@ export function drawAnnotationsOnPage(ctx, viewport, scale, annots, pageIndex = 
     if (ann.embedded) continue; // in the file, so pdfjs drew it already
     const pos = parseAnnotationPosition(ann);
     if (!pos || pos.pageIndex !== pageIndex) continue;
-
-    if (pos.rects?.length && ann.type !== "ink") {
-      ctx.save();
-      // `multiply`, not plain alpha — the overlay uses
-      // `mix-blend-mode: multiply`, which is what keeps the text under a
-      // highlight black instead of washing it toward the highlight
-      // colour. Over white paper the two agree; over glyphs they don't.
-      ctx.globalCompositeOperation = "multiply";
-      ctx.globalAlpha = HIGHLIGHT_ALPHA;
-      ctx.fillStyle = ann.color || "#ffff00";
-      for (const rect of pos.rects) {
-        if (!Array.isArray(rect) || rect.length < 4) continue;
-        const [ax, ay] = viewport.convertToViewportPoint(rect[0], rect[1]);
-        const [bx, by] = viewport.convertToViewportPoint(rect[2], rect[3]);
-        ctx.fillRect(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay));
-      }
-      ctx.restore();
-    }
-
+    const color = ann.color || (ann.type === "ink" ? "#ff0000" : "#ffd400");
+    ctx.save();
     if (ann.type === "ink" && pos.paths?.length) {
-      ctx.save();
-      ctx.strokeStyle = ann.color || "#ff0000";
-      ctx.lineWidth = Math.max(0.5, scale);
+      // Zotero records the pen width in PDF units beside the paths.
+      const width = Number(pos.width) || 1;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(0.75, width * scale);
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
-      for (const pathPoints of pos.paths) {
-        if (!pathPoints || pathPoints.length < 4) continue;
+      for (const pts of pos.paths) {
+        if (!pts || pts.length < 2) continue;
         ctx.beginPath();
-        for (let i = 0; i < pathPoints.length; i += 2) {
-          const [px, py] = viewport.convertToViewportPoint(pathPoints[i], pathPoints[i + 1]);
-          if (i === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
+        for (let i = 0; i + 1 < pts.length; i += 2) {
+          const [x, y] = viewport.convertToViewportPoint(pts[i], pts[i + 1]);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
         }
         ctx.stroke();
       }
-      ctx.restore();
+    } else if (pos.rects?.length) {
+      for (const r of pos.rects) {
+        if (!Array.isArray(r) || r.length < 4) continue;
+        const b = box(viewport, r);
+        if (ann.type === "underline") {
+          const t = Math.max(1, 1.2 * scale);
+          ctx.fillStyle = color;
+          ctx.fillRect(b.x, b.y + b.h - t, b.w, t);
+        } else if (ann.type === "image" || ann.type === "text") {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = Math.max(1, 1.5 * scale);
+          ctx.strokeRect(b.x, b.y, b.w, b.h);
+        } else if (ann.type === "note") {
+          ctx.fillStyle = color;
+          ctx.globalAlpha = 0.9;
+          ctx.fillRect(b.x, b.y, b.w, b.h);
+        } else {
+          ctx.globalCompositeOperation = "multiply";
+          ctx.globalAlpha = HIGHLIGHT_ALPHA;
+          ctx.fillStyle = color;
+          ctx.fillRect(b.x, b.y, b.w, b.h);
+        }
+      }
     }
+    ctx.restore();
   }
+}
+
+/** The viewer's form: `viewport` carries its own scale. */
+export function drawAnnotations(ctx, viewport, annots, pageIndex) {
+  drawAnnotationsOnPage(ctx, viewport, viewport.scale, annots, pageIndex);
+}
+
+/** A string per page that changes when what is drawn on it does — what
+ *  decides whether a rendered page has to be repainted after a refresh.
+ *  Only what shows counts: a repaint replaces the page's text layer, and
+ *  with it any selection being made there, so a comment edit or a new
+ *  version number from Zotero mustn't cause one. */
+export function pageSignatures(annots) {
+  const out = new Map();
+  for (const a of annots || []) {
+    const idx = parseAnnotationPosition(a)?.pageIndex;
+    if (typeof idx !== "number" || a.embedded) continue;
+    const pos = a._raw?.data?.annotationPosition;
+    const part = `${a.key}:${a.type}:${a.color}:${typeof pos === "string" ? pos : JSON.stringify(pos)}`;
+    out.set(idx, out.has(idx) ? `${out.get(idx)},${part}` : part);
+  }
+  return out;
 }
 
 /** True when any annotation in the list falls on `pageIndex`. Lets a

@@ -57,13 +57,22 @@ export const MAX_CANVAS_PIXELS = IS_IOS ? 8_000_000 : 16_777_216;
  *  of tiny fit-3 pages can't hoard thousands of small canvases. */
 const KEEP_BUDGET_BYTES = IS_IOS ? 192_000_000 : 512_000_000;
 const KEEP_MAX_PAGES = IS_IOS ? 24 : 48;
-const MAX_CONCURRENT_RENDERS = IS_IOS ? 1 : 2;
+/** Page renders at once — the folded view keeps to it too. */
+export const MAX_CONCURRENT_RENDERS = IS_IOS ? 1 : 2;
 
 /** Clamp a render scale so `viewport1` (scale-1 viewport) rasterised at
  *  the returned scale stays under MAX_CANVAS_PIXELS. */
 export function capRenderScale(scale, viewport1) {
   const px = viewport1.width * viewport1.height * scale * scale;
   return px > MAX_CANVAS_PIXELS ? scale * Math.sqrt(MAX_CANVAS_PIXELS / px) : scale;
+}
+
+/** Let a canvas's pixels go now. WebKit otherwise holds them until the
+ *  element is garbage-collected, and a relayout drops a dozen rasters
+ *  at once — enough, in a long PDF on an iPad, for the web view to be
+ *  killed. pdf.js's own viewer does the same. */
+export function releaseCanvas(c) {
+  if (c) c.width = c.height = 0;
 }
 
 function isCancelError(e) {
@@ -80,7 +89,10 @@ function isCancelError(e) {
  * @param {function} env.isFolded          () => boolean
  * @param {function} env.isDestroyed       () => boolean
  * @param {function} env.isSuspended       () => boolean
- * @param {function} env.onPageRendered    (idx, pageProxy) => void — annotation + link layers
+ * @param {function} env.sizePage          (page, scale) => void — size a wrapper (pdf-viewer-layout.js)
+ * @param {function} [env.paintPage]       (idx, ctx, viewport) => void — draw into a raster before
+ *                                         it is shown (the annotations)
+ * @param {function} env.onPageRendered    (idx, pageProxy) => void — link + text layers
  * @param {function} [env.onUpdate]        () => void — after each render-set update (page indicator)
  */
 export function createPageRenderer(scrollArea, env) {
@@ -97,6 +109,9 @@ export function createPageRenderer(scrollArea, env) {
   let inFlight = 0;
   const inFlightIdx = new Set();
   let lastRange = null;
+  // Pages still showing a raster that is waiting to be redrawn (see
+  // repaint) — uncounted in renderedBytes, so let go of explicitly.
+  const stale = new Set();
 
   function invalidateGeometry() { geom = null; }
 
@@ -181,7 +196,7 @@ export function createPageRenderer(scrollArea, env) {
     });
     // A fling can leave a render in flight for a page that's now far
     // away — cancel it rather than finishing raster work nobody sees.
-    for (const i of [...inFlightIdx]) {
+    for (const i of [...inFlightIdx, ...stale]) {
       if (i < rFrom || i > rTo) clearPage(i);
     }
     pump();
@@ -270,6 +285,7 @@ export function createPageRenderer(scrollArea, env) {
     // (evicted / not-yet-reached) placeholder animating costs style
     // recalcs across the whole document for nothing.
     p.wrapper.querySelector(".pdf-page-placeholder")?.classList.add("loading");
+    let canvas = null;
     try {
       const page = await pdfDoc.getPage(idx + 1);
       if (env.isDestroyed() || p.cancelled || pages !== env.getPages()) return;
@@ -282,9 +298,7 @@ export function createPageRenderer(scrollArea, env) {
         p.realViewport = true;
         if (Math.abs(vp1.width - p.viewport.width) > 0.5 || Math.abs(vp1.height - p.viewport.height) > 0.5) {
           p.viewport = vp1;
-          const s = env.getEffectiveZoom();
-          p.wrapper.style.width = `${Math.round(vp1.width * s)}px`;
-          p.wrapper.style.height = `${Math.round(vp1.height * s)}px`;
+          env.sizePage(p, env.getEffectiveZoom());
           invalidateGeometry(); // downstream offsets shifted
         }
       }
@@ -294,7 +308,7 @@ export function createPageRenderer(scrollArea, env) {
       const renderScale = capRenderScale(scale * dpr, p.viewport);
       const viewport = page.getViewport({ scale: renderScale });
 
-      const canvas = document.createElement("canvas");
+      canvas = document.createElement("canvas");
       canvas.width = Math.round(viewport.width);
       canvas.height = Math.round(viewport.height);
       canvas.className = "pdf-page-canvas";
@@ -304,6 +318,9 @@ export function createPageRenderer(scrollArea, env) {
       await task.promise;
       p.renderTask = null;
       if (env.isDestroyed() || p.cancelled || pages !== env.getPages()) return;
+      // The annotations go into the raster itself (pdf-annot-raster.js).
+      const ctx = canvas.getContext("2d");
+      if (ctx) env.paintPage?.(idx, ctx, viewport);
 
       // The canvas lives inside a content box sized at paint-time CSS
       // px; annotation + link layers join it there, so a later CSS
@@ -317,6 +334,7 @@ export function createPageRenderer(scrollArea, env) {
       content.appendChild(canvas);
       p.wrapper.querySelector(".pdf-page-placeholder")?.remove();
       if (p.contentEl) p.contentEl.remove();
+      releaseCanvas(p.canvas); // a repaint's old raster
       p.wrapper.insertBefore(content, p.wrapper.firstChild);
       p.contentEl = content;
       p.contentW = cssW;
@@ -326,6 +344,7 @@ export function createPageRenderer(scrollArea, env) {
       p.canvas = canvas;
       p.canvasBytes = canvas.width * canvas.height * 4;
       renderedBytes += p.canvasBytes;
+      stale.delete(idx);
       // Wrapper resized while we rendered (mid-drag) — stretch to match.
       const curW = parseFloat(p.wrapper.style.width) || cssW;
       if (Math.abs(curW - cssW) > 0.5) content.style.transform = `scale(${curW / cssW})`;
@@ -335,6 +354,8 @@ export function createPageRenderer(scrollArea, env) {
     } finally {
       p.rendering = false;
       p.renderTask = null;
+      // A render that was cancelled or failed drops its canvas.
+      if (canvas && p.canvas !== canvas) releaseCanvas(canvas);
       if (!p.rendered) p.wrapper.querySelector(".pdf-page-placeholder")?.classList.remove("loading");
     }
   }
@@ -346,8 +367,10 @@ export function createPageRenderer(scrollArea, env) {
       p.cancelled = true;
       try { p.renderTask?.cancel(); } catch (_) {}
     }
+    stale.delete(idx);
     if (!p.rendered && !p.contentEl) return;
     if (p.contentEl) { p.contentEl.remove(); p.contentEl = null; }
+    releaseCanvas(p.canvas);
     p.canvas = null;
     p.contentW = 0;
     p.contentH = 0;
@@ -360,6 +383,28 @@ export function createPageRenderer(scrollArea, env) {
     }
     p.rendered = false;
     p.renderedZoom = null;
+    // pdf.js keeps a drawn page's parsed content; let it go with the
+    // raster (it declines while a render of the page is still running).
+    env.getPdfDoc()?.getPage(idx + 1).then((page) => page.cleanup()).catch(() => {});
+  }
+
+  /** Re-render pages in place: the old raster stays up until the new
+   *  one replaces it, so a repaint after a refresh doesn't flash. */
+  function repaint(indices) {
+    const pages = env.getPages();
+    for (const i of indices) {
+      const p = pages[i];
+      if (!p?.rendered) continue;
+      // Only pages about to be redrawn keep their old raster meanwhile;
+      // anywhere else (or folded away) it would hang on unredrawn.
+      const near = lastRange && i >= lastRange[0] - RENDER_BUFFER && i <= lastRange[1] + RENDER_BUFFER;
+      if (env.isFolded() || !near) { clearPage(i); continue; }
+      renderedBytes -= p.canvasBytes || 0;
+      p.canvasBytes = 0;
+      p.rendered = false;
+      stale.add(i);
+    }
+    scheduleUpdate();
   }
 
   function clearAll() {
@@ -371,6 +416,8 @@ export function createPageRenderer(scrollArea, env) {
   /** Forget everything cached about the current document — call before
    *  a (re)load swaps the pages array out. */
   function reset() {
+    for (const p of env.getPages()) releaseCanvas(p.canvas);
+    stale.clear();
     queue = [];
     lastRange = null;
     renderedBytes = 0;
@@ -387,7 +434,7 @@ export function createPageRenderer(scrollArea, env) {
 
   return {
     update, scheduleUpdate, scheduleSettle,
-    clearPage, clearAll, reset, destroy,
+    clearPage, clearAll, reset, destroy, repaint,
     invalidateGeometry, pageAtViewCenter,
   };
 }

@@ -1,0 +1,533 @@
+/* ===== PDF viewer, continued: the bar's sections and tooltips, the
+   paged view and the reading crop, the text layer, find and the
+   outline. See src/pdf/pdf-viewer*.js. ===== */
+
+/* ----- Bottom bar ----- */
+.pdf-toolbar-section {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* − and +, a group of their own: always at full strength (the group's
+   options dim when not the one chosen). */
+.pdf-toggle-option.pdf-zoom-step {
+  opacity: 1;
+  padding: 2px 9px;
+  font-size: 13px;
+}
+.pdf-zoom-toolbar .pdf-zoom-label {
+  min-width: 3.4em;
+  text-align: left;
+}
+.pdf-zoom-toolbar {
+  -webkit-touch-callout: none;
+  /* A narrow pane or stack column scrolls the bar rather than clip it. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.pdf-zoom-toolbar::-webkit-scrollbar { display: none; }
+.pdf-zoom-toolbar > * { flex-shrink: 0; }
+.pdf-zoom-toolbar > .pdf-toolbar-info { flex-shrink: 1; }
+/* The page-mode icons follow the scroll direction. */
+.pdf-page-mode.vertical svg { transform: rotate(90deg); }
+
+/* Toolbar tooltips (pdf-viewer-tooltips.js) — drawn, since iPadOS shows
+   no `title` tooltips. */
+.pdf-tooltip {
+  position: absolute;
+  z-index: 30;
+  width: max-content;
+  max-width: 240px;
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: var(--fg);
+  color: var(--panel-bg, var(--bg));
+  font: 500 11px/1.35 system-ui, -apple-system, sans-serif;
+  pointer-events: none;
+}
+/* The key for what the button does, after its text. */
+.pdf-tooltip-keys {
+  margin-left: 6px;
+  opacity: 0.5;
+}
+
+/* ----- Paged view: sets of 1–3 pages, paged by snapping
+   (pdf-viewer-layout.js). A set takes all of the view but PAGED_PAD,
+   and its pages sit SET_GAP (4px) apart. ----- */
+.pdf-scroll-area.pdf-paged.pdf-layout-horizontal {
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: var(--pdf-paged-pad, 0px);
+  padding: 4px 0;
+  gap: 4px;
+}
+/* Top to bottom, a grid of rows the set's size. Padding is safe here
+   (a set's room plus two pads is the view), unlike in the flex column. */
+.pdf-scroll-area.pdf-layout-pagedv {
+  display: grid;
+  grid-template-columns: repeat(var(--pdf-paged-cols, 1), max-content);
+  justify-content: center;
+  align-content: start;
+  column-gap: 4px;
+  row-gap: var(--pdf-paged-gap, 24px);
+  padding-block: var(--pdf-paged-pad, 4px);
+  padding-inline: 4px;
+  scroll-snap-type: y mandatory;
+  scroll-padding-block: var(--pdf-paged-pad, 0px);
+}
+/* Each set's first page is its snap point. */
+.pdf-paged-1 > .pdf-page-wrapper,
+.pdf-paged-2 > .pdf-page-wrapper:nth-child(2n + 1),
+.pdf-paged-3 > .pdf-page-wrapper:nth-child(3n + 1) {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+/* A trimmed page (pdf-viewer-crop.js) is clipped to what is left, and
+   its trimmed edges' room is closed up by negative margins — --cm-* on
+   each page, zero when untrimmed. The scroll margins match, so the
+   snapping centres what is left rather than the whole page. */
+.pdf-paged > .pdf-page-wrapper,
+.pdf-cropped > .pdf-page-wrapper {
+  margin: var(--cm-t, 0px) var(--cm-r, 0px) var(--cm-b, 0px) var(--cm-l, 0px);
+}
+.pdf-cropped > .pdf-page-wrapper {
+  scroll-margin: var(--cm-t, 0px) var(--cm-r, 0px) var(--cm-b, 0px) var(--cm-l, 0px);
+  clip-path: inset(
+    calc(var(--crop-t) * 100%) calc(var(--crop-r) * 100%) calc(var(--crop-b) * 100%)
+      calc(var(--crop-l) * 100%)
+  );
+}
+/* Side by side: room outside the end sets, and between sets. Margins
+   rather than padding, which would stretch the flex row's height. */
+.pdf-paged.pdf-layout-horizontal > .pdf-page-wrapper:first-child {
+  margin-left: calc(var(--pdf-paged-pad, 0px) + var(--cm-l, 0px));
+}
+.pdf-paged.pdf-layout-horizontal > .pdf-page-wrapper:last-child {
+  margin-right: calc(var(--pdf-paged-pad, 0px) + var(--cm-r, 0px));
+}
+.pdf-paged-1.pdf-layout-horizontal > .pdf-page-wrapper:not(:first-child),
+.pdf-paged-2.pdf-layout-horizontal > .pdf-page-wrapper:nth-child(2n + 1):not(:first-child),
+.pdf-paged-3.pdf-layout-horizontal > .pdf-page-wrapper:nth-child(3n + 1):not(:first-child) {
+  margin-left: calc(var(--pdf-paged-gap, 24px) - 4px + var(--cm-l, 0px));
+}
+
+/* ----- Reading crop ----- */
+/* Under a crop the page's corner buttons and the clips' tabs move in to
+   what is shown — the trim's fractions are on the scroll area, and these
+   percentages are of the page. */
+.pdf-cropped .pdf-page-bookmark-btn {
+  top: calc(var(--crop-t, 0) * 100% + 8px);
+  right: calc(var(--crop-r, 0) * 100% + 8px);
+}
+.pdf-cropped .pdf-page-zotero-btn {
+  bottom: calc(var(--crop-b, 0) * 100% + 8px);
+  right: calc(var(--crop-r, 0) * 100% + 8px);
+}
+.pdf-cropped .pdf-clip-mark {
+  left: calc(var(--crop-l, 0) * 100%);
+  width: calc(var(--clip-x) - var(--crop-l, 0) * 100%);
+}
+/* Adjusting the trim (⌘ held): the pages show whole, the trim drawn over
+   each of them — what is kept framed, the rest shaded. */
+.pdf-crop-editing .textLayer,
+.pdf-crop-editing .pdf-link-layer,
+.pdf-crop-editing .pdf-clip-layer {
+  pointer-events: none;
+}
+.pdf-crop-editing .pdf-clip-layer * { pointer-events: none; }
+.pdf-crop-editing .pdf-page-zotero-btn,
+.pdf-crop-editing .pdf-page-bookmark-btn {
+  display: none;
+}
+.pdf-crop-frame {
+  position: absolute;
+  top: calc(var(--crop-t, 0) * 100%);
+  right: calc(var(--crop-r, 0) * 100%);
+  bottom: calc(var(--crop-b, 0) * 100%);
+  left: calc(var(--crop-l, 0) * 100%);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.32);
+  pointer-events: none;
+  z-index: 6;
+}
+/* Each side of the trim: a dashed line with a grip at its middle, both
+   kept inside the page (which clips). The side under the pointer — or
+   being dragged — turns solid on every page, its grip filled. */
+.pdf-crop-edge {
+  position: absolute;
+  border: 0 dashed var(--accent, #3b82f6);
+}
+.pdf-crop-edge-t, .pdf-crop-edge-b { left: 0; right: 0; height: 0; }
+.pdf-crop-edge-l, .pdf-crop-edge-r { top: 0; bottom: 0; width: 0; }
+.pdf-crop-edge-t { top: 0; border-top-width: 2px; }
+.pdf-crop-edge-b { bottom: 0; border-bottom-width: 2px; }
+.pdf-crop-edge-l { left: 0; border-left-width: 2px; }
+.pdf-crop-edge-r { right: 0; border-right-width: 2px; }
+.pdf-crop-grip {
+  position: absolute;
+  border: 2px solid var(--accent, #3b82f6);
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  transition: transform 0.12s, background 0.12s;
+}
+.pdf-crop-edge-t .pdf-crop-grip,
+.pdf-crop-edge-b .pdf-crop-grip {
+  left: 50%;
+  width: 48px;
+  height: 12px;
+  margin-left: -24px;
+}
+.pdf-crop-edge-t .pdf-crop-grip { top: 3px; }
+.pdf-crop-edge-b .pdf-crop-grip { bottom: 3px; }
+.pdf-crop-edge-l .pdf-crop-grip,
+.pdf-crop-edge-r .pdf-crop-grip {
+  top: 50%;
+  width: 12px;
+  height: 48px;
+  margin-top: -24px;
+}
+.pdf-crop-edge-l .pdf-crop-grip { left: 3px; }
+.pdf-crop-edge-r .pdf-crop-grip { right: 3px; }
+[data-crop-edge="t"] .pdf-crop-edge-t,
+[data-crop-edge="r"] .pdf-crop-edge-r,
+[data-crop-edge="b"] .pdf-crop-edge-b,
+[data-crop-edge="l"] .pdf-crop-edge-l {
+  border-style: solid;
+  border-width: 3px;
+}
+[data-crop-edge="t"] .pdf-crop-edge-t .pdf-crop-grip,
+[data-crop-edge="r"] .pdf-crop-edge-r .pdf-crop-grip,
+[data-crop-edge="b"] .pdf-crop-edge-b .pdf-crop-grip,
+[data-crop-edge="l"] .pdf-crop-edge-l .pdf-crop-grip {
+  background: var(--accent, #3b82f6);
+  transform: scale(1.15);
+}
+.pdf-crop-dragging .pdf-crop-grip { transition: none; }
+/* In the corner, clear of the top edge's grip. */
+.pdf-crop-reset {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 25;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--fg);
+  color: var(--panel-bg, var(--bg));
+  font: 600 12px system-ui, -apple-system, sans-serif;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+}
+
+/* ----- Text layer (pdf.js), so passages can be selected and copied ----- */
+.textLayer {
+  color-scheme: only light;
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 1;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.textLayer span,
+.textLayer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent { display: contents; }
+.textLayer span[role="img"] {
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+.textLayer ::selection {
+  background: rgba(0, 90, 255, 0.25);
+  color: transparent;
+}
+.textLayer br::selection { background: transparent; }
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.textLayer.selecting .endOfContent { top: 0; }
+
+/* ----- Find in the PDF ----- */
+/* Hits, over the page in percentages (pdf-viewer-search.js). */
+.pdf-search-hits {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.pdf-search-hit {
+  position: absolute;
+  background: rgba(255, 214, 0, 0.38);
+  mix-blend-mode: multiply;
+  border-radius: 1px;
+}
+.pdf-search-hit.current {
+  background: rgba(255, 140, 0, 0.55);
+  box-shadow: 0 0 0 1px rgba(230, 110, 0, 0.9);
+}
+/* The find bar, over the top right of the pages. */
+.pdf-find-bar {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 22;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: min(380px, calc(100% - 28px));
+  padding: 4px 6px 4px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel-bg, var(--bg));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  font: 12px system-ui, -apple-system, sans-serif;
+  color: var(--fg);
+}
+.pdf-find-glyph { display: inline-flex; opacity: 0.55; }
+.pdf-find-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 2px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.pdf-find-count {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+  font-size: 11px;
+}
+.pdf-find-step,
+.pdf-find-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.pdf-find-step:hover:not(:disabled),
+.pdf-find-close:hover { background: rgba(128, 128, 128, 0.15); }
+.pdf-find-step:disabled { opacity: 0.35; cursor: default; }
+/* The matches under the field: page, then up to three lines of the text
+   around the match. */
+.pdf-find-hits {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel-bg, var(--bg));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+.pdf-find-hit {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pdf-find-hit:hover { background: rgba(128, 128, 128, 0.1); }
+.pdf-find-hit.current { background: rgba(128, 128, 128, 0.2); }
+.pdf-find-hit-page {
+  flex-shrink: 0;
+  width: 3.6em;
+  font-size: 11px;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+.pdf-find-hit-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+.pdf-find-hit-text mark {
+  background: rgba(255, 200, 0, 0.45);
+  color: inherit;
+  border-radius: 2px;
+}
+.pdf-find-more {
+  padding: 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--accent, #3b82f6);
+  font: inherit;
+  cursor: pointer;
+}
+.pdf-find-more:hover { background: rgba(128, 128, 128, 0.1); }
+
+/* ----- The PDF's outline, at the viewer's left ----- */
+.pdf-outline-panel {
+  width: 250px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel-bg, var(--bg));
+  border-right: 1px solid var(--panel-border);
+  font-family: system-ui, -apple-system, sans-serif;
+  color: var(--fg);
+}
+/* Too little room to share the row with the pages: it lies over them. */
+.pdf-outline-panel.overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 25;
+  width: min(280px, 80%);
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.25);
+}
+.pdf-outline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 6px 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.65;
+}
+.pdf-outline-close {
+  display: inline-flex;
+  padding: 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.pdf-outline-close:hover { background: rgba(128, 128, 128, 0.15); }
+.pdf-outline-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 4px 12px;
+}
+.pdf-outline-row {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.3;
+}
+.pdf-outline-row:hover { background: rgba(128, 128, 128, 0.1); }
+.pdf-outline-row.current {
+  background: rgba(128, 128, 128, 0.2);
+  font-weight: 500;
+}
+.pdf-outline-row.dead { cursor: default; opacity: 0.6; }
+.pdf-outline-toggle {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 13px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  align-self: center;
+  cursor: pointer;
+}
+.pdf-outline-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.pdf-outline-page {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----- Notes tab: Zotero page links as pills (pdf-viewer-notes.js) ----- */
+.pdf-notes-body a.pdf-notes-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pill-color, rgba(128, 128, 128, 0.6)) 28%, transparent);
+  color: inherit;
+  font-size: 11px;
+  line-height: 1.6;
+  text-decoration: none;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+.pdf-notes-body a.pdf-notes-pill:hover {
+  background: color-mix(in srgb, var(--pill-color, rgba(128, 128, 128, 0.6)) 45%, transparent);
+}
+.pdf-notes-pill-icon { display: inline-flex; opacity: 0.7; }

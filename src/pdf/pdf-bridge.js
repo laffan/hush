@@ -16,11 +16,9 @@ let currentViewer = null;
 let currentFileId = null;
 let panelObserver = null;
 
-const _scrollState = new Map();
-
 // Deep-link jump requested for the next mount of a given PDF (bookmark
-// links). Handled inside mountPdf — replacing the saved-scroll restore —
-// so the jump can't race it. See pdf-bookmarks.js#openPdfAtBookmark.
+// links). Handled inside mountPdf, after the viewer has put back its own
+// saved place (pdf-viewer-view-state.js), so the jump wins. See pdf-bookmarks.js#openPdfAtBookmark.
 let _pendingJump = null;
 
 export function requestPdfJump(fileId, page) {
@@ -29,11 +27,7 @@ export function requestPdfJump(fileId, page) {
 
 export async function mountPdf(container, fileId, state) {
   if (currentViewer && currentFileId) {
-    _scrollState.set(currentFileId, {
-      top: currentViewer.getScrollTop(),
-      left: currentViewer.getScrollLeft(),
-      zoom: currentViewer.getZoom(),
-    });
+    // Destroying reports the view it was left in, kept per PDF.
     await currentViewer.destroy();
     currentViewer = null;
     currentFileId = null;
@@ -67,8 +61,6 @@ export async function mountPdf(container, fileId, state) {
 
   const jump = _pendingJump && _pendingJump.fileId === fileId ? _pendingJump : null;
   _pendingJump = null;
-  const saved = _scrollState.get(fileId);
-  if (saved?.zoom != null) viewer.setZoom(saved.zoom);
   if (jump) {
     // Bookmark deep link: land on the bookmarked page instead of the
     // saved scroll. Instant (a smooth scroll started this close to the
@@ -77,11 +69,6 @@ export async function mountPdf(container, fileId, state) {
     requestAnimationFrame(() => {
       viewer.goToPage(jump.page, { instant: true });
       setTimeout(() => viewer.goToPage(jump.page, { instant: true }), 180);
-    });
-  } else if (saved) {
-    requestAnimationFrame(() => {
-      viewer.setScrollTop(saved.top || 0);
-      viewer.setScrollLeft(saved.left || 0);
     });
   }
 
@@ -101,11 +88,6 @@ export async function unmountPdf() {
   stopPanelObserver();
   const fid = currentFileId;
   if (currentViewer && fid) {
-    _scrollState.set(fid, {
-      top: currentViewer.getScrollTop(),
-      left: currentViewer.getScrollLeft(),
-      zoom: currentViewer.getZoom(),
-    });
     await currentViewer.destroy();
     currentViewer = null;
   }

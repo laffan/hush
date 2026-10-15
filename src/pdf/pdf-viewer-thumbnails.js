@@ -1,9 +1,18 @@
+/**
+ * Thumbnail grid over the viewer — every page at a glance, with Zotero's
+ * annotations painted in by the same painter as the pages
+ * (pdf-annot-raster.js).
+ */
+import { drawAnnotations } from "./pdf-annot-raster.js";
+import { releaseCanvas } from "./pdf-viewer-render.js";
+
 const THUMB_WIDTH = 180;
 
 /**
  * @param {HTMLElement} root       The pdf-viewer root element
  * @param {HTMLElement} scrollArea The scroll container (for goToPage context)
- * @param {object} viewerState     { getPages, getPdfDoc, isDestroyed, getAnnotations, goToPage }
+ * @param {object} viewerState     { getPages, getPdfDoc, isDestroyed, getAnnotations, goToPage,
+ *                                   onHide } — onHide: a page pick closed the grid
  */
 export function createThumbnailManager(root, viewerState) {
   let thumbPanel = null;
@@ -51,6 +60,7 @@ export function createThumbnailManager(root, viewerState) {
       cell.addEventListener("click", () => {
         viewerState.goToPage(i + 1);
         toggle();
+        viewerState.onHide?.();
       });
 
       thumbScroll.appendChild(cell);
@@ -80,7 +90,13 @@ export function createThumbnailManager(root, viewerState) {
   function clearThumb(cell) {
     if (!cell?.dataset.thumbRendered) return;
     delete cell.dataset.thumbRendered;
-    cell.querySelector(".pdf-thumb-canvas")?.remove();
+    const canvas = cell.querySelector(".pdf-thumb-canvas");
+    releaseCanvas(canvas);
+    canvas?.remove();
+    // And what pdf.js parsed to draw it: a grid scrolled end to end
+    // would otherwise keep every page of the book.
+    const idx = Number(cell.dataset.thumbIdx);
+    viewerState.getPdfDoc()?.getPage(idx + 1).then((page) => page.cleanup()).catch(() => {});
     if (!cell.querySelector(".pdf-thumb-placeholder")) {
       const placeholder = document.createElement("div");
       placeholder.className = "pdf-thumb-placeholder";
@@ -96,15 +112,6 @@ export function createThumbnailManager(root, viewerState) {
     // pin every rendered thumbnail canvas for the rest of the session.
     thumbPanel.remove();
     thumbPanel = null;
-  }
-
-  function parseAnnotPos(annot) {
-    try {
-      const raw = annot._raw?.data?.annotationPosition;
-      if (typeof raw === "string") return JSON.parse(raw);
-      if (raw && typeof raw === "object") return raw;
-    } catch (_) {}
-    return null;
   }
 
   async function renderThumb(idx) {
@@ -129,50 +136,13 @@ export function createThumbnailManager(root, viewerState) {
 
       await page.render({ canvas, viewport: svp, background: "#ffffff" }).promise;
       // Evicted (scrolled away) or torn down while rendering — drop it.
-      if (viewerState.isDestroyed() || !cell.isConnected || !cell.dataset.thumbRendered) return;
-
-      const allAnnots = viewerState.getAnnotations();
-      if (allAnnots.length) {
-        const ctx = canvas.getContext("2d");
-        for (const ann of allAnnots) {
-          const pos = parseAnnotPos(ann);
-          if (!pos || pos.pageIndex !== idx) continue;
-
-          // svp (the scaled viewport) maps PDF user space → canvas px,
-          // honouring crop-box origins / rotation — a bare
-          // `pageHeight − y` flip drifts on pages whose crop box
-          // doesn't start at (0,0).
-          if (pos.rects?.length && ann.type !== "ink") {
-            const color = ann.color || "#ffff00";
-            ctx.fillStyle = color;
-            ctx.globalAlpha = 0.3;
-            for (const rect of pos.rects) {
-              const [x1, y1, x2, y2] = rect;
-              const [ax, ay] = svp.convertToViewportPoint(x1, y1);
-              const [bx, by] = svp.convertToViewportPoint(x2, y2);
-              ctx.fillRect(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay));
-            }
-            ctx.globalAlpha = 1.0;
-          }
-
-          if (ann.type === "ink" && pos.paths?.length) {
-            ctx.strokeStyle = ann.color || "#ff0000";
-            ctx.lineWidth = Math.max(0.5, scale * 0.8);
-            ctx.lineCap = "round";
-            ctx.lineJoin = "round";
-            for (const pathPoints of pos.paths) {
-              if (!pathPoints || pathPoints.length < 2) continue;
-              ctx.beginPath();
-              for (let pi = 0; pi < pathPoints.length; pi += 2) {
-                const [px, py] = svp.convertToViewportPoint(pathPoints[pi], pathPoints[pi + 1]);
-                if (pi === 0) ctx.moveTo(px, py);
-                else ctx.lineTo(px, py);
-              }
-              ctx.stroke();
-            }
-          }
-        }
+      if (viewerState.isDestroyed() || !cell.isConnected || !cell.dataset.thumbRendered) {
+        releaseCanvas(canvas);
+        return;
       }
+
+      const ctx = canvas.getContext("2d");
+      if (ctx) drawAnnotations(ctx, svp, viewerState.getAnnotations(), idx);
 
       const ph = cell.querySelector(".pdf-thumb-placeholder");
       if (ph) ph.remove();

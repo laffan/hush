@@ -391,6 +391,21 @@ export function createDefaultSettings() {
     shortcutNbResetZoom: "Mod+0",
     shortcutNbSplit: "S",
     shortcutNbGrab: "G",
+    // PDF viewer — bare keys while a PDF has the keyboard (pdf/pdf-viewer-keys.js).
+    shortcutPdfThumbnails: "G",
+    shortcutPdfOutline: "O",
+    shortcutPdfFolded: "F",
+    shortcutPdfFoldFilters: "Shift+F",
+    shortcutPdfExpandFold: "E",
+    shortcutPdfHorizontal: "Z",
+    shortcutPdfVertical: "V",
+    shortcutPdfFit1: "1",
+    shortcutPdfFit2: "2",
+    shortcutPdfFit3: "3",
+    shortcutPdfPaged: "P",
+    shortcutPdfContinuous: "C",
+    shortcutPdfNextPage: "ArrowRight",
+    shortcutPdfPrevPage: "ArrowLeft",
 
     // Proofread mode (harper-core). The mode toggle itself isn't
     // persisted (each session starts off — see state-modes.js), but

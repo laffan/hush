@@ -1,9 +1,8 @@
 /**
- * Annotation shelf + overlay rendering for the PDF viewer.
- *
- * Extracted from pdf-viewer.js to keep each module under 700 lines.
- * All DOM structure, CSS classes, and visual behaviour are identical
- * to the original inline implementation.
+ * The annotation shelf for the PDF viewer, and scrolling to an
+ * annotation. The annotations themselves are painted into the page
+ * rasters (pdf-annot-raster.js, through the renderer's `paintPage`), the
+ * folded view's strips and the thumbnails — one painter for all of them.
  *
  * @param {HTMLElement} scrollArea  The scroll container for PDF pages
  * @param {HTMLElement} body        The .pdf-viewer-body element (shelf is appended here)
@@ -13,6 +12,7 @@
  * @param {function}    viewer.getLayoutMode     () => string
  * @param {function}    viewer.goToPage          (n: number) => void
  * @param {function}    [viewer.scrollToFold]    (annot) => boolean — folded-view delegate
+ * @param {function}    [viewer.isPaged]         () => boolean — paged sets: the page is the place
  * @param {function}    [viewer.getPdfDoc]       () => PDFDocumentProxy — shows Extract Annotations
  * @param {function}    [viewer.extractAnnotations] () => Promise<number> — reads the file's own
  *                                                annotations into the list; resolves to how many
@@ -49,64 +49,19 @@ export function pdfPointToViewport(viewport, x, y) {
   return [x, viewport.height - y]; // fallback: unrotated, origin (0,0)
 }
 
-/** Paint a list of annotations into an overlay layer sized to a page.
- *  Shared between the page overlays and the folded view. */
-export function paintAnnotationsInto(layer, pageAnnots, viewport, scaleX, scaleY) {
-  for (const annot of pageAnnots) {
-    // The file's own annotations are already in the page's raster.
-    if (annot.embedded) continue;
-    const pos = parseAnnotationPosition(annot);
-    if (!pos) continue;
-
-    if (annot.type === "ink" && pos.paths?.length) {
-      paintInkAnnotation(layer, annot, pos, scaleX, scaleY, viewport);
-    } else if (pos.rects?.length) {
-      for (const rect of pos.rects) {
-        const [x1, y1, x2, y2] = rect;
-        const [ax, ay] = pdfPointToViewport(viewport, x1, y1);
-        const [bx, by] = pdfPointToViewport(viewport, x2, y2);
-        const div = document.createElement("div");
-        div.className = "pdf-annot-highlight";
-        div.style.left = `${Math.min(ax, bx) * scaleX}px`;
-        div.style.top = `${Math.min(ay, by) * scaleY}px`;
-        div.style.width = `${Math.abs(bx - ax) * scaleX}px`;
-        div.style.height = `${Math.abs(by - ay) * scaleY}px`;
-        div.style.backgroundColor = annot.color || "#ffff00";
-        if (annot.comment) div.title = annot.comment;
-        layer.appendChild(div);
-      }
-    }
-  }
-}
-
-function paintInkAnnotation(layer, annot, pos, scaleX, scaleY, viewport) {
-  const w = Math.round(viewport.width * scaleX);
-  const h = Math.round(viewport.height * scaleY);
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.classList.add("pdf-annot-ink");
-  svg.setAttribute("width", String(w));
-  svg.setAttribute("height", String(h));
-  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
-
-  for (const pathPoints of pos.paths) {
-    if (!pathPoints || pathPoints.length < 2) continue;
-    let d = "";
-    for (let i = 0; i < pathPoints.length; i += 2) {
-      const [vx, vy] = pdfPointToViewport(viewport, pathPoints[i], pathPoints[i + 1]);
-      const x = vx * scaleX;
-      const y = vy * scaleY;
-      d += (i === 0 ? "M" : "L") + `${x},${y} `;
-    }
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", d);
-    path.setAttribute("fill", "none");
-    path.setAttribute("stroke", annot.color || "#ff0000");
-    path.setAttribute("stroke-width", String(Math.max(0.5, scaleX)));
-    path.setAttribute("stroke-linecap", "round");
-    path.setAttribute("stroke-linejoin", "round");
-    svg.appendChild(path);
-  }
-  layer.appendChild(svg);
+/** Extract Annotations: read the annotations written into the file,
+ *  cache them per fileId, and fold them into `current` beside whatever
+ *  Zotero's API supplied (an earlier extraction's entries are replaced,
+ *  not doubled). Resolves to `{ list, count }`. */
+export async function extractEmbedded(pdfDoc, attKey, fileId, current) {
+  const { extractPdfAnnotations } = await import("./pdf-annotation-extract.js");
+  const z = await import("../zotero-annotations.js");
+  const raw = await extractPdfAnnotations(pdfDoc, { parentKey: attKey || "" });
+  if (fileId) await z.saveExtractedAnnotations(fileId, raw);
+  const fromApi = current
+    .filter((a) => !a._raw?.data?.hushEmbedded)
+    .map((a) => ({ ...a, embedded: false }));
+  return { list: z.mergeAnnotationLists(fromApi, z.normalizeAnnotations(raw)), count: raw.length };
 }
 
 // Shelf width — dragged by its left edge, persisted app-wide as
@@ -177,7 +132,21 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
 
   // The Notes tab beside Annotations, once the PDF's Zotero entry turns
   // out to hold a NOTES.md (pdf-viewer-notes.js).
-  const notesTab = attachNotesTab({ content: shelfContent, title: shelfTitle });
+  const notesTab = attachNotesTab({
+    content: shelfContent,
+    title: shelfTitle,
+    annotationColor: (key) => annotations.find((a) => a.key === key)?.color || undefined,
+    // A page link into this PDF moves the viewer — to its highlight when
+    // it names one — rather than leaving for Zotero.
+    followPdfLink: (link) => {
+      if (!link.attKey || link.attKey !== viewer.getZoteroAttKey?.()) return false;
+      const annot = link.annotation && annotations.find((a) => a.key === link.annotation);
+      if (annot) scrollToAnnotation(annot);
+      else if (link.page) viewer.goToPage(link.page);
+      else return false;
+      return true;
+    },
+  });
 
   // Left-edge resize strip, live only while the shelf is open (CSS).
   const shelfResize = document.createElement("div");
@@ -376,27 +345,26 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
     if (viewer.scrollToFold && viewer.scrollToFold(annot)) return;
     const pages = viewer.getPages();
     const pos = parseAnnotationPosition(annot);
-    if (!pos) {
-      const pageNum = parseInt(annot.pageLabel, 10);
-      if (!isNaN(pageNum)) viewer.goToPage(pageNum);
+    // No position, or the paged view (a set is the place, not a point
+    // on it): go to the page.
+    if (!pos || viewer.isPaged?.()) {
+      const n = pos ? pos.pageIndex + 1 : parseInt(annot.pageLabel, 10);
+      if (!isNaN(n)) viewer.goToPage(n);
       return;
     }
-    const pageIdx = pos.pageIndex;
-    if (pageIdx < 0 || pageIdx >= pages.length) return;
-    const p = pages[pageIdx];
+    const p = pages[pos.pageIndex];
     if (!p?.wrapper) return;
-
     const scale = viewer.getEffectiveZoom();
-    const firstRect = pos.rects?.[0];
-    if (!firstRect) {
+    // Top-left of the first rect, or the first point of a drawing —
+    // through the viewport transform so crop-box origins don't skew it.
+    const rect = pos.rects?.[0];
+    const path = pos.paths?.[0];
+    const anchor = rect ? [rect[0], rect[3]] : path && path.length >= 2 ? [path[0], path[1]] : null;
+    if (!anchor) {
       p.wrapper.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
-
-    // Top-left corner of the annotation in top-origin page units —
-    // through the viewport transform so crop-box origins don't skew it.
-    const [vx, vy] = pdfPointToViewport(p.viewport, firstRect[0], firstRect[3]);
-
+    const [vx, vy] = pdfPointToViewport(p.viewport, anchor[0], anchor[1]);
     if (viewer.getLayoutMode() === "horizontal") {
       const targetLeft = p.wrapper.offsetLeft + vx * scale - scrollArea.clientWidth / 3;
       scrollArea.scrollTo({ left: Math.max(0, targetLeft), behavior: "smooth" });
@@ -406,50 +374,13 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
     }
   }
 
-  // ── Annotation rendering on pages ─────────────────────────────────
+  // ── The list ─────────────────────────────────────────────────────
   function setAnnotations(annots) {
-    const pages = viewer.getPages();
     annotations = annots || [];
-    for (let i = 0; i < pages.length; i++) {
-      if (pages[i].rendered) paintAnnotationsOnPage(i);
-    }
     shelf.classList.toggle("has-annotations", annotations.length > 0);
     paintColorFilter();
     if (shelfOpen) rebuildShelfList();
-  }
-
-  function refreshAnnotations() {
-    const pages = viewer.getPages();
-    for (let i = 0; i < pages.length; i++) {
-      const layer = pages[i].wrapper?.querySelector(".pdf-annot-layer");
-      if (layer) layer.remove();
-      if (pages[i].rendered) paintAnnotationsOnPage(i);
-    }
-    if (shelfOpen) rebuildShelfList();
-  }
-
-  function paintAnnotationsOnPage(pageIdx) {
-    const pages = viewer.getPages();
-    const p = pages[pageIdx];
-    if (!p?.rendered || !p.canvas) return;
-    // The overlay joins the page's content box so it stretches with the
-    // raster during a drag-resize; geometry uses the paint-time content
-    // size (offset* ignores the stretch transform), not the live
-    // wrapper size, so a mid-resize paint can't skew it.
-    const host = p.contentEl || p.wrapper;
-    let layer = host.querySelector(".pdf-annot-layer");
-    if (layer) layer.remove();
-    layer = document.createElement("div");
-    layer.className = "pdf-annot-layer";
-    const pageAnnots = annotations.filter(a => {
-      const pos = parseAnnotationPosition(a);
-      return pos && pos.pageIndex === pageIdx;
-    });
-    if (!pageAnnots.length) return;
-    const scaleX = host.offsetWidth / p.viewport.width;
-    const scaleY = host.offsetHeight / p.viewport.height;
-    paintAnnotationsInto(layer, pageAnnots, p.viewport, scaleX, scaleY);
-    if (layer.children.length) host.appendChild(layer);
+    notesTab.refresh();
   }
 
   // ── Public API ────────────────────────────────────────────────────
@@ -457,9 +388,10 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
     shelf,
     toggleShelf,
     setAnnotations,
-    refreshAnnotations,
-    paintAnnotationsOnPage,
-    /** Provide current annotations for suspend/resume snapshots */
+    /** Rebuild the list (the rasters are the renderer's to repaint). */
+    refreshList: () => { if (shelfOpen) rebuildShelfList(); },
+    scrollToAnnotation,
+    isShelfOpen: () => shelfOpen,
     getAnnotations() { return annotations; },
     setNotes: notesTab.setNotes,
   };

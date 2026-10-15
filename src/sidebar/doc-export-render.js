@@ -25,11 +25,11 @@ const PREVIEW_MAX_PAGES = 12;
 
 /** Rasterize the rendered PDF into the preview pane via pdf.js. */
 export async function paintPdfPreview(previewEl, bytes) {
-  const { getPdfjs } = await import("../pdf/pdf-viewer.js");
+  const { getPdfjs, PDFJS_ASSETS } = await import("../pdf/pdfjs-loader.js");
   const pdfjs = await getPdfjs();
   // pdf.js can detach the underlying buffer, so hand it a private copy
   // and keep our cached bytes intact for the eventual save.
-  const doc = await pdfjs.getDocument({ data: bytes.slice() }).promise;
+  const doc = await pdfjs.getDocument({ data: bytes.slice(), ...PDFJS_ASSETS }).promise;
   const frag = document.createDocumentFragment();
   const dpr = window.devicePixelRatio || 1;
   const avail = Math.max(160, (previewEl.clientWidth || 320) - 8);

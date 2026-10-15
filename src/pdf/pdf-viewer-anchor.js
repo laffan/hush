@@ -1,0 +1,62 @@
+/**
+ * Keeping the reader's place across a relayout. When the pages change
+ * size — the shelf or the outline opening beside them, a pane resized,
+ * a window resize in a fit mode, a reading crop — the old scroll offset
+ * points somewhere else; the place is kept instead as a page and a
+ * fraction into it.
+ */
+
+/** The first page reaching into view, and how far into it the view
+ *  starts: `{ idx, frac }`, or null. `horiz`: the pages run side by side. */
+export function viewAnchor(area, pages, horiz) {
+  const ar = area.getBoundingClientRect();
+  const edge = horiz ? ar.left : ar.top;
+  for (let i = 0; i < pages.length; i++) {
+    const r = pages[i].wrapper.getBoundingClientRect();
+    if ((horiz ? r.right : r.bottom) <= edge) continue;
+    const size = horiz ? r.width : r.height;
+    return { idx: i, frac: size ? (edge - (horiz ? r.left : r.top)) / size : 0 };
+  }
+  return null;
+}
+
+/** Scroll so the view starts where `a` says, in the new geometry. Left
+ *  alone when it already does: any write to the scroll offset stops a
+ *  smooth scroll under way (an outline jump, a page turn). */
+export function restoreAnchor(area, pages, horiz, a) {
+  const w = pages[a.idx]?.wrapper;
+  if (!w) return;
+  const ar = area.getBoundingClientRect();
+  const r = w.getBoundingClientRect();
+  const delta = horiz ? r.left - ar.left + a.frac * r.width : r.top - ar.top + a.frac * r.height;
+  if (Math.abs(delta) < 1) return;
+  if (horiz) area.scrollLeft += delta;
+  else area.scrollTop += delta;
+}
+
+/** Scroll (smoothly, top to bottom) to `top`, in PDF user space (y up),
+ *  on page `p` — a little above it, so the line is not on the edge. */
+export function scrollToPagePoint(area, p, top) {
+  const y = p.viewport.convertToViewportPoint(p.viewport.viewBox[0], top)[1];
+  const frac = Math.max(0, Math.min(1, y / p.viewport.height));
+  const wr = p.wrapper.getBoundingClientRect();
+  const ar = area.getBoundingClientRect();
+  const target = area.scrollTop + wr.top - ar.top + frac * wr.height - 16;
+  area.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
+}
+
+/** Put the point `frac` of the way down page `p` at the centre of the
+ *  view (at once). Side by side, the page is centred across instead. */
+export function centerPagePoint(area, p, frac, horiz) {
+  const wr = p.wrapper.getBoundingClientRect();
+  const ar = area.getBoundingClientRect();
+  if (horiz) area.scrollLeft += wr.left + wr.width / 2 - (ar.left + area.clientWidth / 2);
+  else area.scrollTop += wr.top + frac * wr.height - (ar.top + area.clientHeight / 2);
+}
+
+/** How far down page `p` (0–1) the view's vertical centre falls. */
+export function pageFracAtCenter(area, p) {
+  const wr = p.wrapper.getBoundingClientRect();
+  const ar = area.getBoundingClientRect();
+  return wr.height ? Math.max(0, Math.min(1, (ar.top + area.clientHeight / 2 - wr.top) / wr.height)) : 0;
+}

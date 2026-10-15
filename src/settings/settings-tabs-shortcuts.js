@@ -95,7 +95,33 @@ export const shortcutCategories = [
       { key: "shortcutNbGrab", label: "Grab tool" },
     ],
   },
+  {
+    name: "PDF",
+    shortcuts: [
+      { key: "shortcutPdfThumbnails", label: "Thumbnail view" },
+      { key: "shortcutPdfOutline", label: "Outline" },
+      { key: "shortcutPdfFolded", label: "Toggle the folded view" },
+      { key: "shortcutPdfFoldFilters", label: "Folded view filters" },
+      { key: "shortcutPdfExpandFold", label: "Open / close the fold under the pointer" },
+      { key: "shortcutPdfHorizontal", label: "Horizontal scroll" },
+      { key: "shortcutPdfVertical", label: "Vertical scroll" },
+      { key: "shortcutPdfFit1", label: "Fit one page" },
+      { key: "shortcutPdfFit2", label: "Fit two pages" },
+      { key: "shortcutPdfFit3", label: "Fit three pages" },
+      { key: "shortcutPdfPaged", label: "Paged view (sets of pages)" },
+      { key: "shortcutPdfContinuous", label: "Continuous view" },
+      { key: "shortcutPdfNextPage", label: "Next page (next fold, when folded)" },
+      { key: "shortcutPdfPrevPage", label: "Previous page (previous fold, when folded)" },
+    ],
+  },
 ];
+
+/** Categories whose bare keys only listen on one kind of surface — a
+ *  notebook's tool keys and a PDF's view keys can share a key without
+ *  ever meeting, so they aren't a conflict. */
+const SURFACE_OF_CATEGORY = { Notebooks: "notebook", PDF: "pdf" };
+const surfaceOf = new Map(shortcutCategories.flatMap((c) =>
+  c.shortcuts.map((d) => [d.key, SURFACE_OF_CATEGORY[c.name] || null])));
 
 // Flat list for conflict detection
 export const shortcutDefs = shortcutCategories.flatMap(cat => cat.shortcuts);
@@ -144,7 +170,7 @@ export function filetypeShortcutKeys(filetype) {
 
   let keys;
   if (filetype === "notebook") keys = [...notebook, ...editing, ...formatting];
-  else if (filetype === "pdf") keys = []; // PDF zoom is hard-wired, not a settings field
+  else if (filetype === "pdf") keys = keysInCategory("PDF");
   else if (filetype === "stack") keys = [...editing, ...formatting];
   else keys = [...docModes, ...editing, ...formatting]; // document / project
   return new Set([...keys, ...panes, ...appWide]);
@@ -160,8 +186,11 @@ export function findConflict(settings, key) {
   const val = settings[key];
   if (!val) return null;
   const normalized = normalizeShortcut(val);
+  const surface = surfaceOf.get(key);
   for (const def of shortcutDefs) {
     if (def.key === key) continue;
+    const other = surfaceOf.get(def.key);
+    if (surface && other && surface !== other) continue;
     if (settings[def.key] && normalizeShortcut(settings[def.key]) === normalized) return def.label;
   }
   return null;

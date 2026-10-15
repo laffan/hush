@@ -33,7 +33,7 @@
  *    exactly the problem the budget removes.
  */
 
-import { getPdfjs } from "./pdfjs-loader.js";
+import { getPdfjs, PDFJS_ASSETS } from "./pdfjs-loader.js";
 import { drawAnnotationsOnPage, loadPdfAnnotations } from "./pdf-annot-raster.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
@@ -195,7 +195,7 @@ export async function buildProofNotebookContent(bytes, sourceName, sourcePdfFile
   const nbBookmarks = [];
   let bmSeq = 0;
   const pdfjs = await getPdfjs();
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise;
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes), ...PDFJS_ASSETS }).promise;
   try {
     const wanted = (pageNumbers && pageNumbers.length ? pageNumbers : null)
       || Array.from({ length: doc.numPages }, (_, i) => i + 1);
@@ -289,7 +289,7 @@ async function sourceBookmarks(fileId) {
  *  it before anything is rasterised. */
 async function pageCountOf(bytes) {
   const pdfjs = await getPdfjs();
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise;
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes), ...PDFJS_ASSETS }).promise;
   const n = doc.numPages;
   await doc.destroy();
   return n;
