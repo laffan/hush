@@ -126,6 +126,10 @@ export function leafIcon(item) {
 
 // Six-dot drag-handle glyph, shared by the desk-switcher popover rows and
 // the all-desks file-panel rows so desks can be grabbed for reordering.
+/** Open in New Window — a window with an arrow leaving its corner. The
+ *  sidebar row menu's icon row and the desk picker's row button. */
+export const NEW_WINDOW_SVG = `<svg viewBox="0 0 16 16"><path d="M9.5 2.5H13.5V6.5 M13.5 2.5L8 8 M7 3.5H3.5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9"/></svg>`;
+
 export const DRAG_HANDLE_SVG = `<svg viewBox="0 0 16 16" class="drag-handle-icon" width="12" height="12" aria-hidden="true"><circle cx="6" cy="4" r="1.2"/><circle cx="10" cy="4" r="1.2"/><circle cx="6" cy="8" r="1.2"/><circle cx="10" cy="8" r="1.2"/><circle cx="6" cy="12" r="1.2"/><circle cx="10" cy="12" r="1.2"/></svg>`;
 
 // The sidebar ratchet glyph (sidebar_icons/ratchet.svg) shrunk to badge

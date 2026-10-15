@@ -19,15 +19,13 @@ import { paneIndicatorsFor } from "./sidebar/files-panel-pane-indicators.js";
 import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "./pane/pane-state.js";
 import { sendSelectedToFile } from "./selection-extract.js";
 import { addNotebookAsGutter } from "./project/gutter-commands.js";
-import { typeIcons, leafIcon, deskRatchetGlyph } from "./sidebar/files-panel-shared.js";
+import { typeIcons, leafIcon, deskRatchetGlyph, NEW_WINDOW_SVG } from "./sidebar/files-panel-shared.js";
 import { collectFileLeaves, activeDeskSubtree } from "./command-palette-helpers.js";
 import { getDeskRecentFileIds } from "./state/recent-files.js";
 import deskRaw from "./sidebar/sidebar_icons/desk.svg?raw";
 import { customIconSvg, deskIconName } from "./ui/custom-icons.js";
 import { multiWindowAvailable, openDeskInNewWindow } from "./multi-window.js";
 
-// A window with an arrow leaving its corner — Open in New Window.
-const NEW_WINDOW_ICON = `<svg viewBox="0 0 16 16"><path d="M9.5 2.5H13.5V6.5 M13.5 2.5L8 8 M7 3.5H3.5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9"/></svg>`;
 
 /** Pane lands centred on its (x,y) anchor — pre-shift by half the
  *  default pane size so the click-point coordinate (returned by
@@ -165,7 +163,7 @@ export function enterDeskPicker(palette, state) {
       try { await state.setActiveDesk(d.id); } catch (e) { console.error("setActiveDesk failed:", e); }
     },
     trailingAction: newWindow ? {
-      icon: NEW_WINDOW_ICON,
+      icon: NEW_WINDOW_SVG,
       title: "Open in New Window",
       run: (s) => void openDeskInNewWindow(s, d.id),
     } : null,

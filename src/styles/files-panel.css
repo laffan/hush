@@ -395,6 +395,11 @@
   background: rgba(128, 128, 128, 0.15);
 }
 
+/* Open in New Window stands apart from the edits, at the row's right. */
+.tree-row-menu-icon-open-in-new-window {
+  margin-left: auto;
+}
+
 /* Active flag (row is currently flagged → button unflags) renders
    filled so the state is readable at a glance. */
 .tree-row-menu-icon-flag.active svg path {

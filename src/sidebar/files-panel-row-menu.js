@@ -13,6 +13,7 @@
 import { findNode, findParentOfNode } from "../state/tree-helpers.js";
 import { AppState } from "../state/state.js";
 import { multiWindowAvailable } from "../multi-window.js";
+import { NEW_WINDOW_SVG } from "./files-panel-shared.js";
 
 export const ROW_COLORS = [
   { key: "red",    rgba: "rgba(255, 82, 82, 0.13)",   swatch: "#ef5350" },
@@ -73,13 +74,17 @@ const MENU_ICONS = {
   flag: `<svg viewBox="0 0 16 16"><path d="M3 10s1-1 3-1 4 2 6 2 3-1 3-1V2s-1 1-3 1-4-2-6-2-3 1-3 1z" /><line x1="3" y1="14" x2="3" y2="10" /></svg>`,
   rename: `<svg viewBox="0 0 16 16"><path d="M11 2l3 3-8.5 8.5L2 14l.5-3.5z" /><line x1="9.5" y1="3.5" x2="12.5" y2="6.5" /></svg>`,
   delete: `<svg viewBox="0 0 16 16"><polyline points="2 4 4 4 14 4" /><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" /><path d="M12 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4" /></svg>`,
+  "open-in-new-window": NEW_WINDOW_SVG,
 };
 
 // The actions promoted from labeled entries to the icon row. Only the
 // standard single-word labels move up — context-specific delete labels
 // ("Remove from Project") stay as labeled entries so their meaning
 // isn't lost behind a trash glyph.
-const ICON_ROW_LABELS = { flag: ["Flag", "Unflag"], rename: ["Rename"], delete: ["Delete"] };
+const ICON_ROW_LABELS = {
+  flag: ["Flag", "Unflag"], rename: ["Rename"], delete: ["Delete"],
+  "open-in-new-window": ["Open in New Window"],
+};
 // temp/temp-icons/shelf-icon.svg, restroked to currentColor (2×2 grid).
 export const SHELF_SVG = `<svg viewBox="0 0 24 24"><path d="M14 20.4V14.6C14 14.2686 14.2686 14 14.6 14H20.4C20.7314 14 21 14.2686 21 14.6V20.4C21 20.7314 20.7314 21 20.4 21H14.6C14.2686 21 14 20.7314 14 20.4Z"/><path d="M3 20.4V14.6C3 14.2686 3.26863 14 3.6 14H9.4C9.73137 14 10 14.2686 10 14.6V20.4C10 20.7314 9.73137 21 9.4 21H3.6C3.26863 21 3 20.7314 3 20.4Z"/><path d="M14 9.4V3.6C14 3.26863 14.2686 3 14.6 3H20.4C20.7314 3 21 3.26863 21 3.6V9.4C21 9.73137 20.7314 10 20.4 10H14.6C14.2686 10 14 9.73137 14 9.4Z"/><path d="M3 9.4V3.6C3 3.26863 3.26863 3 3.6 3H9.4C9.73137 3 10 3.26863 10 3.6V9.4C10 9.73137 9.73137 10 9.4 10H3.6C3.26863 10 3 9.73137 3 9.4Z"/></svg>`;
 
@@ -349,6 +354,9 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
     const iconable = ICON_ROW_LABELS[ent.action]?.includes(ent.label);
     (iconable ? iconEntries : listEntries).push(ent);
   }
+  // Open in New Window rides at the row's right end (files-panel.css
+  // pushes it there), so it goes last whatever its place in the list.
+  iconEntries.sort((a, b) => (a.action === "open-in-new-window") - (b.action === "open-in-new-window"));
 
   if (iconEntries.length) {
     const iconRow = document.createElement("div");
