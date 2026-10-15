@@ -23,7 +23,7 @@ import { collectVisibleDocs, handleDocMultiClick, installDragSelect } from "./fi
 import {
   handleRename, handleRevealInFinder, handleConvertContainer,
   handleDuplicate, handleDelete, handleEmptyTrash, handleOpenAsStack,
-  handleConvertProjectToDoc,
+  handleConvertProjectToDoc, handleConvertProject,
   handleRestore, handlePermanentDelete, handleDeskAction, handleOpenInNewWindow,
 } from "./files-panel-actions.js";
 import { isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree, renderTabMarkerRow, openDocAtTab } from "./files-panel-tabs.js";
@@ -452,6 +452,11 @@ function dispatchRowAction(action, nodeId, opts) {
     import("./send-to-desk-modal.js").then((m) => m.openSendToDeskModal(storedState, nodeId, "send"));
   } else if (action === "convert-project-to-doc") {
     handleConvertProjectToDoc(nodeId, storedState, refresh);
+  } else if (action === "convert-project") {
+    const PICKED = { folder: ["convert-container", { targetType: "folder" }], desk: ["convert-to-desk"], doc: ["convert-project-to-doc"] };
+    handleConvertProject(nodeId, opts?.convertTargets, storedState, (target) => {
+      if (PICKED[target]) dispatchRowAction(PICKED[target][0], nodeId, PICKED[target][1]);
+    });
   } else if (action === "toggle-numbering") {
     const node = findNode(storedState.fileTree, nodeId);
     if (node) {

@@ -24,6 +24,10 @@ import { collectFileLeaves, activeDeskSubtree } from "./command-palette-helpers.
 import { getDeskRecentFileIds } from "./state/recent-files.js";
 import deskRaw from "./sidebar/sidebar_icons/desk.svg?raw";
 import { customIconSvg, deskIconName } from "./ui/custom-icons.js";
+import { multiWindowAvailable, openDeskInNewWindow } from "./multi-window.js";
+
+// A window with an arrow leaving its corner — Open in New Window.
+const NEW_WINDOW_ICON = `<svg viewBox="0 0 16 16"><path d="M9.5 2.5H13.5V6.5 M13.5 2.5L8 8 M7 3.5H3.5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9"/></svg>`;
 
 /** Pane lands centred on its (x,y) anchor — pre-shift by half the
  *  default pane size so the click-point coordinate (returned by
@@ -139,10 +143,14 @@ export function enterSendSelectedPicker(palette, state) {
 /** Replace the palette's command list with one row per desk so the
  *  "Switch Desks" flow runs inside the command palette — same look and
  *  arrow-key / return navigation as the file picker. The active desk is
- *  marked "current" and picking it is a no-op. */
+ *  marked "current" and picking it is a no-op. Where a second window
+ *  can open, each row also carries a button at its right edge that opens
+ *  that desk in a new window instead (the current desk too — a second
+ *  window onto it). */
 export function enterDeskPicker(palette, state) {
   const desks = state.settings?.desks || [];
   const activeId = state.settings?.activeDeskId;
+  const newWindow = multiWindowAvailable();
   const items = desks.map((d) => ({
     id: "desk-pick-" + d.id,
     label: (d.name || "Untitled desk") + (d.id === activeId ? "  (current)" : ""),
@@ -156,6 +164,11 @@ export function enterDeskPicker(palette, state) {
       if (d.id === activeId || typeof state.setActiveDesk !== "function") return;
       try { await state.setActiveDesk(d.id); } catch (e) { console.error("setActiveDesk failed:", e); }
     },
+    trailingAction: newWindow ? {
+      icon: NEW_WINDOW_ICON,
+      title: "Open in New Window",
+      run: (s) => void openDeskInNewWindow(s, d.id),
+    } : null,
   }));
   palette.setItems(items, "Switch to desk…");
 }

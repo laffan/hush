@@ -36,7 +36,10 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
     { id: "desk-ratchet", section: "Desks", icon: icons.ratchet, shortcutKey: null, ctx: "shared",
       label: getDeskRatchet(state) ? "Stop Desk ratchet mode" : "Start Desk ratchet mode",
       action: (s) => toggleDeskRatchet(s) },
-    { id: "desk-switch", section: "Desks", label: "Switch Desks", icon: icons.desk, shortcutKey: "shortcutSwitchDesks", ctx: "shared",
+    // The desk switcher — what the Switch desks shortcut (⌃⇧D) opens. Its
+    // old name stays searchable, and "open desk" / "go to desk" find it.
+    { id: "desk-switch", section: "Desks", label: "Open Desk Switcher", icon: icons.desk, shortcutKey: "shortcutSwitchDesks", ctx: "shared",
+      keywords: "switch desks change go to open desk picker choose select jump",
       hiddenIf: (s) => !multiDesk(s),
       keepOpen: true,
       action: (s, p) => enterDeskPicker(p, s) },

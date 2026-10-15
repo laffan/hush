@@ -142,7 +142,8 @@ export async function fetchWindowList() {
  *  "restore last file" behaviour. */
 export async function openInNewWindow(fileId, fileType, deskId = null) {
   if (!IS_TAURI) return;
-  if (!fileId || !fileType) return;
+  // A desk with nothing to land on opens on its desk alone.
+  if ((!fileId || !fileType) && !deskId) return;
   const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
   // Unique label so the registry can distinguish windows opened in quick
   // succession. Crypto's randomUUID is widely available in WebViews.
@@ -150,9 +151,10 @@ export async function openInNewWindow(fileId, fileType, deskId = null) {
     ? crypto.randomUUID().replace(/-/g, "").slice(0, 12)
     : Math.random().toString(36).slice(2, 14);
   const label = `window-${id}`;
-  const url =
-    `index.html#file=${encodeURIComponent(fileId)}&type=${encodeURIComponent(fileType)}`
-    + (deskId ? `&desk=${encodeURIComponent(deskId)}` : "");
+  const hash = [];
+  if (fileId && fileType) hash.push(`file=${encodeURIComponent(fileId)}`, `type=${encodeURIComponent(fileType)}`);
+  if (deskId) hash.push(`desk=${encodeURIComponent(deskId)}`);
+  const url = `index.html#${hash.join("&")}`;
   // iPad multi-window is native since Tauri 2.11: `new WebviewWindow` spawns
   // a real UIScene with full IPC, seeded by the same URL hash the desktop
   // path uses. iOS scenes are sized/decorated by the system, so the desktop
@@ -186,6 +188,17 @@ export async function openInNewWindow(fileId, fileType, deskId = null) {
   });
 }
 
+/** Open a desk in a window of its own (the desk picker's button). The
+ *  window lands where switching to that desk would: its last file, else
+ *  the first thing in its Inbox — resolved here, in the opener, so the
+ *  new window boots straight onto it — or, for an empty desk, on the
+ *  desk with no file selected. */
+export async function openDeskInNewWindow(state, deskId) {
+  if (!deskId) return;
+  const { deskLandingFile } = await import("./state/state-desks-ops.js");
+  const landing = deskLandingFile(state, deskId);
+  await openInNewWindow(landing?.fileId || null, landing?.type || null, deskId);
+}
 
 /** Notify other windows that a piece of cross-window state mutated.
  *  `kind` is `"settings"` or `"files"`. The originator label is embedded

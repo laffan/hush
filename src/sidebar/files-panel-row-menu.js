@@ -138,7 +138,7 @@ function pdfAwaitingFile(fileId) {
 }
 
 /** Compute the list of menu entries that apply to a given tree row.
- *  Each entry: `{ action, label, targetType? }`. */
+ *  Each entry: `{ action, label, targetType?, convertTargets? }`. */
 function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   // Desk rows (only rendered in the all-desks view) carry their own
   // small action set — set-active is the headline action since the
@@ -220,20 +220,31 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   if (isDoc && inProject) {
     entries.push({ action: "use-as-note", label: item?.useAsNote ? "Stop using as note" : "Use as note" });
   }
+  // A project's conversions — to a folder, to a desk of its own, to one
+  // tabbed document — sit behind a single "Convert to…", which opens the
+  // Convert Project chooser (files-panel-actions.js#handleConvertProject)
+  // with whichever of them apply. A folder keeps its two in the menu.
+  const isProject = nodeType === "project" && !isSpecial;
+  const convertTargets = [];
   if (!isSpecial && isContainer && !item?.syncFolderId) {
-    const target = nodeType === "folder" ? "project" : "folder";
-    entries.push({ action: "convert-container", label: `Convert to ${target}`, targetType: target });
+    if (isProject) convertTargets.push("folder");
+    else entries.push({ action: "convert-container", label: "Convert to project", targetType: "project" });
   }
   // A folder or project can become a desk of its own, or move whole to
   // another desk (state-desks-ops.js / send-to-desk-modal.js). Move needs
   // somewhere to go, which only `openRowMenu` can see, so it drops the
   // entry again while there is one desk.
-  if (!isSpecial && isContainer && !item?.syncFolderId && !item?.pdfFolder) {
-    entries.push({ action: "convert-to-desk", label: "Convert to Desk" });
-    entries.push({ action: "move-to-desk", label: "Move to Desk\u2026" });
+  const deskable = !isSpecial && isContainer && !item?.syncFolderId && !item?.pdfFolder;
+  if (deskable) {
+    if (isProject) convertTargets.push("desk");
+    else entries.push({ action: "convert-to-desk", label: "Convert to Desk" });
   }
-  if (nodeType === "project" && !isSpecial) {
-    entries.push({ action: "convert-project-to-doc", label: "Convert to Doc" });
+  if (isProject) {
+    convertTargets.push("doc");
+    entries.push({ action: "convert-project", label: "Convert to\u2026", convertTargets });
+  }
+  if (deskable) entries.push({ action: "move-to-desk", label: "Move to Desk\u2026" });
+  if (isProject) {
     entries.push({ action: "toggle-numbering", label: item?.showNumbers ? "Hide numbers" : "Show numbers" });
   }
   // Convert to Project, Split Headings to Files and Convert Headings to
@@ -354,7 +365,7 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         closeRowMenu();
-        dispatchRowAction(ent.action, nodeId, { anchor: anchorBtn, targetType: ent.targetType });
+        dispatchRowAction(ent.action, nodeId, { anchor: anchorBtn, targetType: ent.targetType, convertTargets: ent.convertTargets });
       });
       iconRow.appendChild(btn);
     }
@@ -371,7 +382,7 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
     item.addEventListener("click", (e) => {
       e.stopPropagation();
       closeRowMenu();
-      dispatchRowAction(ent.action, nodeId, { anchor: anchorBtn, targetType: ent.targetType });
+      dispatchRowAction(ent.action, nodeId, { anchor: anchorBtn, targetType: ent.targetType, convertTargets: ent.convertTargets });
     });
     menu.appendChild(item);
   }

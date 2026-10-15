@@ -11,7 +11,7 @@
  * create a circular dependency).
  */
 import { findNode, isCardsHome } from "../state/tree-helpers.js";
-import { showConfirmModal, showDeleteConfirmModal, showPromptModal } from "./files-panel-shared.js";
+import { showChoiceModal, showConfirmModal, showDeleteConfirmModal, showPromptModal } from "./files-panel-shared.js";
 
 /** Desk row-menu actions (all-desks view): set-active / rename / delete.
  *  Kept here so files-panel.js stays under the line cap. */
@@ -143,6 +143,26 @@ export function handleConvertProjectToDoc(nodeId, state, refreshAfter) {
     confirmLabel: "Convert",
     onConfirm: () => state.convertProjectToDoc(nodeId).then(() => refreshAfter()),
   });
+}
+
+/** What a project can become, as the Convert Project chooser lists it. */
+const PROJECT_CONVERSIONS = {
+  folder: { label: "Folder", detail: "The files stay where they are, without the project's joined view, custom order or numbering." },
+  desk: { label: "Desk", detail: "A desk of its own, with everything in the project in it." },
+  doc: { label: "Tabbed Doc", detail: "One document, each of the project's documents a tab of it. Other files move to a folder beside it." },
+};
+
+/** The project row menu's single "Convert to…": a chooser over every
+ *  conversion `targets` allows (the menu decides which apply). The pick
+ *  goes to `onPick`, which runs that conversion's own flow — its own
+ *  confirmation included — so the chooser adds a step, never skips one. */
+export function handleConvertProject(nodeId, targets, state, onPick) {
+  const node = findNode(state.fileTree, nodeId);
+  if (!node || node.type !== "project") return;
+  const options = (targets || []).filter((t) => PROJECT_CONVERSIONS[t])
+    .map((t) => ({ id: t, ...PROJECT_CONVERSIONS[t] }));
+  if (!options.length) return;
+  showChoiceModal({ title: "Convert Project", message: `Turn "${node.name}" into:`, options, onPick });
 }
 
 export function handleDuplicate(nodeId, state, refreshAfter) {

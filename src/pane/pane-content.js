@@ -220,7 +220,9 @@ async function loadNotebookPane(pane) {
   canvas.state.hostFileId = pane.fileId; // bookmark links are built from it
   // A pane is mostly for reference, and the full bar takes a large share
   // of its frame — every notebook pane (a wikilink peek included) opens
-  // with the toolbar folded to its grip, a click away.
+  // with the toolbar attached to its bottom edge and folded to its grip,
+  // a click away.
+  canvas.state.setDrawingToolbarPosition("bottom");
   canvas.state.setDrawingToolbarMinimized(true);
   pane.notebook = canvas;
   // A pane that was already docked when this canvas mounted (restore at

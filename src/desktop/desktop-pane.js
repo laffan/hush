@@ -99,6 +99,8 @@ export async function mountDesktopPane(pane, state) {
   // instead: read-only, like the rest of the pane.
   canvas.state.desktopStickyTarget = containerId;
   initDesktopConnections(canvas);
+  // Bottom + folded, as the full-window Desktop and every notebook pane.
+  canvas.state.setDrawingToolbarPosition("bottom");
   canvas.state.setDrawingToolbarMinimized(true);
   canvas.applySettings({ ...computeNotebookSettings(state, null), ...BG });
   // Held on `pane.notebook` so the pane system's generic teardown and

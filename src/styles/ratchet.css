@@ -117,7 +117,10 @@
   background: var(--theme-bg, var(--bg));
   padding: 2px 8px;
   border-radius: 6px;
-  z-index: var(--z-modal-top);
+  /* Over the page's chrome (panes, sidebar, stickies) but under every
+     transient overlay, popover and modal — the command palette's and a
+     modal's darkening cover it like the rest of the page. */
+  z-index: calc(var(--z-overlay) - 1);
   opacity: 1;
   pointer-events: none;
   user-select: none;

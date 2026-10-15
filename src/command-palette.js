@@ -325,6 +325,24 @@ function renderList(listEl, state) {
       wrap.appendChild(cmd.paneIndicators);
       row.appendChild(wrap);
     }
+    // A second thing a row can do, as a button at its right edge (the
+    // desk picker's Open in New Window). Its own click closes the palette
+    // and runs it instead of the row's action.
+    if (cmd.trailingAction) {
+      const t = cmd.trailingAction;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "cmd-palette-trailing";
+      btn.innerHTML = t.icon;
+      btn.title = t.title;
+      btn.setAttribute("aria-label", t.title);
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        close();
+        t.run(state);
+      });
+      row.appendChild(btn);
+    }
     row.addEventListener("click", () => {
       const run = listEl.__runCommand;
       if (run) run(cmd);

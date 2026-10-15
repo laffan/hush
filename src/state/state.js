@@ -241,6 +241,8 @@ export class AppState {
           } else {
             await phase("create first file", () => this.newFile());
           }
+        } else if (initialDesk) {
+          // A desk opened in its own window with nothing to land on (openDeskInNewWindow): the global last file is another desk's — no file selected.
         } else {
           // Restore last open file/project/notebook
           const lastProjectId = this.settings.lastProjectId;

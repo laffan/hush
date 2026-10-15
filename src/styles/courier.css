@@ -334,18 +334,27 @@ html[data-theme="dark"] .courier-sheet {
   text-underline-offset: 3px;
 }
 
-/* Narrow windows stack the columns. */
+/* Narrow windows stack the columns, and the sheet takes nearly the
+   window's height so both halves have room: the choices above, the
+   sticky, card or document's end below. The rows are sized outright —
+   with `auto 1fr` the choices' row grew to the whole destination list
+   before the writing row got anything (a percentage max-height on the
+   grid item doesn't bind while its track is sized), which left an
+   append no editor at all and a sticky crushed flat. */
 @media (max-width: 620px) {
   .courier-sheet {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
-    height: min(560px, calc(100% - var(--top-chrome-inset, 0px) - 48px));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(150px, 34%) minmax(0, 1fr);
+    height: min(780px, calc(100% - var(--top-chrome-inset, 0px) - 48px));
   }
   .courier-left {
     border-right: none;
     border-bottom: 1px solid color-mix(in srgb, var(--fg) 7%, transparent);
-    max-height: 45%;
+    padding: 16px 18px 10px;
   }
+  .courier-right { padding: 16px 18px 14px; }
+  .courier-right .courier-sticky-stage,
+  .courier-right .courier-card-stage { padding: 12px; }
 }
 
 /* Card — the card component (styles/cards.css), at its default size,
