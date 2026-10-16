@@ -353,10 +353,6 @@ export function createDefaultSettings() {
     zoteroHighlightsLastUpdate: null,
     zoteroHighlightsFileSize: null,
     zoteroFileSize: null,
-    // Library versions the two files reflect — Update Data's starting
-    // point (zotero/zotero-download.js).
-    zoteroLibraryVersion: null,
-    zoteroHighlightsVersion: null,
     zoteroSnapshotRenderHeight: 1500,
     zoteroSnapshotDisplayHeight: 300,
     zoteroSnapshotQuality: 90,

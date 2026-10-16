@@ -15,18 +15,11 @@
  */
 
 import { testZoteroConnection } from "../zotero.js";
-import {
-  updateReferences, updateHighlights, syncReferences, syncHighlights, isCancelled,
-} from "../zotero/zotero-download.js";
+import { updateReferences, updateHighlights, isCancelled } from "../zotero/zotero-download.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
-/** Per section: the full download, Update Data's incremental one, and
- *  the setting holding the version Update Data starts from. */
-const JOBS = {
-  references: { full: updateReferences, sync: syncReferences, versionKey: "zoteroLibraryVersion" },
-  highlights: { full: updateHighlights, sync: syncHighlights, versionKey: "zoteroHighlightsVersion" },
-};
+const JOBS = { references: updateReferences, highlights: updateHighlights };
 
 /** job → { status: "running" | "cancelled" | "failed", msg, pct,
  *  controller } — controller null for a download running in the editor
@@ -43,7 +36,7 @@ function elsFor(job) {
     fill: p.querySelector(".zotero-progress-fill"),
     text: p.querySelector(".zotero-progress-text"),
     cancel: p.querySelector(".zotero-cancel-btn"),
-    btns: [document.getElementById(`zotero-download-${job}`), document.getElementById(`zotero-sync-${job}`)].filter(Boolean),
+    btn: document.getElementById(`zotero-download-${job}`),
   };
 }
 
@@ -58,7 +51,7 @@ function paint(job) {
   e.text.textContent = j.msg || "";
   e.cancel.hidden = !running;
   e.cancel.disabled = !!j.cancelling;
-  for (const b of e.btns) b.disabled = running;
+  if (e.btn) e.btn.disabled = running;
 }
 
 function credentials() {
@@ -68,7 +61,7 @@ function credentials() {
   return userId && apiKey ? { userId, apiKey } : null;
 }
 
-async function run(job, mode = "full") {
+async function run(job) {
   if (jobs.get(job)?.status === "running") return;
   const creds = credentials();
   if (!creds) return;
@@ -77,9 +70,7 @@ async function run(job, mode = "full") {
   jobs.set(job, state);
   paint(job);
   try {
-    const def = JOBS[job];
-    const patch = await def[mode](creds.userId, creds.apiKey, {
-      since: ctx.settings?.[def.versionKey] ?? null,
+    const patch = await JOBS[job](creds.userId, creds.apiKey, {
       signal: controller.signal,
       onProgress: (msg, pct) => { state.msg = msg; state.pct = pct; paint(job); },
     });
@@ -163,8 +154,8 @@ export function bindZoteroTab({ settings, saveSetting, render }) {
       status.textContent = "Connected successfully!"; status.className = "zotero-status success";
       saveSetting("zoteroUserId", userId); saveSetting("zoteroApiKey", apiKey);
       for (const job of Object.keys(JOBS)) {
-        if (jobs.get(job)?.status === "running") continue;
-        for (const b of elsFor(job)?.btns || []) b.disabled = false;
+        const btn = document.getElementById(`zotero-download-${job}`);
+        if (btn && jobs.get(job)?.status !== "running") btn.disabled = false;
       }
     } catch (e) {
       status.textContent = "Connection failed: " + e.message; status.className = "zotero-status error";
@@ -172,8 +163,7 @@ export function bindZoteroTab({ settings, saveSetting, render }) {
   });
 
   for (const job of Object.keys(JOBS)) {
-    document.getElementById(`zotero-download-${job}`)?.addEventListener("click", () => void run(job, "full"));
-    document.getElementById(`zotero-sync-${job}`)?.addEventListener("click", () => void run(job, "sync"));
+    document.getElementById(`zotero-download-${job}`)?.addEventListener("click", () => void run(job));
     elsFor(job)?.cancel.addEventListener("click", () => void cancel(job));
     paint(job);
   }

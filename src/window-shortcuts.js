@@ -12,6 +12,7 @@ import { dispatchDomShortcut, matchesDomEvent } from "./shortcuts.js";
 import { toggleCommandPalette, openFilePalette } from "./command-palette.js";
 import { openSettingsWindow } from "./settings/settings-ui.js";
 import { isPaneActive } from "./pane/pane-manager.js";
+import { installHistoryKeys } from "./history-keys.js";
 
 /**
  * Wire window activation to focus the active editing surface so keyboard
@@ -75,6 +76,8 @@ function installPanelToggleGuard(state) {
 
 export function installWindowShortcuts(state, windowCommands) {
   installPanelToggleGuard(state);
+  // ⌘Z / ⇧⌘Z on iPad arrive from the native side, not as keydowns.
+  installHistoryKeys();
   window.addEventListener("keydown", (e) => {
     // Skip shortcuts already consumed by CodeMirror's keymap.  When the
     // editor is focused, CM calls `preventDefault()` as soon as it handles

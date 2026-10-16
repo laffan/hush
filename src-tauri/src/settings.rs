@@ -368,10 +368,6 @@ pub struct AppSettings {
     #[serde(default)] pub zotero_highlight_count: u32,
     #[serde(default)] pub zotero_highlights_last_update: Option<String>,
     #[serde(default)] pub zotero_highlights_file_size: Option<String>,
-    /// The library version each file reflects — what Update Data asks
-    /// Zotero for changes since (zotero/zotero-download.js).
-    #[serde(default)] pub zotero_library_version: Option<u64>,
-    #[serde(default)] pub zotero_highlights_version: Option<u64>,
     #[serde(default = "default_shortcut_zotero")] pub shortcut_zotero: String,
     #[serde(default = "default_shortcut_switch_desks")] pub shortcut_switch_desks: String,
     #[serde(default = "default_zotero_snapshot_render_height")]
@@ -862,8 +858,6 @@ impl Default for AppSettings {
             zotero_highlight_count: 0,
             zotero_highlights_last_update: None,
             zotero_highlights_file_size: None,
-            zotero_library_version: None,
-            zotero_highlights_version: None,
             shortcut_zotero: default_shortcut_zotero(),
             shortcut_switch_desks: default_shortcut_switch_desks(),
             zotero_snapshot_render_height: default_zotero_snapshot_render_height(),

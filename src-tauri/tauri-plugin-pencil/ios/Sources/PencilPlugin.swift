@@ -23,6 +23,9 @@ import WebKit
 //  3. Make each window's web view first responder while a hardware
 //     keyboard is attached, so shortcuts reach the page before anything
 //     has been tapped. See KeyboardFocus.swift.
+//
+//  4. Hand ⌘Z / ⇧⌘Z to the page, ahead of the menu bar's Undo / Redo,
+//     so a notebook canvas undoes from the keyboard. See HistoryKeys.swift.
 
 class PencilPlugin: Plugin {
     private var pencilInteraction: UIPencilInteraction?

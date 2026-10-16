@@ -90,6 +90,8 @@ enum KeyboardFocus {
     }
 
     static func claim(_ webView: WKWebView) {
+        // ⌘Z / ⇧⌘Z go to the page on the same occasions (HistoryKeys.swift).
+        HistoryKeys.attach(to: webView)
         guard GCKeyboard.coalesced != nil,
               let window = webView.window,
               window.rootViewController?.presentedViewController == nil,
