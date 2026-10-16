@@ -40,9 +40,7 @@ export function renderZoteroTab(settings) {
           ${s.zoteroFileSize ? `<br/><span class="zotero-ref-detail">File size: ${s.zoteroFileSize}</span>` : ""}
         </div>
       ` : ""}
-      <button id="zotero-download-references" class="zotero-download-btn" ${!hasCredentials ? "disabled" : ""}>
-        ${hasRefs ? "Update References" : "Download References"}
-      </button>
+      ${zoteroButtons("references", hasRefs, hasCredentials, "References")}
     </div>
     <div class="settings-section">
       <h2>Highlights</h2>
@@ -57,9 +55,7 @@ export function renderZoteroTab(settings) {
           ${s.zoteroHighlightsFileSize ? `<br/><span class="zotero-ref-detail">File size: ${s.zoteroHighlightsFileSize}</span>` : ""}
         </div>
       ` : ""}
-      <button id="zotero-download-highlights" class="zotero-download-btn" ${!hasCredentials ? "disabled" : ""}>
-        ${hasHighlights ? "Update Highlights" : "Download Highlights"}
-      </button>
+      ${zoteroButtons("highlights", hasHighlights, hasCredentials, "Highlights")}
     </div>
     <div class="settings-section">
       <h2>PDF Snapshots</h2>
@@ -80,6 +76,21 @@ export function renderZoteroTab(settings) {
       </div>
     </div>
   `;
+}
+
+/** A section's buttons. With a file already on this device, Update Data
+ *  fetches only what changed in the library since it was written, and
+ *  Re-download All replaces it whole; without one, a single Download. */
+function zoteroButtons(job, hasData, hasCredentials, noun) {
+  const dis = hasCredentials ? "" : "disabled";
+  if (!hasData) {
+    return `<button id="zotero-download-${job}" class="zotero-download-btn" ${dis}>Download ${noun}</button>`;
+  }
+  return `
+      <div class="zotero-btn-row">
+        <button id="zotero-sync-${job}" class="zotero-download-btn" ${dis} title="Fetch only the items added, changed or deleted since the last download">Update Data</button>
+        <button id="zotero-download-${job}" class="zotero-download-btn zotero-secondary-btn" ${dis} title="Download the whole library again">Re-download All</button>
+      </div>`;
 }
 
 /** A download's progress bar, its message and its Cancel — hidden until

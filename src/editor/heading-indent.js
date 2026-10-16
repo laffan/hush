@@ -21,6 +21,8 @@ const headingMarkerHideDeco = Decoration.replace({});
 // another LIST_LEFT_INDENT_PX so depth is visible at a glance instead of
 // being conveyed by the source's 2-space leading whitespace alone.
 const LIST_LEFT_INDENT_PX = 30;
+// A card is 300px wide: a Doc's 30px a level took a tenth of it per step.
+const CARD_LIST_LEFT_INDENT_PX = 14;
 
 let _listMarkerMeasureCtx = null;
 
@@ -45,7 +47,9 @@ function listNestingDepth(leading) {
 function listIndentLineDeco(paddingPx, textIndentPx) {
   return Decoration.line({
     class: "list-indent",
-    attributes: { style: `padding-left: ${paddingPx}px; text-indent: -${textIndentPx}px;` },
+    // The custom property is for surfaces that zero line padding with
+    // !important (a card, styles/cards.css), which an inline style loses to.
+    attributes: { style: `--list-indent-pad: ${paddingPx}px; padding-left: ${paddingPx}px; text-indent: -${textIndentPx}px;` },
   });
 }
 
@@ -129,7 +133,8 @@ export const headingIndentPlugin = ViewPlugin.fromClass(
           const fullPrefixPx = measureListMarkerPx(view, listMatch[0]);
           const markerOnlyPx = measureListMarkerPx(view, markerOnly);
           const depth = listNestingDepth(leading);
-          const padding = LIST_LEFT_INDENT_PX * (depth + 1) + markerOnlyPx;
+          const step = view.state.facet(insideCard) ? CARD_LIST_LEFT_INDENT_PX : LIST_LEFT_INDENT_PX;
+          const padding = step * (depth + 1) + markerOnlyPx;
           builder.add(line.from, line.from, listIndentLineDeco(padding, fullPrefixPx));
         }
         pos = line.to + 1;

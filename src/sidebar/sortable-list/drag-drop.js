@@ -48,6 +48,14 @@ function onPointerDown(event) {
   const startX = event.clientX;
   const startY = event.clientY;
   let movedFar = false;
+  // A mouse press becomes a drag only once it has both outlasted the hold
+  // delay and moved. On the timer alone, a click held a little past the
+  // delay (180 ms is an ordinary click on a trackpad) turned into a drag
+  // that dropped where it started, and the row never opened: "a single
+  // click doesn't open it". Touch keeps press-and-hold, where a finger
+  // that moves is scrolling.
+  const isMouse = event.pointerType === "mouse";
+  let holdElapsed = false;
 
   const fireClickIfTap = (endEvent) => {
     if (this.pendingDrag && !this.dragSession && !movedFar) {
@@ -88,8 +96,10 @@ function onPointerDown(event) {
       // scrolling the panel — drop the pending intent so the drag-hold
       // timer can't hijack the scroll and a later cancel won't be
       // mistaken for a tap. A mouse has no scroll-by-drag, so we leave the
-      // hold timer alone there and let a fast drag start a reorder.
+      // hold timer alone there and let a fast drag start a reorder — at
+      // once if the hold has already run out.
       if (moveEvent.pointerType !== "mouse") cleanupPending();
+      else if (holdElapsed) beginDrag();
     }
   };
 
@@ -114,7 +124,7 @@ function onPointerDown(event) {
   window.addEventListener("pointercancel", handlePointerCancel);
   window.addEventListener("pointermove", handlePendingMove);
 
-  const timeoutId = setTimeout(() => {
+  const beginDrag = () => {
     if (!this.pendingDrag) return;
     event.preventDefault();
 
@@ -128,6 +138,12 @@ function onPointerDown(event) {
 
     startDrag.call(this, dragTarget, event, { offsetX, offsetY });
     this.pendingDrag = null;
+  };
+
+  const timeoutId = setTimeout(() => {
+    holdElapsed = true;
+    if (isMouse && !movedFar) return; // still a click until it moves
+    beginDrag();
   }, this.config.dragStartDelay);
 
   this.pendingDrag.timeoutId = timeoutId;

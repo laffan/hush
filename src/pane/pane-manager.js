@@ -21,7 +21,7 @@ import {
   syncAllPaneWordCounts,
 } from "./pane-content.js";
 import {
-  schedulePersist, restorePanes as _restorePanes,
+  schedulePersist, serializePanes, restorePanes as _restorePanes,
   wakeDormantPanes, hasDormantPanesFor, dropDormantPanes, dormantPanesForContext,
 } from "./pane-persistence.js";
 import { startCanvasSync, startScrollSync, startPdfScrollSync, stopAttachSync, anchorPaneToPdf, startStackPinSync, anchorPaneToStackItem, stopStackPinSync } from "./pane-attach-sync.js";
@@ -432,6 +432,11 @@ export function closePane(id) {
   pane.el.remove();
   panes.delete(id);
   if (activePaneId === id) setActivePaneId(null);
+  // The sidebar's pane squares fall back to the saved list once a file
+  // has no live pane (files-panel-pane-indicators.js); refresh the
+  // in-memory copy now, or the last square outlives its pane until the
+  // next redraw. The debounce below still does the write.
+  if (appState?.settings) appState.settings.persistedPanes = serializePanes();
   notifyLayoutChange();
   // Reset dock CSS vars + re-flex remaining docks so a sibling on the
   // perpendicular axis reclaims the cross-axis space the closed pane

@@ -100,17 +100,17 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
   const shelfTitle = document.createElement("span");
   shelfTitle.textContent = "Annotations";
   shelfHeader.appendChild(shelfTitle);
+  shelfContent.appendChild(shelfHeader);
   // Read the annotations written into the file itself — the way in for
   // a PDF imported from disk or the clipboard, whose annotations Zotero's
-  // API never handed over (pdf-annotation-extract.js).
+  // API never handed over (pdf-annotation-extract.js). A text link under
+  // the empty list's "No annotations", so it is offered only while the
+  // shelf has none to show (rebuildShelfList places it).
   const extractBtn = document.createElement("button");
   extractBtn.type = "button";
   extractBtn.className = "pdf-annot-shelf-extract";
-  extractBtn.textContent = "Extract Annotations";
+  extractBtn.textContent = "Attempt to Extract Annotations";
   extractBtn.title = "Read the annotations saved in this PDF file";
-  if (!viewer.getPdfDoc) extractBtn.style.display = "none";
-  shelfHeader.appendChild(extractBtn);
-  shelfContent.appendChild(shelfHeader);
 
   const shelfSearch = document.createElement("input");
   shelfSearch.type = "text";
@@ -282,6 +282,7 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
     shelfBody.innerHTML = "";
     if (!annotations.length) {
       shelfBody.innerHTML = '<div class="pdf-annot-shelf-empty">No annotations</div>';
+      if (viewer.getPdfDoc) shelfBody.firstChild.appendChild(extractBtn);
       return;
     }
     const filtered = annotations.filter(a => {

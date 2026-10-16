@@ -81,12 +81,82 @@ export async function fetchCollections(userId, apiKey, signal) {
   return out;
 }
 
-export async function fetchReferences(userId, apiKey, onProgress, signal) {
+/** The library version a response reflects (`Last-Modified-Version`),
+ *  or null. A download records the version its first request saw, so
+ *  anything changed while it ran is fetched again by the next update. */
+export function libraryVersionOf(resp) {
+  const v = parseInt(resp?.headers?.get("Last-Modified-Version") || "", 10);
+  return Number.isFinite(v) ? v : null;
+}
+
+/** An attachment as a reference lists it. */
+export function toAttachment(att) {
+  return {
+    key: att.key,
+    title: att.data.title || "Attachment",
+    filename: att.data.filename || "",
+    contentType: att.data.contentType || "",
+    isPdf: isPdfAttachment(att.data),
+  };
+}
+
+/** Whether a top-level item is a reference (not a standalone attachment
+ *  or note). */
+export function isReferenceItem(item) {
+  return !!item.data && item.data.itemType !== "attachment" && item.data.itemType !== "note";
+}
+
+/** A top-level item as the references file holds it. */
+export function toReference(item, attachments = []) {
+  const d = item.data;
+  const creators = (d.creators || [])
+    .map(c => c.lastName ? `${c.lastName}, ${(c.firstName || "")[0] || ""}`.trim() : c.name || "")
+    .filter(Boolean)
+    .join("; ");
+  const year = (d.date || "").match(/\d{4}/)?.[0] || "";
+  // First author's last name powers the `title (author)` format and the
+  // citekey fallback when Better BibTeX hasn't supplied one.
+  const firstCreator = (d.creators || []).find(c => c.lastName || c.name);
+  const firstAuthor = firstCreator
+    ? (firstCreator.lastName || firstCreator.name || "")
+    : "";
+  // Better BibTeX surfaces the citation key either as a top-level
+  // `citationKey` field on newer Zotero APIs or stuffed into `extra`
+  // as `Citation Key: foo2020`. Fall back to a slug otherwise.
+  let citekey = item.data.citationKey || d.citationKey || "";
+  if (!citekey && d.extra) {
+    const m = /(?:^|\n)\s*Citation Key\s*:\s*(\S+)/i.exec(d.extra);
+    if (m) citekey = m[1];
+  }
+  if (!citekey) {
+    const slug = (firstAuthor || "ref").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    citekey = slug + (year || "");
+  }
+  return {
+    key: item.key,
+    title: d.title || "Untitled",
+    shortTitle: d.shortTitle || "",
+    authors: creators,
+    firstAuthor,
+    citekey,
+    year,
+    itemType: d.itemType,
+    // Collection keys this item belongs to — what the library
+    // browser filters on. Zotero items can sit in several folders
+    // at once, hence an array.
+    collections: Array.isArray(d.collections) ? d.collections : [],
+    attachments,
+  };
+}
+
+/** `meta.version` is set to the library version the download reflects. */
+export async function fetchReferences(userId, apiKey, onProgress, signal, meta = {}) {
   // Step 1: Get total count of top-level items
   onProgress("Checking library size...", 0);
   const countUrl = `${ZOTERO_API}/users/${userId}/items/top?key=${apiKey}&format=json&limit=1`;
   const countResp = await fetch(countUrl, { signal });
   if (!countResp.ok) throw new Error(`HTTP ${countResp.status}`);
+  meta.version = libraryVersionOf(countResp);
   const totalItems = parseInt(countResp.headers.get("Total-Results") || "0", 10);
 
   // Step 2: Fetch all top-level items (paginated, 100 per page)
@@ -128,58 +198,12 @@ export async function fetchReferences(userId, apiKey, onProgress, signal) {
     const parent = att.data?.parentItem;
     if (!parent) continue;
     if (!attByParent[parent]) attByParent[parent] = [];
-    attByParent[parent].push({
-      key: att.key,
-      title: att.data.title || "Attachment",
-      filename: att.data.filename || "",
-      contentType: att.data.contentType || "",
-      isPdf: isPdfAttachment(att.data),
-    });
+    attByParent[parent].push(toAttachment(att));
   }
 
   const references = items
-    .filter(item => item.data && item.data.itemType !== "attachment" && item.data.itemType !== "note")
-    .map(item => {
-      const d = item.data;
-      const creators = (d.creators || [])
-        .map(c => c.lastName ? `${c.lastName}, ${(c.firstName || "")[0] || ""}`.trim() : c.name || "")
-        .filter(Boolean)
-        .join("; ");
-      const year = (d.date || "").match(/\d{4}/)?.[0] || "";
-      // First author's last name powers the `title (author)` format and the
-      // citekey fallback when Better BibTeX hasn't supplied one.
-      const firstCreator = (d.creators || []).find(c => c.lastName || c.name);
-      const firstAuthor = firstCreator
-        ? (firstCreator.lastName || firstCreator.name || "")
-        : "";
-      // Better BibTeX surfaces the citation key either as a top-level
-      // `citationKey` field on newer Zotero APIs or stuffed into `extra`
-      // as `Citation Key: foo2020`. Fall back to a slug otherwise.
-      let citekey = item.data.citationKey || d.citationKey || "";
-      if (!citekey && d.extra) {
-        const m = /(?:^|\n)\s*Citation Key\s*:\s*(\S+)/i.exec(d.extra);
-        if (m) citekey = m[1];
-      }
-      if (!citekey) {
-        const slug = (firstAuthor || "ref").toLowerCase().replace(/[^a-z0-9]+/g, "");
-        citekey = slug + (year || "");
-      }
-      return {
-        key: item.key,
-        title: d.title || "Untitled",
-        shortTitle: d.shortTitle || "",
-        authors: creators,
-        firstAuthor,
-        citekey,
-        year,
-        itemType: d.itemType,
-        // Collection keys this item belongs to — what the library
-        // browser filters on. Zotero items can sit in several folders
-        // at once, hence an array.
-        collections: Array.isArray(d.collections) ? d.collections : [],
-        attachments: attByParent[item.key] || [],
-      };
-    });
+    .filter(isReferenceItem)
+    .map(item => toReference(item, attByParent[item.key] || []));
 
   // Deliberately not "Done!" — the caller has the collections fetch
   // and the local save still to run.
@@ -196,10 +220,14 @@ export async function fetchAllAnnotations(userId, apiKey, onProgress, signal) {
   const byAttachment = {};
   let total = null;
   let count = 0;
+  let version = null;
   for (let start = 0; total == null || start < total; start += pageSize) {
     const url = `${ZOTERO_API}/users/${userId}/items?key=${apiKey}&format=json&itemType=annotation&limit=${pageSize}&start=${start}`;
     const resp = await zoteroFetch(url, signal);
-    if (total == null) total = parseInt(resp.headers.get("Total-Results") || "0", 10);
+    if (total == null) {
+      total = parseInt(resp.headers.get("Total-Results") || "0", 10);
+      version = libraryVersionOf(resp);
+    }
     const batch = await resp.json();
     for (const item of batch) {
       const parent = item?.data?.parentItem;
@@ -210,5 +238,36 @@ export async function fetchAllAnnotations(userId, apiKey, onProgress, signal) {
     onProgress?.(Math.min(start + pageSize, total), total);
     if (batch.length === 0) break;
   }
-  return { byAttachment, count };
+  return { byAttachment, count, version };
+}
+
+/** Every item of `query` (e.g. `items/top?`, `items?itemType=attachment&`)
+ *  changed since library version `since`, paged; and the library version
+ *  the first page saw. */
+export async function fetchChangedSince(userId, apiKey, query, since, signal, onPage) {
+  const pageSize = 100;
+  const out = [];
+  let version = null;
+  let total = null;
+  for (let start = 0; total == null || start < total; start += pageSize) {
+    const url = `${ZOTERO_API}/users/${userId}/${query}key=${apiKey}&format=json&since=${since}&limit=${pageSize}&start=${start}`;
+    const resp = await zoteroFetch(url, signal);
+    if (total == null) {
+      total = parseInt(resp.headers.get("Total-Results") || "0", 10);
+      version = libraryVersionOf(resp);
+    }
+    const batch = await resp.json();
+    out.push(...batch);
+    onPage?.(out.length, total);
+    if (batch.length < pageSize) break;
+  }
+  return { items: out, version };
+}
+
+/** Keys of the items deleted from the library since version `since`. */
+export async function fetchDeletedSince(userId, apiKey, since, signal) {
+  const url = `${ZOTERO_API}/users/${userId}/deleted?key=${apiKey}&since=${since}`;
+  const resp = await zoteroFetch(url, signal);
+  const body = await resp.json();
+  return { items: Array.isArray(body?.items) ? body.items : [], version: libraryVersionOf(resp) };
 }

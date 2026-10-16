@@ -117,7 +117,7 @@ function paletteApi(state) {
 }
 
 export function toggleCommandPalette(state) {
-  if (isOpen()) { close(); if (state.editor) state.editor.focus(); return; }
+  if (isOpen()) { close(); if (state.editor?.view?.dom.getClientRects().length) state.editor.focus(); return; }
   // If the user is mid-edit on a notebook text shape, preserve that
   // editor across the palette's lifetime — the input we're about to
   // focus would otherwise blur the textarea and commit the shape
@@ -226,7 +226,9 @@ function open(state) {
     if (state.runtime.zenView) { state.runtime.zenView.focus(); return; }
     const ctx = getActiveModeContext(state);
     if (ctx?.view) { ctx.view.focus(); return; }
-    if (state.editor) state.editor.focus();
+    // Not the Doc editor while a notebook, PDF or stack hides it: a
+    // hidden editor holding the focus swallows the canvas's ⌘Z.
+    if (state.editor?.view?.dom.getClientRects().length) state.editor.focus();
   };
 
   function runCommand(cmd) {

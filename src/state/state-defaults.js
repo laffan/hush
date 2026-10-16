@@ -234,6 +234,8 @@ export function createDefaultSettings() {
     shortcutMoveSentenceBack: "Alt+Mod+ArrowLeft",
     shortcutSelectPrevious: "Mod+Shift+D",
     shortcutDeleteToSentenceEnd: "Alt+Shift+Backspace",
+    // ⌘⇧⌫ deletes back to the sentence start — the delete half of ⌘⇧←.
+    shortcutDeleteToSentenceStart: "Mod+Shift+Backspace",
     // ⌘⌫ deletes the sentence the caret is in — the delete half of ⌘L.
     // It takes the keystroke over from CodeMirror's delete-to-line-start.
     shortcutDeleteSentence: "Mod+Backspace",
@@ -351,6 +353,10 @@ export function createDefaultSettings() {
     zoteroHighlightsLastUpdate: null,
     zoteroHighlightsFileSize: null,
     zoteroFileSize: null,
+    // Library versions the two files reflect — Update Data's starting
+    // point (zotero/zotero-download.js).
+    zoteroLibraryVersion: null,
+    zoteroHighlightsVersion: null,
     zoteroSnapshotRenderHeight: 1500,
     zoteroSnapshotDisplayHeight: 300,
     zoteroSnapshotQuality: 90,

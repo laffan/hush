@@ -3,7 +3,9 @@ import { Prec, Compartment, Annotation, Transaction } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting } from "@codemirror/language";
 import { Strikethrough, Table } from "@lezer/markdown";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { history, historyKeymap } from "@codemirror/commands";
+import { hushDefaultKeymap } from "./default-keymap.js";
+import { createPlainCopy } from "./plain-copy.js";
 import { wrapOnSelection } from "./wrap-on-selection.js";
 import { getActiveTheme } from "../themes/index.js";
 import { createFootnotePlugin } from "./plugins/footnotes.js";
@@ -234,6 +236,8 @@ export function createBaseExtensions(state, onChange, opts) {
     wrapOnSelection,
     updateListener,
     strikethroughFallback,
+    // Copies that only start like a URL leave as text (plain-copy.js).
+    createPlainCopy(),
     // Forward-only writing reaches every doc surface, not just the main
     // editor — a pane or stack column would otherwise be a way around a
     // ratcheted desk. The pointer handling stays off here so a
@@ -295,7 +299,7 @@ export function createBaseExtensions(state, onChange, opts) {
     // in `#editor-container`: a floating pane or a Zen overlay left
     // readable defeats the whole mode.
     createPrivacyExtensions(state),
-    keymap.of([...defaultKeymap, ...historyKeymap]),
+    keymap.of([...hushDefaultKeymap, ...historyKeymap]),
     Prec.highest(keymap.of(buildFixedKeymap(state))),
     placeholder("Start writing..."),
     EditorView.lineWrapping,

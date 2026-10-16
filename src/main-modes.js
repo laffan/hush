@@ -33,6 +33,12 @@ export async function setupModeSwitching(state) {
       appEl.classList.add(mode); document.body.classList.add(mode);
       modeContainers[mode]?.classList.remove("hidden");
       state.emit("hide-overview");
+      // The Doc editor is display:none from here on, but WebKit leaves a
+      // hidden element holding the focus — so ⌘Z went to the document
+      // nobody could see (undoing it) and the canvas, finding an editable
+      // focused elsewhere, stood down. Let go of it.
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && document.getElementById("editor-container")?.contains(active)) active.blur();
     }
   }
   const showEditor = () => activateMode(null);

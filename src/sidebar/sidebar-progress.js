@@ -2,7 +2,7 @@
  * Sidebar progress center — manages background tasks with visual
  * progress indicators in the sidebar grip area.
  */
-import { updateReferences, isCancelled } from "../zotero/zotero-download.js";
+import { syncReferences, isCancelled } from "../zotero/zotero-download.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -78,8 +78,9 @@ if (IS_TAURI) {
 }
 
 /** Start a Zotero reference update in the background (the palette's
- *  "Update Zotero References"). Highlights are a download of their own,
- *  in Settings → Zotero. */
+ *  "Update Zotero References") — Update Data's: only what changed since
+ *  the last download. Highlights are a download of their own, in
+ *  Settings → Zotero. */
 export async function startZoteroUpdate(state) {
   if (activeTask) return; // one task at a time
   const userId = state.settings.zoteroUserId;
@@ -88,7 +89,8 @@ export async function startZoteroUpdate(state) {
   activeTask = "zotero";
   zoteroAbort = new AbortController();
   try {
-    const patch = await updateReferences(userId, apiKey, {
+    const patch = await syncReferences(userId, apiKey, {
+      since: state.settings.zoteroLibraryVersion ?? null,
       signal: zoteroAbort.signal,
       onProgress: (msg, progress) => {
         state.emit("background-task-progress", { label: "Zotero", progress });

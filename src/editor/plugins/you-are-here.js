@@ -2,12 +2,15 @@
  * YOUAREHERE editor support — two jobs, one plugin:
  *
  * 1. Decorate every literal `YOUAREHERE` (caps, no spaces) as a bright
- *    red rounded tag (`.cm-youarehere`), and whatever follows it on its
- *    line — the note the user leaves themselves about what to do next —
- *    on a red tint (`.cm-youarehere-note`) that runs on from the tag
- *    with no gap: the space after the token is tinted too, and the two
- *    share square corners where they meet. Text *before* the token is
- *    ordinary text. Both are set in the app's UI face, not the style's:
+ *    red rounded tag (`.cm-youarehere`). A colon straight after it
+ *    (`YOUAREHERE: …`, no space between) opens a note — what the user
+ *    leaves themselves about what to do next — set on a red tint
+ *    (`.cm-youarehere-note`) that runs on from the tag with no gap, the
+ *    colon included, the two sharing square corners where they meet.
+ *    The note ends at its first sentence-ending punctuation, which it
+ *    keeps; without one it runs to the end of the line. Without the
+ *    colon there is no note, and text *before* the token is ordinary
+ *    text. Both are set in the app's UI face, not the style's:
  *    they are the app talking, not the text.
  * 2. Enforce "one marker per buffer" at typing time: when an edit
  *    completes a NEW instance while another already exists, the older
@@ -28,13 +31,22 @@ const markDeco = Decoration.mark({ class: "cm-youarehere" });
 const markWithNoteDeco = Decoration.mark({ class: "cm-youarehere cm-youarehere-has-note" });
 const noteDeco = Decoration.mark({ class: "cm-youarehere-note" });
 
-/** End of the note that follows a token ending at `from`: the line up
- *  to `to` with trailing whitespace dropped, or null when nothing but
- *  whitespace follows — a tint over bare spaces reads as a stray
- *  smudge. Leading whitespace stays, so the tint meets the tag. */
-function noteEnd(text, from, to) {
-  while (to > from && /\s/.test(text[to - 1])) to--;
-  return to > from ? to : null;
+/** Sentence-ending punctuation (a run of it, `?!` or `...`) and any
+ *  closing quote or bracket straight after it. */
+const NOTE_STOP = /[.?!\u2026\u203d]+["'\u201d\u2019)\]]*/;
+
+/** End of the note that follows a token ending at `from`, on a line
+ *  that stops at `stop`: null unless a colon follows the token at once.
+ *  The note runs through its first sentence-ending punctuation, else to
+ *  `stop`, trailing whitespace dropped; a colon with nothing after it is
+ *  no note — a tint over a lone colon reads as a stray smudge. */
+function noteEnd(text, from, stop) {
+  if (text[from] !== ":") return null;
+  let to = stop;
+  const m = text.slice(from + 1, stop).match(NOTE_STOP);
+  if (m) to = from + 1 + m.index + m[0].length;
+  while (to > from + 1 && /\s/.test(text[to - 1])) to--;
+  return to > from + 1 ? to : null;
 }
 
 export function createYouAreHerePlugin() {

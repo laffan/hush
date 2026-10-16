@@ -216,6 +216,8 @@ pub struct AppSettings {
     pub shortcut_select_previous: String,
     #[serde(default = "default_shortcut_delete_to_sentence_end")]
     pub shortcut_delete_to_sentence_end: String,
+    #[serde(default = "default_shortcut_delete_to_sentence_start")]
+    pub shortcut_delete_to_sentence_start: String,
     #[serde(default = "default_shortcut_delete_sentence")]
     pub shortcut_delete_sentence: String,
 
@@ -366,6 +368,10 @@ pub struct AppSettings {
     #[serde(default)] pub zotero_highlight_count: u32,
     #[serde(default)] pub zotero_highlights_last_update: Option<String>,
     #[serde(default)] pub zotero_highlights_file_size: Option<String>,
+    /// The library version each file reflects — what Update Data asks
+    /// Zotero for changes since (zotero/zotero-download.js).
+    #[serde(default)] pub zotero_library_version: Option<u64>,
+    #[serde(default)] pub zotero_highlights_version: Option<u64>,
     #[serde(default = "default_shortcut_zotero")] pub shortcut_zotero: String,
     #[serde(default = "default_shortcut_switch_desks")] pub shortcut_switch_desks: String,
     #[serde(default = "default_zotero_snapshot_render_height")]
@@ -802,6 +808,7 @@ impl Default for AppSettings {
             shortcut_move_sentence_back: default_shortcut_move_sentence_back(),
             shortcut_select_previous: default_shortcut_select_previous(),
             shortcut_delete_to_sentence_end: default_shortcut_delete_to_sentence_end(),
+            shortcut_delete_to_sentence_start: default_shortcut_delete_to_sentence_start(),
             shortcut_delete_sentence: default_shortcut_delete_sentence(),
             shortcut_bold: default_shortcut_bold(),
             shortcut_italic: default_shortcut_italic(),
@@ -855,6 +862,8 @@ impl Default for AppSettings {
             zotero_highlight_count: 0,
             zotero_highlights_last_update: None,
             zotero_highlights_file_size: None,
+            zotero_library_version: None,
+            zotero_highlights_version: None,
             shortcut_zotero: default_shortcut_zotero(),
             shortcut_switch_desks: default_shortcut_switch_desks(),
             zotero_snapshot_render_height: default_zotero_snapshot_render_height(),

@@ -346,7 +346,11 @@ export function bindInputEvents(
     // canvas, so we use `.active` (set on the most-recently-focused
     // pane by pane-manager.focusPane) to tell "user is interacting
     // with this canvas" from "user is typing in the host doc".
-    const activeEl = document.activeElement as HTMLElement | null;
+    // A focused element that isn't on screen isn't where the user is
+    // typing: WebKit leaves the Doc editor holding the focus after a
+    // notebook replaces it (display: none), and that swallowed every key.
+    const focused = document.activeElement as HTMLElement | null;
+    const activeEl = focused && focused !== document.body && !focused.getClientRects().length ? null : focused;
     if (activeEl) {
       const activePane = activeEl.closest(".floating-pane") as HTMLElement | null;
       if (activePane && activePane !== ownPane) return;

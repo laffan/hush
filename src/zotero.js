@@ -27,10 +27,18 @@ let zoteroModal = null;
  *  library browser falls back to a flat list — but a cancel is not:
  *  `opts.signal` aborts the whole download before anything is saved. */
 export async function downloadZoteroReferences(userId, apiKey, onProgress, opts = {}) {
-  const { signal } = opts;
-  const references = await fetchReferences(userId, apiKey, onProgress, signal);
+  const { signal, meta } = opts;
+  const references = await fetchReferences(userId, apiKey, onProgress, signal, meta);
+  onProgress("Fetching collections...", 0.95);
+  await refreshZoteroCollections(userId, apiKey, signal);
+  onProgress("Done!", 1);
+  return references;
+}
+
+/** Fetch and save the collection tree — whole every time, it is a page
+ *  or two. Only a cancel is fatal (see downloadZoteroReferences). */
+export async function refreshZoteroCollections(userId, apiKey, signal) {
   try {
-    onProgress("Fetching collections...", 0.95);
     const collections = await fetchCollections(userId, apiKey, signal);
     throwIfCancelled(signal);
     await saveCollections(collections);
@@ -39,8 +47,6 @@ export async function downloadZoteroReferences(userId, apiKey, onProgress, opts 
     console.warn("Zotero collections fetch failed:", e);
   }
   throwIfCancelled(signal);
-  onProgress("Done!", 1);
-  return references;
 }
 
 /** Every highlight in the library, into a file of its own (the
@@ -49,13 +55,13 @@ export async function downloadZoteroReferences(userId, apiKey, onProgress, opts 
 export async function downloadZoteroHighlights(userId, apiKey, onProgress, opts = {}) {
   const { signal } = opts;
   onProgress("Fetching highlights...", 0);
-  const { byAttachment, count } = await fetchAllAnnotations(userId, apiKey, (done, total) => {
+  const { byAttachment, count, version } = await fetchAllAnnotations(userId, apiKey, (done, total) => {
     onProgress(`Fetching highlights (${done} of ${total})...`, total ? (done / total) * 0.95 : 0);
   }, signal);
   throwIfCancelled(signal);
   const bytes = await saveLibraryHighlights(byAttachment);
   onProgress("Done!", 1);
-  return { count, bytes };
+  return { count, bytes, version };
 }
 
 // ===== Storage =====

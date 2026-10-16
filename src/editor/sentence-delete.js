@@ -114,3 +114,58 @@ export function deleteSentence(view) {
   });
   return true;
 }
+
+/** What opens a line's text — a list marker (with its checkbox), a
+ *  heading's hashes, a quote's `>` — which deleting back to a sentence
+ *  start leaves in place. */
+const LINE_PREFIX = /^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?|#{1,6}[ \t]+|>[ \t]?)/;
+
+/**
+ * Delete to sentence start (⌘⇧⌫ by default) — the delete half of ⌘⇧←,
+ * which selects the same span: from the caret back to the start of the
+ * sentence it is in, and no further. A line's list marker, heading hashes
+ * or quote mark stay. With the caret already at a sentence's start it
+ * takes the sentence before it on the line; at the start of the line's
+ * text it joins the line to the one above, as Backspace would. With a
+ * selection, the selection is what goes.
+ */
+export function deleteToSentenceStart(view) {
+  // Same guard as deleteSentence: the window-level fallback hands over
+  // the main editor even when a canvas is in front of it.
+  if (!view.hasFocus) return false;
+  const doc = view.state.doc;
+  const sel = view.state.selection.main;
+  if (!sel.empty) {
+    view.dispatch({ changes: { from: sel.from, to: sel.to }, selection: EditorSelection.cursor(sel.from), userEvent: "delete" });
+    return true;
+  }
+  const head = sel.head;
+  const line = doc.lineAt(head);
+  const ch = head - line.from;
+  const prefix = (line.text.match(LINE_PREFIX) || [""])[0].length;
+  let from;
+  if (ch <= prefix) {
+    // Nothing of the sentence behind the caret on this line: join up.
+    if (line.number === 1) return true;
+    from = line.from - 1;
+  } else {
+    const pos = { line: line.number - 1, ch };
+    from = posToOffset(doc, findSentenceStart(doc, pos));
+    if (from >= head) {
+      // At a sentence's start: step back over the space and the closing
+      // marks before it and take the previous sentence.
+      let back = ch;
+      while (back > prefix && /\s/.test(line.text.charAt(back - 1))) back--;
+      from = back > prefix ? posToOffset(doc, findSentenceStart(doc, { line: pos.line, ch: back })) : line.from + prefix;
+    }
+    from = Math.max(from, line.from + prefix);
+  }
+  if (from >= head) return true;
+  view.dispatch({
+    changes: { from, to: head },
+    selection: EditorSelection.cursor(from),
+    userEvent: "delete",
+    scrollIntoView: true,
+  });
+  return true;
+}

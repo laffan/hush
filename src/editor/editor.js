@@ -3,7 +3,9 @@ import { EditorState, Compartment, Prec } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting } from "@codemirror/language";
 import { Strikethrough, Table } from "@lezer/markdown";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { history, historyKeymap } from "@codemirror/commands";
+import { hushDefaultKeymap } from "./default-keymap.js";
+import { createPlainCopy } from "./plain-copy.js";
 import { wrapOnSelection } from "./wrap-on-selection.js";
 import { getActiveTheme } from "../themes/index.js";
 import { createPrivacyExtensions } from "./plugins/private-mode.js";
@@ -264,6 +266,8 @@ export function createEditor(container, state) {
       blurListener,
       // Physical-key route for Cmd+` — see createStrikethroughFallback.
       createStrikethroughFallback(state),
+      // Copies that only start like a URL leave as text (plain-copy.js).
+      createPlainCopy(),
       shortcutCompartment.of(initialShortcuts),
       readOnlyCompartment.of([]),
       ratchetExtensions,
@@ -328,7 +332,7 @@ export function createEditor(container, state) {
       createCardPlugin(state),
       projectViewField,
       separatorFilter,
-      keymap.of([...defaultKeymap, ...historyKeymap]),
+      keymap.of([...hushDefaultKeymap, ...historyKeymap]),
       placeholder("Start writing..."),
       EditorView.lineWrapping,
   ];

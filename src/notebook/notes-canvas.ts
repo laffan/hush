@@ -98,6 +98,16 @@ export function getActiveNotebookState(): DrawingState | null {
   return lastActiveNotebook ? lastActiveNotebook.state : null;
 }
 
+/** Blur a text field, or an editable, that holds the focus outside
+ *  `container` — but not one that wraps it (an inline notebook pane's
+ *  host Doc), which input-handler.ts handles itself. */
+function releaseOutsideFocus(container: HTMLElement): void {
+  const a = document.activeElement as HTMLElement | null;
+  if (!a || a === document.body || container.contains(a) || a.contains(container)) return;
+  const typing = a.isContentEditable || a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT";
+  if (typing) a.blur();
+}
+
 /** Explicitly make `c` the clipboard/undo routing target. The Desktop
  *  takeover calls this on mount: the hidden main-notebook canvas
  *  underneath may already hold the slot (the constructor's claim only
@@ -683,14 +693,28 @@ export class NotesCanvas {
     // the drawing layer's SVG sits over the canvas and takes the press,
     // so drawing in a pane never made that pane the target and ⌘Z undid
     // in whichever canvas was touched last.
-    this.container.addEventListener("pointerdown", () => { lastActiveNotebook = this; }, true);
+    //
+    // The press also takes the keyboard from any field outside this
+    // canvas. A mouse click on the canvas does that by itself, but a
+    // stroke doesn't: the drawing engine cancels its pointerdown, which
+    // cancels the focus change with it (and a touch or the Pencil never
+    // makes one) — so a Doc pane, a sticky or the hidden Doc editor kept
+    // the focus, and the keydown guard in input-handler.ts, seeing an
+    // editable focused somewhere else, let ⌘Z go by.
+    this.container.addEventListener("pointerdown", () => {
+      lastActiveNotebook = this;
+      releaseOutsideFocus(this.container);
+    }, true);
     this._cleanupScrollGuard = installScrollGuard(this.container);
     // Claim active-canvas status on mount so window-scoped clipboard
     // handlers route to this instance even before any pointerdown. If a
     // pane mounts later it will steal the slot on its first pointer
     // gesture (the listener above), and the user's last-touched canvas
     // remains the clipboard target.
-    if (!lastActiveNotebook) lastActiveNotebook = this;
+    // A holder that is out of sight — a notebook pane whose document was
+    // left, so its pane is hidden — gives the slot up too: otherwise
+    // ⌘Z undid that hidden canvas until this one was first pressed.
+    if (!lastActiveNotebook || !lastActiveNotebook.container.getClientRects().length) lastActiveNotebook = this;
     ensureCopyListener();
 
     // Register as a drop target for the Cmd-drag text system so text

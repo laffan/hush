@@ -471,19 +471,21 @@ html.ios:not(.phone) .floating-pane.docked.docked-bottom .pdf-zoom-toolbar::afte
 .pdf-notes-body mark { color: #000; }
 .pdf-notes-body hr { border: none; border-top: 1px solid rgba(128, 128, 128, 0.3); }
 
+/* A text link under the empty list's "No annotations". */
 .pdf-annot-shelf-extract {
-  margin-left: auto;
-  padding: 3px 8px;
-  border-radius: 5px;
-  border: 1px solid rgba(128, 128, 128, 0.25);
-  background: transparent;
+  display: block;
+  margin: 6px auto 0;
+  padding: 0;
+  border: none;
+  background: none;
   color: var(--fg);
-  font: 500 11px system-ui, -apple-system, sans-serif;
-  white-space: nowrap;
+  font: 12px system-ui, -apple-system, sans-serif;
+  text-decoration: underline;
+  text-underline-offset: 2px;
   cursor: pointer;
 }
-.pdf-annot-shelf-extract:hover:not(:disabled) { background: rgba(128, 128, 128, 0.12); }
-.pdf-annot-shelf-extract:disabled { opacity: 0.6; cursor: default; }
+.pdf-annot-shelf-extract:hover:not(:disabled) { text-decoration-thickness: 2px; }
+.pdf-annot-shelf-extract:disabled { cursor: default; text-decoration: none; }
 .pdf-annot-shelf-note {
   font-size: 12px;
   margin-bottom: 8px;

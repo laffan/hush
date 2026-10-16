@@ -196,6 +196,15 @@
   line-height: 1.45 !important;
   padding: 0 !important;
 }
+/* A list line keeps the left padding heading-indent.js writes inline:
+   its marker is pulled back into that padding by a negative text-indent,
+   so with the padding zeroed the marker — and a caret before it — went
+   past the card's left edge, and wrapped lines lost their hang. */
+.hush-card .cm-editor .cm-line.list-indent,
+#editor-container .hush-card .cm-editor .cm-line.list-indent {
+  padding: 0 !important;
+  padding-left: var(--list-indent-pad) !important;
+}
 
 /* The width handle is the bottom-right corner, and it shows itself the
    way a pane's corner does (floating-pane.css): only under the pointer,
