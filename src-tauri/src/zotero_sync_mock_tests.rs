@@ -265,6 +265,13 @@ fn full_download_then_updates_fold_in_only_the_changes() {
     let keys = ref_keys(dir.path());
     assert!(keys.contains(&"NEW".to_string()));
     assert!(!keys.contains(&"A002".to_string()) && !keys.contains(&"A003".to_string()));
+    assert!(
+        !load_cache(dir.path(), Kind::References)
+            .items
+            .iter()
+            .any(|i| i["key"] == "A002"),
+        "a trashed item leaves the cache too"
+    );
     let refs = read_json(dir.path(), "zotero_references.json");
     let edited = refs
         .as_array()
@@ -301,6 +308,26 @@ fn full_download_then_updates_fold_in_only_the_changes() {
     let s = run(&z, dir.path(), Kind::References, false).unwrap();
     assert_eq!((s.added, s.updated, s.removed), (1, 0, 0));
     assert!(ref_keys(dir.path()).contains(&restored["key"].as_str().unwrap().to_string()));
+}
+
+#[test]
+fn a_full_download_keeps_nothing_from_the_trash() {
+    let dir = tmp();
+    let mut lib = library(3);
+    lib.trash("A001");
+    lib.trash("H002");
+    let z = MockZotero::start(lib);
+    // With the catch-up pass failing, the download alone must leave the
+    // trash out (an update would clean it up anyway).
+    z.lib().fail_once = Some("since=".into());
+    let refs = run(&z, dir.path(), Kind::References, true).unwrap();
+    z.lib().fail_once = Some("since=".into());
+    let highlights = run(&z, dir.path(), Kind::Highlights, true).unwrap();
+    assert_eq!((refs.count, highlights.count), (2, 2));
+    for kind in [Kind::References, Kind::Highlights] {
+        let cache = load_cache(dir.path(), kind);
+        assert!(!cache.items.iter().any(is_trashed), "{kind:?}");
+    }
 }
 
 #[test]

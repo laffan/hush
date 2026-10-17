@@ -17,9 +17,10 @@
 //!   for whatever changed while it ran.
 //! - **Update**: `items?since=<version>` and `deleted?since=<version>`,
 //!   replace by key and remove by key. `includeTrashed=1`, so an item
-//!   moved to the trash arrives with `deleted` set and drops out of the
-//!   files (without it, Zotero leaves it out of `since` answers and it
-//!   would never leave). The version recorded is the first page's —
+//!   moved to the trash arrives with `deleted` set and is taken out of
+//!   the cache like a deleted one — Hush has no trash of its own
+//!   (zotero-helper does the same). Without it, Zotero leaves the item
+//!   out of `since` answers and it would never leave. The version recorded is the first page's —
 //!   anything changed after it is fetched again next time — and a pass
 //!   during which the library moved is run again, since a deletion can
 //!   shift an item across a page boundary.
@@ -326,7 +327,9 @@ async fn fetch_all_resumable(
         let kept: Vec<Value> = page
             .items
             .into_iter()
-            .filter(|i| kind.keeps(i))
+            // Trashed items (the query asks for the trash, so an update's
+            // answers and this one agree) are not kept.
+            .filter(|i| kind.keeps(i) && !is_trashed(i))
             .map(slim)
             .collect();
         if let Err(e) = append_checkpoint_page(&ckpt, n, &kept) {

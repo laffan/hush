@@ -106,8 +106,11 @@ pub(super) struct Changes {
     pub(super) removed: usize,
 }
 
-/// Fold `changed` and `deleted` into `items`, counting as the user would:
-/// an item moved to the trash is removed, one taken out of it is added.
+/// Fold `changed` and `deleted` into `items`, counting as the user would.
+/// Hush has no trash of its own, so an item that arrives in Zotero's
+/// trash is taken out of the cache like a deleted one (as zotero-helper
+/// does), and one taken out of the trash arrives again as new. The cache
+/// never holds a trashed item, so a full download's matches an update's.
 pub(super) fn apply_changes(
     items: Vec<Value>,
     changed: Vec<Value>,
@@ -116,16 +119,21 @@ pub(super) fn apply_changes(
     let mut keyed = Keyed::from_vec(items);
     let mut ch = Changes::default();
     for item in changed {
-        let trashed = is_trashed(&item);
-        let prev_live = match key_of(&item).and_then(|k| keyed.index.get(k)) {
-            Some(&i) => Some(!is_trashed(&keyed.items[i])),
-            None => None,
+        let Some(key) = key_of(&item).map(str::to_string) else {
+            continue;
         };
-        match (prev_live, trashed) {
-            (Some(true), false) => ch.updated += 1,
-            (Some(true), true) => ch.removed += 1,
-            (Some(false) | None, false) => ch.added += 1,
-            (Some(false) | None, true) => {}
+        let had = keyed.index.get(&key).map(|&i| !is_trashed(&keyed.items[i]));
+        if is_trashed(&item) {
+            keyed.remove(&key);
+            if had == Some(true) {
+                ch.removed += 1;
+            }
+            continue;
+        }
+        if had == Some(true) {
+            ch.updated += 1;
+        } else {
+            ch.added += 1;
         }
         keyed.upsert(item);
     }
@@ -136,7 +144,10 @@ pub(super) fn apply_changes(
             }
         }
     }
-    (keyed.into_vec(), ch)
+    let mut items = keyed.into_vec();
+    // A cache written before trashed items were dropped may still hold some.
+    items.retain(|i| !is_trashed(i));
+    (items, ch)
 }
 
 // ---------------------------------------------------------------- the files the app reads

@@ -309,13 +309,27 @@ fn apply_changes_counts_like_the_user_sees_it() {
     );
     assert_eq!(
         keys(&items),
-        ["A", "B", "T", "N"].iter().map(|s| s.to_string()).collect()
+        ["A", "T", "N"].iter().map(|s| s.to_string()).collect(),
+        "the trashed item leaves the cache, as a deleted one does"
     );
     let refs = derive_references(&items);
     let titles: HashSet<&str> = refs.iter().map(|r| r["title"].as_str().unwrap()).collect();
     assert_eq!(
         titles,
         ["a edited", "restored", "new"].into_iter().collect()
+    );
+}
+
+#[test]
+fn a_cache_from_before_trash_was_dropped_is_cleaned_on_the_next_update() {
+    let mut old = article("T", "t");
+    old["data"]["deleted"] = json!(1);
+    let (items, ch) = apply_changes(vec![article("A", "a"), old], vec![], &[]);
+    assert_eq!(keys(&items), HashSet::from(["A".to_string()]));
+    assert_eq!(
+        ch,
+        Changes::default(),
+        "it was never shown, so nothing to count"
     );
 }
 
