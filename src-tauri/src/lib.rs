@@ -50,6 +50,7 @@ mod wikilinks;
 mod wire;
 pub mod typst_export;
 mod zotero;
+mod zotero_sync;
 
 pub use wire::{FileEntry, FileSummary, TreeNode};
 
@@ -501,6 +502,8 @@ pub fn run() {
             commands::zotero::fetch_zotero_annotations,
             commands::zotero::fetch_zotero_note_text,
             commands::zotero::load_zotero_note_text,
+            commands::zotero::zotero_sync,
+            commands::zotero::zotero_sync_cancel,
             commands::desks::desk_list_roots,
             commands::desks::desk_list_root_entries,
             commands::desks::desk_update_root_path,

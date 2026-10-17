@@ -12,6 +12,10 @@
  * (sidebar/sidebar-progress.js) and reports here through
  * `hush-zotero-progress` / `hush-zotero-done`, tagged with which
  * download it is; its Cancel is sent back as `hush-zotero-cancel`.
+ *
+ * Once a file is on this device its section offers Update Data (only
+ * what changed in the library since — zotero/zotero-download.js) beside
+ * Re-download All.
  */
 
 import { testZoteroConnection } from "../zotero.js";
@@ -36,7 +40,7 @@ function elsFor(job) {
     fill: p.querySelector(".zotero-progress-fill"),
     text: p.querySelector(".zotero-progress-text"),
     cancel: p.querySelector(".zotero-cancel-btn"),
-    btn: document.getElementById(`zotero-download-${job}`),
+    btns: [document.getElementById(`zotero-download-${job}`), document.getElementById(`zotero-sync-${job}`)].filter(Boolean),
   };
 }
 
@@ -51,7 +55,7 @@ function paint(job) {
   e.text.textContent = j.msg || "";
   e.cancel.hidden = !running;
   e.cancel.disabled = !!j.cancelling;
-  if (e.btn) e.btn.disabled = running;
+  for (const b of e.btns) b.disabled = running;
 }
 
 function credentials() {
@@ -61,7 +65,7 @@ function credentials() {
   return userId && apiKey ? { userId, apiKey } : null;
 }
 
-async function run(job) {
+async function run(job, full) {
   if (jobs.get(job)?.status === "running") return;
   const creds = credentials();
   if (!creds) return;
@@ -71,6 +75,7 @@ async function run(job) {
   paint(job);
   try {
     const patch = await JOBS[job](creds.userId, creds.apiKey, {
+      full,
       signal: controller.signal,
       onProgress: (msg, pct) => { state.msg = msg; state.pct = pct; paint(job); },
     });
@@ -154,8 +159,8 @@ export function bindZoteroTab({ settings, saveSetting, render }) {
       status.textContent = "Connected successfully!"; status.className = "zotero-status success";
       saveSetting("zoteroUserId", userId); saveSetting("zoteroApiKey", apiKey);
       for (const job of Object.keys(JOBS)) {
-        const btn = document.getElementById(`zotero-download-${job}`);
-        if (btn && jobs.get(job)?.status !== "running") btn.disabled = false;
+        if (jobs.get(job)?.status === "running") continue;
+        for (const b of elsFor(job)?.btns || []) b.disabled = false;
       }
     } catch (e) {
       status.textContent = "Connection failed: " + e.message; status.className = "zotero-status error";
@@ -163,7 +168,8 @@ export function bindZoteroTab({ settings, saveSetting, render }) {
   });
 
   for (const job of Object.keys(JOBS)) {
-    document.getElementById(`zotero-download-${job}`)?.addEventListener("click", () => void run(job));
+    document.getElementById(`zotero-download-${job}`)?.addEventListener("click", () => void run(job, true));
+    document.getElementById(`zotero-sync-${job}`)?.addEventListener("click", () => void run(job, false));
     elsFor(job)?.cancel.addEventListener("click", () => void cancel(job));
     paint(job);
   }

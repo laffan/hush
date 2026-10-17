@@ -1,5 +1,7 @@
-use tauri::State;
+use serde_json::json;
+use tauri::{AppHandle, Emitter, State};
 
+use crate::zotero_sync::{self as engine, Kind};
 use crate::AppState;
 
 #[tauri::command]
@@ -270,4 +272,36 @@ pub fn load_zotero_note_text(state: State<AppState>, item_key: String) -> Result
         .unwrap()
         .load_note_text(&item_key)
         .map_err(|e| e.to_string())
+}
+
+/// Settings → Zotero's References or Highlights download (`kind`): the
+/// whole library when `full` (or when there is nothing to update), else
+/// only what changed since the last one — see `zotero_sync.rs`. Writes
+/// the files the app reads itself and returns what it did. Progress goes
+/// out as `zotero-sync-progress` `{ runId, msg, pct }`; a cancel
+/// (`zotero_sync_cancel`) fails it with `"cancelled"`.
+#[tauri::command]
+pub async fn zotero_sync(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    kind: String,
+    full: bool,
+    run_id: String,
+    user_id: String,
+    api_key: String,
+) -> Result<engine::Summary, String> {
+    let kind = Kind::parse(&kind).ok_or_else(|| format!("Unknown Zotero download: {kind}"))?;
+    let data_dir = state.zotero_manager.lock().unwrap().data_dir().clone();
+    let running = engine::Running::start(kind)?;
+    let progress = move |msg: &str, pct: f64| {
+        let _ = app.emit("zotero-sync-progress", json!({ "runId": run_id, "msg": msg, "pct": pct }));
+    };
+    engine::sync(&data_dir, kind, full, &user_id, &api_key, running.flag(), &progress).await
+}
+
+/// Stop the running `kind` download before its next request. False when
+/// none is running.
+#[tauri::command]
+pub fn zotero_sync_cancel(kind: String) -> bool {
+    Kind::parse(&kind).is_some_and(engine::cancel)
 }

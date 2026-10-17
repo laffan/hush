@@ -438,6 +438,19 @@
   cursor: not-allowed;
 }
 
+/* Update Data beside Re-download All, once a file is on this device. */
+.zotero-btn-row {
+  display: flex;
+  gap: 8px;
+}
+.zotero-btn-row .zotero-download-btn { flex: 1 1 0; width: auto; }
+.zotero-download-btn.zotero-secondary-btn {
+  border-style: solid;
+  border-color: transparent;
+  opacity: 0.7;
+}
+.zotero-download-btn.zotero-secondary-btn:hover:not(:disabled) { opacity: 1; }
+
 /* ===== Highlight browser pane ===== */
 
 .fp-zotero-highlights {

@@ -131,12 +131,23 @@ export async function saveLibraryHighlights(byAttachment) {
   if (IS_TAURI) await tauriInvoke("save_zotero_highlights", { data: json });
   else localStorage.setItem("hush_zotero_highlights", json);
   libraryHighlights = byAttachment ?? null;
-  // Every other window (the settings window downloads, the editor
-  // window reads) drops its copy and reads the file afresh.
+  await announceHighlightsSaved();
+  return new Blob([json]).size;
+}
+
+/** The highlights file was rewritten outside this module (the Zotero
+ *  sync writes it in Rust): drop this window's copy, and every other's. */
+export async function libraryHighlightsReplaced() {
+  libraryHighlights = undefined;
+  await announceHighlightsSaved();
+}
+
+// Every other window (the settings window downloads, the editor window
+// reads) drops its copy and reads the file afresh.
+async function announceHighlightsSaved() {
   if (IS_TAURI) {
     try { (await import("@tauri-apps/api/event")).emit(HIGHLIGHTS_SAVED_EVENT, null); } catch (_) {}
   }
-  return new Blob([json]).size;
 }
 
 const HIGHLIGHTS_SAVED_EVENT = "hush-zotero-highlights-saved";

@@ -60,6 +60,11 @@ fn collect_files(root: &Path) -> std::io::Result<Vec<(PathBuf, String)>> {
                 if name.ends_with(".tmp") || name.ends_with(".bak") {
                     continue;
                 }
+                // The Zotero sync's raw caches and download journals
+                // (zotero_sync.rs): large, and downloaded again on demand.
+                if name.starts_with("zotero_library_") || name.starts_with("zotero_sync_checkpoint_") {
+                    continue;
+                }
                 // Desk-folder era: per-desk version history lives under
                 // .hush/versions/, unplaced history under
                 // .versions-unplaced/, and retired desks under .deleted/.

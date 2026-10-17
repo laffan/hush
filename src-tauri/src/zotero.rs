@@ -15,6 +15,11 @@ impl ZoteroManager {
         }
     }
 
+    /// Where the Zotero files live (the sync engine writes them itself).
+    pub fn data_dir(&self) -> &PathBuf {
+        &self.data_dir
+    }
+
     /// Save references JSON blob to disk
     pub fn save_references(&self, data: &str) -> Result<(), Box<dyn std::error::Error>> {
         let path = self.data_dir.join("zotero_references.json");
