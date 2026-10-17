@@ -30,7 +30,7 @@ import {
 } from "./sentence-navigator.js";
 import { joinLines, joinLinesUp } from "./join-lines.js";
 import { deleteSentence, deleteToSentenceStart } from "./sentence-delete.js";
-import { selectSentenceOrParenthetical } from "./sentence-parenthetical.js";
+import { selectSentenceOrSpan } from "./sentence-parenthetical.js";
 import {
   toggleBold, toggleItalic, toggleHighlight, toggleComment, toggleStrikethrough,
 } from "./formatting.js";
@@ -290,7 +290,7 @@ export function buildEditorCommands() {
     },
 
     // ===== Editing =====
-    shortcutSelectSentence: (_state, view) => (view ? selectSentenceOrParenthetical(view) : false),
+    shortcutSelectSentence: (_state, view) => (view ? selectSentenceOrSpan(view) : false),
     shortcutSelectParagraph: (_state, view) => (view ? selectParagraph(view) : false),
     shortcutSelectParagraphUp: (_state, view) => (view ? selectToParagraphAbove(view) : false),
     shortcutSelectParagraphDown: (_state, view) => (view ? selectToParagraphBelow(view) : false),
