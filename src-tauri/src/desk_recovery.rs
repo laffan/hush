@@ -48,6 +48,9 @@ pub const KEEP_PER_DESK: usize = 16;
 /// memory (see `build_desk_zip`), and a runaway folder would take the
 /// app down with it. The skip is logged so it's never silent.
 const MAX_DESK_BYTES: u64 = 1 << 30; // 1 GiB
+/// How long the scheduler waits after launch before stamping desks with
+/// edits from the previous run — past the boot reads (`start_scheduler`).
+const SEED_DELAY_SECS: u64 = 20;
 
 static EDIT_STAMPS: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
 
@@ -313,6 +316,11 @@ fn rename_restored_desk(root: &Path, new_name: &str) -> Result<(), BoxError> {
 /// Start the background snapshot thread — once per process, from setup.
 pub fn start_scheduler(data_dir: PathBuf) {
     std::thread::spawn(move || {
+        // The seed stats every file in every local desk folder, and it
+        // would otherwise do so at the moment the webview is reading
+        // that same folder to paint its first surface. Nothing needs the
+        // stamps before the first tick, so let the launch go first.
+        std::thread::sleep(Duration::from_secs(SEED_DELAY_SECS));
         seed_stamps_from_disk(&data_dir);
         loop {
             std::thread::sleep(Duration::from_secs(60));

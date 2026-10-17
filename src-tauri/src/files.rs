@@ -181,9 +181,28 @@ impl FileManager {
         })
     }
 
-    /// The library listing: one row per file in every desk.
+    /// The library listing: one row per file in every desk, with every
+    /// document's body. See `listing`.
+    pub fn list_files(&self) -> Result<Vec<FileSummary>, Box<dyn std::error::Error>> {
+        self.listing(true)
+    }
+
+    /// The boot listing: the same rows, but documents arrive with
+    /// `content: None` too — a `stat` each, not a read — except a doc
+    /// still named Untitled, whose body the empty-Untitled sweep needs
+    /// before the last file is restored. The frontend fills the rest in
+    /// after the first surface is up (`read_document_bodies`).
     ///
-    /// **Content is read for documents only.** This runs on boot, and it
+    /// On an iPhone with a 19-document local desk in a synced folder,
+    /// reading the bodies was 2.5 s of a 4.4 s launch, while finding the
+    /// desk and parsing its index took 2 ms — the cost is the first read
+    /// of each file's bytes, not the walk. See README-TECHNICAL, "Startup".
+    pub fn list_files_for_boot(&self) -> Result<Vec<FileSummary>, Box<dyn std::error::Error>> {
+        self.listing(false)
+    }
+
+    /// **Content is read for documents only** (and, with `bodies` off,
+    /// for placeholder-named documents only). This runs on boot, and it
     /// used to read every file in the library byte for byte — inflating
     /// each `.hushnote` zip and base64-ing every image inside it back
     /// into a data URL, then shipping the lot across IPC. On an iPad with
@@ -195,15 +214,19 @@ impl FileManager {
     /// `read_to_string` rejects their bytes — are never opened at all.
     ///
     /// See README-TECHNICAL, "Startup".
-    pub fn list_files(&self) -> Result<Vec<FileSummary>, Box<dyn std::error::Error>> {
+    fn listing(&self, bodies: bool) -> Result<Vec<FileSummary>, Box<dyn std::error::Error>> {
         static TRACE_IDS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+        static TRACE_SLOWEST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
         let (indexed, staged) = crate::startup_trace::record_first(
             &TRACE_IDS,
             "list_files · find desks + parse their indexes",
             || self.store.list_ids(),
         );
+        let count = indexed.len();
+        let mut slowest: Option<(f64, String)> = None;
         let mut entries = Vec::new();
         for (id, desk_id, rel) in indexed {
+            let started = std::time::Instant::now();
             // Read straight from the (desk, rel) list_ids already
             // resolved. Calling load_file(&id) here would re-`locate`
             // each id, re-parsing every desk index once per file —
@@ -218,12 +241,28 @@ impl FileManager {
                 // Documents, and any extension the kind table doesn't
                 // know — reading an unrecognised one is what this did
                 // before, and the scanner doesn't index them anyway.
-                _ => {
+                _ if bodies || is_placeholder_rel(&rel) => {
                     if let Ok((content, modified, name)) = self.store.read_at(&desk_id, &rel) {
                         entries.push(FileSummary { id, name, content: Some(content), modified });
                     }
                 }
+                _ => {
+                    if let Some((modified, name)) = self.stat_at(&desk_id, &rel) {
+                        entries.push(FileSummary { id, name, content: None, modified });
+                    }
+                }
             }
+            let ms = started.elapsed().as_secs_f64() * 1000.0;
+            if slowest.as_ref().map_or(true, |(m, _)| ms > *m) {
+                slowest = Some((ms, rel));
+            }
+        }
+        if let Some((ms, rel)) = slowest {
+            crate::startup_trace::note_first(
+                &TRACE_SLOWEST,
+                &format!("list_files · slowest of {} entries: {}", count, rel),
+                ms,
+            );
         }
         // Staged ids are freshly-created files that no tree save has
         // placed yet — always tiny, and always a doc in practice.
@@ -273,6 +312,41 @@ impl FileManager {
     pub fn rename_file(&self, id: &str, name: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.store.rename_by_id(id, name)
     }
+}
+
+/// A document still carrying the placeholder name — the only kind the
+/// boot listing reads, because the empty-Untitled sweep decides on its
+/// body (`state/empty-untitled.js#isEmptyUntitled`: the name is
+/// "Untitled" or empty).
+fn is_placeholder_rel(rel: &str) -> bool {
+    matches!(Path::new(rel).file_stem().and_then(|s| s.to_str()), None | Some("") | Some("Untitled"))
+}
+
+/// Every document's body, by fileId — the half of the listing the boot
+/// call leaves out, read after the first surface is on screen.
+///
+/// Takes a store of its own rather than the `FileManager` behind the
+/// mutex: on a synced folder this is the multi-second part, and holding
+/// the lock for it would queue the user's first open or save behind it.
+/// It only reads, and every write is tmp + rename, so a concurrent save
+/// is seen whole or not at all; a file a concurrent tree save moved is
+/// simply missing from the map, which leaves its row without a body
+/// exactly as the boot listing had it.
+pub fn read_document_bodies(store: &DeskStore) -> std::collections::HashMap<String, String> {
+    let (indexed, _staged) = store.list_ids();
+    let mut out = std::collections::HashMap::new();
+    for (id, desk_id, rel) in indexed {
+        if matches!(
+            crate::desk_scan::kind_for_rel(&rel).as_deref(),
+            Some("image") | Some("notebook") | Some("stack")
+        ) {
+            continue;
+        }
+        if let Ok((content, _, _)) = store.read_at(&desk_id, &rel) {
+            out.insert(id, content);
+        }
+    }
+    out
 }
 
 // ===== Tree helpers =====
@@ -430,6 +504,49 @@ mod tests {
             ).unwrap()).unwrap()).unwrap();
         assert_eq!(back["shapes"][0]["dataUrl"], "images/img_1.png");
         assert!(full.content.contains("base64"), "load_file must still re-inline");
+    }
+
+    /// The boot listing leaves every document's body out — except a doc
+    /// still called Untitled, which the empty-Untitled sweep has to judge
+    /// before the last file is restored — and `read_document_bodies`
+    /// hands back exactly the bodies it left out.
+    #[test]
+    fn boot_listing_defers_document_bodies() {
+        let dir = tempfile::tempdir().unwrap();
+        let fm = FileManager::new(dir.path());
+        for (id, body) in [
+            ("f-doc", "# Hello\n\nbody"),
+            ("f-untitled", ""),
+            ("f-nb", r#"{"format":"hushnote","version":1,"shapes":[]}"#),
+        ] {
+            fm.store.stage_new(id).unwrap();
+            fm.store.write_by_id(id, body).unwrap();
+        }
+        let tree = vec![desk(vec![
+            tree_node("document", "Hello", "f-doc"),
+            tree_node("document", "Untitled", "f-untitled"),
+            tree_node("notebook", "Sketch", "f-nb"),
+        ])];
+        fm.save_file_tree(&tree).unwrap();
+
+        let listing = fm.list_files_for_boot().unwrap();
+        let by_id = |id: &str| listing.iter().find(|e| e.id == id).unwrap();
+        let doc = by_id("f-doc");
+        assert_eq!(doc.name, "Hello");
+        assert!(doc.content.is_none(), "boot listing read a document body");
+        assert!(doc.modified > 0, "document row lost its mtime");
+        assert_eq!(by_id("f-untitled").content.as_deref(), Some(""), "the sweep needs Untitled's body");
+        assert!(by_id("f-nb").content.is_none());
+
+        let bodies = read_document_bodies(&fm.store);
+        assert_eq!(bodies.get("f-doc").map(String::as_str), Some("# Hello\n\nbody"));
+        assert_eq!(bodies.get("f-untitled").map(String::as_str), Some(""));
+        assert!(!bodies.contains_key("f-nb"), "a notebook is not a document body");
+
+        // The full listing is unchanged for every other caller.
+        let full = fm.list_files().unwrap();
+        let doc = full.iter().find(|e| e.id == "f-doc").unwrap();
+        assert_eq!(doc.content.as_deref(), Some("# Hello\n\nbody"));
     }
 
     /// A stat, not a read — but still a stat. A notebook whose bytes

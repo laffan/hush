@@ -428,6 +428,7 @@ pub fn run() {
             widgets::publish_widget_snapshot,
             widgets::claim_widget_link,
             commands::files::list_files,
+            commands::files::read_document_bodies,
             commands::files::rename_wikilinks,
             commands::files::load_file,
             commands::files::file_availability,

@@ -36,6 +36,7 @@ use crate::TreeNode;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Mutex, OnceLock};
 
 type BoxError = Box<dyn std::error::Error>;
@@ -370,7 +371,19 @@ impl DeskStore {
     }
 
     pub fn load_forest(&self) -> Result<Vec<TreeNode>, BoxError> {
-        self.reconcile_desk_registrations();
+        // The launch's load is the first call; its two halves get native
+        // startup-trace rows (see `commands::files::get_file_tree`).
+        static TRACE_REGS: AtomicBool = AtomicBool::new(true);
+        static TRACE_TREES: AtomicBool = AtomicBool::new(true);
+        crate::startup_trace::record_first(&TRACE_REGS, "get_file_tree · reconcile desk registrations", || {
+            self.reconcile_desk_registrations()
+        });
+        crate::startup_trace::record_first(&TRACE_TREES, "get_file_tree · read desk trees", || {
+            self.load_forest_trees()
+        })
+    }
+
+    fn load_forest_trees(&self) -> Result<Vec<TreeNode>, BoxError> {
         let order = self.load_order();
 
         // Two guards, and they are not the same one. `keys` stops the

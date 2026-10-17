@@ -85,6 +85,23 @@ pub fn record_first<T>(armed: &AtomicBool, name: &str, f: impl FnOnce() -> T) ->
     }
 }
 
+/// A row for a duration measured elsewhere — the slowest single file in
+/// a loop, say, where the loop as a whole is already its own row. Same
+/// `armed` contract as `record_first`.
+pub fn note_first(armed: &AtomicBool, name: &str, ms: f64) {
+    if !armed.swap(false, Ordering::Relaxed) {
+        return;
+    }
+    let phase = Phase {
+        name: name.to_string(),
+        start_ms: ms_since_launch() - ms,
+        ms,
+    };
+    if let Ok(mut list) = phases().lock() {
+        list.push(phase);
+    }
+}
+
 /// The trace so far.
 pub fn snapshot() -> NativeTrace {
     NativeTrace {

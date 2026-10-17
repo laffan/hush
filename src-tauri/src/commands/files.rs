@@ -10,7 +10,15 @@ use crate::{AppState, FileEntry, FileSummary, TreeNode};
 // Async: still walks every desk index and reads every document, which is
 // not main-thread work. Notebooks, stacks and images no longer have their
 // bytes opened at all — see `FileManager::list_files`.
-pub async fn list_files(state: State<'_, AppState>) -> Result<Vec<FileSummary>, String> {
+//
+// `documents: false` is the boot call: documents get a `stat` instead of
+// a read (`FileManager::list_files_for_boot`), and their bodies follow
+// from `read_document_bodies` once the app is on screen. Every other
+// caller omits it and gets the full listing as before.
+pub async fn list_files(
+    state: State<'_, AppState>,
+    documents: Option<bool>,
+) -> Result<Vec<FileSummary>, String> {
     // The launch's call is split in the native startup trace: time spent
     // queued behind another command holding the file manager, then the
     // listing itself (which records its index walk separately).
@@ -19,8 +27,23 @@ pub async fn list_files(state: State<'_, AppState>) -> Result<Vec<FileSummary>, 
     let fm = record_first(&TRACE_LOCK, "list_files · wait for file manager", || {
         state.file_manager.lock().unwrap()
     });
-    record_first(&TRACE_LIST, "list_files · whole listing", || fm.list_files())
-        .map_err(|e| e.to_string())
+    record_first(&TRACE_LIST, "list_files · whole listing", || {
+        if documents == Some(false) { fm.list_files_for_boot() } else { fm.list_files() }
+    })
+    .map_err(|e| e.to_string())
+}
+
+/// fileId → body for every document in the library — what the boot
+/// listing left out. Off the file-manager mutex and on a blocking thread:
+/// see `files::read_document_bodies`.
+#[tauri::command]
+pub async fn read_document_bodies() -> Result<std::collections::HashMap<String, String>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let store = crate::desk_store::DeskStore::new(&crate::get_data_dir());
+        crate::files::read_document_bodies(&store)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -164,8 +187,18 @@ pub fn rename_file(state: State<AppState>, id: String, name: String) -> Result<(
 }
 
 #[tauri::command]
-pub fn get_file_tree(state: State<AppState>) -> Result<Vec<TreeNode>, String> {
-    state.file_manager.lock().unwrap().get_file_tree().map_err(|e| e.to_string())
+// Async: it reads every desk's tree.json, inside a synced folder for a
+// local desk, and a synchronous command runs on the main thread — the
+// boot call was 1.33 s on an iPhone with nothing on screen to freeze but
+// the IPC queue behind it. Traced like `list_files`.
+pub async fn get_file_tree(state: State<'_, AppState>) -> Result<Vec<TreeNode>, String> {
+    static TRACE_LOCK: AtomicBool = AtomicBool::new(true);
+    static TRACE_TREE: AtomicBool = AtomicBool::new(true);
+    let fm = record_first(&TRACE_LOCK, "get_file_tree · wait for file manager", || {
+        state.file_manager.lock().unwrap()
+    });
+    record_first(&TRACE_TREE, "get_file_tree · whole load", || fm.get_file_tree())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -184,7 +184,8 @@ export class AppState {
         if (Object.keys(migrated).length) {
           try { await tauriInvoke("patch_settings", { patch: migrated }); } catch (_) {}
         }
-        this.files = await phase("list_files — index every desk, read the documents", () => tauriInvoke("list_files"));
+        // Bodies follow after the reveal (document-bodies.js; README-TECHNICAL, "Startup").
+        this.files = await phase("list_files — index every desk (bodies after reveal)", () => tauriInvoke("list_files", { documents: false }));
         this.fileTree = await phase("get_file_tree", () => tauriInvoke("get_file_tree"));
         await phase("migrate legacy tree", () => _desks.migrateLegacyTreeIfNeeded(this));
         const specialsChanged = phaseSync("ensure special nodes", () => this.ensureSpecialNodes());

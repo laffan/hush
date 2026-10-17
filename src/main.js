@@ -264,6 +264,9 @@ async function init() {
   // wiring the user can't see, so the splash comes down here rather than
   // at the end of init().
   revealApp(state);
+  // Document bodies the boot listing left on disk — the sidebar's tab,
+  // heading and card rows read them out of `state.files`.
+  import("./state/document-bodies.js").then(({ hydrateDocumentBodies }) => hydrateDocumentBodies(state));
   // Sticky notes — temporary reminders floating above every surface.
   import("./sticky/sticky-notes.js").then(({ initStickyNotes }) => initStickyNotes(state));
   // Wall clock — "Toggle clock"; mounts only while switched on.
