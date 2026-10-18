@@ -489,7 +489,7 @@ export function createStrokeEngine({
     },
     clearCtx,
     getStrokes: () => state.strokes,
-    getTintedAtlas: (brushId, color) => atlas.getTintedAtlas(brushId, color),
+    getTintedAtlas: (brushId, color, diameter) => atlas.getTintedAtlas(brushId, color, diameter),
     options: OPTIONS,
     isVisible: (s) => !isStrokeHidden(s),
     // Hush delta #38: a stroke's own switch, else the notebook's default
@@ -1190,7 +1190,10 @@ export function createStrokeEngine({
     // on an empty canvas, so multiplying against transparent would just show
     // the source anyway.
     renderBrushSwatch(brushId, color, targetCtx, x, y, size, mode) {
-      const { atlas: tinted, cell } = atlas.getTintedAtlas(brushId, color);
+      // Delta #40: same mip pick as a stroke, so the flyout's demo stroke
+      // reads at the thickness the pen will draw.
+      const m = targetCtx.getTransform();
+      const { atlas: tinted, cell } = atlas.getTintedAtlas(brushId, color, size * Math.hypot(m.a, m.b));
       const { strokeAlpha } = getModeComposite(mode || 'normal');
       const half = size / 2;
       targetCtx.save();

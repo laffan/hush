@@ -5,6 +5,8 @@
  *   1b. loadPngBrushes skips the fetch when resolveBrushUrl(id)
  *       returns a falsy value, so brushes with no PNG (e.g. the
  *       highlighter's procedural flat fallback) don't fire a 404.
+ *   Hush delta #40: per-mask mip chain; getTintedAtlas picks the level
+ *       that fits the stamp's device-pixel diameter.
  * ============================================================
  *
  * stroke-atlas.js (stamped) — brush atlas cache.
@@ -134,9 +136,57 @@ async function loadBrushAtlasPng(url) {
   }
 }
 
-// atlasMasks: brushId → { mask, fromPng, cell, variants } — cell+variants
-//   may be overridden by the loaded PNG (defaults to ATLAS_CELL/ATLAS_VARIANTS).
-// tintAtlasCache: brushId|color → { canvas, bitmap? } (tinted atlas).
+// Hush delta #40: mip levels. A stamp is a 128-px cell drawn into a
+// few device pixels — the default 3-px pen is 4–6 px at DPR 2 and one
+// or two once the backing's DPR drops for a zoomed-out view — so every
+// drawImage is a 20–150× minification, and what that looks like is up
+// to the browser's image filter. Chromium mipmaps it; WebKit's canvas
+// does not reliably, and point-samples a handful of texels out of the
+// cell instead. For a textured tip that is the difference between the
+// stroke's real body and a sparse, thinner one, and it changes with the
+// backing's DPR (zoom crossings) and with which canvas of the delta-#31
+// swap pair did the painting — so after zooming out and back in, ink
+// re-stamped by one pass read thinner than ink painted by another. Each
+// mask therefore carries a chain of box-filtered halvings, built once,
+// and a stroke stamps from the smallest level whose cell still covers
+// its device-pixel diameter: no draw minifies by more than ~2× at full
+// pressure, which every filter handles the same way.
+const MIN_MIP_CELL = 4;
+
+// Halve an atlas repeatedly down to MIN_MIP_CELL-pixel cells. An exact
+// 2× bilinear reduction averages each aligned 2×2 block, and cells sit
+// on even boundaries at every level, so neighbouring variants never
+// bleed into each other.
+function buildMipChain(mask, cell) {
+  const levels = [mask];
+  let src = mask;
+  let c = cell;
+  while (c / 2 >= MIN_MIP_CELL && src.width % 2 === 0 && src.height % 2 === 0) {
+    const next = document.createElement('canvas');
+    next.width = src.width / 2;
+    next.height = src.height / 2;
+    const ctx = next.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(src, 0, 0, src.width, src.height, 0, 0, next.width, next.height);
+    levels.push(next);
+    src = next;
+    c /= 2;
+  }
+  return levels;
+}
+
+/** Smallest mip level whose cell is at least `diameter` device px. */
+function levelFor(entry, diameter) {
+  if (!(diameter > 0)) return 0;
+  const k = Math.floor(Math.log2(entry.cell / diameter));
+  return Math.max(0, Math.min(entry.mips.length - 1, k));
+}
+
+// atlasMasks: brushId → { mask, mips, fromPng, cell, variants } — cell+variants
+//   may be overridden by the loaded PNG (defaults to ATLAS_CELL/ATLAS_VARIANTS);
+//   mips[0] is the mask itself, mips[k] has cells of cell / 2^k.
+// tintAtlasCache: brushId|color|level → { canvas, bitmap? } (tinted atlas).
 //
 // Hush delta #30: each tinted atlas is asynchronously promoted to an
 // ImageBitmap, and getTintedAtlas hands the bitmap out once it
@@ -163,8 +213,10 @@ export function createAtlasCache({ onAtlasReady, brushUrl } = {}) {
     // this when they finish decoding. Shape picks the cell look: the
     // highlighter reads right even without a PNG thanks to the flat fallback.
     const def = getBrushDef(brushId);
+    const mask = makeFallbackAtlasMask(def.fallbackShape);
     entry = {
-      mask: makeFallbackAtlasMask(def.fallbackShape),
+      mask,
+      mips: buildMipChain(mask, ATLAS_CELL),
       fromPng: false,
       cell: ATLAS_CELL,
       variants: ATLAS_VARIANTS,
@@ -173,12 +225,15 @@ export function createAtlasCache({ onAtlasReady, brushUrl } = {}) {
     return entry;
   }
 
-  function getTintedAtlas(brushId, color) {
+  // `diameter` is the stamp's full-pressure size in device pixels of the
+  // target (delta #40); omitted, the full-resolution atlas is returned.
+  function getTintedAtlas(brushId, color, diameter) {
     const entry = ensureAtlasMask(brushId);
-    const key = `${brushId}|${color}`;
+    const level = levelFor(entry, diameter);
+    const key = `${brushId}|${color}|${level}`;
     let tinted = tintAtlasCache.get(key);
     if (!tinted) {
-      tinted = { canvas: tintAtlasMask(entry.mask, color), bitmap: null };
+      tinted = { canvas: tintAtlasMask(entry.mips[level], color), bitmap: null };
       tintAtlasCache.set(key, tinted);
       if (canMakeBitmaps) {
         // Promote to an immutable (texture-cacheable) source. Guard
@@ -190,7 +245,7 @@ export function createAtlasCache({ onAtlasReady, brushUrl } = {}) {
         }).catch(() => {});
       }
     }
-    return { atlas: tinted.bitmap || tinted.canvas, cell: entry.cell, variants: entry.variants };
+    return { atlas: tinted.bitmap || tinted.canvas, cell: entry.mips[level].height, variants: entry.variants };
   }
 
   // Async-load PNG atlases for each brush slot in the background. When a
@@ -208,7 +263,7 @@ export function createAtlasCache({ onAtlasReady, brushUrl } = {}) {
       if (!canvas) return;
       const cell = canvas.height;
       const variants = Math.max(1, Math.floor(canvas.width / cell));
-      atlasMasks.set(def.id, { mask: canvas, fromPng: true, cell, variants });
+      atlasMasks.set(def.id, { mask: canvas, mips: buildMipChain(canvas, cell), fromPng: true, cell, variants });
       for (const k of [...tintAtlasCache.keys()]) {
         if (k.startsWith(`${def.id}|`)) {
           const stale = tintAtlasCache.get(k);

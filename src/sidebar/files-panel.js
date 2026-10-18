@@ -10,7 +10,7 @@ import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pan
 import { escHtml, showPromptModal, googleLinkBadgeHtml, computeNumberLabels, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
 import {
   isInboxId, isImagesId, isPdfsId, isTrashId, isAnySpecialId,
-  isInboxItem, isArchiveItem, inboxNameHtml,
+  isInboxItem, isArchiveItem, inboxNameHtml, sortInboxByEdited,
   visibleTopLevel, renderedDeskIdFor, commitRenderedChildren, isAllDesksMode, numberSkip, hasPairedGutter, getIcon,
   actionButtons, getPdfSync, buildPdfRowHtml,
   isItemActive,
@@ -96,7 +96,7 @@ export function createFilesPanel(container, state, hidePanel) {
 
   reapplyGutterMarkers(state.fileTree);
   renderedDeskId = renderedDeskIdFor(state);
-  const sortedTree = augmentTreeWithCards(state, augmentTreeWithHeadings(state, augmentTreeWithTabs(state, normalizeProjectChildren(visibleTopLevel(state)))));
+  const sortedTree = augmentTreeWithCards(state, augmentTreeWithHeadings(state, augmentTreeWithTabs(state, sortInboxByEdited(state, normalizeProjectChildren(visibleTopLevel(state))))));
   numberLabels = computeNumberLabels(sortedTree, numberSkip, isInboxId);
 
   sortableInstance = new SortableList(listContainer, {
@@ -553,7 +553,7 @@ function refreshList(state) {
     // contents (project, PDFs, Inbox) into whichever desk the panel was
     // first built on. That is how content "moved desks" overnight.
     renderedDeskId = renderedDeskIdFor(state);
-    const sorted = augmentTreeWithCards(state, augmentTreeWithHeadings(state, augmentTreeWithTabs(state, normalizeProjectChildren(visibleTopLevel(state)))));
+    const sorted = augmentTreeWithCards(state, augmentTreeWithHeadings(state, augmentTreeWithTabs(state, sortInboxByEdited(state, normalizeProjectChildren(visibleTopLevel(state))))));
     numberLabels = computeNumberLabels(sorted, numberSkip, isInboxId);
     foldCardParents(sorted, sortableInstance.state.collapsedIds);
     sortableInstance.setData(sorted);

@@ -13,7 +13,7 @@
  * to refresh in place; outside clicks dismiss the popover.
  */
 
-import { escHtml, DRAG_HANDLE_SVG, deskRatchetGlyph, LOCAL_HOUSE_PATHS } from "./files-panel-shared.js";
+import { escHtml, DRAG_HANDLE_SVG, deskRatchetGlyph } from "./files-panel-shared.js";
 import { isDesktopTauri } from "../command-palette-helpers.js";
 import { chevronSvg } from "../ui/chevron.js";
 import { customIconSvg, deskIconName, deskShowsName } from "../ui/custom-icons.js";
@@ -185,16 +185,18 @@ function buildPopoverBody(state) {
   return wrap;
 }
 
+/** A map pin — a circle drawn down to a point at the bottom. */
+const LOCAL_PIN_PATH = `<path d="M8 15.25C8 15.25 3.25 10.4 3.25 6.5a4.75 4.75 0 0 1 9.5 0c0 3.9-4.75 8.75-4.75 8.75Z" />`;
+
 function deskRowHtml(d, activeId, canArchive, isLocal = false, iconSlot = false) {
   const isActive = d.id === activeId;
   const mark = isActive ? CHECK : "";
   // Desks in Ratchet mode wear the ratchet glyph after their name.
   const ratchetGlyph = deskRatchetGlyph(_state, d.id);
   // Local desks (operating from a user-picked folder) wear a small
-  // house outline after the name — the same shape Local Folder mounts
-  // use in the files tree.
+  // filled map pin after the name.
   const localGlyph = isLocal
-    ? `<svg viewBox="0 0 16 16" class="desk-switcher-local-glyph" data-tooltip="Local desk" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${LOCAL_HOUSE_PATHS}</svg>`
+    ? `<svg viewBox="0 0 16 16" class="desk-switcher-local-glyph" data-tooltip="Local desk" fill="currentColor">${LOCAL_PIN_PATH}</svg>`
     : "";
   // A local desk is named by its folder, so renaming one renames the
   // folder too — which is something iOS won't let Hush do from in here

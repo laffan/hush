@@ -41,7 +41,6 @@ import type { AnchorState } from "./re-anchor";
 // Re-export so callers that imported these from drawing-layer.ts keep working.
 export type { DrawingLayer, SelectionStyleEntry, SelectionStylePatch };
 
-
 /** Per-canvas memory cap. 4096×4096 = 16 MP. iPad-safe across the
  *  range; beyond it the backing DPR degrades rather than the canvas
  *  blowing up its context. The re-anchor controller (`re-anchor.ts`)
@@ -56,7 +55,6 @@ const MAX_DPR = 2;
 // theme-retint) live in `brush-runtime.ts` so this file stays under the
 // 700-line cap.
 import { applySlotToEngine, renderSwatchToCanvas, renderDemoStrokeToCanvas, applyThemeAndRetint } from "./brush-runtime";
-
 
 /** Construction options. `state` is Hush's DrawingState (kept
  *  structural to avoid a circular import). */
@@ -145,11 +143,11 @@ export function createDrawingLayer({
 
   const cameraRef: Camera = { x: camera.x, y: camera.y, zoom: camera.zoom, rotation: camera.rotation };
 
-  function currentDpr(): number {
+  function dprFor(worldSize: number): number {
     const native = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-    const maxFit = Math.sqrt(MAX_BACKING_PIXELS / (anchor.worldSize * anchor.worldSize));
-    return Math.min(native, maxFit);
+    return Math.min(native, Math.sqrt(MAX_BACKING_PIXELS / (worldSize * worldSize)));
   }
+  function currentDpr(): number { return dprFor(anchor.worldSize); }
 
   // Pocket / done-canvas blit helpers live in pocket-blit.ts. Origin,
   // worldSize, and DPR are read via getters every call — the layer
@@ -196,11 +194,9 @@ export function createDrawingLayer({
     cameraRef.y = next.y;
     cameraRef.zoom = next.zoom;
     cameraRef.rotation = next.rotation;
-    // Hot path on every pan/zoom frame: see whether the camera
-    // viewport is still well inside the canvas backing. If yes, just
-    // update the wrapper's CSS transform — GPU-composited and free.
-    // If the viewport is drifting toward the canvas edge (or the
-    // zoom level wants a different canvas size), re-anchor first.
+    // Hot path on every pan/zoom frame: re-anchor only when the viewport
+    // drifts toward the backing's edge or the zoom wants another size;
+    // otherwise this is just the GPU-composited wrapper transform.
     ensureCoverage(next);
     applyWrapperTransform(next);
   }
@@ -478,6 +474,9 @@ export function createDrawingLayer({
     ensurePocketStash, releasePocketStash,
     sizeCanvases,
     getDpr: currentDpr,
+    dprFor,
+    isBusy: () => strokeEngine.hasActiveStroke(),
+    onSettled: () => applyWrapperTransform(cameraRef),
     // The host box, not the window — a stack column or a pane is a
     // fraction of it, and the coverage math turns that difference into
     // canvas reallocations. Falls back to the window while the container
@@ -657,6 +656,7 @@ export function createDrawingLayer({
   const { hasSelection, snapshotSelectedStyle, applyStyleToSelection, commitStyleHistory } = selectionStyle;
 
   function destroy(): void {
+    reanchorCtl.destroy();
     shim.destroy();
     region.destroy();
     selectionBridge.destroy();

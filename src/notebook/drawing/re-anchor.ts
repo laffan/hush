@@ -69,6 +69,12 @@ const RESIZE_RATIO_THRESHOLD = 1.4;
  *  blits in the worst drift band while tolerating ~10% of zoom-out
  *  drift before a real resize. */
 const MIN_KEEP_COVERAGE = 1.35;
+/** How long the camera has to sit still before `settle` may shrink the
+ *  backing back down. Long enough that a pinch which pauses for a beat
+ *  doesn't pay a full rebake mid-gesture. */
+const SETTLE_MS = 300;
+/** Smallest DPR gain worth a settle's full rebake. */
+const SETTLE_DPR_GAIN = 1.1;
 
 /** Mutable holder for the canvas backing's world-space anchor +
  *  side length. Owned by the drawing layer so its closures
@@ -114,6 +120,14 @@ export interface ReanchorOptions {
   sizeCanvases: () => void;
   /** Live DPR getter (capped against MAX_BACKING_PIXELS). */
   getDpr: () => number;
+  /** The DPR a backing of `worldSize` would get under the same cap. */
+  dprFor?: (worldSize: number) => number;
+  /** True while a re-anchor's rebake would interrupt the user (a stroke
+   *  in flight) — `settle` waits it out. */
+  isBusy?: () => boolean;
+  /** A settle moved the origin outside a camera update — the host
+   *  re-applies the wrapper transform, which carries the origin. */
+  onSettled?: () => void;
   /** Size of the box this canvas actually fills, in CSS px.
    *
    *  Not the window: a canvas hosted in a stack column or a floating
@@ -141,6 +155,8 @@ export interface ReanchorController {
    *  shim's bulk-replace path can restore stash pixels for pocketed
    *  strokes that were never painted to the done canvas. */
   restashPocketedStrokes(): void;
+  /** Cancel a pending settle (the layer is being torn down). */
+  destroy(): void;
 }
 
 export function createReanchor(opts: ReanchorOptions): ReanchorController {
@@ -220,10 +236,10 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
     pocketStashCtx.restore();
   }
 
-  function reAnchor(cam: Camera): void {
+  function reAnchor(cam: Camera, forceSize?: number): void {
     const vp = viewportWorldBounds(cam);
     const vpSide = viewportSide(vp);
-    const want = Math.max(WORLD_SIZE_MIN, vpSide * VIEWPORT_COVERAGE_FACTOR);
+    const want = forceSize ?? Math.max(WORLD_SIZE_MIN, vpSide * VIEWPORT_COVERAGE_FACTOR);
     // Size hysteresis — keep the current worldSize (blit path) unless
     // it's genuinely wrong for the camera: too tight to buy real pan
     // slack (MIN_KEEP_COVERAGE), or oversized past the same ratio the
@@ -233,7 +249,8 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
     const mustGrow = want > anchor.worldSize * RESIZE_RATIO_THRESHOLD;
     const shouldShrink = anchor.worldSize > want * RESIZE_RATIO_THRESHOLD && anchor.worldSize > WORLD_SIZE_MIN;
     const coverageTooTight = anchor.worldSize < vpSide * MIN_KEEP_COVERAGE;
-    const newSize = (mustGrow || shouldShrink || coverageTooTight) ? want : anchor.worldSize;
+    const newSize = (forceSize !== undefined || mustGrow || shouldShrink || coverageTooTight)
+      ? want : anchor.worldSize;
     const vpCenterX = (vp.left + vp.right) / 2;
     const vpCenterY = (vp.top + vp.bottom) / 2;
     let newOriginX = vpCenterX - newSize / 2;
@@ -296,10 +313,49 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
     }
   }
 
-  function ensureCoverage(cam: Camera): void {
-    if (!needsReanchor(cam)) return;
-    reAnchor(cam);
+  // The size hysteresis above keeps pinches cheap, but it also means a
+  // zoom back in never gives the resolution back: out at 0.25 the
+  // backing grows to several times the viewport (and, with the pixel
+  // count capped, its DPR drops well under the screen's), and on the
+  // way back to 1 it only shrinks once it is 1.4× too big — so a
+  // 2048-px view was left on a ~2900-px backing, its ink stamped at
+  // about 70 % of the screen's DPR and magnified, until some later
+  // camera move happened to cross a threshold. A textured pen stroke
+  // is a few device pixels wide, so that loss reads as the ink thinning
+  // out. Once the camera rests, `settle` resizes to what the view
+  // actually wants whenever that buys real resolution.
+  const dprFor = opts.dprFor;
+  let settleCam: Camera | null = null;
+  let settleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function wouldSharpen(cam: Camera): boolean {
+    if (!dprFor) return false;
+    const want = wantWorldSize(cam);
+    return want < anchor.worldSize && dprFor(want) >= getDpr() * SETTLE_DPR_GAIN;
   }
 
-  return { ensureCoverage, reAnchor, restashPocketedStrokes };
+  function settle(): void {
+    settleTimer = null;
+    const cam = settleCam;
+    if (!cam || !wouldSharpen(cam)) return;
+    if (opts.isBusy?.()) { settleTimer = setTimeout(settle, SETTLE_MS); return; }
+    reAnchor(cam, wantWorldSize(cam));
+    opts.onSettled?.();
+  }
+
+  function ensureCoverage(cam: Camera): void {
+    if (needsReanchor(cam)) reAnchor(cam);
+    if (settleTimer) clearTimeout(settleTimer);
+    settleTimer = null;
+    if (!wouldSharpen(cam)) return;
+    settleCam = { ...cam };
+    settleTimer = setTimeout(settle, SETTLE_MS);
+  }
+
+  function destroy(): void {
+    if (settleTimer) clearTimeout(settleTimer);
+    settleTimer = null;
+  }
+
+  return { ensureCoverage, reAnchor, restashPocketedStrokes, destroy };
 }

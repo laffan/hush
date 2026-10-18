@@ -7,7 +7,7 @@
  */
 
 import { AppState } from "../state/state.js";
-import { findParentOfNode, enforceSpecialPositions } from "../state/tree-helpers.js";
+import { findParentOfNode, enforceSpecialPositions, isCardsHome } from "../state/tree-helpers.js";
 import { typeIcons, leafIcon, escHtml } from "./files-panel-shared.js";
 import { renderRowMenuButton, renderFlagOnlyMenuButton } from "./files-panel-row-menu.js";
 import { isTabMarkerItem } from "./files-panel-tabs.js";
@@ -125,6 +125,40 @@ export function isInboxItem(tree, item) {
   if (!item?.fileId) return false;
   if (item.type !== "document" && item.type !== "notebook" && item.type !== "stack") return false;
   return isInboxId(findParentOfNode(tree, item.id)?.id);
+}
+
+/** Put every Inbox's rows in last-edited order, newest first — the order
+ *  the "last edited" line under each name reads in. Keyed on the same
+ *  library mtime that line shows; a folder or project goes by the
+ *  newest file inside it. A file the listing has no mtime for yet was
+ *  just made, so it counts as newest; anything else without one (a PDF,
+ *  an empty folder) sinks to the bottom. The CARDS notebook stays pinned
+ *  first, and ties keep their tree order. Sorts in place, like
+ *  `normalizeProjectChildren`, so a drag writes back what is shown. */
+export function sortInboxByEdited(state, nodes) {
+  const mtimes = new Map((state.files || []).map((f) => [f.id, f.modified]));
+  const keyOf = (n) => {
+    if (n.fileId) {
+      const m = mtimes.get(n.fileId);
+      if (typeof m === "number" && m) return m;
+      return (n.type === "document" || n.type === "notebook" || n.type === "stack") ? Infinity : -Infinity;
+    }
+    let newest = -Infinity;
+    for (const c of n.children || []) newest = Math.max(newest, keyOf(c));
+    return newest;
+  };
+  const visit = (list) => {
+    for (const n of list || []) {
+      if (!Array.isArray(n.children)) continue;
+      if (n.type === "desk") { visit(n.children); continue; }
+      if (!isInboxId(n.id)) continue;
+      const keys = new Map(n.children.map((c) => [c, isCardsHome(c) ? Infinity : keyOf(c)]));
+      // Array#sort is stable, so equal keys keep their tree order.
+      n.children.sort((a, b) => (isCardsHome(b) - isCardsHome(a)) || (keys.get(b) - keys.get(a)) || 0);
+    }
+  };
+  visit(nodes);
+  return nodes;
 }
 
 /** Is this row a file kept in a desk's Archive — directly, or inside a

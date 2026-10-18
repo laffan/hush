@@ -1130,8 +1130,7 @@ button.desk-switcher-row.desk-switcher-add {
   white-space: nowrap;
 }
 
-/* House-outline marker on desks operating from a local folder —
-   matches the Local Folder mount icon in the files tree. */
+/* Filled map-pin marker on desks operating from a local folder. */
 .desk-switcher-local-glyph {
   width: 10px;
   height: 10px;

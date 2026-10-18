@@ -228,7 +228,12 @@ export function createRenderer({ doneCtx, hlCtx, clearCtx, getStrokes, getTinted
   function renderStroke(ctx, stroke, xform) {
     const streamPts = streamPtsFor(stroke);
     const brushId = stroke.brush || BRUSH_DEFS[0].id;
-    const tinted = getTintedAtlas(brushId, stroke.color);
+    // Hush delta #40: stamp from the mip level that fits this stroke's
+    // full-pressure diameter in the target's device pixels — the bake
+    // targets carry the DPR in their transform, an export ctx its own
+    // scale — so the brush texture is never minified by more than ~2×.
+    const m = ctx.getTransform();
+    const tinted = getTintedAtlas(brushId, stroke.color, stroke.size * hypot(m.a, m.b));
     const { composite, strokeAlpha } = getModeComposite(stroke.mode || 'normal');
     if (composite === 'source-over' && strokeAlpha === 1) {
       stampStream(ctx, streamPts, stroke.size, tinted, options.spacing, xform);

@@ -548,6 +548,12 @@ async function _saveNotebookInner(opts) {
       if (mountSwapped()) return null;
       _lastSavedContent = content;
       if (wasContentDirty) {
+        // The library cache's mtime is what the Inbox's "last edited" line
+        // shows and orders by; a doc save patches it (state-files.js), and
+        // a notebook's content save has to as well. Camera-only saves
+        // aren't edits.
+        const cached = _appState?.files?.find((f) => f.id === fileId);
+        if (cached) cached.modified = Math.floor(Date.now() / 1000);
         if (wantSnapshot) _saveGate.markSnapshotTaken();
         else _saveGate.snapshotPending = true;
       }
