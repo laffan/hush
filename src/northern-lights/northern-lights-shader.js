@@ -17,6 +17,13 @@
  *              moving net of caustic lines a rippling surface throws (two
  *              wandering cell patterns, borders lit), and soft rings
  *              rolling in from the edge.
+ *   Thrum (2)  no lines at all: slow, irregular patches of soft
+ *              gradient. A noise field warped through two other noise
+ *              fields (each drifting on its own) gives shapes that fold
+ *              and pool rather than drift past; it decides both how far
+ *              in the light reaches and which colours it is, so each
+ *              patch is a gradient of its own, and it swells and ebbs
+ *              on a slow throb.
  *
  * Colour: all but the palette's last colour are spread along the edge by
  * a slow noise field; the last is what the far reach fades into. With
@@ -36,7 +43,7 @@ uniform float u_depth;    // reach, in canvas px
 uniform float u_opacity;
 uniform float u_sat;
 uniform float u_fade;
-uniform int   u_kind;     // 0 polar, 1 scuba
+uniform int   u_kind;     // 0 polar, 1 scuba, 2 thrum
 uniform int   u_count;    // colours in use, 2..${MAX_SHADER_COLORS}
 uniform vec3  u_colors[${MAX_SHADER_COLORS}];
 
@@ -78,6 +85,9 @@ float fbm(vec2 p) {
   return 0.5 + 0.5 * v / 0.875;
 }
 
+// One octave, 0..1: the broad, smooth shapes Thrum is made of.
+float soft(vec2 p) { return 0.5 + 0.5 * snoise(p); }
+
 vec2 hash2(vec2 p) {
   p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
   return fract(sin(p) * 43758.5453);
@@ -118,12 +128,25 @@ float edgeDistance(vec2 p) {
   return min(min(p.x, u_res.x - p.x), min(p.y, u_res.y - p.y));
 }
 
+// The edge distance with the corners rounded off (a soft minimum of the
+// four), so a patch turning a corner bends round it instead of meeting
+// itself along the diagonal.
+float roundedEdgeDistance(vec2 p, float k) {
+  float e = exp(-p.x / k) + exp(-(u_res.x - p.x) / k) + exp(-p.y / k) + exp(-(u_res.y - p.y) / k);
+  return max(-k * log(e), 0.0);
+}
+
 void main() {
   vec2 px = gl_FragCoord.xy;
   float t = u_time;
   bool scuba = u_kind == 1;
+  bool thrum = u_kind == 2;
   // Past the furthest any lobe (or the water's bend) can reach: nothing.
-  if (edgeDistance(px) > u_depth * (scuba ? 1.85 : 1.6)) { outColor = vec4(0.0); return; }
+  // Thrum's reach is 1.6 depths and fades out to 1.1 of that, measured
+  // on rounded corners, which can read up to 0.42 depths nearer the
+  // edge than the plain distance (k·ln 4 at k = 0.3 depth): 2.2 covers it.
+  float bound = thrum ? 2.2 : (scuba ? 1.85 : 1.6);
+  if (edgeDistance(px) > u_depth * bound) { outColor = vec4(0.0); return; }
 
   float s = min(u_res.x, u_res.y);
   vec2 uv = px / s;
@@ -137,6 +160,26 @@ void main() {
     px += warp * u_depth * 0.16;
   }
   float d = max(edgeDistance(px), 0.0);
+
+  if (thrum) {
+    // Large single-octave shapes, bent gently by two others drifting on
+    // their own: broad patches that fold into one another rather than
+    // slide past, with no fine detail to catch the eye.
+    vec2 w = vec2(soft(uv * 0.7 + vec2(t * 0.02, 0.0)),
+                  soft(uv * 0.7 + vec2(5.2, 1.3) - t * 0.016));
+    float field = soft(uv * 0.85 + 1.2 * w + vec2(1.7, 9.2) + t * 0.01);
+    float reachT = u_depth * (0.3 + 1.3 * smoothstep(0.25, 0.85, field));
+    float xt = roundedEdgeDistance(px, max(u_depth * 0.3, 1.0)) / max(reachT, 1.0);
+    float throb = 0.72 + 0.28 * sin(t * 0.35 + field * 5.0 + w.x * 3.0);
+    float glowT = smoothstep(1.1, 0.0, xt) * throb;
+    // Colour from a field of its own, so neighbouring patches differ,
+    // spread over the palette's whole width so many colours don't band.
+    float hue = soft(uv * 0.9 + 0.9 * w + vec2(3.1, 7.7) - t * 0.012);
+    vec3 colT = paletteColor(0.3 + 0.4 * hue, xt);
+    float aT = clamp(glowT, 0.0, 1.0) * u_opacity * u_fade;
+    outColor = vec4(colT * aT, aT);
+    return;
+  }
 
   vec2 q = (px - 0.5 * u_res) / s;
   float ang = atan(q.y, q.x);

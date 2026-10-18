@@ -11,11 +11,13 @@
  * not a preference.
  */
 
-/** The two skies the overlay can draw (northern-lights-overlay.js):
- *  curtains of light, or the same light seen through rippling water. */
+/** The skies the overlay can draw (northern-lights-shader.js): curtains
+ *  of light, the same light seen through rippling water, or slow
+ *  irregular patches of gradient. */
 export const KINDS = [
   { id: "polar", name: "Polar" },
   { id: "scuba", name: "Scuba" },
+  { id: "thrum", name: "Thrum" },
 ];
 
 /** A palette is two to six colours. All but the last are spread along

@@ -18,6 +18,9 @@
 import { linkProgram, setupQuad, hexToVec3 } from "../background-layers/webgl-utils.js";
 import { FRAG, MAX_SHADER_COLORS } from "./northern-lights-shader.js";
 
+/** The shader's `u_kind` numbers, in order. */
+const KIND_IDS = ["polar", "scuba", "thrum"];
+
 const VERT = `#version 300 es
 in vec2 a_pos;
 void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }`;
@@ -73,7 +76,7 @@ export function mountNorthernLights(options) {
     colors.forEach((c, i) => flat.set(hexToVec3(c), i * 3));
     gl.uniform3fv(u.u_colors, flat);
     gl.uniform1i(u.u_count, Math.max(2, colors.length));
-    gl.uniform1i(u.u_kind, opts.kind === "scuba" ? 1 : 0);
+    gl.uniform1i(u.u_kind, Math.max(0, KIND_IDS.indexOf(opts.kind)));
   }
 
   function resize() {
