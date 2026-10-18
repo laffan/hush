@@ -663,9 +663,9 @@ pub struct AppSettings {
     #[serde(default)]
     pub midnight_until: Option<f64>,
 
-    // Northern Lights' last options — `{ palette, custom, saturation,
-    // opacity, depth }`. Whether they are on is per-window and never
-    // stored. Opaque; see src/northern-lights/northern-lights-store.js.
+    // Northern Lights' last options — `{ kind, palette, customColors,
+    // saturation, opacity, depth, speed }`. Whether they are on is
+    // per-window and never stored. Opaque; see src/northern-lights/northern-lights-store.js.
     #[serde(default)]
     pub northern_lights: serde_json::Value,
 

@@ -32,7 +32,7 @@ html.dark-surface .northern-lights {
 
 .nl-palettes {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 8px;
   margin: 8px 0 16px;
 }
@@ -66,23 +66,73 @@ html.dark-surface .northern-lights {
   color: var(--fg);
 }
 
-/* The custom swatch is its own colour well: the well fills the swatch
-   and paints nothing — the swatch shows the palette it spreads into. */
-.nl-swatch .hush-color-well {
-  position: absolute;
-  inset: 0;
+/* Custom's own colours: a row of wells, then − and +. */
+.nl-custom-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: -6px 0 16px;
+}
+
+.nl-custom-row[hidden] {
+  display: none;
+}
+
+/* Round wells, matching the palette swatches above them. */
+.nl-custom-row .hush-color-well {
+  border-radius: 50%;
+}
+
+.nl-custom-row input[type="color"] {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
   background: none;
+  box-shadow: 0 0 0 1px var(--panel-border);
+}
+
+.nl-custom-row input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.nl-custom-row input[type="color"]::-webkit-color-swatch {
+  border: none;
   border-radius: 50%;
 }
 
-.nl-swatch .hush-color-well input[type="color"] {
-  width: 100%;
-  height: 100%;
-  opacity: 0 !important;
+.nl-custom-row .hush-color-well-hit {
+  border-radius: 50%;
 }
 
-.nl-swatch .hush-color-well-hit {
+.nl-custom-step {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--panel-border);
   border-radius: 50%;
+  background: transparent;
+  color: var(--fg);
+  font: 15px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.nl-custom-step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.nl-kind {
+  justify-self: start;
+  grid-column: 2 / 4;
+  padding: 3px 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  font: 13px system-ui, sans-serif;
 }
 
 .nl-row {

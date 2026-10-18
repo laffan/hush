@@ -7,14 +7,8 @@
  * webgl-utils.js), but not mounted as a style layer: it sits over the
  * app rather than behind the text, and it belongs to no style.
  *
- * The shader works out each pixel's distance from the nearest window
- * edge and its angle about the centre. The angle, taken as a point on a
- * circle so it has no seam, is the coordinate the shapes move along:
- * large slow lobes set how far each stretch of edge reaches in (the
- * `depth` option is their scale), finer bands running out from the edge
- * make the curtains, and every lobe breathes on its own phase. Colour
- * runs from the palette's first two colours along the edge into the
- * third at the far reach.
+ * What it draws — Polar's curtains or Scuba's ripples — is the shader's
+ * (northern-lights-shader.js); this module runs it.
  *
  * Cost: it is drawn at half the CSS resolution (it is all soft light),
  * at 30 fps, and a pixel further in than any lobe can reach leaves at
@@ -22,101 +16,7 @@
  * distance test. The loop stops while the window is hidden.
  */
 import { linkProgram, setupQuad, hexToVec3 } from "../background-layers/webgl-utils.js";
-
-const FRAG = `#version 300 es
-precision highp float;
-out vec4 outColor;
-
-uniform vec2  u_res;
-uniform float u_time;
-uniform float u_depth;    // reach, in canvas px
-uniform float u_opacity;
-uniform float u_sat;
-uniform float u_fade;
-uniform vec3  u_c1;
-uniform vec3  u_c2;
-uniform vec3  u_c3;
-
-// 2D simplex noise (Ashima Arts / Ian McEwan, MIT) — smooth in every
-// direction, so the shapes have no grid in them. Range about -1..1.
-vec3 permute(vec3 x) { return mod(((x * 34.0) + 1.0) * x, 289.0); }
-float snoise(vec2 v) {
-  const vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
-  vec2 i = floor(v + dot(v, C.yy));
-  vec2 x0 = v - i + dot(i, C.xx);
-  vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
-  vec4 x12 = x0.xyxy + C.xxzz;
-  x12.xy -= i1;
-  i = mod(i, 289.0);
-  vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
-  vec3 m = max(0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)), 0.0);
-  m = m * m;
-  m = m * m;
-  vec3 x = 2.0 * fract(p * C.www) - 1.0;
-  vec3 h = abs(x) - 0.5;
-  vec3 ox = floor(x + 0.5);
-  vec3 a0 = x - ox;
-  m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
-  vec3 g;
-  g.x = a0.x * x0.x + h.x * x0.y;
-  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
-  return 130.0 * dot(m, g);
-}
-// Three octaves, each turned against the last; 0..1.
-float fbm(vec2 p) {
-  const mat2 R = mat2(0.8, -0.6, 0.6, 0.8);
-  float v = 0.0;
-  float a = 0.5;
-  for (int i = 0; i < 3; i++) {
-    v += a * snoise(p);
-    p = R * p * 2.02 + vec2(17.1, 9.2);
-    a *= 0.5;
-  }
-  return 0.5 + 0.5 * v / 0.875;
-}
-
-void main() {
-  vec2 px = gl_FragCoord.xy;
-  float d = min(min(px.x, u_res.x - px.x), min(px.y, u_res.y - px.y));
-  // Past the furthest any lobe can reach: nothing to draw.
-  if (d > u_depth * 1.6) { outColor = vec4(0.0); return; }
-
-  vec2 q = (px - 0.5 * u_res) / min(u_res.x, u_res.y);
-  float ang = atan(q.y, q.x);
-  vec2 ring = vec2(cos(ang), sin(ang));
-  float t = u_time;
-
-  // How far in this stretch of edge reaches — slow lobes drifting round
-  // the frame, from almost nothing to well past the depth, so the light
-  // gathers in places rather than lining the window like a frame.
-  float lobe  = fbm(ring * 1.4 + vec2(t * 0.03, -t * 0.022));
-  float lobe2 = fbm(ring * 2.6 + vec2(-t * 0.045, t * 0.035) + 11.0);
-  float gather = smoothstep(0.3, 0.75, lobe) * (0.55 + 0.6 * lobe2);
-  float reach = u_depth * (0.12 + 1.35 * gather);
-  float x = d / max(reach, 1.0);
-
-  // The curtains: fine bands running out from the edge, drifting along
-  // it and flowing inward.
-  float rays = fbm(ring * 9.0 + vec2(t * 0.06, x * 1.6 - t * 0.18));
-  float curtain = 0.25 + 1.2 * smoothstep(0.25, 0.85, rays);
-
-  // Each lobe breathes on a phase of its own; the whole sky slower still.
-  float pulse = (0.78 + 0.22 * sin(t * 0.5 + lobe * 9.0)) * (0.9 + 0.1 * sin(t * 0.19));
-
-  float glow = pow(clamp(1.0 - x, 0.0, 1.0), 1.8) * curtain * pulse;
-  // A soft seam right at the edge where the light gathers, as if it
-  // came from just beyond the window.
-  glow += 0.3 * gather * exp(-d / max(u_depth * 0.06, 1.0)) * pulse;
-
-  float m = fbm(ring * 1.1 + vec2(t * 0.018, t * 0.013) + 3.0);
-  vec3 col = mix(u_c1, u_c2, smoothstep(0.3, 0.7, m));
-  col = mix(col, u_c3, smoothstep(0.1, 0.75, x));
-  float lum = dot(col, vec3(0.299, 0.587, 0.114));
-  col = clamp(mix(vec3(lum), col, u_sat), 0.0, 1.0);
-
-  float a = clamp(glow, 0.0, 1.0) * u_opacity * u_fade;
-  outColor = vec4(col * a, a);
-}`;
+import { FRAG, MAX_SHADER_COLORS } from "./northern-lights-shader.js";
 
 const VERT = `#version 300 es
 in vec2 a_pos;
@@ -129,7 +29,7 @@ const FADE_IN_MS = 2500;
 const FADE_OUT_MS = 1200;
 
 /** Mount the overlay with `options` (resolved — see northern-lights-
- *  store.js#readOptions — plus `colors`, the three palette colours).
+ *  store.js#readOptions — plus `colors`, the palette's colours).
  *  Returns `{ update(options), stop() }`; `stop` fades out and resolves
  *  once the element is gone. */
 export function mountNorthernLights(options) {
@@ -147,7 +47,7 @@ export function mountNorthernLights(options) {
   gl.useProgram(program);
   setupQuad(gl, program);
   const u = {};
-  for (const name of ["u_res", "u_time", "u_depth", "u_opacity", "u_sat", "u_fade", "u_c1", "u_c2", "u_c3"]) {
+  for (const name of ["u_res", "u_time", "u_depth", "u_opacity", "u_sat", "u_fade", "u_kind", "u_count", "u_colors"]) {
     u[name] = gl.getUniformLocation(program, name);
   }
 
@@ -160,15 +60,20 @@ export function mountNorthernLights(options) {
   let fadeStart = performance.now();
   let fadeMs = FADE_IN_MS;
   let onFadedOut = null;
-  // The sky starts somewhere different each time it is begun.
-  const epoch = performance.now() - Math.random() * 600000;
+  // The sky's own clock: real time times the speed option, accumulated
+  // so a change of speed carries on from where the shapes are rather
+  // than jumping. It starts somewhere different each time it is begun.
+  let skyTime = Math.random() * 600;
+  let lastClock = performance.now();
   const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
 
-  function applyColors() {
-    const [c1, c2, c3] = opts.colors.map(hexToVec3);
-    gl.uniform3f(u.u_c1, ...c1);
-    gl.uniform3f(u.u_c2, ...c2);
-    gl.uniform3f(u.u_c3, ...c3);
+  function applyOptions() {
+    const colors = opts.colors.slice(0, MAX_SHADER_COLORS);
+    const flat = new Float32Array(MAX_SHADER_COLORS * 3);
+    colors.forEach((c, i) => flat.set(hexToVec3(c), i * 3));
+    gl.uniform3fv(u.u_colors, flat);
+    gl.uniform1i(u.u_count, Math.max(2, colors.length));
+    gl.uniform1i(u.u_kind, opts.kind === "scuba" ? 1 : 0);
   }
 
   function resize() {
@@ -190,7 +95,9 @@ export function mountNorthernLights(options) {
     fade = fadeFrom + (fadeTarget - fadeFrom) * k * k * (3 - 2 * k);
     if (k >= 1 && fadeTarget === 0) { finish(); return; }
     gl.uniform2f(u.u_res, el.width, el.height);
-    gl.uniform1f(u.u_time, ((now - epoch) / 1000) * (reduced ? 0.35 : 1));
+    skyTime += ((now - lastClock) / 1000) * opts.speed * (reduced ? 0.35 : 1);
+    lastClock = now;
+    gl.uniform1f(u.u_time, skyTime);
     gl.uniform1f(u.u_depth, opts.depth * Math.min(el.width, el.height));
     gl.uniform1f(u.u_opacity, opts.opacity);
     gl.uniform1f(u.u_sat, opts.saturation);
@@ -199,7 +106,11 @@ export function mountNorthernLights(options) {
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
-  const start = () => { if (!raf && !document.hidden) raf = requestAnimationFrame(frame); };
+  const start = () => {
+    if (raf || document.hidden) return;
+    lastClock = performance.now(); // time hidden doesn't move the sky
+    raf = requestAnimationFrame(frame);
+  };
   const onVisibility = () => { if (!document.hidden) start(); };
 
   function finish() {
@@ -212,7 +123,7 @@ export function mountNorthernLights(options) {
     onFadedOut?.();
   }
 
-  applyColors();
+  applyOptions();
   resize();
   window.addEventListener("resize", resize);
   document.addEventListener("visibilitychange", onVisibility);
@@ -221,7 +132,7 @@ export function mountNorthernLights(options) {
   return {
     update(next) {
       opts = next;
-      applyColors();
+      applyOptions();
     },
     stop() {
       return new Promise((resolve) => {

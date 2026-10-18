@@ -1,6 +1,7 @@
 /**
- * The Northern Lights modal — colour, saturation, opacity and depth, then
- * Begin or Cancel. Every change is drawn at once on the overlay behind
+ * The Northern Lights modal — type (Polar or Scuba), colour, saturation,
+ * opacity, depth and speed, then Begin or Cancel. Custom's colours are a
+ * row of two to six wells, shown while Custom is chosen. Every change is drawn at once on the overlay behind
  * it (the backdrop is kept light so it can be seen); Cancel puts back
  * what was there before. While the lights are on it opens on their
  * options, with Apply in place of Begin and a Turn off beside them.
@@ -10,7 +11,9 @@
  */
 import { escHtml } from "../sidebar/files-panel-shared.js";
 import { installColorPickers } from "../ui/color-picker.js";
-import { PALETTES, LIMITS, readOptions, paletteColors, isNorthernLightsOn } from "./northern-lights-store.js";
+import {
+  KINDS, PALETTES, LIMITS, MIN_COLORS, MAX_COLORS, readOptions, paletteColors, nextCustomColor, isNorthernLightsOn,
+} from "./northern-lights-store.js";
 import {
   previewNorthernLights, cancelNorthernLightsPreview, beginNorthernLights, endNorthernLights,
 } from "./northern-lights.js";
@@ -19,12 +22,20 @@ const SLIDERS = [
   { key: "saturation", label: "Saturation", step: 0.01 },
   { key: "opacity", label: "Opacity", step: 0.01 },
   { key: "depth", label: "Depth", step: 0.01 },
+  { key: "speed", label: "Speed", step: 0.01 },
 ];
 
 const pct = (v) => `${Math.round(v * 100)}%`;
 
 function swatchStyle(colors) {
-  return `background: linear-gradient(135deg, ${colors[0]}, ${colors[1]} 55%, ${colors[2]})`;
+  return `background: linear-gradient(135deg, ${colors.join(", ")})`;
+}
+
+/** The custom palette's wells, with + and − to add or drop a colour. */
+function customRowHtml(colors) {
+  return `${colors.map((c, i) => `<input type="color" data-index="${i}" value="${c}" aria-label="Colour ${i + 1}" />`).join("")}
+    <button type="button" class="nl-custom-step" data-step="-1" title="Remove the last colour" ${colors.length <= MIN_COLORS ? "disabled" : ""}>−</button>
+    <button type="button" class="nl-custom-step" data-step="1" title="Add a colour" ${colors.length >= MAX_COLORS ? "disabled" : ""}>+</button>`;
 }
 
 export function openNorthernLightsModal(state) {
@@ -38,15 +49,19 @@ export function openNorthernLightsModal(state) {
   modal.className = "tree-delete-modal northern-lights-modal";
   modal.innerHTML = `
     <div class="tree-delete-modal-title">Northern Lights</div>
+    <label class="nl-row">
+      <span class="nl-label">Type</span>
+      <select class="nl-kind">${KINDS.map((k) => `<option value="${k.id}">${escHtml(k.name)}</option>`).join("")}</select>
+    </label>
     <div class="nl-label">Colour</div>
     <div class="nl-palettes" role="radiogroup" aria-label="Colour">
       ${PALETTES.map((p) => `
         <button type="button" class="nl-palette" role="radio" data-palette="${p.id}" title="${escHtml(p.name)}">
-          <span class="nl-swatch" ${p.colors ? `style="${swatchStyle(p.colors)}"` : ""}>${
-            p.colors ? "" : `<input type="color" class="nl-custom" aria-label="Custom colour" />`}</span>
+          <span class="nl-swatch" ${p.colors ? `style="${swatchStyle(p.colors)}"` : ""}></span>
           <span class="nl-palette-name">${escHtml(p.name)}</span>
         </button>`).join("")}
     </div>
+    <div class="nl-custom-row" hidden></div>
     ${SLIDERS.map((s) => `
       <label class="nl-row">
         <span class="nl-label">${s.label}</span>
@@ -62,8 +77,11 @@ export function openNorthernLightsModal(state) {
   document.body.appendChild(backdrop);
   const disposePickers = installColorPickers(modal);
 
-  const custom = modal.querySelector(".nl-custom");
-  custom.value = draft.custom;
+  const kind = modal.querySelector(".nl-kind");
+  kind.value = draft.kind;
+  const customRow = modal.querySelector(".nl-custom-row");
+  const renderCustomRow = () => { customRow.innerHTML = customRowHtml(draft.customColors); };
+  renderCustomRow();
 
   const sync = () => {
     modal.querySelectorAll(".nl-palette").forEach((b) => {
@@ -71,9 +89,9 @@ export function openNorthernLightsModal(state) {
       b.classList.toggle("selected", sel);
       b.setAttribute("aria-checked", String(sel));
     });
-    // The custom swatch shows the palette it will spread into.
     modal.querySelector('[data-palette="custom"] .nl-swatch')
       ?.setAttribute("style", swatchStyle(paletteColors({ ...draft, palette: "custom" })));
+    customRow.hidden = draft.palette !== "custom";
     for (const s of SLIDERS) {
       modal.querySelector(`input[data-key="${s.key}"]`).value = String(draft[s.key]);
       modal.querySelector(`[data-value="${s.key}"]`).textContent = pct(draft[s.key]);
@@ -83,17 +101,30 @@ export function openNorthernLightsModal(state) {
   sync();
 
   modal.querySelectorAll(".nl-palette").forEach((b) => {
-    // The custom swatch is also its colour well: the press that chooses
-    // it opens the picker too.
     b.addEventListener("click", () => {
       draft.palette = b.dataset.palette;
       sync();
     });
   });
-  custom.addEventListener("input", () => {
-    if (!/^#[0-9a-f]{6}$/i.test(custom.value)) return;
-    draft.custom = custom.value.toLowerCase();
-    draft.palette = "custom";
+  kind.addEventListener("change", () => {
+    draft.kind = kind.value;
+    sync();
+  });
+  // Delegated: the wells are rebuilt whenever a colour is added or dropped.
+  customRow.addEventListener("input", (e) => {
+    const well = e.target.closest?.('input[type="color"]');
+    if (!well || !/^#[0-9a-f]{6}$/i.test(well.value)) return;
+    draft.customColors = draft.customColors.map((c, i) => (i === +well.dataset.index ? well.value.toLowerCase() : c));
+    sync();
+  });
+  customRow.addEventListener("click", (e) => {
+    const btn = e.target.closest?.(".nl-custom-step");
+    if (!btn) return;
+    const list = draft.customColors;
+    draft.customColors = +btn.dataset.step > 0
+      ? [...list, nextCustomColor(list)].slice(0, MAX_COLORS)
+      : list.slice(0, Math.max(MIN_COLORS, list.length - 1));
+    renderCustomRow();
     sync();
   });
   modal.querySelectorAll('input[type="range"]').forEach((input) => {
