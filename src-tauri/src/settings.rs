@@ -663,11 +663,16 @@ pub struct AppSettings {
     #[serde(default)]
     pub midnight_until: Option<f64>,
 
-    // Northern Lights' last options — `{ kind, palette, customColors,
+    // Edge Lights' last options — `{ kind, palette, customColors,
     // saturation, opacity, depth, speed }`. Whether they are on is
-    // per-window and never stored. Opaque; see src/northern-lights/northern-lights-store.js.
+    // per-window and never stored. Opaque; see src/edge-lights/edge-lights-store.js.
     #[serde(default)]
-    pub northern_lights: serde_json::Value,
+    pub edge_lights: serde_json::Value,
+
+    // Edge Lights presets — `[{ id, name, options }]`, app-wide like
+    // styles. Opaque; see src/edge-lights/edge-lights-presets.js.
+    #[serde(default)]
+    pub edge_lights_presets: serde_json::Value,
 
     // The desk Write Now (triple-tapped Option) switches to; None or ""
     // stays on the desk in front. See src/write-now/write-now.js.
@@ -916,7 +921,8 @@ impl Default for AppSettings {
             timer: serde_json::Value::Null,
             clock: serde_json::Value::Null,
             midnight_until: None,
-            northern_lights: serde_json::Value::Null,
+            edge_lights: serde_json::Value::Null,
+            edge_lights_presets: serde_json::json!([]),
             write_now_desk_id: None,
             recent_activity: serde_json::Value::Null,
             you_are_here: serde_json::json!({}),

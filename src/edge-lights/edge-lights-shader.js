@@ -1,5 +1,5 @@
 /**
- * Northern Lights — the fragment shader, both skies in one program (the
+ * Edge Lights — the fragment shader, both skies in one program (the
  * `u_kind` branch is uniform across the frame, so it costs nothing).
  *
  * Both work per pixel from two things: its distance to the nearest

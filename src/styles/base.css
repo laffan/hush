@@ -78,7 +78,7 @@
    *                      bands so the palette, Settings and the style
    *                      editor (and anything the palette opens) come up
    *                      over it rather than behind it
-   *   --z-northern-lights the Northern Lights overlay — click-through,
+   *   --z-edge-lights    the Edge Lights overlay — click-through,
    *                      over every piece of the app Zen included, under
    *                      the palette and the modals (its own among them)
    *   --z-popover        detached popovers (footnote, command palette, image preview)
@@ -103,7 +103,7 @@
   --z-sticky: 250;
   --z-overlay: 300;
   --z-zen: 390;
-  --z-northern-lights: 395;
+  --z-edge-lights: 395;
   --z-popover: 400;
   --z-modal: 500;
   --z-modal-content: 510;

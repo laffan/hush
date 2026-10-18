@@ -1,5 +1,5 @@
 /**
- * Northern Lights — the overlay itself: one fixed, click-through canvas
+ * Edge Lights — the overlay itself: one fixed, click-through canvas
  * over the whole window, whose edges glow in slowly shifting curtains of
  * colour. Imported only when the lights are begun (or previewed).
  *
@@ -8,7 +8,7 @@
  * app rather than behind the text, and it belongs to no style.
  *
  * What it draws — Polar's curtains or Scuba's ripples — is the shader's
- * (northern-lights-shader.js); this module runs it.
+ * (edge-lights-shader.js); this module runs it.
  *
  * Cost: it is drawn at half the CSS resolution (it is all soft light),
  * at 30 fps, and a pixel further in than any lobe can reach leaves at
@@ -16,7 +16,7 @@
  * distance test. The loop stops while the window is hidden.
  */
 import { linkProgram, setupQuad, hexToVec3 } from "../background-layers/webgl-utils.js";
-import { FRAG, MAX_SHADER_COLORS } from "./northern-lights-shader.js";
+import { FRAG, MAX_SHADER_COLORS } from "./edge-lights-shader.js";
 
 /** The shader's `u_kind` numbers, in order. */
 const KIND_IDS = ["polar", "scuba", "thrum"];
@@ -31,13 +31,13 @@ const FRAME_MS = 1000 / 30;
 const FADE_IN_MS = 2500;
 const FADE_OUT_MS = 1200;
 
-/** Mount the overlay with `options` (resolved — see northern-lights-
+/** Mount the overlay with `options` (resolved — see edge-lights-
  *  store.js#readOptions — plus `colors`, the palette's colours).
  *  Returns `{ update(options), stop() }`; `stop` fades out and resolves
  *  once the element is gone. */
-export function mountNorthernLights(options) {
+export function mountEdgeLights(options) {
   const el = document.createElement("canvas");
-  el.className = "northern-lights";
+  el.className = "edge-lights";
   el.setAttribute("aria-hidden", "true");
   document.body.appendChild(el);
 
@@ -156,7 +156,7 @@ export function mountNorthernLights(options) {
 function mountFallback(canvas, options) {
   canvas.remove();
   const el = document.createElement("div");
-  el.className = "northern-lights northern-lights-fallback";
+  el.className = "edge-lights edge-lights-fallback";
   el.setAttribute("aria-hidden", "true");
   document.body.appendChild(el);
   const paint = (o) => {

@@ -1,17 +1,18 @@
 /**
- * Northern Lights — the options and the palettes. Kept apart from the
+ * Edge Lights — the options and the palettes. Kept apart from the
  * renderer so the command palette and the modal can read them without
  * pulling the WebGL code in.
  *
- * The options are app-wide and remembered (`settings.northernLights`,
+ * The options are app-wide and remembered (`settings.edgeLights`,
  * opaque `serde_json::Value` on `AppSettings`): `{ kind, palette,
  * customColors, saturation, opacity, depth, speed }`. Whether the lights
  * are *on* is not: it is this window's, for this session
- * (`state.runtime.northernLights`), the way a mode is — something begun,
- * not a preference.
+ * (`state.runtime.edgeLights`), the way a mode is — something begun,
+ * not a preference. Named sets of options are presets
+ * (`settings.edgeLightsPresets`, below).
  */
 
-/** The skies the overlay can draw (northern-lights-shader.js): curtains
+/** The skies the overlay can draw (edge-lights-shader.js): curtains
  *  of light, the same light seen through rippling water, or slow
  *  irregular patches of gradient. */
 export const KINDS = [
@@ -82,7 +83,7 @@ function readCustomColors(o) {
 
 /** The stored options, every key present and in range. */
 export function readOptions(settings) {
-  const raw = settings?.northernLights;
+  const raw = settings?.edgeLights;
   const o = raw && typeof raw === "object" ? raw : {};
   // "polar" was the Glacier palette's id before Polar became a kind.
   const palette = o.palette === "polar" ? "glacier" : o.palette;
@@ -98,7 +99,7 @@ export function readOptions(settings) {
 }
 
 export function saveOptions(state, options) {
-  return state.updateSettings({ northernLights: { ...readOptions({ northernLights: options }) } });
+  return state.updateSettings({ edgeLights: { ...readOptions({ edgeLights: options }) } });
 }
 
 /** The colours `options` draws with. */
@@ -126,9 +127,40 @@ function spreadColor(hex) {
   ];
 }
 
+/** Saved presets — `settings.edgeLightsPresets`, `[{ id, name, options }]`,
+ *  app-wide like styles. Each preset's options go through `readOptions`
+ *  on the way out, so one saved by an older build still reads whole. */
+export function readPresets(settings) {
+  const raw = Array.isArray(settings?.edgeLightsPresets) ? settings.edgeLightsPresets : [];
+  return raw
+    .filter((p) => p && typeof p.id === "string")
+    .map((p) => ({
+      id: p.id,
+      name: String(p.name || "").trim() || "Untitled",
+      options: readOptions({ edgeLights: p.options }),
+    }));
+}
+
+export function savePresets(state, presets) {
+  return state.updateSettings({ edgeLightsPresets: presets.map(({ id, name, options }) => ({ id, name, options })) });
+}
+
+/** Whether two option sets would draw the same lights — what marks a
+ *  preset as the one in use. */
+export function sameOptions(a, b) {
+  return JSON.stringify(readOptions({ edgeLights: a })) === JSON.stringify(readOptions({ edgeLights: b }));
+}
+
+/** A name for the settings as they stand: their type and palette. */
+export function describeOptions(options) {
+  const kind = KINDS.find((k) => k.id === options.kind)?.name || "";
+  const palette = PALETTES.find((p) => p.id === options.palette)?.name || "";
+  return [kind, palette].filter(Boolean).join(" · ");
+}
+
 /** Whether the lights are on in this window. */
-export function isNorthernLightsOn(state) {
-  return !!state.runtime?.northernLights;
+export function isEdgeLightsOn(state) {
+  return !!state.runtime?.edgeLights;
 }
 
 function hexToHsl(hex) {

@@ -1,0 +1,342 @@
+/* Edge Lights — the overlay (edge-lights/edge-lights-
+   overlay.js) and its modal. */
+
+.edge-lights {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: var(--z-edge-lights);
+}
+
+/* On a dark page the light adds to what is under it, as light does; on a
+   light one it is laid over it, since screen would wash it out to white. */
+html.dark-surface .edge-lights {
+  mix-blend-mode: screen;
+}
+
+/* The modal previews on the overlay, so its backdrop only just dims. */
+.tree-delete-modal-backdrop.edge-lights-backdrop {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+/* Two columns: the presets rail, then the settings. */
+.tree-delete-modal.edge-lights-modal {
+  display: flex;
+  gap: 0;
+  max-width: 620px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.edge-lights-modal .el-form {
+  flex: 1;
+  min-width: 0;
+  padding: 20px;
+}
+
+.el-rail {
+  width: 170px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px 12px 12px;
+  border-right: 1px solid var(--panel-border);
+  min-height: 0;
+}
+
+.el-rail-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--sidebar-fg);
+  opacity: 0.75;
+  padding-left: 4px;
+}
+
+.el-rail-list {
+  flex: 1;
+  min-height: 0;
+  max-height: 340px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px;
+}
+
+.el-rail-empty {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--sidebar-fg);
+  opacity: 0.75;
+  padding: 4px;
+}
+
+.el-rail-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  outline: 2px solid transparent;
+}
+
+.el-rail-row:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+
+/* The preset whose settings are the ones on screen. */
+.el-rail-row.current {
+  outline-color: var(--fg);
+}
+
+.el-rail-chip {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--panel-border);
+}
+
+.el-rail-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+}
+
+.el-rail-rename,
+.el-rail-name {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  font: 13px system-ui, sans-serif;
+}
+
+.el-rail-delete {
+  visibility: hidden;
+  flex: 0 0 auto;
+  padding: 0 5px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--sidebar-fg);
+  font: 13px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.el-rail-row:hover .el-rail-delete,
+.el-rail-delete.armed {
+  visibility: visible;
+}
+
+/* A touch screen has no hover to reveal it. */
+@media (hover: none) {
+  .el-rail-delete {
+    visibility: visible;
+  }
+}
+
+.el-rail-delete:hover {
+  background: rgba(128, 128, 128, 0.18);
+  color: var(--fg);
+}
+
+.el-rail-delete.armed {
+  font-size: 11px;
+  color: #dc3232;
+  background: rgba(220, 50, 50, 0.12);
+}
+
+.el-rail-add {
+  padding: 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font: 15px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.el-rail-add:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.el-rail-add[hidden],
+.el-rail-naming[hidden] {
+  display: none;
+}
+
+/* Narrow windows (a phone, a small iPad window): the rail goes above. */
+@media (max-width: 600px) {
+  .tree-delete-modal.edge-lights-modal {
+    flex-direction: column;
+    max-height: 92vh;
+    overflow-y: auto;
+  }
+  .el-rail {
+    width: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--panel-border);
+    padding-bottom: 12px;
+  }
+  .el-rail-list {
+    max-height: 140px;
+  }
+}
+
+.edge-lights-modal .el-label {
+  font-size: 12px;
+  color: var(--sidebar-fg);
+}
+
+.el-palettes {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin: 8px 0 16px;
+}
+
+.el-palette {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--sidebar-fg);
+  font: 11px system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.el-swatch {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--panel-border);
+}
+
+.el-palette.selected .el-swatch {
+  box-shadow: 0 0 0 2px var(--panel-bg, var(--bg)), 0 0 0 3.5px var(--fg);
+}
+
+.el-palette.selected .el-palette-name {
+  color: var(--fg);
+}
+
+/* Custom's own colours: a row of wells, then − and +. */
+.el-custom-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: -6px 0 16px;
+}
+
+.el-custom-row[hidden] {
+  display: none;
+}
+
+/* Round wells, matching the palette swatches above them. */
+.el-custom-row .hush-color-well {
+  border-radius: 50%;
+}
+
+.el-custom-row input[type="color"] {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  box-shadow: 0 0 0 1px var(--panel-border);
+}
+
+.el-custom-row input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.el-custom-row input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 50%;
+}
+
+.el-custom-row .hush-color-well-hit {
+  border-radius: 50%;
+}
+
+.el-custom-step {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg);
+  font: 15px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.el-custom-step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.el-kind {
+  justify-self: start;
+  grid-column: 2 / 4;
+  padding: 3px 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  font: 13px system-ui, sans-serif;
+}
+
+.el-row {
+  display: grid;
+  grid-template-columns: 74px 1fr 40px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.el-row input[type="range"] {
+  width: 100%;
+}
+
+.el-value {
+  font: 12px system-ui, sans-serif;
+  color: var(--sidebar-fg);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.edge-lights-modal .tree-delete-modal-btns {
+  margin-top: 16px;
+}
+
+.edge-lights-modal .el-spacer {
+  flex: 1;
+}
+
+.edge-lights-modal .el-begin {
+  background: rgba(128, 128, 128, 0.18);
+}

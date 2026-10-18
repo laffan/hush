@@ -1,10 +1,10 @@
 /**
  * Palette entries for the two "set the scene" features: Write Now (also
- * triple-tapped Option — write-now/) and Northern Lights (northern-
- * lights/). Split out of `command-palette-commands.js`, which is at the
+ * triple-tapped Option — write-now/) and Edge Lights (edge-lights/).
+ * Split out of `command-palette-commands.js`, which is at the
  * line cap. Both are `shared`: neither depends on what is open.
  */
-import { isNorthernLightsOn } from "./northern-lights/northern-lights-store.js";
+import { isEdgeLightsOn } from "./edge-lights/edge-lights-store.js";
 
 // A pen nib over a spark — begin writing, now.
 const writeNowIcon = `<svg viewBox="0 0 24 24"><path d="M4 20 L8.5 19 L19 8.5 L15.5 5 L5 15.5 Z M13.5 7 L17 10.5"/><path d="M19 15 V19 M17 17 H21"/></svg>`;
@@ -16,14 +16,14 @@ export function buildSessionCommands() {
     { id: "write-now", section: "Create", label: "Write Now", icon: writeNowIcon, shortcutKey: null, ctx: "shared",
       keywords: "new document fullscreen midnight zen idea start begin triple option",
       action: async (s) => (await import("./write-now/write-now.js")).writeNow(s) },
-    { id: "northern-lights", section: "Styles", icon: lightsIcon, shortcutKey: null, ctx: "shared",
-      label: "Northern Lights",
-      keywords: "aurora borealis glow edges ambient background lights magic",
-      action: async (s) => (await import("./northern-lights/northern-lights-modal.js")).openNorthernLightsModal(s) },
-    { id: "northern-lights-off", section: "Active Modes", icon: lightsIcon, shortcutKey: null, ctx: "shared",
-      label: "Turn off Northern Lights",
-      keywords: "aurora borealis glow end stop",
-      hiddenIf: (s) => !isNorthernLightsOn(s),
-      action: async (s) => (await import("./northern-lights/northern-lights.js")).endNorthernLights(s) },
+    { id: "edge-lights", section: "Styles", icon: lightsIcon, shortcutKey: null, ctx: "shared",
+      label: "Edge Lights",
+      keywords: "northern lights aurora borealis glow edges ambient background magic presets",
+      action: async (s) => (await import("./edge-lights/edge-lights-modal.js")).openEdgeLightsModal(s) },
+    { id: "edge-lights-off", section: "Active Modes", icon: lightsIcon, shortcutKey: null, ctx: "shared",
+      label: "Turn off Edge Lights",
+      keywords: "northern lights aurora borealis glow end stop",
+      hiddenIf: (s) => !isEdgeLightsOn(s),
+      action: async (s) => (await import("./edge-lights/edge-lights.js")).endEdgeLights(s) },
   ];
 }
