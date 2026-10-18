@@ -14,7 +14,7 @@ const lightsIcon = `<svg viewBox="0 0 24 24"><path d="M3 20 H21"/><path d="M5 16
 export function buildSessionCommands() {
   return [
     { id: "write-now", section: "Create", label: "Write Now", icon: writeNowIcon, shortcutKey: null, ctx: "shared",
-      keywords: "new document fullscreen midnight zen idea start begin triple option",
+      keywords: "new document idea start begin quick triple option",
       action: async (s) => (await import("./write-now/write-now.js")).writeNow(s) },
     { id: "edge-lights", section: "Styles", icon: lightsIcon, shortcutKey: null, ctx: "shared",
       label: "Edge Lights",

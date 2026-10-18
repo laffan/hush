@@ -21,8 +21,7 @@ import { initCmdButton } from "./cmd-button.js";
 import { initCmdHeldSliders } from "./cmd-held-sliders.js";
 import { applyActiveStyle, applyFocusModeOpacity, applyDeskGlobalStyle, handleOAuthCode } from "./style-application.js";
 import { installWindowShortcuts, installActivationFocus } from "./window-shortcuts.js";
-import { installCourierTrigger } from "./courier/courier-trigger.js";
-import { installWriteNowTrigger } from "./write-now/write-now-trigger.js";
+import { installTripleTapTriggers } from "./triple-tap-triggers.js";
 import { setTooltipsEnabled } from "./tooltips.js";
 import { installBackgroundFlush } from "./state/background-flush.js";
 import { setupMultiWindow } from "./multi-window.js";
@@ -158,9 +157,9 @@ async function init() {
   // Window-level keyboard shortcut fallback (for when focus is outside editor)
   const windowCommands = buildEditorCommands();
   installWindowShortcuts(state, windowCommands);
-  // From anywhere: triple-tap Shift opens Courier, triple-tap Option Write Now.
-  installCourierTrigger(state);
-  installWriteNowTrigger(state);
+  // From anywhere: triple-tap Shift opens Courier, Option runs Write Now,
+  // Command toggles Edge Lights.
+  installTripleTapTriggers(state);
 
   // Sidebar toggle (left panel) — single Files panel now.
   state.on("toggle-left-panel", () => {

@@ -52,3 +52,10 @@ export function endEdgeLights(state) {
   state.runtime.edgeLights = false;
   hide();
 }
+
+/** On with the settings last used (the modal's, a preset's), or off —
+ *  triple-tapped ⌘ (edge-lights-trigger.js), no modal in between. */
+export function toggleEdgeLights(state) {
+  if (isEdgeLightsOn(state)) endEdgeLights(state);
+  else void beginEdgeLights(state, readOptions(state.settings));
+}

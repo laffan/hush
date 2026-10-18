@@ -2,7 +2,8 @@
  * The Edge Lights modal's left rail — saved presets, as the style editor
  * lists styles. A row loads its settings into the modal (and so onto the
  * lights behind it); the row whose settings are the ones on screen is
- * marked. Double-click a name to rename it; × deletes, after a second
+ * marked, and a sun or a moon says whether the page was light or dark
+ * when it was saved. Double-click a name to rename it; × deletes, after a second
  * press on the same ×. The + at the foot names the current settings.
  *
  * Naming, renaming and confirming all happen in the rail itself rather
@@ -12,6 +13,23 @@
  */
 import { escHtml, escAttrValue } from "../sidebar/files-panel-shared.js";
 import { readPresets, savePresets, sameOptions, describeOptions, paletteColors } from "./edge-lights-store.js";
+
+// The page's appearance when a preset was saved.
+const SUN = `<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="2.3"/><path d="M6 0.8V2 M6 10V11.2 M0.8 6H2 M10 6H11.2 M2.3 2.3L3.2 3.2 M8.8 8.8L9.7 9.7 M2.3 9.7L3.2 8.8 M8.8 3.2L9.7 2.3"/></svg>`;
+const MOON = `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M9.8 7.6A4.3 4.3 0 0 1 4.4 2.2 4.3 4.3 0 1 0 9.8 7.6Z"/></svg>`;
+
+/** Light or dark, as the page is painted now — the resolved background,
+ *  so a dark style under Light counts as dark and Midnight mode does too
+ *  (theme-colors.js sets `dark-surface` from it). */
+function currentAppearance() {
+  return document.documentElement.classList.contains("dark-surface") ? "dark" : "light";
+}
+
+function appearanceMark(appearance) {
+  if (!appearance) return "";
+  const dark = appearance === "dark";
+  return `<span class="el-rail-mode" title="Saved in ${dark ? "dark" : "light"} mode">${dark ? MOON : SUN}</span>`;
+}
 
 const newId = () => `elp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
@@ -60,6 +78,7 @@ export function mountPresetRail(rail, state, { getDraft, onPick }) {
           return `<div class="el-rail-row" role="option" data-id="${escAttrValue(p.id)}" title="${escAttrValue(describeOptions(p.options))}">
             <span class="el-rail-chip" style="${chipStyle(p.options)}"></span>
             ${name}
+            ${appearanceMark(p.appearance)}
             <button type="button" class="el-rail-delete${armedDelete === p.id ? " armed" : ""}" data-id="${escAttrValue(p.id)}"
               title="${armedDelete === p.id ? "Press again to delete" : "Delete preset"}">${armedDelete === p.id ? "Delete" : "×"}</button>
           </div>`;
@@ -91,7 +110,7 @@ export function mountPresetRail(rail, state, { getDraft, onPick }) {
     const name = nameInput.value.trim();
     stopNaming();
     if (!name) return;
-    write([...presets(), { id: newId(), name, options: { ...getDraft() } }]);
+    write([...presets(), { id: newId(), name, options: { ...getDraft() }, appearance: currentAppearance() }]);
   }
   function commitRename(field) {
     const id = renaming;

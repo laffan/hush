@@ -50,9 +50,10 @@ export function openEdgeLightsModal(state) {
   const modal = document.createElement("div");
   modal.className = "tree-delete-modal edge-lights-modal";
   modal.innerHTML = `
+    <div class="tree-delete-modal-title el-title">Edge Lights</div>
+    <div class="el-columns">
     <div class="el-rail"></div>
     <div class="el-form">
-    <div class="tree-delete-modal-title">Edge Lights</div>
     <label class="el-row">
       <span class="el-label">Type</span>
       <select class="el-kind">${KINDS.map((k) => `<option value="${k.id}">${escHtml(k.name)}</option>`).join("")}</select>
@@ -76,6 +77,7 @@ export function openEdgeLightsModal(state) {
       ${on ? `<button type="button" class="el-turn-off">Turn off</button><span class="el-spacer"></span>` : ""}
       <button type="button" class="tree-delete-cancel">Cancel</button>
       <button type="button" class="el-begin">${on ? "Apply" : "Begin"}</button>
+    </div>
     </div>
     </div>`;
   backdrop.appendChild(modal);

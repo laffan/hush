@@ -21,28 +21,40 @@ html.dark-surface .edge-lights {
   background: rgba(0, 0, 0, 0.12);
 }
 
-/* Two columns: the presets rail, then the settings. */
+/* The title across the top, then two columns: the presets rail and the
+   settings. */
 .tree-delete-modal.edge-lights-modal {
   display: flex;
-  gap: 0;
+  flex-direction: column;
   max-width: 620px;
   padding: 0;
   overflow: hidden;
 }
 
+.edge-lights-modal .el-title {
+  margin: 0;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.edge-lights-modal .el-columns {
+  display: flex;
+  min-height: 0;
+}
+
 .edge-lights-modal .el-form {
   flex: 1;
   min-width: 0;
-  padding: 20px;
+  padding: 16px 20px 20px;
 }
 
 .el-rail {
-  width: 170px;
+  width: 190px;
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 20px 12px 12px;
+  padding: 16px 12px 12px;
   border-right: 1px solid var(--panel-border);
   min-height: 0;
 }
@@ -113,6 +125,24 @@ html.dark-surface .edge-lights {
   color: var(--fg);
 }
 
+/* Sun or moon: the appearance the preset was saved in. */
+.el-rail-mode {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--sidebar-fg);
+  opacity: 0.8;
+}
+
+.el-rail-mode svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .el-rail-rename,
 .el-rail-name {
   flex: 1;
@@ -127,8 +157,9 @@ html.dark-surface .edge-lights {
   font: 13px system-ui, sans-serif;
 }
 
+/* Out of the row until the pointer is on it, so the name keeps the room. */
 .el-rail-delete {
-  visibility: hidden;
+  display: none;
   flex: 0 0 auto;
   padding: 0 5px;
   height: 20px;
@@ -142,13 +173,13 @@ html.dark-surface .edge-lights {
 
 .el-rail-row:hover .el-rail-delete,
 .el-rail-delete.armed {
-  visibility: visible;
+  display: inline-block;
 }
 
 /* A touch screen has no hover to reveal it. */
 @media (hover: none) {
   .el-rail-delete {
-    visibility: visible;
+    display: inline-block;
   }
 }
 
@@ -185,9 +216,11 @@ html.dark-surface .edge-lights {
 /* Narrow windows (a phone, a small iPad window): the rail goes above. */
 @media (max-width: 600px) {
   .tree-delete-modal.edge-lights-modal {
-    flex-direction: column;
     max-height: 92vh;
     overflow-y: auto;
+  }
+  .edge-lights-modal .el-columns {
+    flex-direction: column;
   }
   .el-rail {
     width: auto;

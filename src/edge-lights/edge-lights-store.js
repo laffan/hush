@@ -127,9 +127,13 @@ function spreadColor(hex) {
   ];
 }
 
-/** Saved presets — `settings.edgeLightsPresets`, `[{ id, name, options }]`,
- *  app-wide like styles. Each preset's options go through `readOptions`
- *  on the way out, so one saved by an older build still reads whole. */
+/** Saved presets — `settings.edgeLightsPresets`, `[{ id, name, options,
+ *  appearance }]`, app-wide like styles. `appearance` is `"light"` or
+ *  `"dark"`: how the page looked when the preset was saved, since the
+ *  same lights read very differently on each (missing on none saved
+ *  before it was recorded). Each preset's options go through
+ *  `readOptions` on the way out, so one saved by an older build still
+ *  reads whole. */
 export function readPresets(settings) {
   const raw = Array.isArray(settings?.edgeLightsPresets) ? settings.edgeLightsPresets : [];
   return raw
@@ -138,11 +142,14 @@ export function readPresets(settings) {
       id: p.id,
       name: String(p.name || "").trim() || "Untitled",
       options: readOptions({ edgeLights: p.options }),
+      appearance: p.appearance === "light" || p.appearance === "dark" ? p.appearance : null,
     }));
 }
 
 export function savePresets(state, presets) {
-  return state.updateSettings({ edgeLightsPresets: presets.map(({ id, name, options }) => ({ id, name, options })) });
+  return state.updateSettings({
+    edgeLightsPresets: presets.map(({ id, name, options, appearance }) => ({ id, name, options, appearance: appearance || null })),
+  });
 }
 
 /** Whether two option sets would draw the same lights — what marks a

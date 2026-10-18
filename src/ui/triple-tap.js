@@ -1,13 +1,16 @@
 /**
  * Three quick taps of one modifier key, with no other key pressed during
- * or between them — the gesture behind Courier (Shift) and Write Now
- * (Option).
+ * or between them — the gesture behind Courier (Shift), Write Now
+ * (Option) and Edge Lights (Command). `installTripleTapTriggers` (in
+ * triple-tap-triggers.js) installs all three.
  *
  * Installed once per window at boot, as a capture-phase listener pair on
  * `window`, so it hears the keys before any surface does: the main
  * editor, a pane, a canvas, the Zen overlay. It never cancels anything —
- * a lone Shift or Option does nothing anywhere in the app, so the taps
- * cost the surface underneath nothing.
+ * a lone Shift, Option or Command does nothing anywhere in the app, so
+ * the taps cost the surface underneath nothing. (Holding ⌘ does — the
+ * PDF reading crop, the touch bar's held-⌘ sliders — but a tap is over
+ * in under TAP_MAX_MS, before any of them wakes.)
  *
  * A tap is a press and release under TAP_MAX_MS; consecutive taps must
  * start within GAP_MAX_MS of the previous release. Anything else — a
@@ -23,11 +26,11 @@ const TAPS = 3;
 
 /** The event flag each tappable key sets on its own keydown, which is
  *  not a chord; every other modifier flag is. */
-const OWN_FLAG = { Shift: "shiftKey", Alt: "altKey" };
+const OWN_FLAG = { Shift: "shiftKey", Alt: "altKey", Meta: "metaKey" };
 const MOD_FLAGS = ["shiftKey", "altKey", "metaKey", "ctrlKey"];
 
-/** Call `onTrigger` on the third quick tap of `key` (`"Shift"` or
- *  `"Alt"`, as `KeyboardEvent.key` names them). */
+/** Call `onTrigger` on the third quick tap of `key` (`"Shift"`, `"Alt"`
+ *  or `"Meta"`, as `KeyboardEvent.key` names them). */
 export function installTripleTap(key, onTrigger) {
   const others = MOD_FLAGS.filter((f) => f !== OWN_FLAG[key]);
   let taps = 0;
