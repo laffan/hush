@@ -147,3 +147,9 @@ body.desktop-active .ratchet-timer {
 body.notebook-mode .word-count-display {
   display: none;
 }
+
+/* Nothing to count on the "No file selected" pane (word-count.js stands
+   the pill down there too; this covers the frame before it runs). */
+body.empty-mode .word-count-display {
+  display: none;
+}

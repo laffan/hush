@@ -76,7 +76,25 @@ export function renderGeneralTab(settings) {
       ${isIOSSettings() ? `<div class="settings-row"><label>Touch mode</label><input type="checkbox" id="setting-touch-mode" ${s.touchMode ? "checked" : ""} /></div>` : ""}
       ${isIOSSettings() ? `<div class="settings-row"><label>Hide status bar in full screen</label><input type="checkbox" id="setting-hide-system-chrome" ${s.hideSystemChrome !== false ? "checked" : ""} /></div>` : ""}
     </div>
+    <div class="settings-section">
+      <h2>Write Now</h2>
+      <div class="settings-row">
+        <label>Desk</label>
+        <select id="setting-write-now-desk">${writeNowDeskOptions(s)}</select>
+      </div>
+      <p class="settings-help">Tap Option three times (or run Write Now from the command palette) for a fresh document on this desk: full screen, Midnight mode, the sidebar closed and Zen Focus on.</p>
+    </div>
   `;
+}
+
+/** The Write Now desk choices: the desk in front at the time, or one of
+ *  the desks. A stored desk that no longer exists reads as the current one. */
+function writeNowDeskOptions(s) {
+  const desks = Array.isArray(s.desks) ? s.desks.filter((d) => d && d.id) : [];
+  const chosen = desks.some((d) => d.id === s.writeNowDeskId) ? s.writeNowDeskId : "";
+  return [`<option value="" ${chosen ? "" : "selected"}>The current desk</option>`,
+    ...desks.map((d) => `<option value="${escAttr(d.id)}" ${d.id === chosen ? "selected" : ""}>${escHtml(d.name || "Desk")}</option>`),
+  ].join("");
 }
 
 // ===== Editor Tab =====

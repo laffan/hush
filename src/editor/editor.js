@@ -489,10 +489,13 @@ export function createEditor(container, state) {
     // macOS fullscreen transition desynchronises CodeMirror's internal
     // focus state from the DOM: activeElement stays on cm-content and
     // hasFocus() recovers, but CM still ignores key events.  Blur then
-    // re-focus forces CM to re-run its focusin handler.
+    // re-focus forces CM to re-run its focusin handler. Zen's editor is
+    // the one being typed in while it is up (Write Now opens it right
+    // after going full screen).
     function refocusEditor() {
-      view.contentDOM.blur();
-      view.focus();
+      const target = state.runtime.zenView || view;
+      target.contentDOM.blur();
+      target.focus();
     }
     setTimeout(() => {
       refocusEditor();
@@ -537,6 +540,8 @@ export function createEditor(container, state) {
   // document it was counting (deleted file, emptied desk).
   state.on("word-limit-changed", () => updateWordCountDisplay(state));
   state.on("no-file-state", () => updateWordCountDisplay(state));
+  // …and comes back with whatever surface replaces the empty pane.
+  for (const ev of ["notebook-open", "pdf-open", "stack-open"]) state.on(ev, () => updateWordCountDisplay(state));
 
   state.on("style-changed", () => applyBlockCursor(state));
 

@@ -14,6 +14,7 @@
  */
 
 import { currentWordLimit, LIMIT_WARN_WORDS } from "../word-limit-store.js";
+import { hasOpenFile } from "../../state/open-surface.js";
 
 let wordCountEl = null;
 let recomputeTimer = null;
@@ -89,6 +90,10 @@ function recompute(state) {
   // buffer — the pill keeps its section / total format there.
   const cap = currentWordLimit(state);
   if (!isWordCountVisible(state) && cap === null) { unmountPill(); return; }
+  // The "No file selected" pane has nothing to count. The main editor
+  // behind it is still there, so reading it here put a count over a
+  // pane with no document in it.
+  if (!hasOpenFile(state)) { unmountPill(); return; }
 
   let text = "";
   if (state.editor && state.editor.getContent) {

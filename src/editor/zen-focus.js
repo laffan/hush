@@ -29,6 +29,7 @@ import { bindLineIndicatorToContainer } from "./line-indicator.js";
 import { panes } from "../pane/pane-state.js";
 import { getActivePaneId } from "../pane/pane-manager.js";
 import { getStackInstance } from "../stack/stack-bridge.js";
+import { mainEditorHoldsDoc } from "../state/open-surface.js";
 
 let active = null;
 let hintFadeTimer = null;
@@ -114,7 +115,9 @@ function pickZenSource(state) {
       return { kind: "pane", pane };
     }
   }
-  if (!state.currentNotebookFileId && state.editor?.view) {
+  // The main editor only when it holds a document: on the "No file
+  // selected" pane it is still there, empty, and Zen would open over it.
+  if (mainEditorHoldsDoc(state) && state.editor?.view) {
     return { kind: "main", view: state.editor.view };
   }
   return null;
@@ -306,7 +309,10 @@ export function enterZenFocus(state) {
   if (active) return;
   const source = pickZenSource(state);
   if (!source) {
+    // Nothing to focus on — undo the flag the toggle set, and say so to
+    // the listeners that already heard it go on.
     state.zenFocus = false;
+    state.emit("mode-changed");
     return;
   }
   const seed = readSeed(source);

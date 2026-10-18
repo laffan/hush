@@ -282,6 +282,7 @@ function bindAll() {
   bindSelect("setting-desk-display-mode", "deskDisplayMode");
   bindCheckbox("setting-touch-mode", "touchMode");
   bindCheckbox("setting-hide-system-chrome", "hideSystemChrome");
+  bindSelect("setting-write-now-desk", "writeNowDeskId");
 
   // Editor tab — font/theme/size/line-height live in the Styles sidebar now;
   // only sticky headers, panes, typewriter and footnotes remain here.

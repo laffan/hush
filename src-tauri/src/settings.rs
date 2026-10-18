@@ -663,6 +663,17 @@ pub struct AppSettings {
     #[serde(default)]
     pub midnight_until: Option<f64>,
 
+    // Northern Lights' last options — `{ palette, custom, saturation,
+    // opacity, depth }`. Whether they are on is per-window and never
+    // stored. Opaque; see src/northern-lights/northern-lights-store.js.
+    #[serde(default)]
+    pub northern_lights: serde_json::Value,
+
+    // The desk Write Now (triple-tapped Option) switches to; None or ""
+    // stays on the desk in front. See src/write-now/write-now.js.
+    #[serde(default)]
+    pub write_now_desk_id: Option<String>,
+
     // When each desk and file was last opened on this device —
     // `{ desks: { id: ms }, files: { id: ms } }` — which orders the home
     // screen widgets' recent desks and cross-desk recent files. Opaque;
@@ -905,6 +916,8 @@ impl Default for AppSettings {
             timer: serde_json::Value::Null,
             clock: serde_json::Value::Null,
             midnight_until: None,
+            northern_lights: serde_json::Value::Null,
+            write_now_desk_id: None,
             recent_activity: serde_json::Value::Null,
             you_are_here: serde_json::json!({}),
             panes_hidden_by_context: serde_json::json!({}),

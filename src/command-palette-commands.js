@@ -23,6 +23,7 @@ import {
 } from "./command-palette-pickers.js";
 import { addGutter, openGutter, closeGutter, gutterAddHidden, gutterOpenHidden, gutterCloseHidden } from "./project/gutter-commands.js";
 import { toggleModeOnContext, hasActiveDocSurface } from "./state/mode-context.js";
+import { hasOpenFile } from "./state/open-surface.js";
 import { deleteTreeNode } from "./state/state-tree.js";
 import {
   getActivePaneId, fitActivePaneToGap, createPane,
@@ -67,6 +68,7 @@ import {
   canConvertNotebookToOutline, convertNotebookToOutline,
 } from "./outline/outline-commands.js";
 import { buildDeskCommands } from "./command-palette-desk-commands.js";
+import { buildSessionCommands } from "./command-palette-session-commands.js";
 import { buildGoogleCommands } from "./command-palette-google-commands.js";
 import { buildStickyCommands } from "./sticky/sticky-commands.js";
 
@@ -483,7 +485,7 @@ function buildCommands(state) {
     { id: "focus", section: "Writing", label: "Focus mode", icon: icons.focus, shortcutKey: "shortcutToggleFocus", ctx: "doc",
       action: (s) => s.toggleFocus() },
     { id: "zen", section: "Writing", label: "Zen Focus", icon: icons.focus, shortcutKey: "shortcutZenFocus", ctx: "shared",
-      action: (s) => s.toggleZenFocus() },
+      hiddenIf: (s) => !hasOpenFile(s), action: (s) => s.toggleZenFocus() },
     // Sentence mode only for now; word / paragraph are planned but not yet
     // surfaced. Shown only when there's a live selection to break apart.
     // Three start configs: explode (all in margins), or seed the column
@@ -669,6 +671,7 @@ function buildCommands(state) {
       hiddenIf: (s) => !s.settings?.showProjectHeadings,
       action: (s) => s.updateSettings({ showProjectHeadings: false }) },
     ...buildDeskCommands({ state, icons, typeIcons, desktop, ipad, enterDeskPicker, currentFileTreeNodeId }),
+    ...buildSessionCommands(),
   ];
 
   return all.filter(cmd => {

@@ -121,6 +121,12 @@ export function createDefaultSettings() {
     // 8am after it was turned on), or null when off. Cleared by Rust at
     // launch, so it never outlives the app (see src/midnight/).
     midnightUntil: null,
+    // Northern Lights' last options (see src/northern-lights/); whether
+    // they are on is per-window and never stored.
+    northernLights: null,
+    // The desk Write Now switches to; null stays on the desk in front
+    // (see src/write-now/write-now.js).
+    writeNowDeskId: null,
     // When each desk and file was last opened on this device:
     // `{ desks: { [deskId]: ms }, files: { [fileId]: ms } }`. Orders the
     // home screen widgets' recents (see src/widgets/). Per-device.
