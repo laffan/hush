@@ -155,6 +155,7 @@ function openPopover() {
   popover.className = "desk-switcher-popover";
   popover.appendChild(buildPopoverBody(_state));
   _container.appendChild(popover);
+  placePopover(popover);
 
   popover.addEventListener("click", (ev) => onPopoverClick(ev, popover));
   attachReorder(popover);
@@ -169,6 +170,21 @@ function openPopover() {
   }, 0);
 }
 
+/** The popover is as wide as its longest desk name needs, not as wide as
+ *  the sidebar, so it can't sit in the sidebar's flow: `#panel-overlay`
+ *  clips its overflow. It is `position: fixed` (nothing between it and
+ *  the viewport makes a containing block) and placed from the header,
+ *  where the old absolute box sat: under the switcher, 8 px in, at least
+ *  as wide as the switcher, and never past the window's right edge. */
+function placePopover(popover) {
+  const r = _container.getBoundingClientRect();
+  const left = r.left + 8;
+  popover.style.top = `${r.bottom}px`;
+  popover.style.left = `${left}px`;
+  popover.style.minWidth = `${Math.max(0, r.width - 16)}px`;
+  popover.style.maxWidth = `${Math.max(160, window.innerWidth - left - 12)}px`;
+}
+
 function buildPopoverBody(state) {
   const desks = state.settings.desks || [];
   const activeId = state.settings.activeDeskId;
@@ -181,23 +197,29 @@ function buildPopoverBody(state) {
   // has one, every row keeps the slot, so the names stay in a column.
   const iconSlots = desks.some((d) => deskIconName(state, d.id));
   wrap.classList.toggle("has-icons", iconSlots);
-  wrap.innerHTML = desks.map((d) => deskRowHtml(d, activeId, canArchive, !!roots[d.id], iconSlots)).join("") + addRowHtml(iconSlots);
+  // Same rule for the local-desk pin: once any desk is local, every row
+  // keeps its slot.
+  const pinSlots = desks.some((d) => !!roots[d.id]);
+  wrap.innerHTML = desks.map((d) => deskRowHtml(d, activeId, canArchive, !!roots[d.id], iconSlots, pinSlots)).join("")
+    + addRowHtml(iconSlots, pinSlots);
   return wrap;
 }
 
-/** A map pin — a circle drawn down to a point at the bottom. */
-const LOCAL_PIN_PATH = `<path d="M8 15.25C8 15.25 3.25 10.4 3.25 6.5a4.75 4.75 0 0 1 9.5 0c0 3.9-4.75 8.75-4.75 8.75Z" />`;
+/** A map pin — a circle drawn down to a point at the bottom — in outline. */
+const LOCAL_PIN_PATH = `<path d="M8 14.75C8 14.75 3.75 10.4 3.75 6.75a4.25 4.25 0 0 1 8.5 0c0 3.65-4.25 8-4.25 8Z" />`;
 
-function deskRowHtml(d, activeId, canArchive, isLocal = false, iconSlot = false) {
+function deskRowHtml(d, activeId, canArchive, isLocal = false, iconSlot = false, pinSlot = false) {
   const isActive = d.id === activeId;
   const mark = isActive ? CHECK : "";
   // Desks in Ratchet mode wear the ratchet glyph after their name.
   const ratchetGlyph = deskRatchetGlyph(_state, d.id);
   // Local desks (operating from a user-picked folder) wear a small
-  // filled map pin after the name.
+  // outlined map pin before the name. Only here: the dropdown is the one
+  // place a desk's kind is shown.
   const localGlyph = isLocal
-    ? `<svg viewBox="0 0 16 16" class="desk-switcher-local-glyph" data-tooltip="Local desk" fill="currentColor">${LOCAL_PIN_PATH}</svg>`
+    ? `<svg viewBox="0 0 16 16" class="desk-switcher-local-glyph" data-tooltip="Local desk" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">${LOCAL_PIN_PATH}</svg>`
     : "";
+  const pinHtml = pinSlot ? `<span class="desk-switcher-row-pin">${localGlyph}</span>` : "";
   // A local desk is named by its folder, so renaming one renames the
   // folder too — which is something iOS won't let Hush do from in here
   // (it grants a scope for the folder, not for its parent). The pencil
@@ -213,16 +235,16 @@ function deskRowHtml(d, activeId, canArchive, isLocal = false, iconSlot = false)
   return `<div class="desk-switcher-row${isActive ? " active" : ""}" data-desk-id="${d.id}">
     <button class="desk-switcher-row-pick" type="button" data-action="pick">
       <span class="desk-switcher-row-mark">${mark}</span>
-      ${iconSlot ? `<span class="desk-switcher-row-icon">${customIconSvg(deskIconName(_state, d.id))}</span>` : ""}<span class="desk-switcher-row-name">${escHtml(d.name || "Untitled desk")}</span>${ratchetGlyph}${localGlyph}
+      ${pinHtml}${iconSlot ? `<span class="desk-switcher-row-icon">${customIconSvg(deskIconName(_state, d.id))}</span>` : ""}<span class="desk-switcher-row-name">${escHtml(d.name || "Untitled desk")}</span>${ratchetGlyph}
     </button>
-    <span class="desk-switcher-row-actions">${handle}${pencilBtn}${archiveBtn}</span>
+    <span class="desk-switcher-row-actions">${pencilBtn}${archiveBtn}${handle}</span>
   </div>`;
 }
 
-function addRowHtml(iconSlot = false) {
+function addRowHtml(iconSlot = false, pinSlot = false) {
   return `<button class="desk-switcher-row desk-switcher-add" type="button" data-action="add">
     <span class="desk-switcher-row-mark">${PLUS}</span>
-    ${iconSlot ? `<span class="desk-switcher-row-icon"></span>` : ""}<span class="desk-switcher-row-name">Add desk</span>
+    ${pinSlot ? `<span class="desk-switcher-row-pin"></span>` : ""}${iconSlot ? `<span class="desk-switcher-row-icon"></span>` : ""}<span class="desk-switcher-row-name">Add desk</span>
   </button>`;
 }
 
@@ -326,6 +348,9 @@ function beginInlineRename(deskId) {
   input.type = "text";
   input.className = "desk-switcher-rename-input";
   input.value = current;
+  // Hold the name's width so the popover — sized to its contents —
+  // doesn't jump narrower when the input stands in for the name.
+  input.style.width = `${Math.max(120, nameEl.getBoundingClientRect().width)}px`;
   nameEl.replaceWith(input);
   input.focus();
   input.select();

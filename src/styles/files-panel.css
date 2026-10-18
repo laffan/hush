@@ -1053,10 +1053,11 @@
 }
 
 .desk-switcher-popover {
-  position: absolute;
-  top: 100%;
-  left: 8px;
-  right: 8px;
+  /* Placed by desk-switcher.js#placePopover — fixed so it can run past
+     the sidebar's edge, sized to the longest desk name. */
+  position: fixed;
+  width: max-content;
+  box-sizing: border-box;
   z-index: 50;
   background: var(--theme-bg, var(--bg));
   border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
@@ -1090,7 +1091,9 @@
   gap: 8px;
   flex: 1;
   min-width: 0;
-  padding: 6px 8px;
+  /* 30 px from the end of the longest name to the first action glyph:
+     22 here + the row's 4 px gap + the action button's 4 px padding. */
+  padding: 6px 22px 6px 8px;
   background: none;
   border: none;
   cursor: pointer;
@@ -1124,19 +1127,26 @@ button.desk-switcher-row.desk-switcher-add {
 }
 
 .desk-switcher-row-name {
-  flex: 1;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Filled map-pin marker on desks operating from a local folder. */
+/* Outlined map pin before the name of a desk operating from a local
+   folder. The slot is kept (empty) on every row once any desk is local,
+   so the names line up. */
+.desk-switcher-row-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 12px;
+  width: 12px;
+}
 .desk-switcher-local-glyph {
-  width: 10px;
-  height: 10px;
-  flex: 0 0 auto;
-  margin-left: 6px;
-  opacity: 0.55;
+  width: 12px;
+  height: 12px;
+  opacity: 0.6;
 }
 
 .desk-switcher-row-actions {
@@ -1184,7 +1194,7 @@ button.desk-switcher-row.desk-switcher-add {
   align-items: center;
   justify-content: center;
   width: 14px;
-  padding-left: 4px;
+  padding-left: 2px;
   cursor: grab;
   color: var(--fg);
   opacity: 0;
