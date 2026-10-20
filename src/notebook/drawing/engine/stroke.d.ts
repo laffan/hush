@@ -28,6 +28,10 @@ export function createStrokeEngine(opts: {
   onPenResumeDraw?: () => boolean;
   /** Hush delta #33 — a finger tapped without drifting or holding. */
   onFingerTap?: () => void;
+  /** Hush delta #41 — a pencil-only finger dragged before its hold
+   *  fired: the host pans. Held still, the finger goes to
+   *  `onFingerDragSelect` instead. */
+  onFingerPan?: (evt: { phase: "start" | "move" | "end"; pointerId: number; clientX: number; clientY: number }) => void;
   onLongPress?: (e: { pointerId: number; point: { x: number; y: number } }) => void;
   onStrokeAdded?: (stroke: any, index: number) => void;
   onStrokesRemoved?: (removed: { stroke: any; index: number }[]) => void;

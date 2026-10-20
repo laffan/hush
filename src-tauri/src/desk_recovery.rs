@@ -295,7 +295,7 @@ impl DeskStore {
 /// Point a just-restored desk's name at the recovery title — tree root
 /// and `.hushdesk` together, the same two spots `save_forest` keeps in
 /// step.
-fn rename_restored_desk(root: &Path, new_name: &str) -> Result<(), BoxError> {
+pub(crate) fn rename_restored_desk(root: &Path, new_name: &str) -> Result<(), BoxError> {
     let tree_path = root.join(".hush").join("tree.json");
     let mut tree: crate::TreeNode = serde_json::from_str(&fs::read_to_string(&tree_path)?)?;
     tree.name = new_name.to_string();

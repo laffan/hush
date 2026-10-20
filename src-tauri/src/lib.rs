@@ -17,6 +17,7 @@ mod desk_archive;
 mod desk_conflicts;
 mod desk_dedupe;
 mod desk_hashes;
+mod desk_hold;
 mod desk_identity;
 mod desk_index;
 mod desk_meta;
@@ -511,6 +512,7 @@ pub fn run() {
             commands::desks::desk_meta_set,
             commands::desks::desk_make_local,
             commands::desks::desk_make_internal,
+            commands::desks::desk_copy_internal,
             commands::desks::desk_rename_local_root,
             commands::desks::desk_move_local_root,
             commands::desks::desk_open_folder_as_desk,

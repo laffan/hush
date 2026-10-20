@@ -112,6 +112,16 @@
  *      that tapers because the hand eased off reads as a mistake.
  *      Erase and slice ignore the flag — both act along the path
  *      the pointer actually travelled.
+ *  41. One finger pans; held still, it selects. With `onFingerPan`
+ *      wired, a pencil-only finger that drifts past
+ *      FINGER_DRAG_THRESHOLD_2 before its hold fires is a pan — the
+ *      engine reports it (`start` / `move` / `end`, client px) and the
+ *      host moves the camera, zoom untouched — and a finger held still
+ *      for FINGER_HOLD_MS is what a dragged finger used to be: it goes
+ *      to `onFingerDragSelect`, which sweeps a marquee or carries a live
+ *      selection. A tap still clears (`onFingerTap`). The pen's own
+ *      hold-to-lasso (`onLongPress`) is untouched. selection.js #41 is
+ *      the same rule for a finger landing while select mode is live.
  *   (Deltas 4 + 5 live in selection.js + gestures.js; #24 in
  *    gestures.js; #26 — the per-stroke streamline cache — in
  *    stroke-render.js; #30 — ImageBitmap tinted atlases, so stamp
@@ -174,6 +184,10 @@ const LONG_PRESS_MOVE_THRESHOLD_2 = 16; // 4px
 // tap tolerance the gesture recogniser uses, so a still finger waiting
 // on the hold-to-lasso timer isn't stolen by hand tremor.
 const FINGER_DRAG_THRESHOLD_2 = 64; // (8 CSS px)^2
+// Hush delta #41: how long a finger must stay put before it selects
+// rather than pans. Shorter than the pen's hold-to-lasso: the finger
+// has nothing else to do while it waits.
+const FINGER_HOLD_MS = 400;
 
 export function createStrokeEngine({
   svg,                   // pointer target + overlay host
@@ -200,6 +214,9 @@ export function createStrokeEngine({
                          //   contact draw
   onFingerTap,           // Hush delta #33: () => void — a pencil-only finger landed and
                          //   lifted without drifting or holding long enough to lasso
+  onFingerPan,           // Hush delta #41: ({ phase: 'start'|'move'|'end', pointerId,
+                         //   clientX, clientY }) — a pencil-only finger dragged before
+                         //   its hold fired; the host pans the camera
   onStrokeAdded,
   onStrokesRemoved,
   onStrokesTransformed,
@@ -270,6 +287,7 @@ export function createStrokeEngine({
                               // anchor + the live point, so a drag reads as a ruled A→B line
     fingerHoldPointer: null,  // Hush delta #19: pointerId of a finger waiting on the long-press timer
     fingerHoldClient: null,   // Hush delta #33: that finger's landing point in client px
+    fingerPanPointer: null,   // Hush delta #41: pointerId of a finger that is panning
                               // (pencil-only mode lets fingers hold-to-select without drawing)
     previewingIds: null,      // Set<id> currently rendered to previewCanvas
     previewingTiles: null,    // tile keys currently held out of doneCanvas
@@ -565,7 +583,7 @@ export function createStrokeEngine({
   }
 
   // --------- long-press timer ---------
-  function armLongPress(point, pointerId) {
+  function armLongPress(point, pointerId, ms = state.longPressMs) {
     cancelLongPress();
     state.longPressAnchor = { x: point.x, y: point.y };
     state.longPressPointer = pointerId;
@@ -579,8 +597,16 @@ export function createStrokeEngine({
       const pid = state.longPressPointer;
       const anchor = state.longPressAnchor;
       state.suppressedPointerId = pid;
+      // Hush delta #41: a finger held still selects — the marquee (or
+      // the move of a live selection) a dragged finger used to start.
+      if (onFingerPan && onFingerDragSelect && state.fingerHoldPointer === pid) {
+        state.fingerHoldPointer = null;
+        state.fingerHoldClient = null;
+        onFingerDragSelect({ pointerId: pid, point: anchor });
+        return;
+      }
       onLongPress && onLongPress({ pointerId: pid, point: anchor });
-    }, state.longPressMs);
+    }, ms);
   }
   function cancelLongPress() {
     if (state.longPressTimer) {
@@ -643,7 +669,7 @@ export function createStrokeEngine({
       const fp = getPoint(e);
       state.fingerHoldPointer = e.pointerId;
       state.fingerHoldClient = { x: e.clientX, y: e.clientY };
-      armLongPress(fp, e.pointerId);
+      armLongPress(fp, e.pointerId, onFingerPan ? FINGER_HOLD_MS : state.longPressMs);
       return;
     }
     if (e.button !== undefined && e.button !== 0) return;
@@ -760,6 +786,11 @@ export function createStrokeEngine({
 
   function onPointerMove(e) {
     if (e.pointerId === state.suppressedPointerId) return;
+    // Hush delta #41: a panning finger only moves the camera.
+    if (state.fingerPanPointer !== null && e.pointerId === state.fingerPanPointer) {
+      onFingerPan({ phase: 'move', pointerId: e.pointerId, clientX: e.clientX, clientY: e.clientY });
+      return;
+    }
     // Hush delta #19 / #33: a finger waiting on the hold-to-lasso timer
     // has drifted. Held still it becomes a freehand lasso; dragged it
     // becomes a rectangle marquee (`onFingerDragSelect`) so the user can
@@ -776,6 +807,13 @@ export function createStrokeEngine({
           cancelLongPress();
           state.fingerHoldPointer = null;
           state.fingerHoldClient = null;
+          // Hush delta #41: dragged before the hold fired — a pan.
+          if (onFingerPan) {
+            state.fingerPanPointer = pid;
+            onFingerPan({ phase: 'start', pointerId: pid, clientX: c.x, clientY: c.y });
+            onFingerPan({ phase: 'move', pointerId: pid, clientX: e.clientX, clientY: e.clientY });
+            return;
+          }
           if (onFingerDragSelect) {
             // Suppress this pointer for the stroke path; the selection
             // engine owns its move / up events from here.
@@ -849,6 +887,12 @@ export function createStrokeEngine({
   }
 
   function onPointerUp(e) {
+    if (state.fingerPanPointer !== null && e.pointerId === state.fingerPanPointer) {
+      state.fingerPanPointer = null;
+      releaseCapture(e.pointerId);
+      onFingerPan({ phase: 'end', pointerId: e.pointerId, clientX: e.clientX, clientY: e.clientY });
+      return;
+    }
     if (e.pointerId === state.suppressedPointerId) {
       state.suppressedPointerId = null;
       // Long-press fired and the lasso took over; clear the finger
@@ -1094,6 +1138,13 @@ export function createStrokeEngine({
       // SVG is non-capturing and the canvas's own touch handlers run.
       releaseCapture(state.fingerHoldPointer);
       releaseCapture(state.activePointerId);
+      // Hush delta #41: a one-finger pan gives way to the gesture.
+      if (state.fingerPanPointer !== null) {
+        const pid = state.fingerPanPointer;
+        releaseCapture(pid);
+        state.fingerPanPointer = null;
+        onFingerPan && onFingerPan({ phase: 'end', pointerId: pid, clientX: 0, clientY: 0 });
+      }
       // Hush delta #19: a second finger landing also kills any
       // pending finger-hold so the multi-touch gesture (pan / pinch /
       // tap) wins over the lasso handoff.

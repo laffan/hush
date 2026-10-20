@@ -227,6 +227,7 @@ export function createDrawingLayer({
     setSelectionEventActive: (a) => selectionBox.current?.setEventActive(a),
   });
 
+  const atlasListeners = new Set<() => void>();
   const strokeEngine = createStrokeEngine({
     svg,
     doneCanvas,
@@ -241,21 +242,10 @@ export function createDrawingLayer({
     getDpr: currentDpr,
     brushUrl,
     blitCanvas: blitHelper,
-    onLongPress: ({ pointerId, point }) => {
-      // 1.5s hold with no drift promotes the in-flight stroke into a
-      // lasso — the user's "I want to select what I just drew" gesture.
-      // Without this hook the engine just cancels the active stroke.
-      //
-      // Flip the sub-tool to "select" so the stroke engine stops
-      // accepting pointerdowns as draws while the selection is live —
-      // otherwise tapping inside the bbox both moves the selection AND
-      // starts a new stroke. The previous sub-tool is saved so we can
-      // restore it when the user deselects (lasso misses, or tap-away).
-      region.beginRegionGesture();
-      const sel = selectionBox.current;
-      if (sel) sel.startLassoAtPointer(pointerId, point);
-      flashSelectHint(point);
-    },
+    // The pen held still promotes its stroke into a lasso.
+    onLongPress: region.onPenLongPress,
+    // A brush PNG landed: the toolbar's previews redraw with it.
+    onBrushAtlasLoaded: () => { for (const fn of atlasListeners) fn(); },
     // Hush delta #33: a finger dragged instead of holding — sweep a
     // rectangle marquee rather than a freehand loop.
     onFingerDragSelect: region.onFingerDragSelect,
@@ -265,6 +255,8 @@ export function createDrawingLayer({
     // Hush delta #33: a bare finger tap deselects, the same as tapping
     // empty canvas under the Select tool or the Lasso sub-tool.
     onFingerTap: region.onFingerTap,
+    // Hush delta #41: dragged before its hold, a finger pans.
+    onFingerPan: region.onFingerPan,
     onStrokeAdded: (stroke: EngineStroke, _index: number) => {
       const shim = shimBox.current;
       if (!shim) return;
@@ -357,6 +349,8 @@ export function createDrawingLayer({
     // Hush delta #35: a finger grabbed the selection and let go without
     // dragging it — same tap, same dismissal as everywhere else.
     onRegionTap: region.onFingerTap,
+    onFingerPan: region.onFingerPan, // Hush delta #41
+    onFingerHold: flashSelectHint,
     // A second finger promoted the burst into a pan / pinch before the
     // region resolved — give the user back the brush the gesture
     // borrowed, or they're stuck in select mode with nothing selected.
@@ -678,6 +672,7 @@ export function createDrawingLayer({
     setPencilOnly,
     renderSwatch,
     renderDemoStroke,
+    onBrushAtlasLoaded: (fn: () => void) => { atlasListeners.add(fn); return () => atlasListeners.delete(fn); },
     undo,
     redo,
     canUndo,

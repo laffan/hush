@@ -43,6 +43,8 @@ import {
 } from "./state-splits";
 // PERF-HUD (temporary): tracer singleton — see perf-hud.ts.
 import { perf } from "./perf-hud";
+import { TouchGate } from "./touch-hold";
+import { hitTestSplits } from "./splits";
 import { placeBookmark } from "./bookmarks";
 import { addCardShape, toggleCardCollapsed } from "./card-shape";
 import { CARD_HEADER_HEIGHT } from "../cards/card-model";
@@ -851,6 +853,24 @@ export class DrawingState extends EventTarget {
    *  any pinned outline (whose world position isn't where it is drawn).
    *  Returns the live array untouched in the common case so the hot
    *  hit-test paths don't allocate. */
+  /** Whether a finger landing here touches nothing — so a drag from it
+   *  should pan rather than sweep (touch-hold.ts). Anything under it that
+   *  a press manipulates directly (a shape, a handle, a split line, the
+   *  pocket) says no. A drag area counts as empty: it is a region more
+   *  than an object, and often the size of the view; held, the press
+   *  still picks it up as before. */
+  private _touchLandsOnEmpty(screenPt: Point, canvasPt: Point): boolean {
+    const tool = this.tool;
+    if (!(tool === "select" || tool === "text" || tool === "drag-area" || tool === "bookmark" || this.brainstormMode)) return false;
+    if (this.isPanning || this.grab || this.croppingImageId || this.splitHover) return false;
+    if (this.hitTestResizeHandles(canvasPt)) return false;
+    if (hitTestSplits(this.splits, canvasPt, this.camera.zoom)) return false;
+    const canvas = this.canvasEl;
+    if (canvas && findPocketedShapeAtScreen(screenPt, this.shapes, canvas.clientWidth, this.fontFamily, this.pocketRightInset)) return false;
+    const solid = this._interactableShapes().filter((s) => s.type !== "drag-area");
+    return !findShapeAtPoint(canvasPt, solid, this.fontFamily);
+  }
+
   _interactableShapes(): Shape[] {
     const inert = this._inertLayerIds();
     // `some` rather than a filter for the fast path: this runs on every
@@ -970,6 +990,19 @@ export class DrawingState extends EventTarget {
    *  jumpy on iPad even though it was smooth on Mac (where the cursor is
    *  the only pointer in flight). */
   private _panPointerId: number | null = null;
+  /** One finger on empty canvas pans; held still it does what a finger
+   *  used to (touch-hold.ts). */
+  private _touchGate = new TouchGate({
+    replay: (down) => this.handlePointerDown(down),
+    beginPan: (down) => {
+      this._isPanningActive = true;
+      this._panStart = { x: down.clientX, y: down.clientY };
+      this._cameraStart = { ...this.camera };
+      this._panStartScrollTop = this.gutterScrollDOM?.scrollTop || 0;
+      this._panPointerId = down.pointerId;
+    },
+    canvas: () => this.canvasEl,
+  });
   private _selectStart: Point | null = null;
   private _isDragging = false;
   private _dragStart: Point = { x: 0, y: 0 };
@@ -1600,6 +1633,8 @@ export class DrawingState extends EventTarget {
       return; // commit ends the interaction; next click starts fresh
     }
 
+    if (this._touchGate.down(e, () => this._touchLandsOnEmpty(screenPt, canvasPt))) return;
+
     // An outline's frame is its own UI: a press on a checkbox or on one
     // of the two footer toggles has to be consumed here, ahead of edge
     // affordances, splits, selection and the text tool, or the press
@@ -1929,6 +1964,8 @@ export class DrawingState extends EventTarget {
     const screenPt: Point = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     const canvasPt = screenToCanvas(screenPt, this.camera);
 
+    if (this._touchGate.move(e)) return;
+
     if (this._isPanningActive) {
       // Filter to the pointer that started the pan. iPad occasionally
       // delivers pointermoves from a second contact (palm, other thumb,
@@ -1939,19 +1976,7 @@ export class DrawingState extends EventTarget {
       // on iPad. Mac mouse drags only ever fire one pointer so the
       // bug was invisible there.
       if (this._panPointerId !== null && e.pointerId !== this._panPointerId) return;
-      const dx = e.clientX - this._panStart.x;
-      const dy = e.clientY - this._panStart.y;
-      // Gutter mode: vertical drag scrolls the host doc 1:1; horizontal
-      // still pans camera.x. Camera.y tracks the live scrollTop so the
-      // engine's viewport math sees the correct world rect.
-      if (this.gutterScrollDOM) {
-        this.gutterScrollDOM.scrollTop = (this._panStartScrollTop || 0) - dy;
-        this.camera = { x: this._cameraStart.x + dx, y: this.gutterCameraOffset - this.gutterScrollDOM.scrollTop, zoom: 1 };
-        this.notify("camera");
-        return;
-      }
-      this.camera = { x: this._cameraStart.x + dx, y: this._cameraStart.y + dy, zoom: this._cameraStart.zoom, rotation: this._cameraStart.rotation };
-      this.notify("camera");
+      this._applyPan(e.clientX, e.clientY);
       return;
     }
 
@@ -2254,7 +2279,46 @@ export class DrawingState extends EventTarget {
     }
   }
 
+  /** Move the camera for a pan that started at `_panStart`. */
+  private _applyPan(clientX: number, clientY: number) {
+    const dx = clientX - this._panStart.x;
+    const dy = clientY - this._panStart.y;
+    // Gutter mode: vertical drag scrolls the host doc 1:1; horizontal
+    // still pans camera.x. Camera.y tracks the live scrollTop so the
+    // engine's viewport math sees the correct world rect.
+    if (this.gutterScrollDOM) {
+      this.gutterScrollDOM.scrollTop = (this._panStartScrollTop || 0) - dy;
+      this.camera = { x: this._cameraStart.x + dx, y: this.gutterCameraOffset - this.gutterScrollDOM.scrollTop, zoom: 1 };
+      this.notify("camera");
+      return;
+    }
+    this.camera = { x: this._cameraStart.x + dx, y: this._cameraStart.y + dy, zoom: this._cameraStart.zoom, rotation: this._cameraStart.rotation };
+    this.notify("camera");
+  }
+
+  /** A one-finger pan the drawing engines report in pen mode, where the
+   *  drawing overlay rather than the canvas receives the touches
+   *  (stroke.js / selection.js delta #41). Same pan, zoom untouched. */
+  touchPan(phase: "start" | "move" | "end", pointerId: number | null, clientX: number, clientY: number) {
+    if (phase === "start") {
+      this._isPanningActive = true;
+      this._panStart = { x: clientX, y: clientY };
+      this._cameraStart = { ...this.camera };
+      this._panStartScrollTop = this.gutterScrollDOM?.scrollTop || 0;
+      this._panPointerId = pointerId;
+    } else if (phase === "move") {
+      if (!this._isPanningActive || (this._panPointerId !== null && pointerId !== this._panPointerId)) return;
+      this._applyPan(clientX, clientY);
+    } else if (this._isPanningActive && (pointerId === null || pointerId === this._panPointerId)) {
+      this._isPanningActive = false;
+      this._panPointerId = null;
+    }
+  }
+
   handlePointerUp(e: PointerEvent) {
+    // A press the touch gate was still holding: a tap (its down is
+    // delivered now, and this up completes it) or a cancel (nothing).
+    if (this._touchGate.up(e)) { this._preTouchSelectedIds = null; return; }
     // Gesture finished cleanly — drop the touch selection snapshot so
     // the next interaction starts fresh. (A multi-touch promotion
     // would have called cancelActiveInteraction first, which already
@@ -2740,6 +2804,7 @@ export class DrawingState extends EventTarget {
    *  marquee selection / drag-area / drag / resize state started by
    *  the first finger doesn't render between the user's fingers. */
   cancelActiveInteraction() {
+    this._touchGate.cancel();
     let changed = false;
     // Restore the selection that existed before the gesture began —
     // a finger that brushed a shape on its way to a two-finger pan

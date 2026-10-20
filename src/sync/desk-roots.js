@@ -387,6 +387,22 @@ async function notePendingFiles(state, deskId, report) {
   } catch (_) {}
 }
 
+/** Files the reconcile is holding back (`ScanReport.held`, Rust
+ *  `desk_hold`) wait for the sidecars that name them. Nothing else may
+ *  come along to reconcile again — the folder can go quiet — so once the
+ *  hold is up, look again: the file is then named or minted. */
+const HELD_RECHECK_MS = 125_000;
+const _heldRecheck = new Map();
+
+function scheduleHeldRecheck(state, deskId, report) {
+  if (!(report?.held > 0) || _heldRecheck.has(deskId)) return;
+  logActivity("desks", "info", "Held new file(s) until their sidecars arrive", { deskId, held: report.held });
+  _heldRecheck.set(deskId, setTimeout(() => {
+    _heldRecheck.delete(deskId);
+    reconcileDesk(state, deskId).catch(() => {});
+  }, HELD_RECHECK_MS));
+}
+
 /** Run the disk-wins reconcile for one desk and refresh the UI when it
  *  changed anything, then re-read every surface holding one of its files
  *  open — a content-only change is invisible to the reconcile, so the
@@ -407,6 +423,7 @@ export async function reconcileDesk(state, deskId) {
   }
   kickPendingDownloads(state, deskId, report);
   await notePendingFiles(state, deskId, report);
+  scheduleHeldRecheck(state, deskId, report);
   // `matched` and `rekeyed` are in here too: they don't add or remove a
   // row, but re-pairing one with the fileId the far device is writing
   // under is exactly the event worth having on the record when sync goes

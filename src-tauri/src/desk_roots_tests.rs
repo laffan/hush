@@ -262,16 +262,24 @@ fn reconcile_from_disk_follows_external_adds_and_removes() {
     // ...and deletes the original doc.
     fs::remove_file(target.join("Doc.md")).unwrap();
 
-    // Additions land immediately; the deletion only starts the grace
+    // Additions land immediately — except one beside a doc that just
+    // vanished, which could be that doc under a new name and waits for
+    // its sidecars (desk_hold). The deletion only starts the grace
     // clock — inside a synced folder, "absent" routinely means "not
     // delivered yet", so a single scan can never remove anything.
     let report = store.reconcile_desk_from_disk("d1").unwrap();
-    assert_eq!(report.added, 2);
+    assert_eq!(report.added, 1);
+    assert_eq!(report.held, 1);
     assert_eq!(report.removed, 0);
     assert_eq!(report.pending, 1);
     let forest = store.load_forest().unwrap();
     assert!(forest[0].children.iter().any(|n| n.name == "Doc"),
         "a just-missed file is held, not dropped");
+
+    // Nothing came to name it: once the hold is up, it is a new file.
+    crate::desk_hold::backdate_for_tests(&target, "From Finder.md", crate::desk_hold::HOLD_SECS + 1);
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!((report.added, report.held, report.removed), (1, 0, 0));
 
     // Once the absence has outlasted the grace window, a later scan
     // treats it as the real deletion it is.
@@ -371,8 +379,12 @@ fn rename_with_changed_content_falls_back_to_remove_plus_add() {
 
     fs::remove_file(target.join("Doc.md")).unwrap();
     fs::write(target.join("Different.md"), "not the same bytes").unwrap();
-    // Different bytes can't pair as a rename, so the add lands and the
-    // vanish waits out the grace window like any other absence.
+    // Different bytes can't pair as a rename. The add waits a while for
+    // sidecars that might name it (desk_hold), then lands; the vanish
+    // waits out the grace window like any other absence.
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!((report.renamed, report.added, report.held), (0, 0, 1));
+    crate::desk_hold::backdate_for_tests(&target, "Different.md", crate::desk_hold::HOLD_SECS + 1);
     let report = store.reconcile_desk_from_disk("d1").unwrap();
     assert_eq!((report.renamed, report.added, report.removed), (0, 1, 0));
     assert_eq!(report.pending, 1);

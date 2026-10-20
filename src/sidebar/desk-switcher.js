@@ -265,17 +265,12 @@ async function onPopoverClick(ev, popover) {
   if (action === "add") {
     // The Internal / Local fork owns creation now (see new-desk-flow.js).
     // The popover has to close first — the flow's modal takes over the
-    // screen — and reopens on the way out so the new desk is visible.
+    // screen. A created desk is already named (and switched to), so the
+    // popover stays shut; it used to reopen on the new row in rename
+    // mode, asking for the name the prompt had just been given.
     closePopover();
     const { startNewDeskFlow } = await import("./new-desk-flow.js");
-    const newId = await startNewDeskFlow(_state, {
-      // Only an internal desk lands in inline-rename mode; a local desk
-      // is named by its folder and can't be renamed at all.
-      onCreated: (id, kind) => {
-        if (kind !== "internal") return;
-        setTimeout(() => { openPopover(); requestAnimationFrame(() => beginInlineRename(id)); }, 0);
-      },
-    });
+    const newId = await startNewDeskFlow(_state);
     // Backed out — put the popover back where it was.
     if (!newId) setTimeout(() => openPopover(), 0);
     return;

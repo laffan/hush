@@ -66,9 +66,28 @@ export function updateTreeNodeNameByFileId(state, fileId) {
   return false;
 }
 
-export async function maybeRenameFromFirstLine(state) {
+/** True when `fileId` lives in a desk kept in a folder of the user's —
+ *  one their sync provider is moving about too. */
+function inLocalDesk(state, fileId) {
+  const roots = state.deskRoots || {};
+  for (const desk of state.fileTree || []) {
+    if (desk.type !== "desk" || !roots[desk.id]) continue;
+    if (findNodeByFileId(desk.children || [], fileId)) return true;
+  }
+  return false;
+}
+
+/** `opts.idle`: the trigger is a pause in typing rather than a stable
+ *  moment (leaving the title line, blur, switching files). In a local
+ *  desk a pause with the caret still on the title doesn't rename: every
+ *  rename there is a file rename plus an index.json and a tree.json the
+ *  provider carries separately, and a title typed with pauses was a
+ *  rename per pause — the churn behind a far device seeing one document
+ *  arrive as two. Leaving the line, or the document, renames it once. */
+export async function maybeRenameFromFirstLine(state, opts = {}) {
   if (state.currentProjectId || state.currentNotebookFileId || state.currentLocalSync) return;
   if (!state.currentFileId || !state.editor) return;
+  if (opts.idle && cursorOnFirstLine(state) && inLocalDesk(state, state.currentFileId)) return;
   // Docs linked to a Google Doc track the GDoc's title — the user
   // already chose that filename when they imported / linked, and the
   // first-line auto-rename would silently overwrite it with the doc

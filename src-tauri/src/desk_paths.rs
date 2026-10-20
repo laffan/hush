@@ -3,6 +3,7 @@
 
 use crate::TreeNode;
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Document extensions Hush recognises but never *writes*. A doc it
@@ -191,3 +192,69 @@ pub fn sanitize_segment(name: &str) -> String {
     out
 }
 
+/// The directory chain of a desk-relative path, as name segments.
+pub(crate) fn dir_segments(path: &Path) -> Vec<String> {
+    path.parent()
+        .map(|d| {
+            d.components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Recognised files under `dir` as desk-relative paths. Hidden entries
+/// and the `.hush` sidecar are skipped.
+pub(crate) fn walk_files(root: &Path, dir: &Path, out: &mut Vec<String>) {
+    let Ok(rd) = fs::read_dir(dir) else { return };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue; // .hush, .hushdesk, .DS_Store, dotfiles
+        }
+        if path.is_dir() {
+            walk_files(root, &path, out);
+        } else if path.is_file() {
+            if let Ok(rel) = path.strip_prefix(root) {
+                out.push(rel.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+}
+
+/// Logical desk-relative paths of every iCloud placeholder under `dir`.
+/// A file iCloud knows about but hasn't delivered locally is a plist
+/// dotfile named `.<Name>.icloud` beside where `<Name>` belongs — the
+/// normal on-disk state for evicted/undownloaded files on iOS, where
+/// plain `std::fs` never triggers a download. `walk_files` skips them
+/// as dotfiles, so this walk is how the reconciler learns the file
+/// exists at all. Dot-directories (`.hush`) are skipped, and a
+/// placeholder whose logical name is itself a dotfile is ignored.
+pub(crate) fn walk_placeholders(root: &Path, dir: &Path, out: &mut Vec<String>) {
+    let Ok(rd) = fs::read_dir(dir) else { return };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if path.is_dir() {
+            if !name.starts_with('.') {
+                walk_placeholders(root, &path, out);
+            }
+            continue;
+        }
+        let Some(stem) = name.strip_prefix('.').and_then(|s| s.strip_suffix(".icloud")) else {
+            continue;
+        };
+        if stem.is_empty() || stem.starts_with('.') {
+            continue;
+        }
+        if let Ok(rel_dir) = dir.strip_prefix(root) {
+            let rel = if rel_dir.as_os_str().is_empty() {
+                stem.to_string()
+            } else {
+                format!("{}/{}", rel_dir.to_string_lossy().replace('\\', "/"), stem)
+            };
+            out.push(rel);
+        }
+    }
+}

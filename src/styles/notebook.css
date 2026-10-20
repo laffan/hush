@@ -372,3 +372,22 @@ body.bookmark-stamping-nb .nb-bookmark {
   0% { left: -40%; }
   100% { left: 100%; }
 }
+
+/* A held finger's press has been handed to the canvas (touch-hold.ts,
+   and pen mode's finger hold): a ring swells and fades under it. */
+.nb-touch-hold-ring {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 90;
+  animation: nb-touch-hold-ring 0.55s ease-out forwards;
+}
+@keyframes nb-touch-hold-ring {
+  from { transform: scale(0.4); opacity: 0.55; }
+  to { transform: scale(1.25); opacity: 0; }
+}

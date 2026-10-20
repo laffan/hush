@@ -92,12 +92,21 @@ export async function keepHeldBuffer(state, fileId) {
 export async function saveDocChecked(state, fileId, content) {
   const base = baseFor(state, fileId);
   let report;
+  // The caller cleared `dirty` before this await, so to the reload hook
+  // the buffer looks clean — and a reconcile landing now would read the
+  // disk from before this write and put that in the editor, and make it
+  // the base. `docSaveInFlight` tells it to stand down, and `docSaveSeq`
+  // tells a read that straddled a whole save that what it read is stale.
+  state.runtime.docSaveInFlight = fileId;
+  state.runtime.docSaveSeq = (state.runtime.docSaveSeq || 0) + 1;
   try {
     report = await invoke("save_file", { id: fileId, content, baseHash: base?.hash || null });
   } catch (e) {
     console.error("Save failed:", e);
     logActivity("files", "error", "Save failed", { fileId, error: String(e) });
     return false;
+  } finally {
+    if (state.runtime.docSaveInFlight === fileId) state.runtime.docSaveInFlight = null;
   }
   if (report?.conflict) {
     void handleSaveConflict(state, fileId, report);

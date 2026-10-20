@@ -51,9 +51,14 @@ async function maybeReloadOpenDoc(state, deskId) {
   const fileId = state.currentFileId;
   if (!fileId || !state.editor || state.currentProjectId) return;
   if (!fileInDesk(state, deskId, fileId)) return;
+  // Our own save is on its way to disk: what the disk holds is older than
+  // the buffer, however clean the buffer looks (doc-conflict.js).
+  if (state.runtime.docSaveInFlight === fileId) return;
+  const saveSeq = state.runtime.docSaveSeq;
   try {
     const file = await invoke("load_file", { id: fileId });
     if (!file || state.currentFileId !== fileId) return;
+    if (state.runtime.docSaveInFlight === fileId || state.runtime.docSaveSeq !== saveSeq) return;
     const applied = applyExternalDocContent(state, {
       content: file.content,
       lockKey: fileId,

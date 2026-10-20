@@ -170,7 +170,35 @@ impl DeskStore {
     /// desk_recovery.rs) — into a brand-new internal desk with a fresh
     /// identity throughout. Returns the new desk id.
     pub(crate) fn restore_desk_zip(&self, src: &Path) -> Result<String, BoxError> {
-        let bytes = fs::read(src)?;
+        self.restore_desk_bytes(fs::read(src)?)
+    }
+
+    /// Copy a local desk into a brand-new internal desk named `new_name` —
+    /// the same zip-and-re-identify round trip an archive takes, done in
+    /// memory. The local folder is only read: it stays exactly as it is,
+    /// for any other device still using it, and the copy shares no id
+    /// with it, so the two can never be mistaken for one desk. Returns
+    /// the new desk id.
+    pub fn copy_desk_to_internal(&self, desk_id: &str, new_name: &str) -> Result<String, BoxError> {
+        if crate::desk_roots::root_for(&self.desks_dir, desk_id).is_none() {
+            return Err("desk is not local".into());
+        }
+        let root = self.desk_dir(desk_id);
+        if !root.is_dir() {
+            return Err(format!("the folder for desk {} can't be reached", desk_id).into());
+        }
+        let (buf, files) = build_desk_zip(&root, new_name, desk_id, true, now_secs())?;
+        let new_id = self.restore_desk_bytes(buf)?;
+        crate::desk_recovery::rename_restored_desk(&self.desks_dir.join(&new_id), new_name)?;
+        crate::activity_log::note(
+            "desks",
+            "info",
+            format!("Copied local desk {} ({} files) into internal desk {}", desk_id, files, new_id),
+        );
+        Ok(new_id)
+    }
+
+    fn restore_desk_bytes(&self, bytes: Vec<u8>) -> Result<String, BoxError> {
         let mut zip = zip::ZipArchive::new(Cursor::new(bytes))?;
 
         let new_id = uuid::Uuid::new_v4().to_string();

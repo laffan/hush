@@ -21,6 +21,11 @@ export function createSelectionEngine(opts: {
   /** Hush delta #35 — a touch grabbed a live selection and released
    *  without dragging it. */
   onRegionTap?: () => void;
+  /** Hush delta #41 — a touch on empty canvas travelled before its hold
+   *  fired: the host pans. */
+  onFingerPan?: (evt: { phase: "start" | "move" | "end"; pointerId: number | null; clientX: number; clientY: number }) => void;
+  /** Hush delta #41 — that touch was held, and now selects. */
+  onFingerHold?: (point: { x: number; y: number }) => void;
 }): {
   activate(): void;
   deactivate(): void;

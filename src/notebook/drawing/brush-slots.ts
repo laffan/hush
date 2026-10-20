@@ -115,19 +115,29 @@ export function createBrushSlots(
   });
 
   // ---------- slot row ----------
-  // Thumb canvases are 26 px (down from 32) so the slim 1-px-padded
-  // toolbar still has room for a centered preview without bleeding
-  // into the rounded button corners. Buttons stay at 36 px so the
-  // tap target hasn't shrunk.
+  // Thumbs are sized as a share of their button (26 of 36 px at full
+  // size) rather than in px, so they shrink with the buttons when the
+  // bar goes compact instead of overrunning them. Every size change —
+  // compacting, the first layout of a bar mounted hidden, a pane
+  // resize — redraws the thumb at its new size (the ResizeObserver
+  // below), and so does every brush PNG that lands after the first
+  // draw (`onBrushAtlasLoaded`). Without those, a thumb drawn before
+  // its button had a size, or before its brush had loaded, stayed
+  // blank until something else happened to repaint it — a tap.
   const slotBtns: HTMLButtonElement[] = [];
   const slotThumbs: HTMLCanvasElement[] = [];
+  const thumbRO = typeof ResizeObserver !== "undefined"
+    ? new ResizeObserver(() => redrawThumbs())
+    : null;
   // One button per state slot (4 by default — pen ×3 + highlighter).
   for (let i = 0; i < state.brushSlots.length; i++) {
     const thumb = document.createElement("canvas");
     thumb.width = 26; thumb.height = 26;
     Object.assign(thumb.style, {
-      width: "26px", height: "26px", display: "block",
+      width: "72%", height: "72%", display: "block",
     });
+    thumb.classList.add("nb-brush-thumb");
+    thumbRO?.observe(thumb);
     slotThumbs.push(thumb);
 
     const btn = h("button", {
@@ -501,7 +511,10 @@ export function createBrushSlots(
 
   function redrawThumbs(): void {
     for (let i = 0; i < slotBtns.length; i++) {
-      drawingLayer.renderSwatch(slotThumbs[i], state.brushSlots[i]);
+      // Not laid out (the bar is minimized or not mounted yet): drawing
+      // now would size the backing off a guess. The observer redraws it
+      // once it has a size.
+      if (slotThumbs[i].clientWidth > 0) drawingLayer.renderSwatch(slotThumbs[i], state.brushSlots[i]);
       // Active-slot indication is opacity-only — no background tint,
       // so the brush preview PNG reads cleanly against the toolbar.
       // Only highlighted when the drawing engine is actually taking
@@ -580,9 +593,13 @@ export function createBrushSlots(
     requestAnimationFrame(updateMiniPalette);
   }) as EventListener);
 
-  // Initial draw (and one delayed re-draw for async atlas PNGs).
+  // Initial draw; layout and late brush PNGs redraw through the
+  // observer above and this subscription.
   redrawThumbs();
-  setTimeout(redrawThumbs, 400);
+  drawingLayer.onBrushAtlasLoaded(() => {
+    redrawThumbs();
+    if (flyoutOpen) { redrawBrushCells(); redrawDemoStroke(); }
+  });
   if (state.drawingToolbarVertical) root.style.flexDirection = "column";
   updateMiniPalette();
   setTimeout(updateMiniPalette, 400);

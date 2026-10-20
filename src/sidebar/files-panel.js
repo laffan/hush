@@ -447,7 +447,10 @@ function dispatchRowAction(action, nodeId, opts) {
     import("../state/state-desks-ops.js")
       .then((m) => m.convertFolderToDesk(storedState, nodeId))
       .then(refresh)
-      .catch((e) => console.error("convert to desk failed:", e));
+      .catch((e) => {
+        console.error("convert to desk failed:", e);
+        window.alert(`Couldn't convert to a desk:\n${e?.message || e}`);
+      });
   } else if (action === "move-to-desk") {
     import("./send-to-desk-modal.js").then((m) => m.openSendToDeskModal(storedState, nodeId, "send"));
   } else if (action === "convert-project-to-doc") {
@@ -507,7 +510,7 @@ function dispatchRowAction(action, nodeId, opts) {
   } else if (action === "make-desk-local") {
     import("../sync/desk-roots.js").then((m) => m.makeDeskLocal(storedState, nodeId).then(refresh));
   } else if (action === "make-desk-internal") {
-    import("../sync/desk-roots.js").then((m) => m.makeDeskInternal(storedState, nodeId).then(refresh));
+    import("../sync/desk-internalize.js").then((m) => m.convertLocalDeskToInternal(storedState, nodeId));
   } else if (action === "reveal-desk-folder") {
     import("../sync/desk-roots.js").then((m) => m.revealDeskRoot(storedState, nodeId));
   } else if (action === "move-desk-folder") {

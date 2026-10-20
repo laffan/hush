@@ -74,6 +74,9 @@ export interface DrawingLayer {
    *  spacing all read at a glance. The flyout uses this in place of a
    *  static "Pen" header. */
   renderDemoStroke(canvas: HTMLCanvasElement, slot: DrawingSlot): void;
+  /** Call `fn` whenever a brush PNG finishes loading — every preview
+   *  drawn before then was drawn without it. Returns an unsubscribe. */
+  onBrushAtlasLoaded(fn: () => void): () => void;
   /** Drawing-mode undo / redo. Separate from Hush's notebook undo
    *  stack for now — see INTEGRATION-PLAN.md → shortcuts. */
   undo(): void;

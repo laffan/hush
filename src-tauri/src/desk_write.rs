@@ -46,7 +46,10 @@ pub fn content_hash(content: &str) -> String {
 /// other device's edits, and asking the user about them would be a false
 /// alarm every time two windows share a document.
 static OWN_WRITES: OnceLock<Mutex<HashMap<String, VecDeque<String>>>> = OnceLock::new();
-const OWN_WRITES_KEPT: usize = 16;
+/// Deep enough to cover a long offline stretch: a provider coming back
+/// online can hand back bytes from many saves ago, and those are still
+/// only ever ours. Sixteen covered about half a minute of autosaves.
+const OWN_WRITES_KEPT: usize = 512;
 
 fn own_writes() -> &'static Mutex<HashMap<String, VecDeque<String>>> {
     OWN_WRITES.get_or_init(|| Mutex::new(HashMap::new()))
@@ -62,7 +65,7 @@ fn note_own_write(id: &str, hash: &str) {
     }
 }
 
-fn is_own_write(id: &str, hash: &str) -> bool {
+pub(crate) fn is_own_write(id: &str, hash: &str) -> bool {
     own_writes().lock().unwrap().get(id).map(|r| r.iter().any(|h| h == hash)).unwrap_or(false)
 }
 

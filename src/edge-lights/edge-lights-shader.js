@@ -24,6 +24,9 @@
  *              in the light reaches and which colours it is, so each
  *              patch is a gradient of its own, and it swells and ebbs
  *              on a slow throb.
+ *   Thrum Dark (3)  Thrum's shapes, drawn the same; the overlay lays
+ *              them over the page unblended (edge-lights-overlay.js), so
+ *              a dark palette darkens the edges of a light page.
  *
  * Colour: all but the palette's last colour are spread along the edge by
  * a slow noise field; the last is what the far reach fades into. With
@@ -43,7 +46,7 @@ uniform float u_depth;    // reach, in canvas px
 uniform float u_opacity;
 uniform float u_sat;
 uniform float u_fade;
-uniform int   u_kind;     // 0 polar, 1 scuba, 2 thrum
+uniform int   u_kind;     // 0 polar, 1 scuba, 2 thrum, 3 thrum dark
 uniform int   u_count;    // colours in use, 2..${MAX_SHADER_COLORS}
 uniform vec3  u_colors[${MAX_SHADER_COLORS}];
 
@@ -140,7 +143,7 @@ void main() {
   vec2 px = gl_FragCoord.xy;
   float t = u_time;
   bool scuba = u_kind == 1;
-  bool thrum = u_kind == 2;
+  bool thrum = u_kind == 2 || u_kind == 3;
   // Past the furthest any lobe (or the water's bend) can reach: nothing.
   // Thrum's reach is 1.6 depths and fades out to 1.1 of that, measured
   // on rounded corners, which can read up to 0.42 depths nearer the

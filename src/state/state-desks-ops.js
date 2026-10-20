@@ -1,8 +1,7 @@
 /**
  * Desk graph operations driven by the command palette:
- *   - `convertFolderToDesk(state, folderId)` promotes a desk-child folder
- *     (or project) into a top-level desk. Inner Inbox/Trash/Images
- *     subfolders matched by name become per-desk specials.
+ *   - `convertFolderToDesk(state, folderId)` makes a new internal desk
+ *     from a copy of a folder (or project) and archives the original.
  *   - `collapseDeskToFolder(state, deskId)` demotes a top-level desk back
  *     to a regular folder placed inside another desk. Refuses to run
  *     while the source desk's Inbox or Trash hold any items — those
@@ -18,76 +17,102 @@
  * direct desk-children).
  */
 
-import { findNode, removeNode } from "./tree-helpers.js";
+import { findNode, removeNode, uniqueChildName } from "./tree-helpers.js";
 import { specialNodeId, isSpecialNodeId, parseSpecialNodeId, ensureDeskSpecials, seedNewArchivesCollapsed, setDeskIcon } from "./state-desks.js";
 
 function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
-/** Promote a folder/project (anywhere inside a desk) into its own
- *  top-level desk. The folder's children come along; inner Inbox /
- *  Trash / Images subfolders (matched by name) become per-desk
- *  specials. */
+/** Make a new desk out of a folder or project (anywhere inside a desk):
+ *  a new **internal** desk named after it, holding a copy of everything
+ *  in it, with the original moved into its desk's Archive — where it
+ *  stays, untouched, until the user deletes it.
+ *
+ *  A copy, not a move, for two reasons. It is the only form that works
+ *  whatever kind of desk the folder sits in: a folder inside a *local*
+ *  desk lives in the user's own folder on disk, and the store will not
+ *  pull files out of a registered root into a folderless desk (README-
+ *  SYNC, rule 3) — the old in-place promotion therefore produced a desk
+ *  that existed only in this window's memory, opened onto the desk it
+ *  came from, and was gone after a restart. And the archived original is
+ *  the way back if the result isn't what was wanted.
+ *
+ *  The copy is the "Copy Files from other Desks" copier's
+ *  (`copy-from-desks-copy.js#runCopyPlan`): fresh fileIds, names kept,
+ *  stacks repointed at the copied docs, PDFs referenced rather than
+ *  duplicated. A top-level `Inbox` or `Archive` folder inside the source
+ *  (what Collapse desk into folder leaves) fills the new desk's own
+ *  Inbox / Archive; `Images` and `Trash` stay behind — images resolve by
+ *  filename from any desk, and trash is trash. A folder's custom icon
+ *  becomes the desk's. Resolves to the new desk's id. */
 export async function convertFolderToDesk(state, folderId) {
   const tree = state.fileTree || [];
-
-  // Locate the folder, at any depth inside a desk. The tree save
-  // recomputes every file's path from the tree (README-SYNC, save_forest),
-  // so a nested folder needs nothing more than a direct child does —
-  // the same holds for Send to desk, which moves subtrees from anywhere.
   let folder = null;
+  let sourceDesk = null;
   for (const top of tree) {
     if (top.type !== "desk") continue;
     folder = findNode(top.children || [], folderId);
-    if (folder) break;
+    if (folder) { sourceDesk = top; break; }
   }
   if (!folder) throw new Error("folder not found inside a desk");
   if (folder.type !== "folder" && folder.type !== "project") throw new Error("only folders or projects can convert");
   if (isSpecialNodeId(folder.id)) throw new Error("specials cannot convert");
 
-  // Detach from wherever it sits.
-  removeNode(tree, folderId);
+  // Unsaved edits go to disk first, so the copy carries them.
+  try { if (state.dirty) await state.saveCurrentFile(); } catch (_) {}
 
-  // Reshape into a desk.
-  const deskId = uid();
-  const deskName = folder.name || "Untitled desk";
-  const createdAt = folder.createdAt || Math.floor(Date.now() / 1000);
-  const desk = {
-    id: deskId, type: "desk", name: deskName,
-    children: [], flagged: !!folder.flagged, createdAt,
+  const name = folder.name || "Untitled desk";
+  const deskId = await state.createDesk(name);
+  if (!deskId) throw new Error("couldn't create the desk");
+  // The copier files PDFs under the *active* desk's PDFs folder, which
+  // has to be the new one.
+  await state.setActiveDesk(deskId);
+
+  const plan = [];
+  const add = (src, parentId) => {
+    plan.push({ srcNodeId: src.id, parentId, index: plan.filter((p) => p.parentId === parentId).length,
+      type: src.type, name: src.name });
   };
-  for (const c of (folder.children || [])) {
-    if (!c) continue;
-    if (isSpecialNodeId(c.id)) { desk.children.push(c); continue; }
-    if (c.name === "Inbox" && (c.type === "folder" || c.type === "project")) {
-      c.id = specialNodeId("__inbox__", deskId); c.type = "project";
-      desk.children.push(c);
-    } else if (c.name === "Images" && c.type === "folder") {
-      c.id = specialNodeId("__images__", deskId);
-      desk.children.push(c);
-    } else if (c.name === "Archive" && c.type === "folder") {
-      c.id = specialNodeId("__archive__", deskId);
-      desk.children.push(c);
-    } else if (c.name === "Trash" && c.type === "folder") {
-      c.id = specialNodeId("__trash__", deskId);
-      desk.children.push(c);
-    } else {
-      desk.children.push(c);
+  const roleOf = { Inbox: "__inbox__", Archive: "__archive__" };
+  for (const c of folder.children || []) {
+    if (!c || isSpecialNodeId(c.id)) continue;
+    const isContainer = c.type === "folder" || c.type === "project";
+    if (isContainer && roleOf[c.name]) {
+      for (const g of c.children || []) if (g) add(g, specialNodeId(roleOf[c.name], deskId));
+      continue;
+    }
+    if (isContainer && (c.name === "Images" || c.name === "Trash")) continue;
+    add(c, deskId);
+  }
+  const { runCopyPlan } = await import("../sidebar/copy-from-desks-copy.js");
+  const { skipped } = await runCopyPlan(state, plan);
+
+  // The original goes to its desk's Archive. Looked up again: the tree
+  // has been saved (and possibly adopted from the store) since.
+  const liveTree = state.fileTree || [];
+  const liveDesk = liveTree.find((n) => n.type === "desk" && n.id === sourceDesk.id);
+  const original = liveDesk ? findNode(liveDesk.children || [], folderId) : null;
+  if (liveDesk && original) {
+    seedNewArchivesCollapsed(state, ensureDeskSpecials(liveDesk));
+    const archive = findNode(liveDesk.children || [], specialNodeId("__archive__", liveDesk.id));
+    if (archive) {
+      removeNode(liveTree, folderId);
+      original.name = uniqueChildName(archive, original.name || "Untitled", original.type, original.id);
+      if (!Array.isArray(archive.children)) archive.children = [];
+      archive.children.unshift(original);
+      await state.saveFileTree();
     }
   }
-  seedNewArchivesCollapsed(state, ensureDeskSpecials(desk));
-  tree.push(desk);
-
-  const desks = [...(state.settings.desks || []), { id: deskId, name: deskName, createdAt }];
-  await state.updateSettings({ desks });
-  await state.saveFileTree();
-  // A folder's custom icon becomes the desk's (desks keep theirs in
-  // portable meta, not on the node) — after the save, so the desk's
-  // `.hushdesk` exists for the write-through.
   if (folder.icon) await setDeskIcon(state, deskId, folder.icon);
   state.emit("desks-changed");
   state.emit("files-changed");
+  try {
+    const { showImportToast } = await import("../editor/import-toast.js");
+    showImportToast(`“${name}” is now a desk${skipped ? ` (${skipped} item${skipped === 1 ? "" : "s"} couldn't be copied)` : ""}`
+      + ` — the original is in ${sourceDesk.name || "its desk"}'s Archive`, "info");
+  } catch (_) {}
+  return deskId;
 }
 
 /** Returns the per-desk specials that still hold items, keyed by the
@@ -188,9 +213,8 @@ export async function collapseDeskToFolder(state, deskId) {
 // ===== Command-palette pickers =====
 
 /** Swap the palette into "pick a folder to convert" mode. The candidate
- *  set is direct desk-children only (folders / projects, non-special),
- *  since the path-rewrite logic in `convertFolderToDesk` only handles
- *  one nesting level. */
+ *  set is direct desk-children (folders / projects, non-special); the
+ *  sidebar's row menu reaches nested ones. */
 export function enterConvertFolderPicker(palette, state, { typeIcons, fallbackIcon } = {}) {
   const candidates = [];
   for (const top of state.fileTree || []) {

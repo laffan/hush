@@ -7,7 +7,7 @@
  * webgl-utils.js), but not mounted as a style layer: it sits over the
  * app rather than behind the text, and it belongs to no style.
  *
- * What it draws — Polar's curtains or Scuba's ripples — is the shader's
+ * What it draws — Polar's curtains, Scuba's ripples, Thrum's patches — is the shader's
  * (edge-lights-shader.js); this module runs it.
  *
  * Cost: it is drawn at half the CSS resolution (it is all soft light),
@@ -17,9 +17,10 @@
  */
 import { linkProgram, setupQuad, hexToVec3 } from "../background-layers/webgl-utils.js";
 import { FRAG, MAX_SHADER_COLORS } from "./edge-lights-shader.js";
+import { UNBLENDED_KINDS } from "./edge-lights-store.js";
 
 /** The shader's `u_kind` numbers, in order. */
-const KIND_IDS = ["polar", "scuba", "thrum"];
+const KIND_IDS = ["polar", "scuba", "thrum", "thrumDark"];
 
 const VERT = `#version 300 es
 in vec2 a_pos;
@@ -77,6 +78,7 @@ export function mountEdgeLights(options) {
     gl.uniform3fv(u.u_colors, flat);
     gl.uniform1i(u.u_count, Math.max(2, colors.length));
     gl.uniform1i(u.u_kind, Math.max(0, KIND_IDS.indexOf(opts.kind)));
+    el.classList.toggle("edge-lights-unblended", UNBLENDED_KINDS.has(opts.kind));
   }
 
   function resize() {
@@ -160,6 +162,7 @@ function mountFallback(canvas, options) {
   el.setAttribute("aria-hidden", "true");
   document.body.appendChild(el);
   const paint = (o) => {
+    el.classList.toggle("edge-lights-unblended", UNBLENDED_KINDS.has(o.kind));
     const reach = Math.round(o.depth * Math.min(window.innerWidth, window.innerHeight));
     el.style.boxShadow = `inset 0 0 ${reach}px ${Math.round(reach / 3)}px ${o.colors[0]}`;
     el.style.opacity = String(o.opacity);

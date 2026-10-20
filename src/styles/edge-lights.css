@@ -16,6 +16,12 @@ html.dark-surface .edge-lights {
   mix-blend-mode: screen;
 }
 
+/* Thrum Dark is paint, not light: never screened, so black stays black
+   on either page. */
+html.dark-surface .edge-lights.edge-lights-unblended {
+  mix-blend-mode: normal;
+}
+
 /* The modal previews on the overlay, so its backdrop only just dims. */
 .tree-delete-modal-backdrop.edge-lights-backdrop {
   background: rgba(0, 0, 0, 0.12);

@@ -107,6 +107,9 @@ export interface ShimState {
    *  replace the selection with what it caught. Returns the hit count;
    *  the drawing layer reads a zero as "the user dismissed this". */
   selectShapesInRegion(poly: Point[], opts?: { additive?: boolean }): number;
+  /** Engine delta #41 — a one-finger pan the engines report in pen mode
+   *  (client px); the canvas moves its camera as for any pan. */
+  touchPan(phase: "start" | "move" | "end", pointerId: number | null, clientX: number, clientY: number): void;
   /** Engine-driven bbox move of a mixed selection: the engine previews
    *  the strokes, these carry every other selected shape. */
   beginExternalMove(): void;

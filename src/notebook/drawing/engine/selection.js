@@ -52,6 +52,13 @@
  *      began outside this engine (stroke.js's finger drift, which has
  *      already crossed a larger threshold — hence the pre-satisfied
  *      slop flag).
+ *  41. One finger pans; held still, it does the above. A touch landing
+ *      on empty canvas while select mode is live waits: travelling past
+ *      FINGER_PAN_SLOP_2 first is a pan (`onFingerPan`, as stroke.js
+ *      #41 reports it), staying put for FINGER_HOLD_MS starts what the
+ *      touch used to start at once (the move of #35, or a lasso), and
+ *      lifting before either is #35's tap. Only with `onFingerPan`
+ *      wired; a touch on the bbox or a handle is unchanged.
  * ============================================================
  *
  * selection.js — lasso + bounding box + move/resize/delete.
@@ -88,6 +95,10 @@ const ROTATE_OFFSET = 48;
 // previews anything. Without it a finger tap's natural wobble nudges the
 // selection a pixel and stops reading as a tap on release.
 const MOVE_SLOP_2 = 25; // (5 CSS px)^2
+// Hush delta #41: a touch on empty canvas pans once it has travelled
+// this far (CLIENT px, squared), and selects once held this long.
+const FINGER_PAN_SLOP_2 = 64; // (8 CSS px)^2
+const FINGER_HOLD_MS = 400;
 
 const HANDLE_SPEC = [
   { name: 'nw', sx: 0, sy: 0 },
@@ -147,6 +158,10 @@ export function createSelectionEngine({
                    //   burst), so the host must roll its half back too.
   onRegionTap,     // Hush delta #35: () — a touch landed and lifted on a live
                    //   selection without dragging it. Host clears the selection.
+  onFingerPan,     // Hush delta #41: ({ phase, pointerId, clientX, clientY }) — a
+                   //   touch on empty canvas dragged before its hold; host pans
+  onFingerHold,    // Hush delta #41: (point) — that touch was held and now
+                   //   selects; the host shows it took
   onRegionCancel,  // Hush delta #33: () — an in-flight lasso / marquee was
                    //   abandoned (promoted into a multi-touch gesture). The host
                    //   uses it to hand back the brush the region gesture borrowed.
@@ -219,6 +234,8 @@ export function createSelectionEngine({
   const state = {
     active: false,               // whether the select tool is active
     mode: 'idle',                // 'idle' | 'lasso' | 'marquee' | 'move' | 'resize' | 'rotate'
+                                 //   | 'touchPending' | 'pan' (Hush delta #41)
+    touchHoldTimer: 0,           // Hush delta #41: the waiting touch's hold timer
     lassoPts: [],
     marqueeAnchor: null,         // Hush delta #33: { x, y } corner the box grows from
     extraBBox: null,             // Hush delta #34: host bounds for non-stroke selection
@@ -583,6 +600,25 @@ export function createSelectionEngine({
       return;
     }
 
+    // Hush delta #41: a touch on empty canvas waits to see whether it
+    // pans (it travels) or selects (it holds) — see onPointerMove / Up.
+    if (state.dragWasTouch && onFingerPan) {
+      state.mode = 'touchPending';
+      clearTimeout(state.touchHoldTimer);
+      state.touchHoldTimer = setTimeout(() => {
+        state.touchHoldTimer = 0;
+        if (state.mode !== 'touchPending') return;
+        if (onFingerHold) onFingerHold(p);
+        beginCanvasPress(p);
+      }, FINGER_HOLD_MS);
+      return;
+    }
+    beginCanvasPress(p);
+  }
+
+  /** What a press on empty canvas starts: the move of a live selection
+   *  (#35, touch only) or a new lasso. */
+  function beginCanvasPress(p) {
     // Hush delta #35: with a live selection, a finger landing on empty
     // canvas grabs the selection rather than starting a new region —
     // dragging moves it from anywhere, lifting without dragging clears
@@ -608,6 +644,22 @@ export function createSelectionEngine({
     if (!state.active) return;
     if (state.mode === 'idle') return;
     if (state.dragPointerId !== null && e.pointerId !== state.dragPointerId) return;
+
+    // Hush delta #41: a waiting touch that travels is a pan; a panning
+    // one only moves the camera.
+    if (state.mode === 'touchPending') {
+      const c = state.dragStartClient;
+      const cdx = c ? e.clientX - c.x : 0, cdy = c ? e.clientY - c.y : 0;
+      if (cdx * cdx + cdy * cdy < FINGER_PAN_SLOP_2) return;
+      clearTimeout(state.touchHoldTimer);
+      state.touchHoldTimer = 0;
+      state.mode = 'pan';
+      onFingerPan({ phase: 'start', pointerId: e.pointerId, clientX: c.x, clientY: c.y });
+    }
+    if (state.mode === 'pan') {
+      onFingerPan({ phase: 'move', pointerId: e.pointerId, clientX: e.clientX, clientY: e.clientY });
+      return;
+    }
 
     const p = clientToSvg(e);
     if (state.mode === 'lasso') {
@@ -655,6 +707,21 @@ export function createSelectionEngine({
     try { svg.releasePointerCapture(e.pointerId); } catch {}
     const prevMode = state.mode;
     state.dragPointerId = null;
+
+    // Hush delta #41: lifted while still waiting — #35's tap (a cancel is
+    // nothing); lifted from a pan — the pan ends.
+    if (prevMode === 'touchPending') {
+      clearTimeout(state.touchHoldTimer);
+      state.touchHoldTimer = 0;
+      state.mode = 'idle';
+      if (e.type !== 'pointercancel' && onRegionTap) onRegionTap();
+      return;
+    }
+    if (prevMode === 'pan') {
+      state.mode = 'idle';
+      onFingerPan({ phase: 'end', pointerId: e.pointerId, clientX: e.clientX, clientY: e.clientY });
+      return;
+    }
 
     if (prevMode === 'lasso' || prevMode === 'marquee') {
       state.mode = 'idle';
@@ -883,6 +950,19 @@ export function createSelectionEngine({
       recomputeBBoxFromSelection();
     },
     cancelActive() {
+      // Hush delta #41: a waiting or panning touch gives way to the
+      // gesture with nothing to undo.
+      if (state.mode === 'touchPending' || state.mode === 'pan') {
+        const wasPan = state.mode === 'pan';
+        const pid = state.dragPointerId;
+        clearTimeout(state.touchHoldTimer);
+        state.touchHoldTimer = 0;
+        state.mode = 'idle';
+        state.dragPointerId = null;
+        try { if (pid !== null) svg.releasePointerCapture(pid); } catch {}
+        if (wasPan && onFingerPan) onFingerPan({ phase: 'end', pointerId: pid, clientX: 0, clientY: 0 });
+        return;
+      }
       const wasDragging = state.mode === 'move' || state.mode === 'resize' || state.mode === 'rotate';
       const wasRegion = state.mode === 'lasso' || state.mode === 'marquee';
       if (state.mode === 'idle') return;

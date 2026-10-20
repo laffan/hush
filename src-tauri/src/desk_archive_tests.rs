@@ -92,3 +92,36 @@ fn archive_handles_are_treated_as_untrusted() {
     assert!(sanitize_handle("plain.txt").is_err());
     assert_eq!(sanitize_handle("desk-1.husharchive").unwrap(), "desk-1.husharchive");
 }
+
+/// Convert Local Desk to Internal, keeping the folder: the internal desk
+/// is a copy under fresh ids, and the folder — which another device may
+/// still be using — is only read.
+#[test]
+fn a_local_desk_copies_into_a_fresh_internal_desk_and_leaves_its_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let external = tempfile::tempdir().unwrap();
+    let target = external.path().join("Shared Desk");
+    let store = DeskStore::new(dir.path());
+    store.stage_new("f-local").unwrap();
+    store.write_by_id("f-local", "kept in the folder").unwrap();
+    store
+        .save_forest(&[desk("loc", "Shared Desk", vec![node("n1", "document", "Note", Some("f-local"), Vec::new())])])
+        .unwrap();
+    store.make_desk_local("loc", &target, None).unwrap();
+
+    let new_id = store.copy_desk_to_internal("loc", "Shared Desk").unwrap();
+    assert_ne!(new_id, "loc");
+    assert!(target.join("Note.md").exists(), "the folder is untouched");
+    assert!(target.join(".hushdesk").exists());
+    assert!(dir.path().join("desks").join(&new_id).is_dir(), "the copy lives in app data");
+
+    let forest = store.load_forest().unwrap();
+    let copy = forest.iter().find(|d| d.id == new_id).expect("copy in the forest");
+    assert_eq!(copy.name, "Shared Desk");
+    let doc = copy.children.iter().find(|c| c.name == "Note").expect("doc copied");
+    let fresh = doc.file_id.clone().unwrap();
+    assert_ne!(fresh, "f-local");
+    assert_eq!(store.read_by_id(&fresh).unwrap().0, "kept in the folder");
+
+    assert!(store.copy_desk_to_internal(&new_id, "x").is_err(), "an internal desk has nothing to copy from");
+}

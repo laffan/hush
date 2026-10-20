@@ -116,7 +116,7 @@ export function createEditor(container, state) {
       scheduleWordCountRecompute(state);
       if (titleDebounceTimer) clearTimeout(titleDebounceTimer);
       titleDebounceTimer = setTimeout(() => {
-        queueMicrotask(() => { void state.maybeRenameFromFirstLine?.(); });
+        queueMicrotask(() => { void state.maybeRenameFromFirstLine?.({ idle: true }); });
       }, TITLE_DEBOUNCE_MS);
       if (state.ratchetMode) onEncourageKeystroke(update.view, state);
     } else if (programmatic && !runwayOnly) {

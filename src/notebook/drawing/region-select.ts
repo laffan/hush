@@ -28,6 +28,7 @@ type SubTool = "draw" | "erase" | "slice" | "select";
 
 interface MarqueeCapableSelection {
   startMarqueeAtPointer(pointerId: number, point: { x: number; y: number }): void;
+  startLassoAtPointer(pointerId: number, point: { x: number; y: number }): void;
   /** Engine delta #35 — adopt a move for a drag that began in the
    *  stroke engine. False when there's no bbox to move. */
   startMoveAtPointer(pointerId: number, point: { x: number; y: number }): boolean;
@@ -40,6 +41,10 @@ export interface RegionSelectController {
   onFingerDragSelect(e: { pointerId: number; point: { x: number; y: number } }): void;
   /** Engine delta #33 — a finger tapped without drifting or holding. */
   onFingerTap(): void;
+  /** The pen held still on a stroke (the engine's long-press). */
+  onPenLongPress(e: { pointerId: number; point: { x: number; y: number } }): void;
+  /** Engine delta #41 — a finger dragged before its hold: pan. */
+  onFingerPan(e: { phase: "start" | "move" | "end"; pointerId: number | null; clientX: number; clientY: number }): void;
   onEngineDragStart(kind: "move" | "resize" | "rotate"): void;
   onEngineDragMove(info: { kind: string; dx: number; dy: number }): void;
   onEngineDragEnd(cancelled?: boolean): void;
@@ -145,6 +150,23 @@ export function createRegionSelect(deps: {
     flashHint(e.point);
   }
 
+  /** A pen held still promotes the in-flight stroke into a lasso — the
+   *  user's "I want to select what I just drew" gesture. Select mode is
+   *  borrowed first so the stroke engine stops taking the contact as
+   *  ink (a tap inside the bbox would otherwise both move the selection
+   *  and start a stroke); the brush comes back on deselect. */
+  function onPenLongPress(e: { pointerId: number; point: { x: number; y: number } }): void {
+    beginRegionGesture();
+    selectionBox.current?.startLassoAtPointer(e.pointerId, e.point);
+    flashHint(e.point);
+  }
+
+  /** One finger pans in pen mode too (stroke.js / selection.js delta
+   *  #41) — the same pan the canvas runs, zoom untouched. */
+  function onFingerPan(e: { phase: "start" | "move" | "end"; pointerId: number | null; clientX: number; clientY: number }): void {
+    state.touchPan(e.phase, e.pointerId, e.clientX, e.clientY);
+  }
+
   /** A bare finger tap clears the selection — the dismissal half of the
    *  finger's vocabulary (tap clears, drag boxes or moves, hold lassos).
    *  Shared by the stroke engine's tap (brush / eraser active) and the
@@ -202,6 +224,8 @@ export function createRegionSelect(deps: {
   return {
     onLassoRegion,
     onFingerDragSelect,
+    onFingerPan,
+    onPenLongPress,
     onFingerTap,
     beginRegionGesture,
     onEngineDragStart,

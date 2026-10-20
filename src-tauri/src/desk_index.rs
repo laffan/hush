@@ -111,6 +111,14 @@ pub(crate) fn pair_vanished(
         if let Some(hit) = hit {
             return Some(hit.clone());
         }
+        // Bytes this process itself wrote under that id: our own rename,
+        // with a far device's index (which hadn't heard of it) read back
+        // in the meantime. The hash cache only holds the latest save, and
+        // the rename of a title being typed has moved on since.
+        let ours = candidates().find(|(id, _)| crate::desk_write::is_own_write(id, hash));
+        if let Some(ours) = ours {
+            return Some(ours.clone());
+        }
     }
     let filename = Path::new(rel).file_name()?.to_str()?;
     candidates()

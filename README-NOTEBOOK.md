@@ -282,6 +282,22 @@ polygon** and returns Hush shape ids:
 | Pen-mode freehand lasso | engine SVG path (hold-to-lasso, or the Lasso sub-tool) |
 | Pen-mode finger marquee | engine SVG rect — one finger dragging while a brush / eraser is active (iPad) |
 
+**A finger that lands on nothing pans; held still first, it does all
+of the above.** Since the one-finger pan (`touch-hold.ts` on the canvas,
+stroke.js / selection.js delta #41 in pen mode), a touch on empty canvas
+waits: travelling past 8 px first is a pan — the same zoom-free camera
+move space-drag makes, `_applyPan` — staying put for 400 ms hands the
+press over as it always was (with a ring under the finger to say the
+hold took), and lifting before either is delivered as a tap (down, then
+up). The rest of this section is what the hold hands over to. A touch
+that lands *on* something — a shape, a resize handle, a split line, the
+pocket — is direct manipulation and goes through at once; a drag area
+counts as empty, since it is a region (often the size of the view)
+more than an object. The canvas gate replays the press it held through
+`handlePointerDown` itself, so every path below — outline chrome, edge
+midpoints, checkboxes, the text tool's placement — still sees the
+original event. Mouse and pen never wait.
+
 Once something *is* selected, the finger stops sweeping and starts
 moving — in every tool, not just pen mode. A touch-drag that would have
 started a region carries the whole selection instead, and a tap clears
@@ -314,6 +330,18 @@ pushes the stroke subset back down for the bbox — see README-DRAWING.md.
 - **Emoji stickers**: a text shape whose content is only emoji (grapheme-cluster test in `emoji-sticker.ts`) rasterizes to a 100 px ImageShape on commit.
 
 ### Toolbar satellites
+
+**The brush slots' thumbnails are sized as a share of their button**
+(`brush-slots.ts`), so the compact bar's smaller buttons take them down
+with them, and a `ResizeObserver` redraws each one whenever its size
+changes — including the first layout of a bar mounted while hidden,
+which a thumb drawn at mount never saw. A thumb with no size is not
+drawn at all (its backing would be sized off a guess). The drawing
+layer also forwards the engine's `onBrushAtlasLoaded`
+(`drawingLayer.onBrushAtlasLoaded`): a brush PNG landing after the
+first draw redraws the thumbs and an open flyout. Before both, the one
+redraw 400 ms after mount was all there was, and a thumb whose brush or
+layout arrived later stayed blank until a tap repainted it.
 
 The bottom toolbar's flyout group — the brush flyout, the lasso flyout and the mini-palette strip — is appended to the **canvas container**, not to the bar, so it can escape the pill's `overflow`. That means the `notebook-toolbar-minimized` class, which hides every child of the bar, never reaches any of them: each has to read `state.drawingToolbarMinimized` itself. The drag tab's own toggle therefore fires `notify("drawingToolbarMinimized")` (a repaint-only key — it must not mark the notebook content-dirty) while still bypassing `setDrawingToolbarMinimized`'s tool side-effects, which would flip the user out of the pen. Without the notify the mini-palette was left floating over the canvas, attached to a brush row that was no longer there.
 

@@ -334,7 +334,7 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
         ? [
             ...(isDesktop ? [{ action: "reveal-desk-folder", label: "Reveal Folder" }] : []),
             { action: "move-desk-folder", label: "Move Local Folder…" },
-            { action: "make-desk-internal", label: "Make Internal" },
+            { action: "make-desk-internal", label: "Make Internal…" },
           ]
         : [{ action: "make-desk-local", label: "Make Local…" }];
       entries.splice(insertAt < 0 ? entries.length : insertAt, 0, ...extra);

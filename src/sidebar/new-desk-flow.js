@@ -6,7 +6,8 @@
  * Creating a desk forks before anything else can be asked, because the
  * two kinds are named differently:
  *
- *   - **Internal** — lives in Hush's app data. Prompt for a name.
+ *   - **Internal** — lives in Hush's app data. Prompt for a name, and
+ *     optionally an icon.
  *   - **Local** — the folder the user picks (an iCloud Drive or Dropbox
  *     folder, a USB stick, anywhere) *becomes* the desk: Hush writes its
  *     sidecar into it and absorbs whatever files are already there. A
@@ -25,27 +26,100 @@
  * the internal prompt opens directly.
  */
 
-import { showChoiceModal, showPromptModal } from "./files-panel-shared.js";
+import { showChoiceModal, typeIcons } from "./files-panel-shared.js";
+import { customIconSvg, isCustomIcon } from "../ui/custom-icons.js";
+import { openIconPicker } from "../ui/icon-picker-modal.js";
+import { setDeskIcon } from "../state/state-desks.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 
+/** The internal branch's prompt: the desk's name, and — beside it — its
+ *  icon, so a new desk can wear one from the start instead of waiting
+ *  for "Change Desk Icon". The icon button opens the shared picker over
+ *  this modal (its backdrop is its own, so this one stays put) and shows
+ *  whatever was chosen; reset in the picker goes back to the stock
+ *  glyph. Calls `onConfirm(name, icon|null)`. */
+function showNewDeskPrompt({ onConfirm, onCancel }) {
+  document.querySelectorAll(".tree-delete-modal-backdrop").forEach((el) => el.remove());
+  const backdrop = document.createElement("div");
+  backdrop.className = "tree-delete-modal-backdrop";
+  const modal = document.createElement("div");
+  modal.className = "tree-delete-modal new-desk-modal";
+  modal.innerHTML = `
+    <div class="tree-delete-modal-title">New desk</div>
+    <label class="tree-prompt-modal-label" for="new-desk-name">Name</label>
+    <div class="new-desk-name-row">
+      <button type="button" class="new-desk-icon-btn" title="Choose an icon" aria-label="Choose an icon"></button>
+      <input id="new-desk-name" class="tree-prompt-modal-input" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Untitled desk" />
+    </div>
+    <div class="tree-delete-modal-btns">
+      <button class="tree-delete-cancel">Cancel</button>
+      <button class="tree-delete-confirm tree-prompt-modal-confirm">Create</button>
+    </div>`;
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+  const input = modal.querySelector("input");
+  const iconBtn = modal.querySelector(".new-desk-icon-btn");
+  const confirmBtn = modal.querySelector(".tree-prompt-modal-confirm");
+  let icon = null;
+  const paintIcon = () => {
+    iconBtn.innerHTML = isCustomIcon(icon) ? customIconSvg(icon, "new-desk-icon-glyph") : typeIcons.desk;
+    iconBtn.classList.toggle("has-icon", isCustomIcon(icon));
+  };
+  paintIcon();
+  input.value = "Untitled desk";
+  const sync = () => { confirmBtn.disabled = input.value.trim().length === 0; };
+  sync();
+  const cleanup = () => backdrop.remove();
+  const submit = () => {
+    const value = input.value.trim();
+    if (!value) return;
+    cleanup();
+    onConfirm(value, isCustomIcon(icon) ? icon : null);
+  };
+  const cancel = () => { cleanup(); onCancel?.(); };
+  iconBtn.addEventListener("click", () => {
+    openIconPicker({
+      title: "Desk icon",
+      subject: input.value.trim() || "Untitled desk",
+      current: icon,
+      defaultIcon: typeIcons.desk,
+      onPick: (name) => {
+        icon = name;
+        paintIcon();
+        input.focus();
+      },
+    });
+  });
+  modal.querySelector(".tree-delete-cancel").addEventListener("click", cancel);
+  confirmBtn.addEventListener("click", submit);
+  input.addEventListener("input", sync);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); submit(); }
+    else if (e.key === "Escape") { e.preventDefault(); cancel(); }
+  });
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) cancel(); });
+  // Focus + select-all inside the opening gesture, so iOS raises the
+  // keyboard and the default name is ready to be typed over.
+  input.focus();
+  input.select();
+}
+
 /** Run the create-a-desk flow. Resolves to the new desk's id, or null if
  *  the user backed out at either step. `onCreated` (optional) fires with
- *  the id before the promise settles — the desk switcher uses it to drop
- *  the fresh row into inline-rename mode, which only applies to the
- *  internal branch. */
+ *  the id and its kind ("internal" / "local") before the promise
+ *  settles. The new desk becomes the active one; nothing else follows —
+ *  the name and icon were chosen in the prompt, so the desk switcher no
+ *  longer drops the fresh row into rename. */
 export function startNewDeskFlow(state, { onCreated } = {}) {
   return new Promise((resolve) => {
     const internal = () => {
-      showPromptModal({
-        title: "New desk",
-        label: "Name",
-        placeholder: "Untitled desk",
-        initialValue: "Untitled desk",
-        confirmLabel: "Create",
-        onConfirm: async (name) => {
+      showNewDeskPrompt({
+        onConfirm: async (name, icon) => {
           const id = await state.createDesk(name);
           if (id) {
+            if (icon) await setDeskIcon(state, id, icon);
             await state.setActiveDesk(id);
             onCreated?.(id, "internal");
           }

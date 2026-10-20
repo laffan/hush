@@ -101,11 +101,14 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
         const desk = s.getActiveDesk();
         if (desk) await (await import("./sync/desk-roots.js")).makeDeskLocal(s, desk.id);
       } },
-    { id: "desk-make-internal", section: "Desks", label: "Make Desk Internal", icon: icons.desk, shortcutKey: null, ctx: "shared",
+    // Asks whether to copy the folder in (leaving it for other devices)
+    // or move its files in — see sync/desk-internalize.js.
+    { id: "desk-make-internal", section: "Desks", label: "Convert Local Desk to Internal", icon: icons.desk, shortcutKey: null, ctx: "shared",
+      keywords: "make desk internal local folder copy move back",
       hiddenIf: (s) => (!desktop && !ipad) || !s.deskRoots?.[s.getActiveDesk?.()?.id],
       action: async (s) => {
         const desk = s.getActiveDesk();
-        if (desk) await (await import("./sync/desk-roots.js")).makeDeskInternal(s, desk.id);
+        if (desk) await (await import("./sync/desk-internalize.js")).convertLocalDeskToInternal(s, desk.id);
       } },
     // A local desk is named by its folder, so renaming one renames the
     // folder. Desktop only: renaming a folder writes to its parent

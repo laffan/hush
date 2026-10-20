@@ -104,6 +104,18 @@ pub fn desk_make_internal(state: State<AppState>, desk_id: String) -> Result<Str
         .map_err(|e| e.to_string())
 }
 
+/// Copy a local desk into a new internal desk named `new_name`, leaving
+/// the folder untouched (see `DeskStore::copy_desk_to_internal`). Returns
+/// the new desk id; the caller then detaches the local one.
+#[tauri::command]
+pub async fn desk_copy_internal(desk_id: String, new_name: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        store().copy_desk_to_internal(&desk_id, &new_name).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Rename a local desk's folder in place — same parent, new name —
 /// and repoint the root at it. Returns the new path.
 ///

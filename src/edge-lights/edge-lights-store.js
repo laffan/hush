@@ -14,12 +14,19 @@
 
 /** The skies the overlay can draw (edge-lights-shader.js): curtains
  *  of light, the same light seen through rippling water, or slow
- *  irregular patches of gradient. */
+ *  irregular patches of gradient. Thrum Dark is Thrum laid over the page
+ *  as paint rather than added to it as light (`UNBLENDED_KINDS`), so a
+ *  dark colour shows on a light page and a dark one alike. */
 export const KINDS = [
   { id: "polar", name: "Polar" },
   { id: "scuba", name: "Scuba" },
   { id: "thrum", name: "Thrum" },
+  { id: "thrumDark", name: "Thrum Dark" },
 ];
+
+/** Kinds the overlay composites as plain paint in every appearance —
+ *  never screened onto a dark page, where black is no light at all. */
+export const UNBLENDED_KINDS = new Set(["thrumDark"]);
 
 /** A palette is two to six colours. All but the last are spread along
  *  the edge as the light drifts; the last is the colour its far reach
@@ -36,6 +43,8 @@ export const PALETTES = [
   { id: "twilight", name: "Twilight", colors: ["#ff8fb8", "#c77dff", "#7b6cff", "#3a4bd8"] },
   { id: "lagoon", name: "Lagoon", colors: ["#7dffe1", "#2ad4ff", "#3fa7ff", "#2f6bff", "#5b3dff"] },
   { id: "spectrum", name: "Spectrum", colors: ["#ff5f6d", "#ffc371", "#7dff8a", "#4dd9ff", "#8c7bff", "#d06bff"] },
+  // Dark colours for Thrum Dark: shadow rather than light.
+  { id: "ink", name: "Ink", colors: ["#000000", "#2b2d42", "#1b1b1f"] },
   { id: "custom", name: "Custom", colors: null },
 ];
 

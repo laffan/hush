@@ -161,3 +161,43 @@
   height: 15px;
 }
 .icon-picker-reset-icon .desk-icon { stroke: currentColor; fill: none; stroke-width: 1.6; }
+
+/* ----- The New desk prompt (sidebar/new-desk-flow.js): the icon button
+   sits beside the name, at the picker's 30 px. ----- */
+
+.new-desk-name-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.new-desk-name-row .tree-prompt-modal-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.new-desk-icon-btn {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  margin-top: -1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.new-desk-icon-btn:hover {
+  border-color: color-mix(in srgb, var(--fg) 60%, transparent);
+}
+.new-desk-icon-btn svg {
+  width: 15px;
+  height: 15px;
+}
+.new-desk-icon-btn.has-icon svg {
+  width: 30px;
+  height: 30px;
+}
+.new-desk-icon-btn .desk-icon { stroke: currentColor; fill: none; }

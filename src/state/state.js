@@ -556,7 +556,7 @@ export class AppState {
   renameFile(id, newName) { return _files.renameFile(this, id, newName); }
   duplicateFile(id) { return _files.duplicateFile(this, id); }
 
-  maybeRenameFromFirstLine() { return _naming.maybeRenameFromFirstLine(this); }
+  maybeRenameFromFirstLine(opts) { return _naming.maybeRenameFromFirstLine(this, opts); }
   maybeRenameFileFromContent(fileId, content) { return _naming.maybeRenameFileFromContent(this, fileId, content); }
   _deriveName(content) { return _naming.deriveName(content); }
 
