@@ -24,9 +24,10 @@
  *              in the light reaches and which colours it is, so each
  *              patch is a gradient of its own, and it swells and ebbs
  *              on a slow throb.
- *   Thrum Dark (3)  Thrum's shapes, drawn the same; the overlay lays
- *              them over the page unblended (edge-lights-overlay.js), so
- *              a dark palette darkens the edges of a light page.
+ *   Thrum Dark (3)  Thrum's shapes as ink rather than light: solid at
+ *              the edge — a black palette is black, not a grey wash —
+ *              with opacity setting how much of the band is solid, and
+ *              laid over the page unblended (edge-lights-overlay.js).
  *
  * Colour: all but the palette's last colour are spread along the edge by
  * a slow noise field; the last is what the far reach fades into. With
@@ -180,6 +181,16 @@ void main() {
     float hue = soft(uv * 0.9 + 0.9 * w + vec2(3.1, 7.7) - t * 0.012);
     vec3 colT = paletteColor(0.3 + 0.4 * hue, xt);
     float aT = clamp(glowT, 0.0, 1.0) * u_opacity * u_fade;
+    if (u_kind == 3) {
+      // Thrum Dark is ink, not light: it reaches full strength. The
+      // throb moves the reach in and out instead of dimming the patch,
+      // and opacity sets how much of the band is solid — the colour
+      // itself at the edge, easing off towards the reach.
+      // A straight ramp over a slightly longer reach than Thrum's, so the
+      // fade into the page stays as long as the solid part, or longer.
+      float sd = clamp(1.0 - xt * (1.15 - 0.15 * throb) / 1.3, 0.0, 1.0);
+      aT = clamp(sd * sd * (3.0 - 2.0 * sd) * (1.0 + 1.5 * u_opacity), 0.0, 1.0) * u_fade;
+    }
     outColor = vec4(colT * aT, aT);
     return;
   }
