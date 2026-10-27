@@ -410,6 +410,21 @@
   color: #e5484d;
 }
 
+/* The "Add" row — a container's new Doc / Notebook / Stack, right-aligned,
+   with the footer's + after them at half strength. */
+.tree-row-menu-add { justify-content: flex-end; }
+.tree-row-menu-add-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 24px;
+  margin-left: 2px;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0.5;
+}
+
 .tree-row-menu-item {
   display: block;
   width: 100%;

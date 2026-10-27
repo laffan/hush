@@ -487,6 +487,13 @@ function dispatchRowAction(action, nodeId, opts) {
     if (node?.fileId) {
       import("../pdf/pdf-proofread.js").then((m) => m.createProofNotebook(storedState, node.fileId));
     }
+  } else if (action === "archive") {
+    import("../state/state-tree.js").then((m) => m.archiveTreeNode(storedState, nodeId)).then(refresh);
+  } else if (action === "new-stack-here") {
+    showPromptModal({
+      title: "New stack", label: "Name", placeholder: "New Stack", initialValue: "New Stack", confirmLabel: "Create",
+      onConfirm: async (name) => { await storedState.createStack(name, nodeId); refresh(); },
+    });
   } else if (action === "new-doc-here") {
     storedState.newFile(nodeId).then(refresh);
   } else if (action === "new-notebook-here") {

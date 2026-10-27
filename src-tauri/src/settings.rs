@@ -230,6 +230,8 @@ pub struct AppSettings {
     pub shortcut_highlight: String,
     #[serde(default = "default_shortcut_comment")]
     pub shortcut_comment: String,
+    #[serde(default = "default_shortcut_blockquote")]
+    pub shortcut_blockquote: String,
     #[serde(default = "default_shortcut_insert_footnote")]
     pub shortcut_insert_footnote: String,
 
@@ -825,6 +827,7 @@ impl Default for AppSettings {
             shortcut_bold: default_shortcut_bold(),
             shortcut_italic: default_shortcut_italic(),
             shortcut_highlight: default_shortcut_highlight(),
+            shortcut_blockquote: default_shortcut_blockquote(),
             shortcut_comment: default_shortcut_comment(),
             shortcut_insert_footnote: default_shortcut_insert_footnote(),
             dry_range: default_dry_range(),

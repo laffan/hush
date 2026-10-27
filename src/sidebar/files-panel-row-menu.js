@@ -13,7 +13,7 @@
 import { findNode, findParentOfNode } from "../state/tree-helpers.js";
 import { AppState } from "../state/state.js";
 import { multiWindowAvailable } from "../multi-window.js";
-import { NEW_WINDOW_SVG } from "./files-panel-shared.js";
+import { NEW_WINDOW_SVG, typeIcons } from "./files-panel-shared.js";
 
 export const ROW_COLORS = [
   { key: "red",    rgba: "rgba(255, 82, 82, 0.13)",   swatch: "#ef5350" },
@@ -67,12 +67,13 @@ const isTrashId = (id) => id === AppState.TRASH_ID || id?.startsWith(AppState.TR
 
 const HAMBURGER_SVG = `<svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`;
 
-// Icon-row glyphs — the flag / rename / delete trio surfaced as a strip
+// Icon-row glyphs — flag / rename / archive / delete surfaced as a strip
 // of icon buttons at the top of the row menu. Flag reuses the sidebar's
-// wavy-flag glyph; delete reuses the trash-can from typeIcons.
+// wavy-flag glyph; archive and delete reuse typeIcons' box and trash-can.
 const MENU_ICONS = {
   flag: `<svg viewBox="0 0 16 16"><path d="M3 10s1-1 3-1 4 2 6 2 3-1 3-1V2s-1 1-3 1-4-2-6-2-3 1-3 1z" /><line x1="3" y1="14" x2="3" y2="10" /></svg>`,
   rename: `<svg viewBox="0 0 16 16"><path d="M11 2l3 3-8.5 8.5L2 14l.5-3.5z" /><line x1="9.5" y1="3.5" x2="12.5" y2="6.5" /></svg>`,
+  archive: typeIcons.archive,
   delete: `<svg viewBox="0 0 16 16"><polyline points="2 4 4 4 14 4" /><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" /><path d="M12 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4" /></svg>`,
   "open-in-new-window": NEW_WINDOW_SVG,
 };
@@ -81,8 +82,15 @@ const MENU_ICONS = {
 // standard single-word labels move up — context-specific delete labels
 // ("Remove from Project") stay as labeled entries so their meaning
 // isn't lost behind a trash glyph.
+/** The "Add" row: a container's new-file actions as type icons,
+ *  right-aligned, with the footer's + beside them. */
+const ADD_ROW = {
+  "new-doc-here": typeIcons.document,
+  "new-notebook-here": typeIcons.notebook,
+  "new-stack-here": typeIcons.stack,
+};
 const ICON_ROW_LABELS = {
-  flag: ["Flag", "Unflag"], rename: ["Rename"], delete: ["Delete"],
+  flag: ["Flag", "Unflag"], rename: ["Rename"], archive: ["Archive"], delete: ["Delete"],
   "open-in-new-window": ["Open in New Window"],
 };
 // temp/temp-icons/shelf-icon.svg, restroked to currentColor (2×2 grid).
@@ -190,16 +198,17 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   const docRenameable = isDoc && item?.name && item.name !== "Untitled";
 
   const entries = [];
-  // Containers carry the "New Doc / New Notebook" entries at the top so
-  // the most common action on a folder/project is the first thing in
-  // the menu. Inbox is internally typed as a project so it lands here
-  // too — natural since it's where new files live by default. Images
-  // is also typed as project but the new-here actions don't make sense
-  // there (it only holds image refs), so it's explicitly skipped —
-  // as is the PDFs folder (PDFs arrive via Zotero only).
+  // Containers carry the new-file actions, drawn as the menu's second
+  // icon row ("Add": Doc, Notebook, Stack — see ADD_ROW). Inbox is
+  // internally typed as a project so it lands here too — natural since
+  // it's where new files live by default. Images is also typed as
+  // project but the new-here actions don't make sense there (it only
+  // holds image refs), so it's explicitly skipped — as is the PDFs
+  // folder (PDFs arrive via Zotero only).
   if (isContainer && !isImagesId(nodeId) && !isPdfsId(nodeId) && !isArchiveId(nodeId)) {
     entries.push({ action: "new-doc-here", label: "New Doc" });
     entries.push({ action: "new-notebook-here", label: "New Notebook" });
+    entries.push({ action: "new-stack-here", label: "New Stack" });
   }
 
   if (isPdf && !item?.pdfAlias) {
@@ -271,10 +280,23 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   if (!(isSpecial || isImage || isPdf)) {
     entries.push({ action: "duplicate", label: "Duplicate" });
   }
+  // Into the desk's Archive, beside Delete — not for what is there
+  // already, and not for PDFs or images, whose places are fixed.
+  if (!isSpecial && !isPdf && !isImage && !item?.inArchive) {
+    entries.push({ action: "archive", label: "Archive" });
+  }
   if (!isSpecial) {
     entries.push({ action: "delete", label: "Delete" });
   }
   return entries;
+}
+
+/** True when the node sits anywhere under a desk's Archive. */
+function isInsideArchive(tree, nodeId) {
+  for (let p = findParentOfNode(tree, nodeId); p; p = findParentOfNode(tree, p.id)) {
+    if (isArchiveId(p.id)) return true;
+  }
+  return false;
 }
 
 let openMenuEl = null;
@@ -314,7 +336,8 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
     const parent = node.type === "document" ? findParentOfNode(state.fileTree, nodeId) : null;
     const inProject = !!parent && parent.type === "project"
       && parent.id !== "__inbox__" && !parent.id?.startsWith("__inbox__:");
-    entries = getMenuEntries(nodeId, node.type, inTrash, node, inProject);
+    const inArchive = isInsideArchive(state.fileTree, nodeId);
+    entries = getMenuEntries(nodeId, node.type, inTrash, inArchive ? { ...node, inArchive } : node, inProject);
     if ((state.settings?.desks || []).length < 2) entries = entries.filter((e) => e.action !== "move-to-desk");
     // Local-desk actions need runtime state (the roots map), so they
     // join here rather than in the static entry builder.
@@ -349,8 +372,10 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
   // strip of icon buttons at the top; everything else keeps its labeled
   // list entry below.
   const iconEntries = [];
+  const addEntries = [];
   const listEntries = [];
   for (const ent of entries) {
+    if (ADD_ROW[ent.action]) { addEntries.push(ent); continue; }
     const iconable = ICON_ROW_LABELS[ent.action]?.includes(ent.label);
     (iconable ? iconEntries : listEntries).push(ent);
   }
@@ -378,6 +403,33 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
       iconRow.appendChild(btn);
     }
     menu.appendChild(iconRow);
+  }
+
+  if (addEntries.length) {
+    const addRow = document.createElement("div");
+    addRow.className = "tree-row-menu-icons tree-row-menu-add";
+    addRow.setAttribute("aria-label", "Add");
+    for (const ent of addEntries) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `tree-row-menu-icon-btn tree-row-menu-icon-${ent.action}`;
+      btn.dataset.treeAction = ent.action;
+      btn.title = ent.label;
+      btn.setAttribute("aria-label", ent.label);
+      btn.innerHTML = ADD_ROW[ent.action];
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        closeRowMenu();
+        dispatchRowAction(ent.action, nodeId, { anchor: anchorBtn });
+      });
+      addRow.appendChild(btn);
+    }
+    const plus = document.createElement("span");
+    plus.className = "tree-row-menu-add-plus";
+    plus.setAttribute("aria-hidden", "true");
+    plus.textContent = "+";
+    addRow.appendChild(plus);
+    menu.appendChild(addRow);
   }
 
   for (const ent of listEntries) {

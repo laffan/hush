@@ -252,6 +252,9 @@ pub fn default_shortcut_italic() -> String {
 pub fn default_shortcut_highlight() -> String {
     "Mod+=".to_string()
 }
+pub fn default_shortcut_blockquote() -> String {
+    "Mod+.".to_string()
+}
 pub fn default_shortcut_comment() -> String {
     "Mod+/".to_string()
 }

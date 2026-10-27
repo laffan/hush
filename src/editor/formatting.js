@@ -2,7 +2,8 @@
  * Markdown formatting toggle commands for CodeMirror 6.
  * Supports bold, italic, highlight (==), strikethrough (~~) and
  * Obsidian-style comments (%%). Each wraps the selection less any
- * whitespace at its ends (`trimmedSelection`).
+ * whitespace at its ends (`trimmedSelection`). Blockquote (`> `) works
+ * by line instead: every line the selection touches.
  */
 import { EditorSelection } from "@codemirror/state";
 import { bypassRatchet } from "./ratchet.js";
@@ -108,4 +109,33 @@ export function toggleComment(view) {
  *  revision the mode allows (see editor/ratchet.js). */
 export function toggleStrikethrough(view) {
   return toggleWrap(view, "~~", [bypassRatchet.of(true)]);
+}
+
+/** Toggle `> ` blockquote on every line the selection touches (the
+ *  caret's line when nothing is selected). Off when every non-blank line
+ *  is already quoted, on otherwise — blank lines inside a quoted run take
+ *  a bare `>` so the quote stays one block. The selection maps through. */
+export function toggleBlockquote(view) {
+  const { state } = view;
+  const sel = state.selection.main;
+  const first = state.doc.lineAt(sel.from).number;
+  // A selection ending at the very start of a line doesn't take that line.
+  let last = state.doc.lineAt(sel.to).number;
+  if (last > first && sel.to === state.doc.line(last).from) last--;
+  const lines = [];
+  for (let n = first; n <= last; n++) lines.push(state.doc.line(n));
+  const filled = lines.filter((l) => l.text.trim());
+  const quoted = filled.length > 0 && filled.every((l) => /^\s*>/.test(l.text));
+  const changes = [];
+  for (const line of lines) {
+    if (quoted) {
+      const m = /^(\s*)> ?/.exec(line.text);
+      if (m) changes.push({ from: line.from + m[1].length, to: line.from + m[0].length, insert: "" });
+    } else if (!/^\s*>/.test(line.text)) {
+      changes.push({ from: line.from, insert: line.text.trim() || lines.length === 1 ? "> " : ">" });
+    }
+  }
+  if (!changes.length) return true;
+  view.dispatch({ changes, scrollIntoView: true, userEvent: "input.format" });
+  return true;
 }

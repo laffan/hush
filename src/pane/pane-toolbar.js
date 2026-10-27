@@ -89,6 +89,7 @@ export function buildPaneDOM(pane, deps) {
     if (pane.fileType === "notebook") appState.openNotebook(pane.fileId);
     else if (pane.fileType === "pdf") appState.openPdf(pane.fileId);
     else if (pane.fileType === "stack") appState.openStack(pane.fileId);
+    else if (pane.fileType === "project") appState.openProject(pane.fileId);
     else appState.openFile(pane.fileId);
   });
   title.appendChild(titleLink);

@@ -436,6 +436,30 @@ export async function renameTreeNode(state, nodeId, newName) {
   state.syncRenameNode(nodeId, oldName, node.type);
 }
 
+/** Move a node into its own desk's Archive — the same desk-local rule
+ *  deletes follow for Trash, so an archive never writes into another
+ *  desk's subtree. The node keeps its subtree and its place on screen
+ *  (an open file stays open). */
+export async function archiveTreeNode(state, nodeId) {
+  if (state.isSpecialNodeId(nodeId) || state.isInTrash(nodeId)) return;
+  const node = findNode(state.fileTree, nodeId);
+  if (!node || node.type === "desk") return;
+  const desk = (state.fileTree || []).find((d) => d?.type === "desk" && findNode([d], nodeId));
+  if (!desk) return;
+  const { ensureDeskSpecials } = await import("./state-desks.js");
+  ensureDeskSpecials(desk);
+  const archive = findNode([desk], `__archive__:${desk.id}`);
+  if (!archive) return;
+  const removed = removeNode(state.fileTree, nodeId);
+  if (!removed) return;
+  // Names map to paths, so a same-named sibling already archived gets
+  // the newcomer suffixed rather than overwritten.
+  removed.name = uniqueChildName(archive, removed.name, removed.type, removed.id);
+  (archive.children || (archive.children = [])).unshift(removed);
+  await state.saveFileTree();
+  state.emit("files-changed");
+}
+
 export async function toggleFlagged(state, nodeId) {
   const node = findNode(state.fileTree, nodeId);
   if (!node) return;

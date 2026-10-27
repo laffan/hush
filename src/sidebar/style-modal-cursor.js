@@ -34,7 +34,7 @@ import {
   glowForAppearance,
   hasAnyGlow,
   glowIntensity,
-  cursorIdleAnimation,
+  effectiveIdleAnimation,
   IDLE_ANIMATIONS,
   GLOW_INTENSITY_MIN,
   GLOW_INTENSITY_MAX,
@@ -103,7 +103,7 @@ function swatchPairRow(draft, mode, key, rowLabel, showFor = () => true) {
 export function renderCursorSection(draft, settings) {
   const mode = resolveCursorMode(draft, settings);
   const intensity = glowIntensity(draft);
-  const idle = cursorIdleAnimation(draft);
+  const idle = effectiveIdleAnimation(draft, settings);
   return `
             <div class="style-modal-section">
               <h3 class="style-modal-section-title">Cursor</h3>

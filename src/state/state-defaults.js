@@ -254,6 +254,7 @@ export function createDefaultSettings() {
     shortcutHighlight: "Mod+=",
     shortcutComment: "Mod+/",
     shortcutStrikethrough: "Mod+-",
+    shortcutBlockquote: "Mod+.",
     shortcutInsertFootnote: "Mod+Shift+M",
 
     // Shortcuts — Additional editing actions

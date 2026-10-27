@@ -68,6 +68,16 @@ export function cursorIdleAnimation(obj) {
   return obj?.cursorBlink === false ? "none" : "blink";
 }
 
+/** The idle animation a style actually gets: its own when it says one,
+ *  else the Default style's (`settings`) — the inheritance the painter
+ *  applies (block-cursor.js). The style editor shows this, not the bare
+ *  `cursorIdleAnimation(draft)`: a style that never chose read "Blink"
+ *  there while pulsing on screen with the Default's Pulse, and picking
+ *  Blink from a menu already showing it changed nothing. */
+export function effectiveIdleAnimation(draft, settings) {
+  return cursorIdleAnimation(definesIdleAnimation(draft) ? draft : settings);
+}
+
 /** The two box-shadows the glow is drawn with, at a given scale. Same
  *  pair as `.cursor-glow` in styles/editor.css (which scales them by
  *  `--cursor-glow-scale`): a tight bright core and a wide soft bloom. */

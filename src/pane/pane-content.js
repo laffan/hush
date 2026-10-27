@@ -62,6 +62,7 @@ export async function loadPaneContent(pane) {
   if (t === "notebook") return loadNotebookPane(pane);
   if (t === "pdf") return loadPdfPane(pane);
   if (t === "stack") return loadStackPane(pane);
+  if (t === "project") return (await import("./pane-project.js")).loadProjectPane(pane);
   // Fileless custom types mount from their own modules. A `desktop`
   // pane's `fileId` is a project's tree-node id, not a file id.
   if (t === "zotero-highlights") {
@@ -398,6 +399,8 @@ async function loadNotebookPane(pane) {
 export async function savePaneContent(pane) {
   // These types own their own persistence (or have no file behind them).
   if (["pdf", "stack", "zotero-highlights", "desktop"].includes(pane.fileType)) { pane.dirty = false; return; }
+  // A project's buffer splits back into its documents (pane-project.js).
+  if (pane.fileType === "project") return (await import("./pane-project.js")).saveProjectPane(pane);
   if (!pane.dirty) return;
   pane.dirty = false;
 

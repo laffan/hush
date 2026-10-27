@@ -32,7 +32,7 @@ import { joinLines, joinLinesUp } from "./join-lines.js";
 import { deleteSentence, deleteToSentenceStart } from "./sentence-delete.js";
 import { selectSentenceOrSpan } from "./sentence-parenthetical.js";
 import {
-  toggleBold, toggleItalic, toggleHighlight, toggleComment, toggleStrikethrough,
+  toggleBold, toggleItalic, toggleHighlight, toggleComment, toggleStrikethrough, toggleBlockquote,
 } from "./formatting.js";
 import { insertFootnote } from "./plugins/footnotes.js";
 import { openZoteroModal } from "../zotero.js";
@@ -333,6 +333,7 @@ export function buildEditorCommands() {
     shortcutHighlight: (_state, view) => (view ? toggleHighlight(view) : false),
     shortcutComment: (_state, view) => (view ? toggleComment(view) : false),
     shortcutStrikethrough: (_state, view) => (view ? toggleStrikethrough(view) : false),
+    shortcutBlockquote: (_state, view) => (view ? toggleBlockquote(view) : false),
     shortcutInsertFootnote: (_state, view) => (view ? insertFootnote(view) : false),
     // A Doc's selection, or a canvas's selected text shapes — see
     // cards/card-commands.js for why the focus test lives there.
