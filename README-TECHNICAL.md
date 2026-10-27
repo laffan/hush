@@ -29,11 +29,11 @@ Hush is a [Tauri v2](https://v2.tauri.app/) app (macOS + iOS/iPadOS) with a vani
 | `midnight/` | Midnight mode: the model every colour resolver reads (`midnight-mode.js`), the appearance choice / 8am end / cross-window repaint (`midnight-controller.js`), the pinned palette row and the glyph (see **Midnight mode**) |
 | `widgets/` | Home screen widgets, app side: recency stamps, the snapshot, its publisher, what a widget tap does (see widgets/README-WIDGETS.md) |
 | `courier/` | Courier, the triple-Shift quick-send sheet (stickies, appends and cards): trigger, destination lists, delivery, per-device memory (see **Courier**) |
-| `write-now/` | Write Now, the triple-Option "fresh document, set up to write" sequence, and its trigger (see **Write Now**). The tap detector both triggers share is `ui/triple-tap.js` |
+| `write-now/` | Write Now, the triple-Option "fresh document, set up to write" sequence, its trigger, and the veil it runs behind (see **Write Now**). The tap detector both triggers share is `ui/triple-tap.js` |
 | `edge-lights/` | Edge Lights (called Northern Lights while it was being built): the options, kinds, palettes and presets (`edge-lights-store.js`), on / off / preview (`edge-lights.js`), the WebGL overlay and its shader (`edge-lights-overlay.js`, `edge-lights-shader.js`, lazily imported), the modal and its presets rail (`edge-lights-presets.js`) (see **Edge Lights**) |
 | `cards/` | Cards — `<<<` … `>>>` markdown chunks shown as one component on Docs, canvases and Courier: the model, the card element, the Doc plugin and the layer that draws cards beside the text, the drags (header and canvas), delivery to named files, the sidebar's notebook index (see **Cards**) |
 | `links/` | Wikilink resolver/popup, citation popup, Zotero link menu, deep-link router |
-| `sync/` | Provider-agnostic sync core + local desk roots + Local Sync mounts — see README-SYNC.md |
+| `sync/` | Provider-agnostic sync core + local desk roots + Local Sync mounts + desk backups (`desk-backups.js`; the browser and the "Use Backups" field are `sidebar/desk-backup-*.js`) — see README-SYNC.md |
 | `google-docs/`, `editor/google-docs/` | Phase 2 (OAuth, Drive/Docs API, link bar, incremental push, comments) / Phase 1 (pure paste/copy converters) |
 | `pdf/`, `zotero*` | PDF.js viewer (+ shelf, bookmarks, covers, folds, paged view, reading crop, find, outline, keys, per-PDF view state, suspend — see **PDF viewer**), Zotero API (`zotero/api.js`) + caches + the shared library browser |
 | `settings/` | Settings window tabs |
@@ -52,7 +52,7 @@ Hush is a [Tauri v2](https://v2.tauri.app/) app (macOS + iOS/iPadOS) with a vani
 | `lib.rs` | App setup, managed state (`Mutex<AppSettings>` + managers), plugin registration, tray, window events, `invoke_handler!` list |
 | `wire.rs` | The types the frontend sees: `TreeNode`, `FileEntry`, `FileSummary`. Re-exported from `lib.rs`, so `crate::TreeNode` still resolves |
 | `atomic.rs` | `write_atomic` / `write_atomic_str` — tmp + fsync + rename. **Every long-lived JSON/binary store writes through this**; worst case on crash is always "the previous version" |
-| `commands/` | Tauri command surface, grouped by domain (files, images, settings, snapshots, desks, local_sync, zotero, window, backup, grammar, spellcheck, pdf_export, multi_window, google_docs, diagnostics, handwriting) |
+| `commands/` | Tauri command surface, grouped by domain (files, images, settings, snapshots, desks, desk_backups, local_sync, zotero, window, backup, grammar, spellcheck, pdf_export, multi_window, google_docs, diagnostics, handwriting) |
 | `desk_*.rs` | The desk-folder store (including `desk_relocate.rs`, which renames and moves a local desk's folder) — see README-SYNC.md |
 | `settings.rs` + `settings/defaults.rs` | `AppSettings` (camelCase serde) + default-value fns |
 | `files.rs`, `images.rs`, `snapshots.rs` | fileId-keyed file CRUD, image storage, version snapshots |
@@ -285,6 +285,10 @@ Delivery (`courier-send.js`) follows the rule that **a surface holding a file ow
 
 `src/write-now/`. The trigger is Courier's gesture on Option (`installTripleTap("Alt", …)`; an Option keydown sets `altKey` itself, so the chord test ignores the key's own flag and rejects every other one — Option-↑ is a chord and resets the count). `write-now.js#writeNow` runs the steps in the order asked and skips any already so: leave Zen first (it holds a copy of the document it opened over and writes it back on exit), `toggleFullscreen`, `setMidnightMode`, the desk, `newFile` (unless the main editor already holds an empty Untitled on the active desk — `isEmptyUntitled`), `hide-panel`, then Zen after `deactivateAllPanes` (Zen seeds from the active pane before the main editor) and two frames for the new document's surface to swap in. **The desk switch has to land before the new document is made**: `setActiveDesk` emits `active-desk-changed`, whose handler in `main.js` opens the desk's last file asynchronously — a document made before that finishes is replaced by it. Write Now waits for the `desk-overview-restore` that handler emits at its end (5 s ceiling). The desk is `settings.writeNowDeskId` (`write_now_desk_id: Option<String>`), set in Settings → General; empty or a desk that no longer exists means the current one. Re-entry is guarded, since a triple-tap can arrive while a run is still awaiting.
 
+**The steps run behind a veil** (`write-now-veil.js`): a black `.write-now-veil` at `--z-write-now` (above Courier and every modal band, since Zen is the last thing opened under it) fades in before the first step and out after the last, swallowing pointer input while it is up; reduced motion makes both fades instant. It lifts only once the document is ready to type into — after Zen is open and, when this run went full screen, after the window has stopped resizing (`windowSettled`: 180 ms without a `resize`, 1.2 s cap), since the macOS animation outlasts both `setFullscreen` and the fullscreen handler's 100 ms re-focus. The veil is lowered in `finally`, so a failed step can't leave the screen black.
+
+**The document is headed with the time.** Before Zen opens, the empty document gets `writeNowStamp()` (`2026.9.23-12h33`: month, day and hour unpadded, minutes padded, 24-hour) and ten blank lines, dispatched into the main editor as a *user* edit — so it goes dirty and saves, and the caret leaving line 1 names the file after the stamp (`state-naming.js`). The blank lines don't survive that editor, though: opening Zen emits `mode-changed`, and with typewriter mode off `editor.js` answers every `mode-changed` with `stripTypewriterRunway`, which deletes all trailing whitespace. So `restoreBlankLines` re-applies them, and the caret below them, in `state.runtime.zenView` once Zen is up; Zen's write-back carries them home with whatever was typed after them. Nothing is inserted when the open document isn't empty.
+
 **The fullscreen handler re-focuses whatever is being typed in.** `editor.js`'s `fullscreen-changed` listener blurs and re-focuses CodeMirror 100 ms after the transition (macOS desynchronises CM's focus state). It focused the main editor unconditionally, which behind Zen meant every keystroke after Write Now went into the hidden document; it now takes `state.runtime.zenView` when Zen is up.
 
 Full screen on iPad is the class toggle alone (`applyFullscreen` — see the `setFocus` gotcha): iPadOS gives an app no call that makes its window full screen or maximised (`UIRequiresFullScreen` is deprecated, and `requestGeometryUpdate` is documented for orientation), so the step hides Hush's chrome and the window stays the size the user gave it.
@@ -505,6 +509,7 @@ Ranked by cost. Item 1 is measured — on an iPad it was 2.8 s of a 3 s launch �
 ├── desks/                    (the desk-folder store — layout in README-SYNC.md)
 ├── desk-archives/            (archived desks, one zip each)
 ├── desk-recovery/            (automatic local-desk snapshots)
+├── desk-backups.json         (per-device desk backup folders — desk_backup.rs; the backups themselves live in those folders)
 ├── activity.log
 ├── files/                    (legacy flat store — inert backup after migration)
 │   └── pdfs/                 (PDF binaries + _registry.json — per-device cache)

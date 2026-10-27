@@ -240,23 +240,7 @@ impl SnapshotManager {
             .map(|(i, (_, ms))| (i, ms / 1000))
             .collect();
 
-        let now = now_ms() / 1000;
-        // Keep-all window is 5 minutes. It was 30, but notebooks used
-        // to snapshot on every 2-second autosave — a long writing
-        // session accumulated hundreds of multi-MB copies before the
-        // thinning even started. Notebook snapshots are now throttled
-        // client-side too (see notebook-bridge.js); the tighter window
-        // keeps doc-side bursts from piling up the same way.
-        let five_min = now - 5 * 60;
-        let two_hours = now - 2 * 60 * 60;
-        let twenty_four_hours = now - 24 * 60 * 60;
-        let seven_days = now - 7 * 24 * 60 * 60;
-
-        let mut doomed: Vec<usize> = Vec::new();
-        doomed.extend(thin_window(&secs, two_hours, five_min, 60));
-        doomed.extend(thin_window(&secs, twenty_four_hours, two_hours, 600));
-        doomed.extend(thin_window(&secs, seven_days, twenty_four_hours, 3600));
-        doomed.extend(thin_window(&secs, 0, seven_days, 86400));
+        let doomed = decay_doomed(&secs, now_ms() / 1000);
 
         let count = doomed.len() as u64;
         for idx in doomed {
@@ -264,6 +248,32 @@ impl SnapshotManager {
         }
         count
     }
+}
+
+/// The Versions decay policy over `(index, seconds)` pairs: every entry
+/// newer than five minutes, then the newest per minute to 2 h, per ten
+/// minutes to 24 h, per hour to 7 days, per day beyond. Returns the
+/// indices to delete. Desk backups (desk_backup.rs) prune by the same
+/// rule, so their hourly copies thin out exactly as a document's
+/// versions do.
+pub(crate) fn decay_doomed(secs: &[(usize, i64)], now: i64) -> Vec<usize> {
+    // Keep-all window is 5 minutes. It was 30, but notebooks used
+    // to snapshot on every 2-second autosave — a long writing
+    // session accumulated hundreds of multi-MB copies before the
+    // thinning even started. Notebook snapshots are now throttled
+    // client-side too (see notebook-bridge.js); the tighter window
+    // keeps doc-side bursts from piling up the same way.
+    let five_min = now - 5 * 60;
+    let two_hours = now - 2 * 60 * 60;
+    let twenty_four_hours = now - 24 * 60 * 60;
+    let seven_days = now - 7 * 24 * 60 * 60;
+
+    let mut doomed: Vec<usize> = Vec::new();
+    doomed.extend(thin_window(secs, two_hours, five_min, 60));
+    doomed.extend(thin_window(secs, twenty_four_hours, two_hours, 600));
+    doomed.extend(thin_window(secs, seven_days, twenty_four_hours, 3600));
+    doomed.extend(thin_window(secs, 0, seven_days, 86400));
+    doomed
 }
 
 /// `(index, seconds)` pairs → indices to delete, keeping the newest entry

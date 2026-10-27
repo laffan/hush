@@ -1,0 +1,15 @@
+/* ===== Write Now veil (write-now/write-now-veil.js) =====
+   The screen fades to black while Write Now goes full screen, opens the
+   document and Zen, then fades back once the caret is ready. Durations
+   are set inline per direction; reduced motion sets them to 0. */
+.write-now-veil {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  transition-property: opacity;
+  transition-timing-function: ease-in-out;
+  z-index: var(--z-write-now);
+  pointer-events: auto;
+}
+.write-now-veil.opaque { opacity: 1; }

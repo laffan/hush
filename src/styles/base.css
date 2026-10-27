@@ -92,6 +92,8 @@
    *   --z-courier        the Courier quick-send sheet — reachable from
    *                      every context, Zen included, so it clears the
    *                      whole modal band
+   *   --z-write-now      the fade Write Now runs its steps behind — over
+   *                      everything those steps open, Zen included
    *   --z-drag-ghost     drag preview that must escape every stacking
    *                      context (text drag chip from sidebar to editor)
    */
@@ -110,6 +112,7 @@
   --z-modal-top: 9999;
   --z-modal-topmost: 10001;
   --z-courier: 10010;
+  --z-write-now: 10020;
   --z-drag-ghost: 2147483647;
 }
 

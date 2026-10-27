@@ -14,6 +14,8 @@ mod activity_log;
 mod atomic;
 mod commands;
 mod desk_archive;
+mod desk_backup;
+mod desk_backup_restore;
 mod desk_conflicts;
 mod desk_dedupe;
 mod desk_hashes;
@@ -288,6 +290,9 @@ pub fn run() {
                 // background thread zips any local desk with pending
                 // edits every 30 minutes (see desk_recovery.rs).
                 desk_recovery::start_scheduler(crate::get_data_dir());
+                // Hourly desk backups into the folders users chose, for
+                // internal and local desks alike (see desk_backup.rs).
+                desk_backup::start_scheduler(crate::get_data_dir());
             }
 
             #[cfg(desktop)]
@@ -528,6 +533,14 @@ pub fn run() {
             commands::desks::desk_recovery_list,
             commands::desks::desk_recovery_delete,
             commands::desks::desk_recovery_restore,
+            commands::desk_backups::desk_backup_targets,
+            commands::desk_backups::desk_backup_default_folder,
+            commands::desk_backups::desk_backup_set_target,
+            commands::desk_backups::desk_backup_now,
+            commands::desk_backups::desk_backup_list,
+            commands::desk_backups::desk_backup_contents,
+            commands::desk_backups::desk_backup_read_file,
+            commands::desk_backups::desk_backup_restore,
             commands::diagnostics::activity_log_append,
             commands::diagnostics::activity_log_read,
             commands::diagnostics::activity_log_clear,

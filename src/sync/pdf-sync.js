@@ -125,6 +125,27 @@ export async function addPdfEntry(fileId, meta) {
   await persistRegistry();
 }
 
+/** Register the PDFs a desk recovered from a backup brought back
+ *  (desk_backup_restore.rs): each `{ fileId, entry, cached }` carries the
+ *  backed-up registry entry under its fresh fileId. A binary Rust copied
+ *  from this device's cache counts as downloaded; the rest are fetched
+ *  from Zotero. Returns how many downloads started. */
+export async function restorePdfEntries(pdfs, state) {
+  if (!pdfs?.length) return 0;
+  if (!_registry) _registry = { format: "hush-pdfs", version: 1, items: {} };
+  for (const { fileId, entry } of pdfs) {
+    _registry.items[fileId] = { title: "Untitled", addedAt: Math.floor(Date.now() / 1000), ...entry, fileId };
+  }
+  await persistRegistry();
+  const toDownload = [];
+  for (const { fileId, cached } of pdfs) {
+    if (cached) _downloadedSet.add(fileId);
+    else if (_registry.items[fileId].zoteroAttKey) toDownload.push(fileId);
+  }
+  if (toDownload.length) startBatchDownload(toDownload, state);
+  return toDownload.length;
+}
+
 export async function removePdfEntry(fileId) {
   if (!_registry?.items?.[fileId]) return;
   delete _registry.items[fileId];

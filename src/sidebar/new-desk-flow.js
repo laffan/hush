@@ -22,6 +22,12 @@
  * left the second job with no visible door, and people went looking for
  * one (see README-SYNC § desk identity).
  *
+ * Both kinds are offered backups — hourly zips of the desk into a folder
+ * of the user's choosing (desk-backup-field.js, desk_backup.rs). The
+ * internal prompt carries the "Use Backups" checkbox under the name; a
+ * local desk has no name to ask for, so the same field follows the
+ * folder pick on its own.
+ *
  * Outside Tauri there is no folder picker, so the fork is skipped and
  * the internal prompt opens directly.
  */
@@ -30,6 +36,8 @@ import { showChoiceModal, typeIcons } from "./files-panel-shared.js";
 import { customIconSvg, isCustomIcon } from "../ui/custom-icons.js";
 import { openIconPicker } from "../ui/icon-picker-modal.js";
 import { setDeskIcon } from "../state/state-desks.js";
+import { createBackupField, openDeskBackupPrompt } from "./desk-backup-field.js";
+import { setDeskBackupTarget } from "../sync/desk-backups.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 
@@ -38,7 +46,8 @@ const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
  *  for "Change Desk Icon". The icon button opens the shared picker over
  *  this modal (its backdrop is its own, so this one stays put) and shows
  *  whatever was chosen; reset in the picker goes back to the stock
- *  glyph. Calls `onConfirm(name, icon|null)`. */
+ *  glyph. Under the name, "Use Backups". Calls
+ *  `onConfirm(name, icon|null, backupTarget|null)`. */
 function showNewDeskPrompt({ onConfirm, onCancel }) {
   document.querySelectorAll(".tree-delete-modal-backdrop").forEach((el) => el.remove());
   const backdrop = document.createElement("div");
@@ -53,13 +62,17 @@ function showNewDeskPrompt({ onConfirm, onCancel }) {
       <input id="new-desk-name" class="tree-prompt-modal-input" type="text" autocomplete="off" spellcheck="false"
              placeholder="Untitled desk" />
     </div>
+    <div class="new-desk-backup"></div>
     <div class="tree-delete-modal-btns">
       <button class="tree-delete-cancel">Cancel</button>
       <button class="tree-delete-confirm tree-prompt-modal-confirm">Create</button>
     </div>`;
+  const backup = createBackupField();
+  if (backup) modal.querySelector(".new-desk-backup").appendChild(backup.el);
+  else modal.querySelector(".new-desk-backup").remove();
   backdrop.appendChild(modal);
   document.body.appendChild(backdrop);
-  const input = modal.querySelector("input");
+  const input = modal.querySelector("#new-desk-name");
   const iconBtn = modal.querySelector(".new-desk-icon-btn");
   const confirmBtn = modal.querySelector(".tree-prompt-modal-confirm");
   let icon = null;
@@ -76,7 +89,7 @@ function showNewDeskPrompt({ onConfirm, onCancel }) {
     const value = input.value.trim();
     if (!value) return;
     cleanup();
-    onConfirm(value, isCustomIcon(icon) ? icon : null);
+    onConfirm(value, isCustomIcon(icon) ? icon : null, backup?.value() || null);
   };
   const cancel = () => { cleanup(); onCancel?.(); };
   iconBtn.addEventListener("click", () => {
@@ -116,10 +129,11 @@ export function startNewDeskFlow(state, { onCreated } = {}) {
   return new Promise((resolve) => {
     const internal = () => {
       showNewDeskPrompt({
-        onConfirm: async (name, icon) => {
+        onConfirm: async (name, icon, backupTarget) => {
           const id = await state.createDesk(name);
           if (id) {
             if (icon) await setDeskIcon(state, id, icon);
+            if (backupTarget) await turnOnBackups(id, backupTarget);
             await state.setActiveDesk(id);
             onCreated?.(id, "internal");
           }
@@ -152,10 +166,28 @@ export function startNewDeskFlow(state, { onCreated } = {}) {
         if (choice === "internal") { internal(); return; }
         const { createLocalDesk } = await import("../sync/desk-roots.js");
         const id = await createLocalDesk(state);
-        if (id) onCreated?.(id, "local");
+        if (id) {
+          const name = (state.fileTree || []).find((n) => n.type === "desk" && n.id === id)?.name || "this desk";
+          await openDeskBackupPrompt(id, {
+            title: `Backups for "${name}"`,
+            confirmLabel: "Done",
+            cancelLabel: "Skip",
+          });
+          onCreated?.(id, "local");
+        }
         resolve(id || null);
       },
       onCancel: () => resolve(null),
     });
   });
+}
+
+/** Point a just-made desk's backups at the folder the prompt chose. The
+ *  desk exists either way; a folder Rust refuses is said, not fatal. */
+async function turnOnBackups(deskId, target) {
+  try {
+    await setDeskBackupTarget(deskId, target);
+  } catch (e) {
+    window.alert(`The desk was made, but backups couldn't use that folder:\n${e?.message || e}\n\nChoose another with "Desk Backup Folder…" in the command palette.`);
+  }
 }

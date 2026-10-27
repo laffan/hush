@@ -79,6 +79,11 @@ export async function bootAppState(IS_TAURI) {
         logActivity("desks", "error", "Could not re-open local desk folders before boot", { error: String(e) });
       }
     });
+    // Desk backup folders the same way, for the Rust backup scheduler —
+    // nothing at boot reads them, so this doesn't hold the launch up.
+    void import("./sync/desk-backups.js")
+      .then((m) => m.acquireBackupFolderAccess())
+      .catch((e) => logActivity("desks", "warn", "Could not re-open desk backup folders", { error: String(e) }));
   }
 
   const initialFile = state.isSecondaryWindow ? getInitialFileFromHash() : null;

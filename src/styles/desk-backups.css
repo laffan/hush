@@ -1,0 +1,270 @@
+/* ===== Desk backups =====
+   The "Use Backups" field (sidebar/desk-backup-field.js) — under the
+   name in the New desk prompt, and alone in the backup prompt — and the
+   Recover Desk Version browser (sidebar/desk-backup-browser.js +
+   desk-backup-viewer.js). The browser borrows the archive modal's
+   buttons; it rides the modal band so it opens over Zen. */
+
+.new-desk-backup { margin: 12px 0 16px; }
+
+.backup-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 13px;
+}
+.backup-field-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+}
+.backup-field-toggle input { margin: 0; }
+.backup-field-folder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 21px;
+  min-width: 0;
+}
+.backup-field-folder[hidden], .backup-field-note[hidden] { display: none; }
+.backup-field-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  opacity: 0.75;
+}
+.backup-field-browse {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  color: var(--fg);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 3px 10px;
+}
+.backup-field-browse:hover { background: rgba(128, 128, 128, 0.15); }
+.backup-field-note {
+  padding-left: 21px;
+  font-size: 11.5px;
+  opacity: 0.55;
+}
+
+.desk-backup-prompt-message {
+  font-size: 13px;
+  line-height: 1.45;
+  opacity: 0.8;
+  margin: 0 0 12px;
+}
+.desk-backup-prompt-field { margin-bottom: 16px; }
+
+/* ----- Recover Desk Version ----- */
+.desk-backup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal);
+  padding: 16px;
+  box-sizing: border-box;
+}
+.desk-backup-modal {
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  width: min(920px, 100%);
+  height: min(640px, 100%);
+  border-radius: 8px;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.4));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  padding: 14px 14px 10px;
+  font-family: system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+}
+.desk-backup-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.desk-backup-heading { min-width: 0; }
+.desk-backup-now { flex-shrink: 0; white-space: nowrap; }
+.desk-backup-title {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.7;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.desk-backup-sub {
+  font-size: 13px;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.desk-backup-sub span { opacity: 0.6; }
+
+.desk-backup-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 10px;
+}
+.desk-backup-versions {
+  overflow-y: auto;
+  border-right: 1px solid var(--panel-border, rgba(128, 128, 128, 0.3));
+  padding-right: 8px;
+  outline: none;
+}
+.desk-backup-day {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.55;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 8px 6px 4px;
+}
+.desk-backup-day:first-child { padding-top: 0; }
+.desk-backup-version {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  color: var(--fg);
+  cursor: pointer;
+  font-family: inherit;
+  padding: 6px 8px;
+  text-align: left;
+}
+.desk-backup-version:hover { background: rgba(128, 128, 128, 0.1); }
+.desk-backup-version.selected { background: rgba(128, 128, 128, 0.2); }
+.desk-backup-versions:focus-visible .desk-backup-version.selected {
+  box-shadow: inset 0 0 0 1px var(--panel-border, rgba(128, 128, 128, 0.5));
+}
+.desk-backup-version-time { font-size: 13.5px; }
+.desk-backup-version-meta { font-size: 11px; opacity: 0.55; }
+
+.desk-backup-viewer {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(150px, 34%) minmax(0, 1fr);
+  gap: 10px;
+}
+.desk-backup-tree,
+.desk-backup-preview {
+  min-height: 0;
+  overflow: auto;
+}
+.desk-backup-tree { border-right: 1px solid var(--panel-border, rgba(128, 128, 128, 0.3)); padding-right: 6px; }
+.desk-backup-children[hidden] { display: none; }
+.desk-backup-node {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--fg);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  padding-right: 6px;
+  text-align: left;
+}
+.desk-backup-node:hover { background: rgba(128, 128, 128, 0.1); }
+.desk-backup-node.selected { background: rgba(128, 128, 128, 0.2); }
+.desk-backup-caret { width: 10px; flex-shrink: 0; font-size: 10px; opacity: 0.6; }
+.desk-backup-node-icon { display: inline-flex; width: 14px; height: 14px; flex-shrink: 0; }
+.desk-backup-node-icon svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.2; opacity: 0.7; }
+.desk-backup-node-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.desk-backup-hint { font-size: 13px; line-height: 1.5; opacity: 0.6; margin: 4px 2px; }
+.desk-backup-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.desk-backup-preview-title { font-size: 14px; font-weight: 500; word-break: break-word; }
+.desk-backup-preview-meta { font-size: 11.5px; opacity: 0.55; margin-top: 2px; }
+.desk-backup-preview-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 13.5px;
+  line-height: 1.55;
+  user-select: text;
+}
+
+.desk-backup-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.desk-backup-pdfs {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.desk-backup-pdfs[hidden] { display: none; }
+.desk-backup-foot-btns { display: flex; gap: 6px; margin-left: auto; }
+.desk-backup-recover {
+  background: var(--fg);
+  color: var(--theme-bg, var(--bg));
+  border: 1px solid var(--fg);
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 5px 12px;
+}
+.desk-backup-recover:disabled { opacity: 0.4; cursor: default; }
+
+/* Narrow windows (a phone, an iPad window pulled small): the versions
+   become a strip above, and the tree sits above the preview. */
+@media (max-width: 640px) {
+  .desk-backup-overlay { padding: 8px; }
+  .desk-backup-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(90px, 28%) minmax(0, 1fr);
+  }
+  .desk-backup-versions {
+    border-right: none;
+    border-bottom: 1px solid var(--panel-border, rgba(128, 128, 128, 0.3));
+    padding: 0 0 6px;
+  }
+  .desk-backup-viewer {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(80px, 40%) minmax(0, 1fr);
+  }
+  .desk-backup-tree {
+    border-right: none;
+    border-bottom: 1px solid var(--panel-border, rgba(128, 128, 128, 0.3));
+    padding: 0 0 6px;
+  }
+}

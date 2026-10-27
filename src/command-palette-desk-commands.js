@@ -215,5 +215,20 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
         const m = await import("./sidebar/desk-archive.js");
         await m.openArchivedDesksModal(s);
       } },
+    // Desk backups — hourly zips of the active desk into a folder the
+    // user chose (sync/desk-backups.js, desk_backup.rs). A desk with no
+    // folder yet asks for one first.
+    { id: "desk-backup-now", section: "Desks", label: "Backup Desk Now", icon: icons.desk, shortcutKey: null, ctx: "shared",
+      keywords: "back up save snapshot zip copy desk backup",
+      hiddenIf: (s) => !(desktop || ipad) || !s.getActiveDesk?.(),
+      action: async (s) => (await import("./sidebar/desk-backup-browser.js")).backupActiveDeskNow(s) },
+    { id: "desk-backup-recover", section: "Desks", label: "Recover Desk Version", icon: icons.desk, shortcutKey: null, ctx: "shared",
+      keywords: "restore backup history previous older version desk recover",
+      hiddenIf: (s) => !(desktop || ipad) || !s.getActiveDesk?.(),
+      action: async (s) => (await import("./sidebar/desk-backup-browser.js")).openRecoverDeskVersion(s) },
+    { id: "desk-backup-folder", section: "Desks", label: "Desk Backup Folder…", icon: icons.desk, shortcutKey: null, ctx: "shared",
+      keywords: "backups settings turn off on change location desk backup",
+      hiddenIf: (s) => !(desktop || ipad) || !s.getActiveDesk?.(),
+      action: async (s) => (await import("./sidebar/desk-backup-browser.js")).editDeskBackupFolder(s) },
   ];
 }

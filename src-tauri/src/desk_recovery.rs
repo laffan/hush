@@ -75,6 +75,13 @@ pub fn note_desk_edit(desk_id: &str) {
     stamps().lock().unwrap().insert(desk_id.to_string(), now_secs());
 }
 
+/// When `desk_id` last received a content mutation this run, if it has.
+/// Desk backups (desk_backup.rs) read the same stamps to tell an edited
+/// desk from an idle one.
+pub(crate) fn edited_at(desk_id: &str) -> Option<u64> {
+    stamps().lock().unwrap().get(desk_id).copied()
+}
+
 /// A path component that arrived over IPC: must be a bare name — no
 /// separators, no leading dot, no traversal.
 fn safe_component(s: &str) -> Result<&str, BoxError> {
@@ -99,7 +106,7 @@ fn stamp_of(file_name: &str) -> Option<u64> {
 
 /// The desk's display name straight from its folder (`.hushdesk`, then
 /// the tree root), so the scheduler needs no frontend help.
-fn desk_display_name(root: &Path) -> String {
+pub(crate) fn desk_display_name(root: &Path) -> String {
     let from = |path: PathBuf| -> Option<String> {
         let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(path).ok()?).ok()?;
         Some(v.get("name")?.as_str()?.to_string())

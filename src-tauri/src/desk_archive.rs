@@ -57,7 +57,7 @@ fn now_secs() -> u64 {
 }
 
 /// A filename component that's safe on every platform we ship to.
-fn slug(name: &str) -> String {
+pub(crate) fn slug(name: &str) -> String {
     let cleaned: String = name
         .trim()
         .chars()
@@ -198,7 +198,7 @@ impl DeskStore {
         Ok(new_id)
     }
 
-    fn restore_desk_bytes(&self, bytes: Vec<u8>) -> Result<String, BoxError> {
+    pub(crate) fn restore_desk_bytes(&self, bytes: Vec<u8>) -> Result<String, BoxError> {
         let mut zip = zip::ZipArchive::new(Cursor::new(bytes))?;
 
         let new_id = uuid::Uuid::new_v4().to_string();
@@ -251,8 +251,26 @@ pub(crate) fn build_desk_zip(
     was_local: bool,
     stamp: u64,
 ) -> Result<(Vec<u8>, usize), BoxError> {
+    build_desk_zip_with(root, desk_name, desk_id, was_local, stamp, &|_| false, &[])
+}
+
+/// `build_desk_zip` with a filter and extra root-level entries: `skip`
+/// takes a file's desk-relative path and leaves it out when true, and
+/// each `(name, bytes)` in `extra` is written beside `archive.json`.
+/// Desk backups (desk_backup.rs) use both — PDFs left out, and the
+/// PDF registry entries they need written in their place.
+pub(crate) fn build_desk_zip_with(
+    root: &Path,
+    desk_name: &str,
+    desk_id: &str,
+    was_local: bool,
+    stamp: u64,
+    skip: &dyn Fn(&str) -> bool,
+    extra: &[(String, Vec<u8>)],
+) -> Result<(Vec<u8>, usize), BoxError> {
     let mut entries = Vec::new();
     walk_all(root, root, &mut entries);
+    entries.retain(|(rel, _)| !skip(rel));
     let mut buf = Vec::new();
     {
         let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
@@ -279,6 +297,10 @@ pub(crate) fn build_desk_zip(
             }))?
             .as_bytes(),
         )?;
+        for (name, bytes) in extra {
+            zip.start_file(name.as_str(), opts)?;
+            zip.write_all(bytes)?;
+        }
         zip.finish()?;
     }
     let files = entries.len();
