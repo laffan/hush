@@ -484,6 +484,35 @@ pub fn read_archive(&self, file: &str) -> Result<Vec<u8>, BoxError> {
 }
 }
 
+impl DeskStore {
+    /// The desk's Archive folder (the special's directory, `Archive/`) as
+    /// a zip in memory, every file under an `Archive/` root — the Export
+    /// Archive action on the sidebar's Archive row. Dotfiles stay out:
+    /// the folder is the user's files, not the desk's sidecars.
+    pub fn archive_folder_zip(&self, desk_id: &str) -> Result<Vec<u8>, BoxError> {
+        let dir = self.desk_dir(desk_id).join("Archive");
+        let mut entries = Vec::new();
+        if dir.is_dir() {
+            walk_all(&dir, &dir, &mut entries);
+        }
+        entries.retain(|(rel, _)| !rel.split('/').any(|seg| seg.starts_with('.')));
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+            let opts = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+            zip.add_directory("Archive/", opts)?;
+            for (rel, abs) in &entries {
+                let mut bytes = Vec::new();
+                File::open(abs)?.read_to_end(&mut bytes)?;
+                zip.start_file(format!("Archive/{}", rel), opts)?;
+                zip.write_all(&bytes)?;
+            }
+            zip.finish()?;
+        }
+        Ok(buf)
+    }
+}
+
 pub(crate) fn read_manifest(path: &Path) -> Option<serde_json::Value> {
     let bytes = fs::read(path).ok()?;
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;

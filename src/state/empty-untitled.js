@@ -10,7 +10,7 @@
  * Split out of state-files.js for the line cap.
  */
 
-import { findNodeByFileId, removeNode } from "./tree-helpers.js";
+import { findNodeByFileId, removeNode, isCardsHome } from "./tree-helpers.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -34,6 +34,7 @@ export function isEmptyUntitled(name, content) {
  *  on a placeholder doc the user never used. */
 export async function pruneEmptyUntitled(state) {
   if (!Array.isArray(state.files) || state.files.length === 0) return;
+  await clearEmptyInboxItems(state).catch((e) => console.warn("clearing empty Inbox items failed:", e));
   const targets = [];
   for (const file of state.files) {
     // Documents only, and only when we are actually holding the body.
@@ -61,4 +62,51 @@ export async function pruneEmptyUntitled(state) {
   state.files = state.files.filter((f) => !targets.some((t) => t.fileId === f.id));
   if (!IS_TAURI) state._saveFilesLocal();
   try { await state.saveFileTree(); } catch (_) {}
+}
+
+/** A document with nothing past its first line — a title, or a Write Now
+ *  timestamp, and no more. */
+export function hasOnlyFirstLine(content) {
+  if (typeof content !== "string") return false;
+  return content.split("\n").filter((l) => l.trim()).length <= 1;
+}
+
+/** Settings → General, "Automatically clear empty inbox items on start":
+ *  each desk's Inbox loses its top-level empty notebooks and documents
+ *  with only a first line. They go to their desk's Trash rather than
+ *  away for good — a one-line note is still somebody's line — with one
+ *  tree save for the lot. The CARDS notebook stays (it is the Inbox's
+ *  own), as does anything inside a folder or project there. Primary
+ *  window only: a second window booting must not clear a document the
+ *  first one has just made. */
+export async function clearEmptyInboxItems(state) {
+  if (state.settings?.autoClearEmptyInbox === false || state.isSecondaryWindow) return;
+  const bodies = new Map((state.files || []).map((f) => [f.id, f.content]));
+  const docs = [];
+  const notebooks = [];
+  for (const desk of state.fileTree || []) {
+    if (desk?.type !== "desk") continue;
+    const inbox = (desk.children || []).find((c) => c.id === `__inbox__:${desk.id}`);
+    for (const node of inbox?.children || []) {
+      if (!node.fileId || isCardsHome(node)) continue;
+      if (node.type === "document" && hasOnlyFirstLine(bodies.get(node.fileId))) docs.push({ node, desk });
+      else if (node.type === "notebook") notebooks.push({ node, desk });
+    }
+  }
+  let empty = new Set();
+  if (notebooks.length && IS_TAURI) {
+    try { empty = new Set(await tauriInvoke("notebooks_empty", { ids: notebooks.map((n) => n.node.fileId) })); }
+    catch (e) { console.warn("notebooks_empty failed:", e); }
+  }
+  const doomed = [...docs, ...notebooks.filter((n) => empty.has(n.node.fileId))];
+  if (!doomed.length) return;
+  for (const { node, desk } of doomed) {
+    const removed = removeNode(state.fileTree, node.id);
+    const trash = (desk.children || []).find((c) => c.id === `__trash__:${desk.id}`);
+    if (removed && trash) (trash.children || (trash.children = [])).push(removed);
+  }
+  try { await state.saveFileTree(); } catch (_) {}
+  const { logActivity } = await import("../activity-log.js");
+  logActivity("desks", "info", `Cleared ${doomed.length} empty Inbox item${doomed.length === 1 ? "" : "s"} to Trash`,
+    { names: doomed.map((d) => d.node.name) });
 }

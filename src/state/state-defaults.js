@@ -129,6 +129,9 @@ export function createDefaultSettings() {
     // The desk Write Now switches to; null stays on the desk in front
     // (see src/write-now/write-now.js).
     writeNowDeskId: null,
+    // At launch, delete empty Inbox items — empty notebooks, documents
+    // with only a first line (src/state/empty-untitled.js).
+    autoClearEmptyInbox: true,
     // When each desk and file was last opened on this device:
     // `{ desks: { [deskId]: ms }, files: { [fileId]: ms } }`. Orders the
     // home screen widgets' recents (see src/widgets/). Per-device.

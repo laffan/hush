@@ -122,5 +122,16 @@ export async function bootAppState(IS_TAURI) {
     installIOSChromeRepaint(state); // display-change half of the same repaint
   });
 
+  // Archive tidying (month / year folders) — primary window only, so a
+  // window holding an older tree never moves files on its own say-so.
+  // Detached: nothing at boot waits on it.
+  if (!state.isSecondaryWindow) {
+    const tidy = () => import("./state/archive-groups.js")
+      .then((m) => m.tidyArchives(state))
+      .catch((e) => logActivity("desks", "warn", "Archive tidying failed", { error: String(e) }));
+    setTimeout(tidy, 4000);
+    setInterval(tidy, 6 * 60 * 60 * 1000);
+  }
+
   return state;
 }

@@ -258,3 +258,49 @@ pub fn create_stack(state: State<AppState>, name: String, parent_id: Option<Stri
 pub fn load_project_content(state: State<AppState>, project_id: String) -> Result<Vec<FileEntry>, String> {
     state.file_manager.lock().unwrap().load_project_content(&project_id).map_err(|e| e.to_string())
 }
+
+/// Of the given notebook fileIds, the ones holding nothing — no shapes
+/// and no flowchart edges. Reads each `.hushnote`'s `data.json` only,
+/// never its images, so asking about a large notebook stays cheap. A
+/// notebook that can't be read is never reported empty. Used by the
+/// boot-time Inbox clearing (src/state/empty-untitled.js).
+#[tauri::command]
+pub async fn notebooks_empty(ids: Vec<String>) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = crate::desk_store::DeskStore::new(&crate::get_data_dir());
+        ids.into_iter()
+            .filter(|id| {
+                let Some((desk_id, rel)) = store.locate(id) else { return false };
+                let Ok(bytes) = std::fs::read(store.abs_path(&desk_id, &rel)) else { return false };
+                let Ok(data) = crate::hushnote::read_data_json(&bytes) else { return false };
+                notebook_data_is_empty(&data)
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+fn notebook_data_is_empty(data: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(data) else { return false };
+    // Legacy notebooks are a bare array of shapes.
+    if let Some(arr) = v.as_array() {
+        return arr.is_empty();
+    }
+    let empty = |key: &str| v.get(key).and_then(|x| x.as_array()).is_none_or(|a| a.is_empty());
+    v.is_object() && empty("shapes") && empty("flowEdges")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::notebook_data_is_empty;
+
+    #[test]
+    fn an_empty_notebook_is_one_with_no_shapes_and_no_edges() {
+        assert!(notebook_data_is_empty(r#"{"shapes":[],"layers":[{"id":"l"}]}"#));
+        assert!(notebook_data_is_empty("[]"));
+        assert!(!notebook_data_is_empty(r#"{"shapes":[{"id":"s"}]}"#));
+        assert!(!notebook_data_is_empty(r#"{"shapes":[],"flowEdges":[{"id":"e"}]}"#));
+        assert!(!notebook_data_is_empty("not json"));
+    }
+}

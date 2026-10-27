@@ -168,6 +168,10 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
     ];
   }
   if (isTrashId(nodeId)) return [{ action: "empty-trash", label: "Empty Trash" }];
+  if (isArchiveId(nodeId)) return [{ action: "export-archive", label: "Export Archive" }];
+  // The Archive's month and year folders belong to its tidying
+  // (state/archive-groups.js), which names, fills and removes them.
+  if (item?.archiveGroup) return [];
   if (item?.syncFolderId && item.type === "folder") return [];
 
   if (inTrash) {
@@ -450,7 +454,8 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
   // Color palette — last row of the menu for all non-trash nodes
   // (skipped for trashed items too — their menu is just destructive
   // actions, coloring them adds noise)
-  if (node && !isTrashId(nodeId) && !flagOnly && !state.isInTrash(nodeId)) {
+  // The Archive's menu is Export Archive alone.
+  if (node && !isTrashId(nodeId) && !isArchiveId(nodeId) && !flagOnly && !state.isInTrash(nodeId)) {
     menu.appendChild(createColorPalette(node.bgColor || null, (colorKey) => {
       closeRowMenu();
       dispatchRowAction("set-color", nodeId, { colorKey });

@@ -680,6 +680,11 @@ pub struct AppSettings {
     // stays on the desk in front. See src/write-now/write-now.js.
     #[serde(default)]
     pub write_now_desk_id: Option<String>,
+    // Settings → General: at launch, delete Inbox items that hold nothing
+    // — empty notebooks, documents with no more than a first line. See
+    // src/state/empty-untitled.js#clearEmptyInboxItems.
+    #[serde(default = "default_true")]
+    pub auto_clear_empty_inbox: bool,
 
     // When each desk and file was last opened on this device —
     // `{ desks: { id: ms }, files: { id: ms } }` — which orders the home
@@ -927,6 +932,7 @@ impl Default for AppSettings {
             edge_lights: serde_json::Value::Null,
             edge_lights_presets: serde_json::json!([]),
             write_now_desk_id: None,
+            auto_clear_empty_inbox: true,
             recent_activity: serde_json::Value::Null,
             you_are_here: serde_json::json!({}),
             panes_hidden_by_context: serde_json::json!({}),

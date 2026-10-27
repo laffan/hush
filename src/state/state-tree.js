@@ -456,6 +456,9 @@ export async function archiveTreeNode(state, nodeId) {
   // the newcomer suffixed rather than overwritten.
   removed.name = uniqueChildName(archive, removed.name, removed.type, removed.id);
   (archive.children || (archive.children = [])).unshift(removed);
+  // An old item goes straight to its month or year folder.
+  const { tidyArchiveNode } = await import("./archive-groups.js");
+  tidyArchiveNode(archive, new Map((state.files || []).map((f) => [f.id, f.modified])));
   await state.saveFileTree();
   state.emit("files-changed");
 }

@@ -127,4 +127,10 @@ pub struct TreeNode {
     // it, after which skip_serializing_if drops the key from disk).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pinned: bool,
+    // Folder-only — a folder the Archive's tidying made and owns
+    // (src/sidebar/archive-groups.js): "month" ("09 - September") or
+    // "year" ("2025"). Only these are reshuffled or removed when empty;
+    // a folder the user made is an item like any other.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archive_group: Option<String>,
 }

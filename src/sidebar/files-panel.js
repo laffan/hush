@@ -147,6 +147,8 @@ export function createFilesPanel(container, state, hidePanel) {
       // In the all-desks view, desk rows are reorderable; everywhere else
       // the desk container itself stays put.
       if (item.type === "desk") return isAllDesksMode(state);
+      // The Archive's month / year folders stay where its tidying puts them.
+      if (item.archiveGroup) return false;
       return !isAnySpecialId(item.id);
     },
     // Multi-drag: if the dragged row belongs to a multi-selection, return
@@ -487,6 +489,8 @@ function dispatchRowAction(action, nodeId, opts) {
     if (node?.fileId) {
       import("../pdf/pdf-proofread.js").then((m) => m.createProofNotebook(storedState, node.fileId));
     }
+  } else if (action === "export-archive") {
+    import("./archive-export.js").then((m) => m.exportArchive(storedState, nodeId));
   } else if (action === "archive") {
     import("../state/state-tree.js").then((m) => m.archiveTreeNode(storedState, nodeId)).then(refresh);
   } else if (action === "new-stack-here") {

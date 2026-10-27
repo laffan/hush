@@ -414,6 +414,16 @@ pub fn desk_archive_bytes(file: String) -> Result<Vec<u8>, String> {
     store().read_archive(&file).map_err(|e| e.to_string())
 }
 
+/// The desk's Archive folder zipped, for Export Archive — raw bytes, so a
+/// large archive doesn't cross IPC as a JSON number array.
+#[tauri::command]
+pub async fn desk_archive_folder_zip(desk_id: String) -> Result<tauri::ipc::Response, String> {
+    tauri::async_runtime::spawn_blocking(move || store().archive_folder_zip(&desk_id).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| e.to_string())?
+        .map(tauri::ipc::Response::new)
+}
+
 // ===== Desk recovery snapshots =====
 // Rolling automatic snapshots of local desks (see desk_recovery.rs). The
 // scheduler runs in Rust; these commands are the surface for the
