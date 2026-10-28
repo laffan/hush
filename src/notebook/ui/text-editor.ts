@@ -264,7 +264,18 @@ export function createTextEditor(state: DrawingState): HTMLElement {
     if (key === "k") { e.preventDefault(); applyTextareaLink(textarea, state); return; }
   });
 
+  // Which editing session the textarea is serving — bumped each time one
+  // opens. A blur's deferred commit belongs to the session it blurred:
+  // the last box's blur used to land 150 ms later on whatever session
+  // was open by then, so a double-click that opened a new box straight
+  // after leaving one had it closed under the user's first keystrokes,
+  // and the letters fell through to the canvas as tool shortcuts (S for
+  // Split, G for Grab).
+  let session = 0;
+  let wasEditing = false;
+
   textarea.addEventListener("blur", () => {
+    const blurred = session;
     // Defer for the same 150 ms the commit timer uses; popup row clicks
     // also fire mousedown-preventDefault, but the blur still races.
     setTimeout(() => {
@@ -273,7 +284,8 @@ export function createTextEditor(state: DrawingState): HTMLElement {
       closeWikilinkPopup();
     }, 0);
     setTimeout(() => {
-      if (!state.editingText) return;
+      if (!state.editingText || session !== blurred) return;
+      if (document.activeElement === textarea) return;
       if (commitSuspended) return;
       state.endEditingText();
     }, 150);
@@ -306,6 +318,10 @@ export function createTextEditor(state: DrawingState): HTMLElement {
   };
 
   function update() {
+    if (!!state.editingText !== wasEditing) {
+      wasEditing = !!state.editingText;
+      if (wasEditing) session++;
+    }
     if (!state.editingText) {
       textarea.style.display = "none";
       if (_activeNotebookTextEditor === handle) setActiveHandle(null);

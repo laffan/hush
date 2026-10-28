@@ -798,6 +798,20 @@ export class NotesCanvas {
       this.state.notify("theme");
     };
     queueMicrotask(syncShelfRightInset);
+    // Start from the docks already there. They only announce themselves
+    // when they change, so a notebook opened onto panes docked earlier —
+    // a document's own docked panes, waking with it — laid its toolbar
+    // out as if it had the window to itself until the next dock change.
+    const seedDocks = () => {
+      const css = getComputedStyle(document.documentElement);
+      const px = (name: string) => parseFloat(css.getPropertyValue(name)) || 0;
+      onDockChanged(new CustomEvent("pane-dock-changed", { detail: {
+        leftWidth: px("--pane-dock-left-width"), rightWidth: px("--pane-dock-right-width"),
+        topHeight: px("--pane-dock-top-height"), bottomHeight: px("--pane-dock-bottom-height"),
+      } }));
+    };
+    seedDocks();
+    requestAnimationFrame(seedDocks);
     const onShelfMutate = () => { syncShelfRightInset(); trackShelfInsetDuringTransition(); };
     const shelfObs = new MutationObserver(onShelfMutate);
     shelfObs.observe(this._shelfPanel, { attributes: true, attributeFilter: ["style", "class"] });

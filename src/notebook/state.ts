@@ -1559,11 +1559,20 @@ export class DrawingState extends EventTarget {
   updateEditingText(text: string) {
     if (!this.editingText) return;
     this.editingText = { ...this.editingText, text };
-    const id = this.editingText.shapeId;
+    const editing = this.editingText;
+    const id = editing.shapeId;
     if (id) {
-      this.shapes = this.shapes.map((s) =>
-        s.id === id && s.type === "text" ? { ...s, text } : s,
-      );
+      // The width too, fitted the way `commitText` will fit it: the box
+      // is as wide as the text's widest line, up to the editor's width.
+      // Mirroring the text alone left the shape at its old width while
+      // the editor wrapped at its wider one, so the box round the text
+      // grew taller as the user typed instead of wider.
+      this.shapes = this.shapes.map((s) => {
+        if (s.id !== id || s.type !== "text") return s;
+        if (s.manualWidth || s.outline || !editing.width) return { ...s, text };
+        const width = autoFitWidth(text.trim() || text, s.fontSize, editing.width, s.fontFamily || this.fontFamily);
+        return { ...s, text, width };
+      });
       this.notify("shapes");
     }
     this.notify("editingText");

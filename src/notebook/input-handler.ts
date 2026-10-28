@@ -320,7 +320,16 @@ export function bindInputEvents(
     if (document.body.classList.contains("desktop-active")
       && !ownPane && !canvas.closest(".desktop-view")) return;
     if (state.editingText) {
-      if (e.key === "Escape") { state.endEditingText(); }
+      if (e.key === "Escape") { state.endEditingText(); return; }
+      // The box takes the focus a moment after it opens; a key typed in
+      // that moment is the first letter of what goes in it. Focusing the
+      // box now sends the character there instead of dropping it.
+      const ed = (window as unknown as { __activeNotebookTextEditor?: { state: unknown; textarea: HTMLTextAreaElement } })
+        .__activeNotebookTextEditor;
+      if (ed && ed.state === state && document.activeElement !== ed.textarea
+        && e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
+        ed.textarea.focus();
+      }
       return;
     }
     // Esc exits reorder mode at any time — checked before the
