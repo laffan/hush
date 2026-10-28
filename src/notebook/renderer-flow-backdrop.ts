@@ -29,6 +29,11 @@ const BACKDROP_ALPHA = 0.85;
  *  at its parent's edge, and a wide pad would eat the start of it. */
 const BACKDROP_PAD = 3;
 const BACKDROP_RADIUS = 4;
+/** A chart node's backdrop also takes a hairline in the text colour at
+ *  this strength, so a node reads as a box even on a canvas whose colour
+ *  the backdrop matches. */
+const NODE_BORDER_ALPHA = 0.22;
+const NODE_BORDER_WIDTH = 1;
 
 /** A text shape's bounds, measured once per shape object. Shapes are
  *  immutable (README-NOTEBOOK's load-bearing invariant), so an edit is a
@@ -75,6 +80,13 @@ export function flowBackdropIds(
   if (!flowchart || flowchart.edges.length === 0) return ids;
   const paths = flowchart.edgePolylines(shapes);
   if (!paths.length) return ids;
+  // The layer hands back the same polylines while the chart is
+  // unchanged (a pan, a zoom, a hover), and with the same shapes the
+  // answer is the same — reuse it rather than re-clipping every path
+  // against every text box each frame.
+  const memo = idsMemo.get(paths);
+  if (memo && memo.ff === fontFamily && memo.shapes.length === shapes.length
+    && memo.shapes.every((s, i) => s === shapes[i])) return memo.ids;
 
   const boxes = paths.map(({ edge, points }) => {
     ids.add(edge.from);
@@ -102,27 +114,47 @@ export function flowBackdropIds(
       if (crossed) { ids.add(s.id); break; }
     }
   }
+  idsMemo.set(paths, { ff: fontFamily, shapes: shapes.slice(), ids });
   return ids;
 }
 
-/** Lay the backdrop under one text shape, in world space. */
+const idsMemo = new WeakMap<object, { ff: string; shapes: Shape[]; ids: Set<string> }>();
+
+/** The ids of the shapes at either end of an edge — a chart's nodes. */
+export function flowNodeIds(flowchart: FlowchartLayer<Shape> | undefined | null): Set<string> {
+  const ids = new Set<string>();
+  for (const e of flowchart?.edges || []) { ids.add(e.from); ids.add(e.to); }
+  return ids;
+}
+
+/** Lay the backdrop under one text shape, in world space — with a subtle
+ *  border in `borderColor` when it is given (a chart's own nodes; text an
+ *  arrow merely crosses gets the backdrop alone). */
 export function drawTextBackdrop(
   ctx: CanvasRenderingContext2D,
   shape: TextShape,
   fontFamily: string,
   color: string,
+  borderColor?: string | null,
 ): void {
   if (shape.outline || shape.backgroundColor) return;
   const b = boundsOf(shape, fontFamily);
   ctx.save();
-  ctx.globalAlpha *= BACKDROP_ALPHA;
-  ctx.fillStyle = color;
   ctx.beginPath();
   (ctx as any).roundRect(
     b.minX - BACKDROP_PAD, b.minY - BACKDROP_PAD,
     b.maxX - b.minX + BACKDROP_PAD * 2, b.maxY - b.minY + BACKDROP_PAD * 2,
     BACKDROP_RADIUS,
   );
+  const alpha = ctx.globalAlpha;
+  ctx.globalAlpha = alpha * BACKDROP_ALPHA;
+  ctx.fillStyle = color;
   ctx.fill();
+  if (borderColor) {
+    ctx.globalAlpha = alpha * NODE_BORDER_ALPHA;
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = NODE_BORDER_WIDTH;
+    ctx.stroke();
+  }
   ctx.restore();
 }

@@ -297,6 +297,8 @@ export class DrawingState extends EventTarget {
     // group, pointing at one stray stroke instead of the cluster.
     getBounds: (s) => this.unionGroupBounds(s),
     getLayoutBounds: (s) => this.unionGroupBounds(s),
+    // Text bounds depend on the canvas font as well as the shape.
+    boundsKey: () => this.fontFamily,
     // Shapes on a hidden or locked layer are not flowable: the lock
     // exists so the pointer can't reach them, and a chart connection is
     // reached entirely by pointer. This is what keeps `findDropTarget`

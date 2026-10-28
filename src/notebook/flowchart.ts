@@ -83,10 +83,15 @@ export interface FlowchartConfig<S extends FlowNode> {
   /** How to choose which edges of the parent + child the arrow connects.
    *  Defaults to "closest". */
   connectMode?: FlowConnectMode;
+  /** Anything outside the nodes that `getBounds` depends on (the host's
+   *  font, say). The edge geometry is reused while the nodes, the edges
+   *  and this value are unchanged — see `layout`. */
+  boundsKey?: () => unknown;
 }
 
 interface ResolvedConfig<S extends FlowNode> {
   getBounds: (node: S) => FlowBounds;
+  boundsKey: () => unknown;
   getLayoutBounds: (node: S) => FlowBounds;
   isFlowable: (node: S) => boolean;
   gapX: number;
@@ -100,6 +105,18 @@ interface ResolvedConfig<S extends FlowNode> {
   connectMode: FlowConnectMode;
 }
 
+/** One cached layout — see `FlowchartLayer#layout`. */
+interface LayoutMemo<S> {
+  shapes: S[];
+  edges: FlowEdge[];
+  ends: string[];
+  key: unknown;
+  mode: FlowConnectMode;
+  width: number;
+  geoms: Map<string, EdgeGeometry | null>;
+  polylines?: { edge: FlowEdge; points: Pt[] }[];
+}
+
 export class FlowchartLayer<S extends FlowNode> {
   edges: FlowEdge[] = [];
   private cfg: ResolvedConfig<S>;
@@ -107,6 +124,7 @@ export class FlowchartLayer<S extends FlowNode> {
   constructor(config: FlowchartConfig<S>) {
     this.cfg = {
       getBounds: config.getBounds,
+      boundsKey: config.boundsKey ?? (() => null),
       getLayoutBounds: config.getLayoutBounds ?? config.getBounds,
       isFlowable: config.isFlowable ?? (() => true),
       gapX: config.gapX ?? 60,
@@ -229,12 +247,52 @@ export class FlowchartLayer<S extends FlowNode> {
     edgeId: string,
     shapes: S[],
   ): { x: number; y: number } | null {
-    const e = this.edges.find((e) => e.id === edgeId);
-    if (!e) return null;
+    const geom = this.layout(shapes).geoms.get(edgeId);
+    return geom ? bezier(geom, 0.5) : null;
+  }
+
+  // --- Geometry memo ---
+
+  /**
+   * Every edge's placed geometry for this set of nodes, worked out once
+   * and reused while nothing it depends on has changed: the same node
+   * objects in the same order (shapes are immutable, so an edit is a new
+   * object — README-NOTEBOOK), the same edges, the same routing, and the
+   * host's `boundsKey`. Without it each frame measured every node's text
+   * several times per edge — and the delete dots asked for one edge's
+   * midpoint at a time, each ask laying out the whole chart again, which
+   * made a pan quadratic in the number of edges: 50 nodes cost 150 ms a
+   * frame on a desktop, far worse on an iPad. Two entries, because the
+   * renderer asks with two lists (all shapes, and the unpocketed ones).
+   */
+  private _memos: LayoutMemo<S>[] = [];
+
+  private layout(shapes: S[]): LayoutMemo<S> {
+    const key = this.cfg.boundsKey();
+    const fresh = (m: LayoutMemo<S>) => {
+      if (m.key !== key || m.mode !== this.cfg.connectMode || m.width !== this.cfg.arrowWidth) return false;
+      if (m.shapes.length !== shapes.length || m.edges.length !== this.edges.length) return false;
+      for (let i = 0; i < shapes.length; i++) if (m.shapes[i] !== shapes[i]) return false;
+      for (let i = 0; i < this.edges.length; i++) {
+        const e = this.edges[i];
+        if (m.edges[i] !== e || m.ends[i] !== e.from + "\u0000" + e.to) return false;
+      }
+      return true;
+    };
+    const hit = this._memos.find(fresh);
+    if (hit) return hit;
     const byId = new Map<string, S>();
     for (const s of shapes) byId.set(s.id, s);
-    const geom = this.placedGeometry(e, byId, this.edgeOffsets(byId));
-    return geom ? bezier(geom, 0.5) : null;
+    const offsets = this.edgeOffsets(byId);
+    const geoms = new Map<string, EdgeGeometry | null>();
+    for (const e of this.edges) geoms.set(e.id, this.placedGeometry(e, byId, offsets));
+    const memo: LayoutMemo<S> = {
+      shapes: shapes.slice(), edges: this.edges.slice(),
+      ends: this.edges.map((e) => e.from + "\u0000" + e.to), key,
+      mode: this.cfg.connectMode, width: this.cfg.arrowWidth, geoms,
+    };
+    this._memos = [memo, ...this._memos].slice(0, 2);
+    return memo;
   }
 
   // --- Drop logic ---
@@ -554,18 +612,20 @@ export class FlowchartLayer<S extends FlowNode> {
    */
   edgePolylines(shapes: S[], samples = 16): { edge: FlowEdge; points: Pt[] }[] {
     if (this.edges.length === 0) return [];
-    const byId = new Map<string, S>();
-    for (const s of shapes) byId.set(s.id, s);
-    const offsets = this.edgeOffsets(byId);
+    const memo = this.layout(shapes);
+    // The same array back while the chart is unchanged, so a host can
+    // memoize what it derives from it by identity.
+    if (memo.polylines && samples === 16) return memo.polylines;
     const out: { edge: FlowEdge; points: Pt[] }[] = [];
     for (const e of this.edges) {
-      const g = this.placedGeometry(e, byId, offsets);
+      const g = memo.geoms.get(e.id);
       if (!g) continue;
       const points: Pt[] = [];
       for (let i = 0; i <= samples; i++) points.push(bezier(g, i / samples));
       points.push({ x: g.tip.x, y: g.tip.y });
       out.push({ edge: e, points });
     }
+    if (samples === 16) memo.polylines = out;
     return out;
   }
 
@@ -576,8 +636,6 @@ export class FlowchartLayer<S extends FlowNode> {
    */
   draw(ctx: CanvasRenderingContext2D, shapes: S[]): void {
     if (this.edges.length === 0) return;
-    const byId = new Map<string, S>();
-    for (const s of shapes) byId.set(s.id, s);
 
     ctx.save();
     ctx.strokeStyle = this.cfg.arrowColor;
@@ -587,9 +645,9 @@ export class FlowchartLayer<S extends FlowNode> {
     ctx.lineJoin = "round";
 
     const ah = this.cfg.arrowHeadSize;
-    const offsets = this.edgeOffsets(byId);
+    const { geoms } = this.layout(shapes);
     for (const e of this.edges) {
-      const g = this.placedGeometry(e, byId, offsets);
+      const g = geoms.get(e.id);
       if (!g) continue;
 
       // Bezier from parent edge to base of arrowhead.

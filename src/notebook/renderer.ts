@@ -15,7 +15,7 @@ import type { BackgroundImageConfig } from "./renderer-background";
 import { drawSplitChrome } from "./renderer-splits";
 import type { SplitRenderState } from "./renderer-splits";
 import type { FlowchartLayer } from "./flowchart";
-import { flowBackdropIds, drawTextBackdrop } from "./renderer-flow-backdrop";
+import { flowBackdropIds, drawTextBackdrop, flowNodeIds } from "./renderer-flow-backdrop";
 
 export interface RenderState {
   shapes: Shape[];
@@ -250,6 +250,9 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     ? flowBackdropIds(state.flowchart, shapes.filter((s) => !pocketedIds.has(s.id)), state.fontFamily)
     : null;
   const backdropColor = canvasBackgroundOverride || theme.canvasBackground;
+  // A chart's own nodes also take a faint border (renderer-flow-backdrop.ts).
+  const nodeIds = backdropIds?.size ? flowNodeIds(state.flowchart) : null;
+  const borderFor = (id: string) => (nodeIds?.has(id) ? theme.foreground : null);
 
   // File thumbnails that temporarily float above their neighbours: the
   // selected ones (so a picked-up thumbnail is never buried mid-drag)
@@ -293,7 +296,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       if (shape.id === editingShapeId) {
         // The inline editor draws the words; the backdrop still belongs
         // under them, or an arrow runs through the text being typed.
-        if (shape.type === "text" && backdropIds?.has(shape.id)) drawTextBackdrop(ctx, shape, state.fontFamily, backdropColor);
+        if (shape.type === "text" && backdropIds?.has(shape.id)) drawTextBackdrop(ctx, shape, state.fontFamily, backdropColor, borderFor(shape.id));
         return;
       }
       if (shape.type === "draw") return; // drawing layer owns strokes
@@ -307,7 +310,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       if (shape.type === "text" && shape.outline && state.outlinesAsDom) return;
       if (shape.type === "text" && shape.outline) drawOutlineShape(ctx, shape, theme, false, state.flagColors);
       else if (shape.type === "text") {
-        if (backdropIds?.has(shape.id)) drawTextBackdrop(ctx, shape, state.fontFamily, backdropColor);
+        if (backdropIds?.has(shape.id)) drawTextBackdrop(ctx, shape, state.fontFamily, backdropColor, borderFor(shape.id));
         recordHighlights = true;
         drawTextShape(ctx, shape, theme, state.fontFamily, false, state.flagColors);
         recordHighlights = false;

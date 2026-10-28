@@ -4,7 +4,7 @@ import type { FlowchartLayer } from "./flowchart";
 import { drawBackground } from "./renderer-background";
 import { drawDragArea, drawTextShape, drawImageShape, drawOutlineShape } from "./renderer";
 import { drawCardShape } from "./renderer-card";
-import { flowBackdropIds, drawTextBackdrop } from "./renderer-flow-backdrop";
+import { flowBackdropIds, drawTextBackdrop, flowNodeIds } from "./renderer-flow-backdrop";
 
 /** Paint shapes + (optional) background into an arbitrary ctx at an
  *  arbitrary camera. Skips every piece of editor chrome — selection
@@ -90,6 +90,7 @@ export function renderForExport(
     ? flowBackdropIds(flowchart, shapes.filter((s) => !s.pocketed), fontFamily)
     : null;
   const backdropColor = canvasBackgroundOverride || theme.canvasBackground;
+  const nodeIds = backdropIds?.size ? flowNodeIds(flowchart) : null;
 
   for (const layer of layerOrder) {
     if (layer.hidden) continue;
@@ -104,7 +105,7 @@ export function renderForExport(
       if (shape.type === "text" && shape.card) drawCardShape(ctx, shape, theme, omitTextGlyphs, flagColors);
       else if (shape.type === "text" && shape.outline) drawOutlineShape(ctx, shape, theme, omitTextGlyphs, flagColors);
       else if (shape.type === "text") {
-        if (backdropIds?.has(shape.id)) drawTextBackdrop(ctx, shape, fontFamily, backdropColor);
+        if (backdropIds?.has(shape.id)) drawTextBackdrop(ctx, shape, fontFamily, backdropColor, nodeIds?.has(shape.id) ? theme.foreground : null);
         drawTextShape(ctx, shape, theme, fontFamily, omitTextGlyphs, flagColors);
       }
       else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, false, theme);
