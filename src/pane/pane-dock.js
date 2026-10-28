@@ -59,12 +59,15 @@ export function dockPane(pane, edge) {
   // user hasn't sized this dock yet — keeps the editor + a docked
   // reference roughly balanced rather than the docked pane crowding
   // everything out. Width-axis for left/right, height-axis for top/bottom.
+  // Half of what the docks already there leave, so a second column
+  // splits the remaining width rather than claiming half the window.
   if (!pane.dockUserSize) {
+    const others = collectDockFootprints(pane, edge === "left" || edge === "right" ? "horizontal" : "vertical");
     if (edge === "left" || edge === "right") {
-      const visW = computeVisibleWidth();
+      const visW = computeVisibleWidth() - others.left - others.right;
       pane.dockUserSize = Math.max(MIN_WIDTH, Math.min(visW * 0.5, visW - DOCK_MIN_FREE));
     } else {
-      const visH = computeVisibleHeight();
+      const visH = computeVisibleHeight() - others.top - others.bottom;
       pane.dockUserSize = Math.max(MIN_HEIGHT, Math.min(visH * 0.5, visH - DOCK_MIN_FREE));
     }
   }
@@ -138,34 +141,36 @@ export function applyDockGeometry(pane) {
   const visW = Math.max(0, winW - leftInset - rightInset);
   const visH = Math.max(0, winH - topInset - bottomInset);
 
-  // Top/bottom docks sit inboard of any left/right dock so the two
-  // axes carve mutually-exclusive territory and never overlap. Compute
-  // the cross-axis insets after collecting the perpendicular dock
-  // footprints so a top-dock spans only the editor width that's free.
+  // Columns win over rows: a left or right dock runs the full height of
+  // the window, and a top or bottom dock spans only the width between
+  // them — the host document's width. The two axes still carve
+  // mutually-exclusive territory, and no corner is left as dead space
+  // between a column and a row that both stopped short of it.
   const horizDock = collectDockFootprints(pane, "horizontal");
   const vertDock = collectDockFootprints(pane, "vertical");
 
   switch (pane.dockEdge) {
     case "left": {
-      const w = Math.max(MIN_WIDTH, Math.min(visW - DOCK_MIN_FREE, pane.dockUserSize || (visW * 0.5)));
+      // Clamped against the opposite column too, so the two can't meet.
+      const w = Math.max(MIN_WIDTH, Math.min(visW - DOCK_MIN_FREE - horizDock.right, pane.dockUserSize || (visW * 0.5)));
       pane.dockUserSize = w;
       pane.x = leftInset;
-      pane.y = topInset + vertDock.top;
+      pane.y = topInset;
       pane.width = w;
-      pane.height = Math.max(MIN_HEIGHT, winH - topInset - bottomInset - vertDock.top - vertDock.bottom);
+      pane.height = Math.max(MIN_HEIGHT, winH - topInset - bottomInset);
       break;
     }
     case "right": {
-      const w = Math.max(MIN_WIDTH, Math.min(visW - DOCK_MIN_FREE, pane.dockUserSize || (visW * 0.5)));
+      const w = Math.max(MIN_WIDTH, Math.min(visW - DOCK_MIN_FREE - horizDock.left, pane.dockUserSize || (visW * 0.5)));
       pane.dockUserSize = w;
       pane.x = winW - w - rightInset;
-      pane.y = topInset + vertDock.top;
+      pane.y = topInset;
       pane.width = w;
-      pane.height = Math.max(MIN_HEIGHT, winH - topInset - bottomInset - vertDock.top - vertDock.bottom);
+      pane.height = Math.max(MIN_HEIGHT, winH - topInset - bottomInset);
       break;
     }
     case "top": {
-      const h = Math.max(MIN_HEIGHT, Math.min(visH - DOCK_MIN_FREE, pane.dockUserSize || (visH * 0.5)));
+      const h = Math.max(MIN_HEIGHT, Math.min(visH - DOCK_MIN_FREE - vertDock.bottom, pane.dockUserSize || (visH * 0.5)));
       pane.dockUserSize = h;
       pane.x = leftInset + horizDock.left;
       pane.y = topInset;
@@ -174,7 +179,7 @@ export function applyDockGeometry(pane) {
       break;
     }
     case "bottom": {
-      const h = Math.max(MIN_HEIGHT, Math.min(visH - DOCK_MIN_FREE, pane.dockUserSize || (visH * 0.5)));
+      const h = Math.max(MIN_HEIGHT, Math.min(visH - DOCK_MIN_FREE - vertDock.top, pane.dockUserSize || (visH * 0.5)));
       pane.dockUserSize = h;
       pane.x = leftInset + horizDock.left;
       pane.y = winH - h - bottomInset;

@@ -297,8 +297,10 @@
    have a canvas child (notebook panes) but not PDF viewers. Cards and
    outlines are content too: on screen they are DOM laid over the canvas,
    which paints neither, so hiding their layers emptied a CARDS notebook
-   the moment its pane lost focus. */
-.floating-pane:not(.active) .floating-pane-content:has(canvas):not(:has(.pdf-viewer)) > :not(canvas):not(.notebook-drawing-wrapper):not(.nb-card-layer):not(.nb-outline-layer) {
+   the moment its pane lost focus. A stack is neither: a notebook column
+   puts a canvas inside it, and the rule hid the whole stack whenever its
+   pane went inactive — the pointer leaving a docked stack was enough. */
+.floating-pane:not(.active) .floating-pane-content:has(canvas):not(:has(.pdf-viewer)):not(:has(.stack-root)) > :not(canvas):not(.notebook-drawing-wrapper):not(.nb-card-layer):not(.nb-outline-layer) {
   visibility: hidden;
 }
 
