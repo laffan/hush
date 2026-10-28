@@ -10,14 +10,13 @@ import { isMidnightActive } from "./midnight-mode.js";
 import { setMidnightMode } from "./midnight-controller.js";
 import { MIDNIGHT_ICON } from "./midnight-icon.js";
 
-/** The rows pinned above everything else in the palette. They carry no
- *  section, which `groupBySection` puts first and draws without a header,
- *  and they stay out of the Recent list (`pinned`). Empty unless midnight
- *  mode is on. */
+/** Midnight's row in the palette's pinned "Active Modes" group, first in
+ *  it, with the other running modes' turn-offs; it stays out of the
+ *  Recent list (`pinned`). Empty unless midnight mode is on. */
 export function buildPinnedCommands(state) {
   if (!isMidnightActive(state.settings)) return [];
   return [{
-    id: "midnight-deactivate", section: null, pinned: true, label: "Deactivate Midnight mode",
+    id: "midnight-deactivate", section: "Active Modes", pinned: true, label: "Deactivate Midnight mode",
     keywords: "midnight turn off end dark night appearance", icon: MIDNIGHT_ICON, shortcutKey: null, ctx: "shared",
     action: (s) => { void setMidnightMode(s, false); },
   }];

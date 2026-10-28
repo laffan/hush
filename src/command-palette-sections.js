@@ -17,8 +17,11 @@
  *  first-seen order, which keeps a new section visible rather than
  *  silently dropping it. */
 export const SECTION_ORDER = [
-  "Recent",
+  // The way out of whatever is running — Edge Lights, Campfire Cursor,
+  // Ratchet, a timer, Zen, Midnight… — is pinned first, above Recent,
+  // with or without a search (renderList groups the filtered rows too).
   "Active Modes",
+  "Recent",
   "Create",
   "Open",
   "Document",

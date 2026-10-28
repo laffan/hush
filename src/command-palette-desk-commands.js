@@ -13,7 +13,7 @@ import { getDeskRatchet, setDeskShowName } from "./state/state-desks.js";
 import { deskIconName, deskShowsName } from "./ui/custom-icons.js";
 import { toggleDeskRatchet } from "./state/state-modes.js";
 import { getTimer, isTimerRunning, deleteTimer } from "./timer/timer-store.js";
-import { toggleClock } from "./clock/clock-store.js";
+import { toggleClock, getClock } from "./clock/clock-store.js";
 import { hasCardsToSend, sendSurfaceCardsToInbox } from "./cards/card-inbox.js";
 import { hasSelectedCards, copySelectedCards } from "./cards/card-copy.js";
 import { currentProjectNode } from "./progress/progress-data.js";
@@ -35,6 +35,12 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
     // off from a notebook (which the mode never touched anyway).
     { id: "desk-ratchet", section: "Desks", icon: icons.ratchet, shortcutKey: null, ctx: "shared",
       label: getDeskRatchet(state) ? "Stop Desk ratchet mode" : "Start Desk ratchet mode",
+      action: (s) => toggleDeskRatchet(s) },
+    // While it is on, its way out is also pinned with the other running
+    // modes at the top of the palette.
+    { id: "desk-ratchet-off", section: "Active Modes", icon: icons.ratchet, shortcutKey: null, ctx: "shared",
+      label: "Disable Desk Ratchet mode", keywords: "ratchet forward only stop end turn off",
+      hiddenIf: (s) => !getDeskRatchet(s),
       action: (s) => toggleDeskRatchet(s) },
     // The desk switcher — what the Switch desks shortcut (⌃⇧D) opens. Its
     // old name stays searchable, and "open desk" / "go to desk" find it.
@@ -192,14 +198,18 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
       keywords: "focus pomodoro countdown break session clock",
       hiddenIf: (s) => isTimerRunning(s),
       action: async (s) => (await import("./timer/timer-sheet.js")).openTimerSheet(s) },
-    { id: "timer-delete", section: "Active Modes", label: "Delete timer", icon: timerIcon, shortcutKey: null, ctx: "shared",
-      keywords: "stop cancel clear focus pomodoro countdown",
+    { id: "timer-delete", section: "Active Modes", label: "Cancel timer", icon: timerIcon, shortcutKey: null, ctx: "shared",
+      keywords: "turn off delete stop clear focus pomodoro countdown alarm",
       hiddenIf: (s) => !getTimer(s),
       action: (s) => deleteTimer(s) },
     // The wall clock is app-wide, like the timer: the toggle outlives a
     // desk switch (clock/clock-store.js).
     { id: "clock-toggle", section: "View", label: "Toggle clock", icon: clockIcon, shortcutKey: null, ctx: "shared",
       keywords: "wall analog time alarm show hide",
+      action: (s) => toggleClock(s) },
+    { id: "clock-hide", section: "Active Modes", label: "Hide clock", icon: clockIcon, shortcutKey: null, ctx: "shared",
+      keywords: "wall analog time turn off close",
+      hiddenIf: (s) => !getClock(s).visible,
       action: (s) => toggleClock(s) },
     // Words added per day, out of version history — for the project the
     // open document belongs to, or the whole desk (progress/).
