@@ -61,7 +61,7 @@ uniform float u_fade;
 uniform int   u_kind;     // 0 polar, 1 scuba, 2 thrum, 3 thrum dark
 uniform int   u_count;    // colours in use, 2..${MAX_SHADER_COLORS}
 uniform vec3  u_colors[${MAX_SHADER_COLORS}];
-uniform int   u_fill;     // 0 colours, 1 blur mask, 2 animation, 3 frost
+uniform int   u_fill;     // 0 colours, 1 blur's outer mask, 2 animation, 3 frost, 4 blur's core mask
 uniform int   u_anim;     // 0 hyperspace, 1 snow
 uniform float u_psize;    // particle size, a multiple of the first
 uniform int   u_dark;     // 1 on a dark page
@@ -209,11 +209,17 @@ float particles(vec2 px, float t, out float id) {
 // What the pixel becomes, given its colour and how strongly it belongs
 // to the shape (already scaled by opacity and the fade).
 vec4 fillOut(vec3 col, float a, vec2 px, float t) {
-  if (u_fill == 1) return vec4(a, a, a, a);
   // How fully the pixel is in the shape, before opacity; opacity then
   // scales the fill straight down to nothing.
   float k = u_opacity * u_fade;
   float g = k > 0.0 ? clamp(a / k, 0.0, 1.0) : 0.0;
+  // Blur's masks (edge-lights-blur.js): how far into the shape a pixel
+  // is, made mostly solid so the blur reads as a blur rather than the
+  // page faded over a blurred copy — the outer band (1) under a light
+  // blur, the core (4) under the full one. Opacity is the blur's radius,
+  // not the mask's.
+  if (u_fill == 1) { float m = smoothstep(0.02, 0.3, g) * u_fade; return vec4(m); }
+  if (u_fill == 4) { float m = smoothstep(0.3, 0.65, g) * u_fade; return vec4(m); }
   if (u_fill == 2) {
     float id;
     float p = particles(px, t, id);
@@ -222,9 +228,10 @@ vec4 fillOut(vec3 col, float a, vec2 px, float t) {
     return vec4(pc * pa, pa);
   }
   if (u_fill == 3) {
-    // Frost: the shape clouds a little, light on dark and grey on light.
-    float v = 0.16 * g * k;
-    vec3 c = u_dark == 1 ? vec3(1.0) : vec3(0.45);
+    // Frost: a hint of haze, light on dark and grey on light — enough to
+    // show the shape over a blank page, too little to fog the blur.
+    float v = (u_dark == 1 ? 0.08 : 0.05) * g * k;
+    vec3 c = u_dark == 1 ? vec3(1.0) : vec3(0.5);
     return vec4(c * v, v);
   }
   return vec4(col * a, a);

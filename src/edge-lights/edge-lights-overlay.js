@@ -150,10 +150,14 @@ export function mountEdgeLights(options) {
     // surface over it.
     if (distort && now - lastMask >= MASK_MS) {
       lastMask = now;
-      gl.uniform1i(u.u_fill, 1);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
-      distort.setMask(el.toDataURL("image/png"));
+      const masks = [];
+      for (const f of [1, 4]) { // the outer band, then the core
+        gl.uniform1i(u.u_fill, f);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        masks.push(el.toDataURL("image/png"));
+      }
+      distort.setMasks(masks[0], masks[1]);
       gl.uniform1i(u.u_fill, FILL_UNIFORM[opts.fill] ?? 0);
     }
     gl.clear(gl.COLOR_BUFFER_BIT);
