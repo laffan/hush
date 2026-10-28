@@ -83,7 +83,7 @@ const MENU_ICONS = {
 // ("Remove from Project") stay as labeled entries so their meaning
 // isn't lost behind a trash glyph.
 /** The "Add" row: a container's new-file actions as type icons,
- *  right-aligned, with the footer's + beside them. */
+ *  left-aligned, led by the footer's +. */
 const ADD_ROW = {
   "new-doc-here": typeIcons.document,
   "new-notebook-here": typeIcons.notebook,
@@ -413,6 +413,11 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
     const addRow = document.createElement("div");
     addRow.className = "tree-row-menu-icons tree-row-menu-add";
     addRow.setAttribute("aria-label", "Add");
+    const plus = document.createElement("span");
+    plus.className = "tree-row-menu-add-plus";
+    plus.setAttribute("aria-hidden", "true");
+    plus.textContent = "+";
+    addRow.appendChild(plus);
     for (const ent of addEntries) {
       const btn = document.createElement("button");
       btn.type = "button";
@@ -428,11 +433,6 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
       });
       addRow.appendChild(btn);
     }
-    const plus = document.createElement("span");
-    plus.className = "tree-row-menu-add-plus";
-    plus.setAttribute("aria-hidden", "true");
-    plus.textContent = "+";
-    addRow.appendChild(plus);
     menu.appendChild(addRow);
   }
 

@@ -51,6 +51,7 @@ import { CARD_HEADER_HEIGHT } from "../cards/card-model";
 import { titledAreaFollowers } from "./drag-area-title";
 import { snapMovedToGrid, snapResizeDelta } from "./grid-snap";
 import { wordsBounds } from "./graph-pasteboard";
+import { flowNodePad } from "./renderer-flow-backdrop";
 
 /**
  * A pinned outline is drawn against the frame, not the canvas, so its
@@ -295,7 +296,13 @@ export class DrawingState extends EventTarget {
     // arrow against the union of the whole group's bounds, not just
     // the lead member — otherwise the arrowhead lands inside the
     // group, pointing at one stray stroke instead of the cluster.
-    getBounds: (s) => this.unionGroupBounds(s),
+    // A plain text node's arrows end at its outlined box, which sits
+    // `NODE_PAD` out from the words (renderer-flow-backdrop.ts).
+    getBounds: (s) => {
+      const b = this.unionGroupBounds(s);
+      const p = flowNodePad(s);
+      return p ? { minX: b.minX - p, minY: b.minY - p, maxX: b.maxX + p, maxY: b.maxY + p } : b;
+    },
     getLayoutBounds: (s) => this.unionGroupBounds(s),
     // Text bounds depend on the canvas font as well as the shape.
     boundsKey: () => this.fontFamily,

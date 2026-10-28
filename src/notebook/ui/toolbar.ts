@@ -23,6 +23,7 @@
 import type { DrawingState } from "../state";
 import type { Tool } from "../types";
 import { h } from "./dom-helpers";
+import { visibleInsets } from "./visible-insets";
 import { icon } from "./icons";
 import { createBookmarksButton } from "./bookmarks-button";
 import { createLayersPanel } from "../drawing/layers-panel";
@@ -134,20 +135,17 @@ export function createToolbar(state: DrawingState): HTMLElement {
     container.style.bottom = "auto";
     container.style.transform = "none";
 
-    // leftInset = sidebar; rightInset = shelf (which already shifts with
-    // any right-dock via the CSS var). dockedLeftWidth is added so a
-    // left-dock pushes the toolbar inboard the same way the sidebar does.
-    // The top/bottom dock heights similarly push the toolbar inboard
-    // when it's anchored to the top or bottom edge.
-    const leftInset = (state.leftInset || 0) + (state.dockedLeftWidth || 0);
-    const rightInset = state.rightInset || 0;
-    // `hostTopInset` is the pane's own floating pill title bar, which
-    // sits over the top of the canvas box — the bar belongs underneath
-    // it, not behind it.
-    const topInset = (state.dockedTopHeight || 0) + (state.hostTopInset || 0);
-    const bottomInset = state.dockedBottomHeight || 0;
-    const offset = state.drawingToolbarOffset || { x: 0, y: 0 };
+    // The visible part of the host — clear of the sidebar, the docked
+    // panes, the shelf and a pane's own title pill — measured from what
+    // is on screen (visible-insets.ts), so the bar centres on what can
+    // be seen however the host and its covers are laid out.
     const parentEl = container.parentElement;
+    const ins = visibleInsets(state, parentEl);
+    const leftInset = ins.left;
+    const rightInset = ins.right;
+    const topInset = ins.top;
+    const bottomInset = ins.bottom;
+    const offset = state.drawingToolbarOffset || { x: 0, y: 0 };
     const parentW = parentEl?.clientWidth || window.innerWidth;
     const parentH = parentEl?.clientHeight || window.innerHeight;
     const usableW = Math.max(0, parentW - leftInset - rightInset);
@@ -238,6 +236,9 @@ export function createToolbar(state: DrawingState): HTMLElement {
 
   state.addEventListener("change", update);
   window.addEventListener("resize", update);
+  // Docked panes can move without any width the state mirrors changing;
+  // re-measure once their geometry has landed.
+  document.addEventListener("pane-dock-changed", () => requestAnimationFrame(update));
   update();
   return container;
 }

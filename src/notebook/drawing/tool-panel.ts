@@ -36,6 +36,7 @@ import { icon } from "../ui/icons";
 import { createBrushSlots } from "./brush-slots";
 import { createSnapZones } from "./tool-panel-snap";
 import { ensureFlyoutSliderStyle, applyFlyoutSliderTheme } from "./flyout-styles";
+import { visibleInsets } from "../ui/visible-insets";
 
 interface SubToolDef {
   id: DrawingSubTool;
@@ -566,15 +567,14 @@ export function createDrawingToolPanel(
       dragTab.style.width = `${DRAG_STRIP_THICKNESS}px`;
       dragTab.style.height = `${handleH}px`;
       const edgeOff = state.paneHosted ? paneEdgeOff : MINIMIZED_EDGE_OFFSET;
+      // Park at the visible canvas edge — clear of the sidebar, docks
+      // and shelf as they are on screen (visible-insets.ts) — instead
+      // of springing to the window edge and hiding under them.
+      const ins = visibleInsets(state, parent);
       if (minimizedEdge === "right") {
-        const rightInset = (state.rightInset || 0);
-        dragTab.style.right = `${edgeOff + rightInset}px`;
+        dragTab.style.right = `${edgeOff + ins.right}px`;
       } else {
-        // Track the left chrome (sidebar + any left-dock) so the minimized
-        // handle parks at the visible canvas edge instead of springing to
-        // the window edge and hiding under the sidebar.
-        const leftInset = (state.leftInset || 0) + (state.dockedLeftWidth || 0);
-        dragTab.style.left = `${edgeOff + leftInset}px`;
+        dragTab.style.left = `${edgeOff + ins.left}px`;
       }
     } else {
       const handleW = Math.min(MINIMIZED_HANDLE_LENGTH_HORIZONTAL, parentRect.width);

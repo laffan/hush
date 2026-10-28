@@ -29,6 +29,20 @@ const BACKDROP_ALPHA = 0.85;
  *  at its parent's edge, and a wide pad would eat the start of it. */
 const BACKDROP_PAD = 3;
 const BACKDROP_RADIUS = 4;
+/** A chart node's outlined box sits this far out from its text — and
+ *  its arrows end at the box (state.ts pads the node's anchor bounds by
+ *  the same, `flowNodePad`). */
+export const NODE_PAD = 5;
+const NODE_RADIUS = 5;
+
+/** How far a shape's flowchart anchor sits outside its own bounds: a
+ *  plain text node's outlined box (`NODE_PAD`); nothing for anything
+ *  else. */
+export function flowNodePad(shape: Shape): number {
+  if (shape.type !== "text") return 0;
+  const t = shape as TextShape;
+  return t.outline || t.backgroundColor ? 0 : NODE_PAD;
+}
 /** A chart node's backdrop also takes a hairline in the text colour at
  *  this strength, so a node reads as a box even on a canvas whose colour
  *  the backdrop matches. */
@@ -139,12 +153,15 @@ export function drawTextBackdrop(
 ): void {
   if (shape.outline || shape.backgroundColor) return;
   const b = boundsOf(shape, fontFamily);
+  // An outlined chart node gets room round its words; a backdrop alone
+  // stays tight, so an arrow starting at its parent isn't eaten.
+  const pad = borderColor ? NODE_PAD : BACKDROP_PAD;
   ctx.save();
   ctx.beginPath();
   (ctx as any).roundRect(
-    b.minX - BACKDROP_PAD, b.minY - BACKDROP_PAD,
-    b.maxX - b.minX + BACKDROP_PAD * 2, b.maxY - b.minY + BACKDROP_PAD * 2,
-    BACKDROP_RADIUS,
+    b.minX - pad, b.minY - pad,
+    b.maxX - b.minX + pad * 2, b.maxY - b.minY + pad * 2,
+    borderColor ? NODE_RADIUS : BACKDROP_RADIUS,
   );
   const alpha = ctx.globalAlpha;
   ctx.globalAlpha = alpha * BACKDROP_ALPHA;

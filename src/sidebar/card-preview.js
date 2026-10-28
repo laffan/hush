@@ -12,7 +12,7 @@
  * drag of a card in a document shows (cards/card-drag-feedback.js).
  *
  * The row's item is on its element (`__cardItem`, set by
- * `renderCardRow`), so one delegated listener on the list serves every
+ * `renderCardRow`), so one delegated listener on the panel serves every
  * row, across re-renders.
  */
 import { cardGhost } from "../cards/card-element.js";
@@ -53,15 +53,18 @@ function place(el, row) {
   el.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
 }
 
-async function show(state, row) {
-  const item = row.__cardItem;
+async function show(state, shownRow) {
+  const item = shownRow.__cardItem;
   if (!item?.cardRef || document.body.classList.contains("sl-dragging")) return;
   const { readCardRef } = await import("../cards/card-transfer.js");
   let card = null;
   try { card = await readCardRef(state, item.cardRef); } catch { card = null; }
   // A Doc's row carries the card's words as the panel last read them.
   if (!card && item.cardRef.body) card = { body: item.cardRef.body, meta: item.bgColor ? { bgColor: item.bgColor } : {} };
-  if (!card || !row.isConnected || !row.matches(":hover")) return;
+  // Still on the row (or the one a re-render put in its place)?
+  if (!card || !hovered || hovered.id !== item.id) return;
+  const row = currentRow(hovered.row, item.id);
+  if (!row) return;
   preview?.el.remove();
   const el = cardGhost(card.body, card.meta);
   el.classList.add("hush-card-preview");
@@ -112,12 +115,30 @@ async function startDrag(state, down) {
   move(down);
 }
 
-/** Preview card rows under `root` (the sidebar list) on hover. */
+/** The card row now standing for `id` — the same element, or the one a
+ *  re-render of the panel put in its place. */
+function currentRow(row, id) {
+  if (row.isConnected) return row;
+  for (const el of document.querySelectorAll("#panel-overlay .tree-card-row, .tree-card-row")) {
+    if (el.__cardItem?.id === id) return el;
+  }
+  return null;
+}
+
+let hovered = null;      // { row, id } while the pointer is on a card row
+
+/** Preview card rows under `root` (the files panel) on hover. Listened
+ *  for on the panel itself, once, with pointer events rather than
+ *  `:hover` or a hover media query, so any row in the panel and any
+ *  mouse-driven webview gets it; touch never does. */
 export function attachCardPreview(root, state) {
-  if (!window.matchMedia?.("(hover: hover)").matches) return;
+  if (!root || root.__cardPreview) return;
+  root.__cardPreview = true;
   root.addEventListener("pointerover", (e) => {
+    if (e.pointerType === "touch") return;
     const row = e.target instanceof Element ? e.target.closest(".tree-card-row") : null;
     if (!row) return;
+    hovered = { row, id: row.__cardItem?.id };
     clearTimeout(hideTimer);
     if (preview?.row === row) return;
     clearTimeout(showTimer);
@@ -126,11 +147,12 @@ export function attachCardPreview(root, state) {
   root.addEventListener("pointerout", (e) => {
     const row = e.target instanceof Element ? e.target.closest(".tree-card-row") : null;
     if (!row || row.contains(e.relatedTarget)) return;
+    if (hovered?.row === row) hovered = null;
     clearTimeout(showTimer);
     if (preview) scheduleHide();
   });
   // Dragging the row itself, or clicking it, puts the preview away.
   root.addEventListener("pointerdown", (e) => {
-    if (e.target instanceof Element && e.target.closest(".tree-card-row")) hide();
+    if (e.target instanceof Element && e.target.closest(".tree-card-row")) { hovered = null; hide(); }
   });
 }
