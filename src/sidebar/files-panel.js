@@ -422,6 +422,7 @@ export function createFilesPanel(container, state, hidePanel) {
   listContainer.addEventListener("click", onActionClick);
   flaggedContainerEl.addEventListener("click", onActionClick);
   attachPaneIndicatorTooltip(listContainer);
+  import("./card-preview.js").then((m) => m.attachCardPreview(listContainer, state));
   // Option-click on a row opens the Send-to-desk modal (when desks on).
   import("./send-to-desk-modal.js").then((m) => m.attachDeskShortcuts(listContainer, state));
   // Drag-select gutter on the panel's left edge — a pointerdown in the

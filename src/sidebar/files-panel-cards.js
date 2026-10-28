@@ -159,6 +159,7 @@ export function stripCardsFromTree(tree) {
 export function renderCardRow(item) {
   const row = document.createElement("span");
   row.className = "tree-item-row tree-card-row";
+  row.__cardItem = item; // for the hover preview (card-preview.js)
   const icon = document.createElement("span");
   icon.className = "tree-card-icon";
   if (item.bgColor) icon.style.setProperty("--card-accent", item.bgColor);
