@@ -74,6 +74,11 @@ export function openEdgeLightsModal(state) {
       <span class="el-label">Animation</span>
       <select class="el-animation">${ANIMATIONS.map((a) => `<option value="${a.id}">${escHtml(a.name)}</option>`).join("")}</select>
     </label>
+    <label class="el-row el-fill-sub" data-for="animation">
+      <span class="el-label el-size-label">Flake size</span>
+      <input type="range" class="el-size" min="${LIMITS.flakeSize[0]}" max="${LIMITS.flakeSize[1]}" step="0.05" />
+      <span class="el-value el-size-value"></span>
+    </label>
     <div class="el-label el-colour-label">Colour</div>
     <div class="el-palettes" role="radiogroup" aria-label="Colour">
       ${PALETTES.map((p) => `
@@ -118,6 +123,9 @@ export function openEdgeLightsModal(state) {
   const distortion = modal.querySelector(".el-distortion");
   const animation = modal.querySelector(".el-animation");
   const customRow = modal.querySelector(".el-custom-row");
+  const size = modal.querySelector(".el-size");
+  // Snow's flakes and Hyperspace's rays keep a size each.
+  const sizeKey = () => (draft.animation === "snow" ? "flakeSize" : "raySize");
   const renderCustomRow = () => { customRow.innerHTML = customRowHtml(draft.customColors); };
   renderCustomRow();
 
@@ -126,6 +134,9 @@ export function openEdgeLightsModal(state) {
     distortion.value = draft.distortion;
     animation.value = draft.animation;
     modal.querySelectorAll(".el-fill-sub").forEach((row) => { row.hidden = row.dataset.for !== draft.fill; });
+    modal.querySelector(".el-size-label").textContent = draft.animation === "snow" ? "Flake size" : "Ray size";
+    size.value = String(draft[sizeKey()]);
+    modal.querySelector(".el-size-value").textContent = `${draft[sizeKey()].toFixed(1)}×`;
     // A distortion has no colour: the palette goes, and opacity is how
     // strongly it bends what is under it.
     const distorting = draft.fill === "distortion";
@@ -160,6 +171,7 @@ export function openEdgeLightsModal(state) {
     draft.kind = kind.value;
     sync();
   });
+  size.addEventListener("input", () => { draft[sizeKey()] = parseFloat(size.value); sync(); });
   for (const [el, key] of [[fill, "fill"], [distortion, "distortion"], [animation, "animation"]]) {
     el.addEventListener("change", () => { draft[key] = el.value; sync(); });
   }

@@ -131,6 +131,9 @@ export function createDefaultSettings() {
     // Campfire Cursor's options (src/campfire/campfire-store.js); whether
     // it is lit is per window and never stored.
     campfire: null,
+    // Inbox item previews, per desk: `{ [deskId]: false }` turns a desk's
+    // off (sidebar/inbox-preview.js); on unless set.
+    inboxPreviewByDesk: {},
     // The desk Write Now switches to; null stays on the desk in front
     // (see src/write-now/write-now.js).
     writeNowDeskId: null,

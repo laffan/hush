@@ -12,13 +12,10 @@
  * under the caret by writing the caret's place in the text as CSS
  * properties on the content element.
  *
- * There is one fire: at the caret of the doc last written in. Every
- * other surface stays dark. With "follows the cursor" on, the light goes
- * out and comes back with the caret — one loop reads the caret layer's
- * opacity as CodeMirror's blink (or Hush's pulse) animates it, eased a
- * little so a blink dims rather than snaps, and writes it back as
- * `--cf-vis`. While focus is elsewhere (a modal, the sidebar) the caret
- * isn't drawn; the fire then burns steadily where it was left.
+ * There is one fire: at the caret of the doc last written in (`--cf-vis`
+ * 1); every other surface stays dark (0). It burns steadily — it doesn't
+ * blink or pulse with the caret — and stays where it was left while
+ * focus is elsewhere (a modal, the sidebar).
  *
  * The per-surface properties are registered as not inherited, so
  * changing them restyles the content element alone, not every line in it.
@@ -30,9 +27,6 @@ const views = new Set();
 let lit = false;
 let opts = null;
 let active = null;
-let raf = 0;
-let lastTick = 0;
-const TICK_MS = 1000 / 30;
 
 try {
   for (const name of ["--cf-x", "--cf-y", "--cf-lh", "--cf-vis", "--cf-band-top", "--cf-band-bottom"]) {
@@ -43,17 +37,13 @@ try {
 class CampfireView {
   constructor(view) {
     this.view = view;
-    this.vis = 1;
     views.add(this);
     if (lit) this.measure();
   }
 
   update(u) {
     if (!lit) return;
-    if (u.focusChanged) {
-      if (u.view.hasFocus) setActive(this);
-      kick();
-    }
+    if (u.focusChanged && u.view.hasFocus) setActive(this);
     if (u.selectionSet || u.docChanged || u.geometryChanged || u.viewportChanged || u.focusChanged) this.measure();
   }
 
@@ -102,21 +92,17 @@ class CampfireView {
       s.removeProperty("--cf-band-top");
       s.removeProperty("--cf-band-bottom");
     }
-    this.writeVis(this === active ? this.vis : 0, true);
+    this.writeVis();
   }
 
-  writeVis(v, force = false) {
-    const q = Math.round(v * 50) / 50;
-    if (!force && q === this.written) return;
-    this.written = q;
-    this.view.contentDOM.style.setProperty("--cf-vis", String(q));
+  writeVis() {
+    this.view.contentDOM.style.setProperty("--cf-vis", this === active ? "1" : "0");
   }
 
   clear() {
     this.view.dom.classList.remove("cf-surface");
     const s = this.view.contentDOM.style;
     for (const p of ["--cf-x", "--cf-y", "--cf-lh", "--cf-vis", "--cf-band-top", "--cf-band-bottom"]) s.removeProperty(p);
-    this.written = undefined;
   }
 
   destroy() {
@@ -130,42 +116,9 @@ function setActive(p) {
   if (active === p) return;
   const prev = active;
   active = p;
-  prev?.writeVis(0);
-  p.vis = 1;
-  p.writeVis(1);
-  kick();
+  prev?.writeVis();
+  p.writeVis();
 }
-
-/** How visible the caret is right now: its layer's animated opacity —
- *  CodeMirror's blink, or the Pulse idle animation. */
-function caretOpacity(view) {
-  const layer = view.scrollDOM.querySelector(":scope > .cm-cursorLayer");
-  if (!layer) return 1;
-  const o = parseFloat(getComputedStyle(layer).opacity);
-  return Number.isFinite(o) ? o : 1;
-}
-
-function tick(now) {
-  raf = 0;
-  if (!lit || !active || document.hidden) return;
-  const following = opts.followCursor && active.view.hasFocus;
-  if (now - lastTick >= TICK_MS) {
-    lastTick = now;
-    const target = following ? caretOpacity(active.view) : 1;
-    active.vis += (target - active.vis) * 0.55;
-    if (Math.abs(target - active.vis) < 0.01) active.vis = target;
-    active.writeVis(active.vis);
-  }
-  // Steady (focus elsewhere, or not following) once the light is full.
-  if (following || active.vis < 1) raf = requestAnimationFrame(tick);
-}
-
-function kick() {
-  if (!raf && lit) raf = requestAnimationFrame(tick);
-}
-
-document.addEventListener("visibilitychange", () => { if (!document.hidden) kick(); });
-document.addEventListener("focusin", () => kick());
 
 /** Light (`options`) or put out (null) the campfire on every surface. */
 export function setCampfire(options) {
@@ -174,8 +127,6 @@ export function setCampfire(options) {
   if (!lit) {
     for (const p of views) p.clear();
     active = null;
-    if (raf) cancelAnimationFrame(raf);
-    raf = 0;
     return;
   }
   if (!active || !views.has(active)) {
@@ -184,11 +135,7 @@ export function setCampfire(options) {
       || list.find((p) => p.view.dom.closest("#editor-container"))
       || list[0] || null;
   }
-  for (const p of views) {
-    if (p !== active) p.vis = 0;
-    p.measure();
-  }
-  kick();
+  for (const p of views) p.measure();
 }
 
 export function createCampfirePlugin() {

@@ -67,6 +67,10 @@ export function renderGeneralTab(settings) {
         <input type="checkbox" id="setting-show-recent-files" ${s.showRecentFiles ? "checked" : ""} />
       </div>
       <div class="settings-row">
+        <label>Show Inbox Item Preview</label>
+        <input type="checkbox" id="setting-inbox-preview" ${s.inboxPreviewByDesk?.[s.activeDeskId] !== false ? "checked" : ""} />
+      </div>
+      <div class="settings-row">
         <label>Automatically clear empty inbox items on start</label>
         <input type="checkbox" id="setting-auto-clear-inbox" ${s.autoClearEmptyInbox !== false ? "checked" : ""} />
       </div>

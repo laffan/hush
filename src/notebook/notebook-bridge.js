@@ -446,7 +446,7 @@ export async function saveNotebook(opts = {}) {
   _saveInFlight = p;
   try {
     const saved = await p; // then a snapshot for the Inbox's preview card
-    if (saved && canvasInstance) noteNotebookSaved(currentNotebookFileId, canvasInstance.container);
+    if (saved && canvasInstance) noteNotebookSaved(currentNotebookFileId, canvasInstance);
     return saved;
   } finally {
     if (_saveInFlight === p) _saveInFlight = null;

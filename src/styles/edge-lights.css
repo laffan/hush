@@ -22,9 +22,6 @@ html.dark-surface .edge-lights.edge-lights-unblended {
   mix-blend-mode: normal;
 }
 
-/* The Distortion fill: the canvas only draws the shape as a mask for
-   the distortion layer (edge-lights-distort.js), so it isn't seen. */
-.edge-lights.edge-lights-masking { opacity: 0 !important; }
 
 /* Blur: a full-window layer blurring what is behind it, masked by the
    shape. */
@@ -358,17 +355,6 @@ body.edge-lights-distorting { filter: url(#hush-edge-distort); }
   cursor: default;
 }
 
-.el-kind {
-  justify-self: start;
-  grid-column: 2 / 4;
-  padding: 3px 6px;
-  border: 1px solid var(--panel-border);
-  border-radius: 5px;
-  background: transparent;
-  color: var(--fg);
-  font: 13px system-ui, sans-serif;
-}
-
 .el-row {
   display: grid;
   grid-template-columns: 74px 1fr 40px;
@@ -406,3 +392,7 @@ body.edge-lights-distorting { filter: url(#hush-edge-distort); }
 .edge-lights-modal .el-row[hidden],
 .edge-lights-modal .el-palettes[hidden],
 .edge-lights-modal .el-colour-label[hidden] { display: none; }
+
+/* The dropdowns take the app-wide look (styles/select.css) and the
+   row's middle column. */
+.edge-lights-modal .el-row select { width: 100%; }

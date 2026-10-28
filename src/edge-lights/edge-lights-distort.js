@@ -17,7 +17,10 @@
  *                 heavier than the blur, since the page is filtered each
  *                 time it paints.
  *
- * The opacity option is the strength.
+ * The opacity option is the strength, from none at 0. The shape's own
+ * surface (a glass rim, a frost, colour fringes) is drawn by the overlay
+ * canvas over this, so the shape shows even where there is nothing
+ * under it to bend.
  */
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -49,7 +52,7 @@ function buildFilter(kind, strength) {
     filterUnits: "userSpaceOnUse", primitiveUnits: "userSpaceOnUse", "color-interpolation-filters": "sRGB",
   });
   if (kind === "rgb") {
-    const shift = 3 + 9 * strength;
+    const shift = 12 * strength;
     filter.append(
       channel("1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0", "r"),
       fe("feOffset", { in: "r", dx: -shift, dy: 0, result: "rShift" }),
@@ -68,7 +71,7 @@ function buildFilter(kind, strength) {
     filter.append(
       fe("feTurbulence", { type: "fractalNoise", baseFrequency: "0.006 0.009", numOctaves: 2, seed: 7, result: "noise" }),
       fe("feDisplacementMap", {
-        in: "SourceGraphic", in2: "noise", scale: 18 + 50 * strength,
+        in: "SourceGraphic", in2: "noise", scale: 68 * strength,
         xChannelSelector: "R", yChannelSelector: "G", result: "bent",
       }),
       // Glass gathers light: a touch more colour and brightness.
@@ -101,7 +104,7 @@ export function mountDistortion(kind, strength) {
     if (k === "blur") {
       const el = document.createElement("div");
       el.className = "edge-lights-distort";
-      const blur = `blur(${(4 + 14 * s).toFixed(1)}px)`;
+      const blur = `blur(${(18 * s).toFixed(1)}px)`;
       el.style.backdropFilter = blur;
       el.style.webkitBackdropFilter = blur;
       document.body.appendChild(el);
@@ -123,6 +126,8 @@ export function mountDistortion(kind, strength) {
       current.el.style.webkitMaskImage = v;
     } else {
       current.mask.setAttribute("href", url);
+      // Older WebKit reads an feImage's source only from xlink:href.
+      current.mask.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", url);
     }
   }
 

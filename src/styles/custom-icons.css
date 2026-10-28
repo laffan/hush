@@ -229,3 +229,23 @@
   height: 30px;
 }
 .new-desk-icon-btn .desk-icon { stroke: currentColor; fill: none; }
+
+/* A refused edit under a desk ratchet (editor/ratchet.js#noticeRefusal):
+   the Ratchet mark's ring glows red for a moment — the disc on a desk's
+   icon, or the ring round the glyph after its name. */
+.desk-switcher-header .desk-switcher-ratchet:not(:empty) {
+  border-radius: 50%;
+  padding: 2px;
+}
+body.ratchet-refused .desk-switcher-header .desk-switcher-ratchet:not(:empty),
+body.ratchet-refused .desk-switcher-header .desk-icon-ratchet-badge {
+  animation: hush-ratchet-refused 0.9s ease-out;
+}
+@keyframes hush-ratchet-refused {
+  0%, 35% {
+    color: #e5484d;
+    box-shadow: 0 0 0 1px #e5484d, 0 0 6px 2px rgba(229, 72, 77, 0.6);
+  }
+  100% {}
+}
+body.ratchet-refused .desk-switcher-header .desk-switcher-ratchet .desk-ratchet-glyph { opacity: 1; }

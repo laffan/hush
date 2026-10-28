@@ -6,13 +6,12 @@
  * Edge Lights.
  *
  *   baseOpacity   how much of the text shows away from the light (2%)
- *   followCursor  the light goes out and comes back with the caret's
- *                 blink or pulse
  *   brightness    how strongly the light shows the text near it: at 1
  *                 the text at its centre is fully lit; above 1 the fully
  *                 lit middle widens, below 1 even the middle stays dim
  *   range         how far the light reaches, in lines
- *   currentLine   only the caret's line is lit
+ *   currentLine   only the caret's line is lit (the default)
+ *   matchCursor   the lit text takes the caret's colour
  */
 import { resolveCursorPaint } from "../editor/block-cursor.js";
 
@@ -24,10 +23,10 @@ export const LIMITS = {
 
 export const DEFAULTS = Object.freeze({
   baseOpacity: 0.02,
-  followCursor: true,
   brightness: 1,
   range: 4,
-  currentLine: false,
+  currentLine: true,
+  matchCursor: false,
 });
 
 const clamp = (v, [lo, hi], d) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
@@ -37,10 +36,10 @@ export function readCampfireOptions(settings) {
   const raw = settings?.campfire && typeof settings.campfire === "object" ? settings.campfire : {};
   return {
     baseOpacity: clamp(raw.baseOpacity, LIMITS.baseOpacity, DEFAULTS.baseOpacity),
-    followCursor: typeof raw.followCursor === "boolean" ? raw.followCursor : DEFAULTS.followCursor,
     brightness: clamp(raw.brightness, LIMITS.brightness, DEFAULTS.brightness),
     range: clamp(raw.range, LIMITS.range, DEFAULTS.range),
     currentLine: typeof raw.currentLine === "boolean" ? raw.currentLine : DEFAULTS.currentLine,
+    matchCursor: typeof raw.matchCursor === "boolean" ? raw.matchCursor : DEFAULTS.matchCursor,
   };
 }
 

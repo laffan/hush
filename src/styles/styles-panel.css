@@ -942,8 +942,8 @@
   width: 88px;
 }
 
-.style-editor-row input[type="text"],
-.style-editor-row select {
+.style-editor-row select { flex: 1; }
+.style-editor-row input[type="text"] {
   flex: 1;
   background: rgba(128, 128, 128, 0.1);
   border: 1px solid rgba(128, 128, 128, 0.2);
@@ -955,8 +955,7 @@
   outline: none;
 }
 
-.style-editor-row input[type="text"]:focus,
-.style-editor-row select:focus {
+.style-editor-row input[type="text"]:focus {
   border-color: rgba(128, 128, 128, 0.5);
 }
 
@@ -1064,18 +1063,6 @@
 }
 .style-native-select {
   width: 100%;
-  background: rgba(128, 128, 128, 0.1);
-  border: 1px solid rgba(128, 128, 128, 0.2);
-  color: var(--fg);
-  padding: 5px 8px;
-  border-radius: 4px;
-  font-size: 13px;
-  font-family: system-ui, sans-serif;
-  outline: none;
-  cursor: pointer;
-}
-.style-native-select:focus {
-  border-color: rgba(128, 128, 128, 0.5);
 }
 
 /* Light / Dark color tabs */

@@ -924,10 +924,6 @@
 .tree-prompt-modal-select {
   width: 100%;
   box-sizing: border-box;
-  background: transparent;
-  border: 1px solid var(--panel-border);
-  border-radius: 5px;
-  color: var(--fg);
   padding: 6px 10px;
   font: inherit;
   font-size: 13px;

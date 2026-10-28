@@ -9,9 +9,11 @@
  *
  * What it draws — Polar's curtains, Scuba's ripples, Thrum's patches — is the shader's
  * (edge-lights-shader.js); this module runs it. With the Distortion fill
- * the canvas itself is hidden and draws the shape as a mask, which it
- * hands to the distortion layer (edge-lights-distort.js) as an image
- * every `MASK_MS`.
+ * each frame is drawn twice when the mask is due: once as a mask, handed
+ * to the distortion layer (edge-lights-distort.js) as an image every
+ * `MASK_MS`, then as the distortion's visible surface (glass rim, frost,
+ * colour fringes), which is what the canvas shows — so the shape reads
+ * even over a plain page, where the distortion has nothing to bend.
  *
  * Cost: it is drawn at half the CSS resolution (it is all soft light),
  * at 30 fps, and a pixel further in than any lobe can reach leaves at
@@ -38,8 +40,11 @@ const FADE_OUT_MS = 1200;
  *  out as an image costs a little; a dozen times a second is plenty for
  *  shapes this slow. */
 const MASK_MS = 80;
-const FILL_IDS = ["colors", "distortion", "animation"];
+/** The shader's `u_fill` for each fill: Distortion shows its surface
+ *  (3); its mask (1) is drawn only when passed on. */
+const FILL_UNIFORM = { colors: 0, distortion: 3, animation: 2 };
 const ANIMATION_IDS = ["hyperspace", "snow"];
+const DISTORT_IDS = ["glass", "blur", "rgb"];
 
 /** Mount the overlay with `options` (resolved — see edge-lights-
  *  store.js#readOptions — plus `colors`, the palette's colours).
@@ -60,7 +65,7 @@ export function mountEdgeLights(options) {
   gl.useProgram(program);
   setupQuad(gl, program);
   const u = {};
-  for (const name of ["u_res", "u_time", "u_depth", "u_opacity", "u_sat", "u_fade", "u_kind", "u_count", "u_colors", "u_fill", "u_anim"]) {
+  for (const name of ["u_res", "u_time", "u_depth", "u_opacity", "u_sat", "u_fade", "u_kind", "u_count", "u_colors", "u_fill", "u_anim", "u_psize", "u_distort", "u_dark"]) {
     u[name] = gl.getUniformLocation(program, name);
   }
 
@@ -90,8 +95,10 @@ export function mountEdgeLights(options) {
     gl.uniform3fv(u.u_colors, flat);
     gl.uniform1i(u.u_count, Math.max(2, colors.length));
     gl.uniform1i(u.u_kind, Math.max(0, KIND_IDS.indexOf(opts.kind)));
-    gl.uniform1i(u.u_fill, Math.max(0, FILL_IDS.indexOf(opts.fill)));
+    gl.uniform1i(u.u_fill, FILL_UNIFORM[opts.fill] ?? 0);
     gl.uniform1i(u.u_anim, Math.max(0, ANIMATION_IDS.indexOf(opts.animation)));
+    gl.uniform1f(u.u_psize, opts.animation === "snow" ? opts.flakeSize ?? 1 : opts.raySize ?? 1);
+    gl.uniform1i(u.u_distort, Math.max(0, DISTORT_IDS.indexOf(opts.distortion)));
     el.classList.toggle("edge-lights-unblended", UNBLENDED_KINDS.has(opts.kind));
     syncDistortion();
   }
@@ -101,7 +108,6 @@ export function mountEdgeLights(options) {
    *  changes, removed when the fill is something else. */
   function syncDistortion() {
     const on = opts.fill === "distortion";
-    el.classList.toggle("edge-lights-masking", on);
     if (!on) { distort?.remove(); distort = null; distortKey = ""; return; }
     const key = `${opts.distortion}:${opts.opacity.toFixed(2)}`;
     if (key === distortKey) return;
@@ -140,15 +146,21 @@ export function mountEdgeLights(options) {
     gl.uniform1f(u.u_opacity, opts.opacity);
     gl.uniform1f(u.u_sat, opts.saturation);
     gl.uniform1f(u.u_fade, fade);
+    gl.uniform1i(u.u_dark, document.documentElement.classList.contains("dark-surface") ? 1 : 0);
     gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-    // Read in the same task as the draw: the drawing buffer isn't kept
-    // past it (`preserveDrawingBuffer` is off).
+    // The mask, read in the same task as its draw — the drawing buffer
+    // isn't kept past it (`preserveDrawingBuffer` is off) — then the
+    // surface over it.
     if (distort && now - lastMask >= MASK_MS) {
       lastMask = now;
+      gl.uniform1i(u.u_fill, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
       distort.setMask(el.toDataURL("image/png"));
+      gl.uniform1i(u.u_fill, FILL_UNIFORM[opts.fill] ?? 0);
     }
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
   const start = () => {
     if (raf || document.hidden) return;

@@ -179,7 +179,7 @@ export function createSettingsPanel(state: DrawingState, mountOverlayOn?: HTMLEl
       "Libre Baskerville", "Karla", "Lora", "Helvetica", "EB Garamond", "Fira Code",
     ];
     const ffSelect = document.createElement("select");
-    Object.assign(ffSelect.style, { width: "100%", padding: "6px 8px", border: "1px solid #ddd", borderRadius: "6px", fontSize: "13px", outline: "none", background: "#fff" });
+    ffSelect.style.width = "100%"; // the look is the app-wide one (styles/select.css)
     for (const ff of fontFamilies) {
       const opt = document.createElement("option");
       opt.value = ff; opt.textContent = ff;

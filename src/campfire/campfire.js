@@ -22,6 +22,7 @@ async function toast(message, kind = "info") {
 function apply(options) {
   const root = document.documentElement.style;
   document.body.classList.toggle("campfire-on", !!options);
+  document.body.classList.toggle("campfire-match-cursor", !!options?.matchCursor);
   if (!options) {
     for (const p of ["--cf-base", "--cf-peak", "--cf-plateau", "--cf-mid", "--cf-range"]) root.removeProperty(p);
     setCampfire(null);

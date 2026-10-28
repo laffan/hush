@@ -48,7 +48,6 @@ import { EditorState, StateField, StateEffect, Annotation, Prec } from "@codemir
 import { EditorView, keymap } from "@codemirror/view";
 import { programmaticChange } from "./base-extensions.js";
 import { typewriterRunwayAnnotation } from "./plugins/typewriter.js";
-import { showImportToast } from "./import-toast.js";
 import { getDeskRatchet } from "../state/state-desks.js";
 
 /** Marks a dispatch as exempt from the ratchet filter. Used by content
@@ -122,33 +121,24 @@ function isRearrangement(tr) {
   return before.length > 0 && before === material(inserted);
 }
 
-/** The strikethrough binding as the user would read it — the refusal
- *  notice names it, since it's the way out of the refusal. */
-function strikeShortcutLabel(state) {
-  const raw = state?.settings?.shortcutStrikethrough || "Mod+-";
-  const isMac = navigator.platform?.includes("Mac") || navigator.userAgent?.includes("Mac");
-  const parts = raw.split("+").map((p) => (
-    /^(CmdOrCtrl|Mod|Cmd|Meta)$/i.test(p) ? (isMac ? "⌘" : "Ctrl") : p
-  ));
-  return parts.join(isMac ? "" : "+");
-}
-
-// A refused edit says so, once — hammering Backspace shouldn't stack up
-// notices. Only the desk mode speaks: a timed session's silence is the
-// whole feel of it, and the user started it seconds ago.
-let lastNoticeAt = -Infinity;
-const NOTICE_GAP_MS = 4000;
+// A refused edit under a desk ratchet flashes the desk's Ratchet mark —
+// the ring round the glyph after the desk's name, or the disc on its
+// icon — red (styles/custom-icons.css, `body.ratchet-refused`), instead
+// of a notice: hammering Backspace just keeps it glowing. A timed
+// session stays silent — its silence is the whole feel of it.
+let flashTimer = 0;
 
 function noticeRefusal(state) {
-  if (!deskOnlyRatchet(state)) return;
-  const now = typeof performance !== "undefined" ? performance.now() : 0;
-  if (now - lastNoticeAt < NOTICE_GAP_MS) return;
-  lastNoticeAt = now;
-  // Deferred: this runs inside a transaction filter, and mounting DOM
-  // mid-dispatch is asking for trouble.
-  setTimeout(() => showImportToast(
-    `Ratchet: committed text can't be changed. Move it, or strike it through with ${strikeShortcutLabel(state)}.`,
-  ), 0);
+  if (!deskOnlyRatchet(state) || typeof document === "undefined") return;
+  // Deferred: this runs inside a transaction filter.
+  setTimeout(() => {
+    const body = document.body;
+    body.classList.remove("ratchet-refused");
+    void body.offsetWidth; // restart the animation
+    body.classList.add("ratchet-refused");
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => body.classList.remove("ratchet-refused"), 900);
+  }, 0);
 }
 
 /** Drop a live selection under a desk ratchet — "I'm done with that

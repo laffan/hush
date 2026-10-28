@@ -104,12 +104,6 @@
 
 .shortcut-filetype-filter {
   flex-shrink: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  background: var(--tab-bg);
-  color: var(--fg);
-  font-size: 13px;
   cursor: pointer;
 }
 

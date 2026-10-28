@@ -1,5 +1,6 @@
 @import "./shortcut-editor.css";
 @import "../styles/ia-writer-fonts.css";
+@import "../styles/select.css";
 
 *, *::before, *::after {
   margin: 0;
@@ -141,7 +142,7 @@ html, body {
 .settings-row:last-child { border-bottom: none; }
 .settings-row label { font-size: 14px; color: var(--fg); }
 
-.settings-row select,
+.settings-row select { min-width: 180px; }
 .settings-row input[type="text"],
 .settings-row input[type="password"],
 .settings-row input[type="number"] {
@@ -177,10 +178,6 @@ html, body {
 }
 .settings-input:focus { border-color: rgba(128, 128, 128, 0.5); }
 
-.settings-row select option {
-  background: var(--bg);
-  color: var(--fg);
-}
 
 .settings-slider-row {
   display: flex;
@@ -955,7 +952,7 @@ html.phone .settings-tabs-dropdown {
   width: 100%;
   margin: 0;
   padding: 10px 14px;
-  background: var(--tab-bg);
+  background-color: var(--tab-bg);
   border: none;
   border-bottom: 1px solid var(--panel-border);
   color: var(--fg);
@@ -1115,15 +1112,6 @@ html.phone .settings-panel {
   font-family: inherit;
   font-size: 13px;
   padding: 5px 10px;
-}
-.debug-log-level {
-  background: transparent;
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  color: var(--fg);
-  font-family: inherit;
-  font-size: 13px;
-  padding: 5px 8px;
 }
 .debug-log-count {
   color: var(--sidebar-fg);

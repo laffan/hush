@@ -684,6 +684,10 @@ pub struct AppSettings {
     // per-window and never stored. Opaque; see src/campfire/campfire-store.js.
     #[serde(default)]
     pub campfire: serde_json::Value,
+    // Inbox item previews per desk, deskId → bool (absent = on). Opaque;
+    // see src/sidebar/inbox-preview.js#inboxPreviewsOn.
+    #[serde(default)]
+    pub inbox_preview_by_desk: serde_json::Value,
 
     // The desk Write Now (triple-tapped Option) switches to; None or ""
     // stays on the desk in front. See src/write-now/write-now.js.
@@ -942,6 +946,7 @@ impl Default for AppSettings {
             edge_lights_presets: serde_json::json!([]),
             edge_lights_by_desk: serde_json::json!({}),
             campfire: serde_json::Value::Null,
+            inbox_preview_by_desk: serde_json::json!({}),
             write_now_desk_id: None,
             auto_clear_empty_inbox: true,
             recent_activity: serde_json::Value::Null,

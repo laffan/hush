@@ -273,16 +273,9 @@
 
 /* Sort dropdown in the shelf header — matches .pdf-shelf-btn chrome. */
 .pdf-shelf-sort {
-  background: transparent;
-  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
-  color: var(--fg);
-  border-radius: 5px;
-  padding: 4px 6px;
-  font: inherit;
-  font-size: 12px;
   cursor: pointer;
 }
-.pdf-shelf-sort:hover { background: rgba(128, 128, 128, 0.12); }
+.pdf-shelf-sort:hover { background-color: rgba(128, 128, 128, 0.12); }
 .pdf-shelf-sort option {
   background: var(--theme-bg, var(--bg));
   color: var(--fg);

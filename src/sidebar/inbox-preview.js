@@ -3,12 +3,15 @@
  * edited, menu) sits a glimpse of where the work on it left off:
  *
  *   - A **Doc** shows the stretch around its last caret position — up to
- *     the 50 words before it and the 5 after — within four lines, cut
- *     from the top so the end nearest the caret is the part that shows,
- *     with the caret itself a 3px line in the style's cursor colour.
- *   - A **Notebook** shows a small snapshot of its canvas as it was last
- *     saved.
- *   - A **Stack** lists its files, the one edited last picked out.
+ *     the 50 words before it and the 5 after, run together on one line
+ *     — within two lines, cut from the top so the end nearest the caret
+ *     is the part that shows, with the caret a dotted line in the text's
+ *     colour (against the last word when it was in the space after it).
+ *   - A **Notebook** shows a small snapshot of its shapes as last saved,
+ *     transparent so the sidebar shows through, in the appearance on
+ *     screen.
+ *   - A **Stack** lists its files, each with its type's icon, in an
+ *     outline, the one edited last picked out.
  *
  * The item is framed in a light border, its last-edited line moved below
  * the preview (files-panel.js).
@@ -18,7 +21,9 @@
  * and cached until the stack's file changes.
  */
 import { escHtml } from "./files-panel-shared.js";
-import { findNodeByFileId } from "../state/tree-helpers.js";
+import { findNodeByFileId, findParentOfNode } from "../state/tree-helpers.js";
+import { getIcon } from "./files-panel-rows.js";
+import { AppState } from "../state/state.js";
 import { docCaret, notebookThumb } from "./inbox-preview-store.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
@@ -26,7 +31,8 @@ const WORDS_BEFORE = 50;
 const WORDS_AFTER = 5;
 
 /** The words around `caret` in `content`: `{ before, after }`, front
- *  matter left out. The caret defaults to the end of the document. */
+ *  matter left out and line breaks flattened to spaces. The caret
+ *  defaults to the end of the document. */
 export function docExcerpt(content, caret) {
   let text = String(content || "");
   let pos = Number.isFinite(caret) ? Math.max(0, Math.min(caret, text.length)) : text.length;
@@ -50,7 +56,16 @@ export function docExcerpt(content, caret) {
     end++;
     if (words >= WORDS_AFTER) break;
   }
-  return { before: beforeTokens.slice(start).join(""), after: afterTokens.slice(0, end).join("") };
+  // One run of text: line breaks and runs of space become one space.
+  let before = beforeTokens.slice(start).join("").replace(/\s+/g, " ").trimStart();
+  let after = afterTokens.slice(0, end).join("").replace(/\s+/g, " ").trimEnd();
+  // A caret in the space between words — past the last line, on a blank
+  // line — sits against the word before it.
+  if (/\s$/.test(before) && (!after || /^\s/.test(after))) {
+    before = before.trimEnd();
+    if (after) after = ` ${after.trimStart()}`;
+  }
+  return { before, after };
 }
 
 function docPreview(state, item) {
@@ -65,15 +80,20 @@ function docPreview(state, item) {
 }
 
 function notebookPreview(item) {
-  const url = notebookThumb(item.fileId);
-  if (!url) return null;
+  const thumbs = notebookThumb(item.fileId);
+  if (!thumbs) return null;
   const el = document.createElement("div");
   el.className = "inbox-preview inbox-preview-notebook";
-  const img = document.createElement("img");
-  img.alt = "";
-  img.decoding = "async";
-  img.src = url;
-  el.appendChild(img);
+  // Both appearances, transparent: the stylesheet shows the one for the
+  // page on screen, so an appearance change needs no new snapshot.
+  for (const variant of ["light", "dark"]) {
+    const img = document.createElement("img");
+    img.alt = "";
+    img.decoding = "async";
+    img.className = `inbox-thumb-${variant}`;
+    img.src = thumbs[variant];
+    el.appendChild(img);
+  }
   return el;
 }
 
@@ -106,11 +126,12 @@ function stackPreview(state, item) {
     const rows = ids.map((id) => {
       const node = findNodeByFileId(state.fileTree, id);
       const f = (state.files || []).find((x) => x.id === id);
-      return { id, name: node?.name || f?.name || "Untitled", modified: f?.modified || 0 };
+      return { id, node, name: node?.name || f?.name || "Untitled", modified: f?.modified || 0 };
     });
     if (!rows.length) { el.remove(); return; }
     const newest = rows.reduce((a, b) => (b.modified > a.modified ? b : a), rows[0]);
-    el.innerHTML = rows.map((r) => `<div class="inbox-preview-stack-file${r === newest && r.modified ? " latest" : ""}">${escHtml(r.name)}</div>`).join("");
+    el.innerHTML = rows.map((r) => `<div class="inbox-preview-stack-file${r === newest && r.modified ? " latest" : ""}">`
+      + `${r.node ? getIcon(r.node, state) : ""}<span class="inbox-preview-stack-name">${escHtml(r.name)}</span></div>`).join("");
   };
   const cached = stackCache.get(item.fileId);
   if (cached && cached.modified === modified) paint(cached.ids);
@@ -118,10 +139,20 @@ function stackPreview(state, item) {
   return el;
 }
 
+/** Whether the desk an Inbox row is in shows previews — Settings →
+ *  General → Show Inbox Item Preview, kept per desk (on unless turned
+ *  off): `settings.inboxPreviewByDesk[deskId] === false` turns it off. */
+export function inboxPreviewsOn(state, item) {
+  const parentId = findParentOfNode(state.fileTree, item.id)?.id || "";
+  const prefix = AppState.INBOX_ID + ":";
+  const deskId = parentId.startsWith(prefix) ? parentId.slice(prefix.length) : state.settings?.activeDeskId;
+  return state.settings?.inboxPreviewByDesk?.[deskId] !== false;
+}
+
 /** The preview card body for an Inbox row, or null when there is
- *  nothing to show. */
+ *  nothing to show (or the desk shows none). */
 export function inboxPreviewFor(state, item) {
-  if (!item?.fileId) return null;
+  if (!item?.fileId || !inboxPreviewsOn(state, item)) return null;
   if (item.type === "document") return docPreview(state, item);
   if (item.type === "notebook") return notebookPreview(item);
   if (item.type === "stack") return stackPreview(state, item);

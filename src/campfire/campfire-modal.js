@@ -1,9 +1,9 @@
 /**
  * Campfire Cursor Options — the text's opacity away from the light, the
- * light's brightness and range, whether it follows the caret's blink or
- * pulse, and whether only the caret's line is lit. Every change is
- * drawn at once on the doc behind the modal (the backdrop only just dims); Cancel puts back what was
- * there. While the campfire is lit it opens on its options, with Apply
+ * light's brightness and range, whether only the caret's line is lit,
+ * and whether the lit text takes the caret's colour. Every change is
+ * drawn at once on the doc behind the modal (the backdrop only just
+ * dims); Cancel puts back what was there. While the campfire is lit it opens on its options, with Apply
  * in place of Begin and a Turn off beside them.
  *
  * Same shell as the sidebar's modals (`.tree-delete-modal`).
@@ -37,8 +37,8 @@ export function openCampfireModal(state) {
           <input type="range" data-key="${s.key}" min="${LIMITS[s.key][0]}" max="${LIMITS[s.key][1]}" step="${s.step}" />
           <span class="el-value" data-value="${s.key}"></span>
         </label>`).join("")}
-      <label class="cf-check"><input type="checkbox" class="cf-follow" /> Glow follows the cursor's blink or pulse</label>
       <label class="cf-check"><input type="checkbox" class="cf-line" /> Only the current line is lit</label>
+      <label class="cf-check"><input type="checkbox" class="cf-match" /> Glow matches cursor colour</label>
     </div>
     <div class="tree-delete-modal-btns">
       ${on ? `<button type="button" class="cf-turn-off">Turn off</button><span class="el-spacer"></span>` : ""}
@@ -48,7 +48,7 @@ export function openCampfireModal(state) {
   backdrop.appendChild(modal);
   document.body.appendChild(backdrop);
 
-  const follow = modal.querySelector(".cf-follow");
+  const match = modal.querySelector(".cf-match");
   const line = modal.querySelector(".cf-line");
 
   const sync = () => {
@@ -56,7 +56,7 @@ export function openCampfireModal(state) {
       modal.querySelector(`input[data-key="${s.key}"]`).value = String(draft[s.key]);
       modal.querySelector(`[data-value="${s.key}"]`).textContent = s.show(draft[s.key]);
     }
-    follow.checked = draft.followCursor;
+    match.checked = draft.matchCursor;
     line.checked = draft.currentLine;
     previewCampfire(state, draft);
   };
@@ -65,7 +65,7 @@ export function openCampfireModal(state) {
   modal.querySelectorAll('input[type="range"]').forEach((input) => {
     input.addEventListener("input", () => { draft[input.dataset.key] = parseFloat(input.value); sync(); });
   });
-  follow.addEventListener("change", () => { draft.followCursor = follow.checked; sync(); });
+  match.addEventListener("change", () => { draft.matchCursor = match.checked; sync(); });
   line.addEventListener("change", () => { draft.currentLine = line.checked; sync(); });
 
   const close = () => {

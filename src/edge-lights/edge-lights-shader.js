@@ -37,9 +37,14 @@
  * Fill (`u_fill`) decides what the shape is filled with, once each kind
  * has worked out how strongly a pixel belongs to it: the colour above
  * (0); the strength alone, in white, as a mask the distortion layer
- * reads (1 — edge-lights-distort.js); or particles in the palette's
+ * reads (1 — edge-lights-distort.js); particles in the palette's
  * colours (2) — Hyperspace's streaks running out from the middle of the
- * window, or Snow's flakes drifting down in three depths (`u_anim`).
+ * window, or Snow's flakes drifting down in three depths (`u_anim`),
+ * sized by `u_psize`; or the Distortion's own surface (3, `u_distort`),
+ * drawn over what the distortion layer bends so the shape shows even
+ * over a plain page, where there is nothing to bend: a glass rim and
+ * sheen, a frost, or red and blue fringes. Opacity scales every fill
+ * down to nothing at 0.
  */
 
 export const MAX_SHADER_COLORS = 6;
@@ -59,6 +64,9 @@ uniform int   u_count;    // colours in use, 2..${MAX_SHADER_COLORS}
 uniform vec3  u_colors[${MAX_SHADER_COLORS}];
 uniform int   u_fill;     // 0 colours, 1 distortion mask, 2 animation
 uniform int   u_anim;     // 0 hyperspace, 1 snow
+uniform float u_psize;    // particle size, a multiple of the first
+uniform int   u_distort;  // 0 glass, 1 blur, 2 rgb shift
+uniform int   u_dark;     // 1 on a dark page
 
 // 2D simplex noise (Ashima Arts / Ian McEwan, MIT) — smooth in every
 // direction, so the shapes have no grid in them. Range about -1..1.
@@ -157,7 +165,7 @@ float snowLayer(vec2 uv, float scale, float speed, float t, out float id) {
   vec2 h = hash2(cell + scale);
   id = h.y;
   vec2 o = 0.5 + (h - 0.5) * 0.7;
-  float r = 0.07 + 0.07 * h.x;
+  float r = min((0.07 + 0.07 * h.x) * u_psize, 0.3);
   float d = length(fract(p) - o);
   return smoothstep(r, r * 0.25, d) * step(0.45, h.x);
 }
@@ -172,9 +180,9 @@ float warpLayer(vec2 q, float wedges, float seed, float t, out float id) {
   vec2 h = hash2(vec2(wedge, seed));
   id = h.x;
   float head = fract(h.y + t * (0.12 + 0.25 * h.x)) * 1.4;
-  float len = 0.04 + 0.22 * head * head;
+  float len = (0.04 + 0.22 * head * head) * u_psize;
   float along = smoothstep(head - len, head, r) * (1.0 - smoothstep(head, head + 0.01, r));
-  float across = 1.0 - smoothstep(0.06, 0.32, abs(fract(a) - 0.5));
+  float across = 1.0 - smoothstep(0.06 * u_psize, min(0.32 * u_psize, 0.5), abs(fract(a) - 0.5));
   return along * across * smoothstep(0.05, 0.25, head) * step(0.3, h.x);
 }
 
@@ -204,12 +212,37 @@ float particles(vec2 px, float t, out float id) {
 // to the shape (already scaled by opacity and the fade).
 vec4 fillOut(vec3 col, float a, vec2 px, float t) {
   if (u_fill == 1) return vec4(a, a, a, a);
+  // How fully the pixel is in the shape, before opacity; opacity then
+  // scales the fill straight down to nothing.
+  float k = u_opacity * u_fade;
+  float g = k > 0.0 ? clamp(a / k, 0.0, 1.0) : 0.0;
   if (u_fill == 2) {
     float id;
     float p = particles(px, t, id);
     vec3 pc = paletteColor(0.3 + 0.4 * id, 0.0);
-    float pa = clamp(p, 0.0, 1.0) * clamp(a * 3.0, 0.0, 1.0);
+    float pa = clamp(p, 0.0, 1.0) * clamp(g * 3.0, 0.0, 1.0) * k;
     return vec4(pc * pa, pa);
+  }
+  if (u_fill == 3) {
+    vec3 c;
+    float v;
+    if (u_distort == 0) {
+      // Glass: a bright rim where the shape begins, a faint sheen inside.
+      float rim = exp(-pow((g - 0.22) / 0.07, 2.0));
+      v = (0.5 * rim + 0.1 * g) * k;
+      c = u_dark == 1 ? vec3(1.0) : vec3(0.35, 0.4, 0.5);
+    } else if (u_distort == 1) {
+      // Frost: the shape clouds a little, light on dark and grey on light.
+      v = 0.16 * g * k;
+      c = u_dark == 1 ? vec3(1.0) : vec3(0.45);
+    } else {
+      // RGB shift: a red contour and a blue one, as a split edge shows.
+      float r = exp(-pow((g - 0.18) / 0.06, 2.0));
+      float b = exp(-pow((g - 0.34) / 0.06, 2.0));
+      v = max(r, b) * 0.55 * k;
+      c = (r + b) > 0.0 ? vec3(r, 0.1 * (r + b), b) / max(r, b) : vec3(0.0);
+    }
+    return vec4(c * v, v);
   }
   return vec4(col * a, a);
 }
@@ -263,7 +296,9 @@ void main() {
       // A straight ramp over a slightly longer reach than Thrum's, so the
       // fade into the page stays as long as the solid part, or longer.
       float sd = clamp(1.0 - xt * (1.15 - 0.15 * throb) / 1.3, 0.0, 1.0);
-      aT = clamp(sd * sd * (3.0 - 2.0 * sd) * (1.0 + 1.5 * u_opacity), 0.0, 1.0) * u_fade;
+      // Below 20% opacity the ink itself thins, down to none at 0.
+      aT = clamp(sd * sd * (3.0 - 2.0 * sd) * (1.0 + 1.5 * u_opacity), 0.0, 1.0) * u_fade
+         * clamp(u_opacity * 5.0, 0.0, 1.0);
     }
     outColor = fillOut(colT, aT, px, t);
     return;

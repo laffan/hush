@@ -61,4 +61,10 @@ export function installAppListeners(state) {
   installModalShortcuts();
   // The open document's caret, for the Inbox's preview cards.
   installCaretTracking(state);
+  // Show Inbox Item Preview (per desk) redraws the sidebar when it flips.
+  let previews = JSON.stringify(state.settings.inboxPreviewByDesk || {});
+  state.on("settings-changed", () => {
+    const now = JSON.stringify(state.settings.inboxPreviewByDesk || {});
+    if (now !== previews) { previews = now; state.emit("files-changed"); }
+  });
 }

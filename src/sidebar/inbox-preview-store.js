@@ -1,7 +1,7 @@
 /**
  * What the Inbox's preview cards (inbox-preview.js) remember between
- * sessions, per device: where the caret last was in each document, and a
- * small snapshot of each notebook as it was last saved.
+ * sessions, per device: where the caret last was in each document, and
+ * small snapshots of each notebook (light and dark) as it was last saved.
  *
  * A per-device cache rather than a setting — a caret on this machine
  * says nothing about another — kept in `localStorage`, which survives
@@ -16,8 +16,6 @@ const THUMB_PREFIX = "hush.inbox.thumb.";
 const THUMB_INDEX_KEY = "hush.inbox.thumbs";
 const MAX_CARETS = 400;
 const MAX_THUMBS = 40;
-/** The snapshot's width in px — twice the card's, for sharp screens. */
-const THUMB_WIDTH = 480;
 
 function read(key, fallback) {
   try {
@@ -53,59 +51,59 @@ export function docCaret(fileId) {
   return Number.isFinite(v) ? v : null;
 }
 
-/** Keep a small snapshot of a notebook as it is on screen: every canvas
- *  layer inside `container` (the shapes, and the ink in the drawing
- *  layer's stacked canvases) composited at their on-screen places, scaled
- *  down to `THUMB_WIDTH`. */
-export function recordNotebookThumb(fileId, container) {
-  if (!fileId || !container) return;
-  const box = container.getBoundingClientRect();
-  if (box.width < 40 || box.height < 40) return;
-  const scale = THUMB_WIDTH / box.width;
-  const out = document.createElement("canvas");
-  out.width = THUMB_WIDTH;
-  out.height = Math.round(box.height * scale);
-  const ctx = out.getContext("2d");
-  if (!ctx) return;
-  for (const c of container.querySelectorAll("canvas")) {
-    const r = c.getBoundingClientRect();
-    if (!r.width || !r.height || getComputedStyle(c).visibility === "hidden") continue;
-    try {
-      ctx.drawImage(c, (r.left - box.left) * scale, (r.top - box.top) * scale, r.width * scale, r.height * scale);
-    } catch { /* a tainted or lost canvas — leave it out */ }
+function dropThumb(fileId) {
+  for (const k of ["", ".light", ".dark"]) {
+    try { localStorage.removeItem(THUMB_PREFIX + fileId + k); } catch {}
   }
-  let url;
-  try { url = out.toDataURL("image/webp", 0.7); } catch { return; }
-  if (!url.startsWith("data:image/webp")) {
-    try { url = out.toDataURL("image/jpeg", 0.7); } catch { return; }
-  }
+}
+
+/** Keep the notebook's snapshots, light and dark (inbox-notebook-
+ *  thumb.js draws them from `canvasInstance`'s shapes); an empty
+ *  notebook keeps none. */
+export async function recordNotebookThumb(fileId, canvasInstance) {
+  if (!fileId || !canvasInstance) return;
+  const { renderNotebookThumbs } = await import("./inbox-notebook-thumb.js");
+  let thumbs = null;
+  try { thumbs = renderNotebookThumbs(canvasInstance); } catch { thumbs = null; }
   const index = read(THUMB_INDEX_KEY, []).filter((id) => id !== fileId);
-  index.push(fileId);
-  while (index.length > MAX_THUMBS) {
-    try { localStorage.removeItem(THUMB_PREFIX + index.shift()); } catch {}
+  dropThumb(fileId);
+  if (thumbs) {
+    index.push(fileId);
+    while (index.length > MAX_THUMBS) dropThumb(index.shift());
+    try {
+      localStorage.setItem(THUMB_PREFIX + fileId + ".light", thumbs.light);
+      localStorage.setItem(THUMB_PREFIX + fileId + ".dark", thumbs.dark);
+    } catch { dropThumb(fileId); index.pop(); }
   }
-  try { localStorage.setItem(THUMB_PREFIX + fileId, url); } catch { return; }
   write(THUMB_INDEX_KEY, index);
 }
 
 const lastThumbAt = new Map();
-const THUMB_EVERY_MS = 20000;
+const pendingThumb = new Map();
+const THUMB_EVERY_MS = 8000;
 
-/** `recordNotebookThumb`, at most once every `THUMB_EVERY_MS` per
- *  notebook and at an idle moment — the notebook's autosave calls it
- *  after each save, which is how the snapshot follows "as last saved". */
-export function noteNotebookSaved(fileId, container) {
-  const now = Date.now();
-  if (!fileId || now - (lastThumbAt.get(fileId) || 0) < THUMB_EVERY_MS) return;
-  lastThumbAt.set(fileId, now);
-  const run = () => recordNotebookThumb(fileId, container);
-  if (typeof requestIdleCallback === "function") requestIdleCallback(run, { timeout: 2000 });
-  else setTimeout(run, 0);
+/** `recordNotebookThumb` after each save of the notebook, at most once
+ *  every `THUMB_EVERY_MS` and at an idle moment — the last save in a
+ *  burst is always drawn, so the snapshot follows every change. */
+export function noteNotebookSaved(fileId, canvasInstance) {
+  if (!fileId || pendingThumb.has(fileId)) return;
+  const wait = Math.max(0, THUMB_EVERY_MS - (Date.now() - (lastThumbAt.get(fileId) || 0)));
+  pendingThumb.set(fileId, setTimeout(() => {
+    pendingThumb.delete(fileId);
+    lastThumbAt.set(fileId, Date.now());
+    const run = () => void recordNotebookThumb(fileId, canvasInstance);
+    if (typeof requestIdleCallback === "function") requestIdleCallback(run, { timeout: 2000 });
+    else run();
+  }, wait));
 }
 
+/** `{ light, dark }` snapshots of a notebook, or null. */
 export function notebookThumb(fileId) {
-  try { return localStorage.getItem(THUMB_PREFIX + fileId) || null; }
-  catch { return null; }
+  try {
+    const light = localStorage.getItem(THUMB_PREFIX + fileId + ".light");
+    const dark = localStorage.getItem(THUMB_PREFIX + fileId + ".dark");
+    return light && dark ? { light, dark } : null;
+  } catch { return null; }
 }
 
 /** Keep the open document's caret current: after a pause in its edits,
@@ -113,12 +111,18 @@ export function notebookThumb(fileId) {
  *  it too — state/editor-cache-key.js). */
 export function installCaretTracking(state) {
   let timer = null;
-  const note = () => {
-    if (!state.currentFileId || state.currentProjectId || state.currentLocalSync) return;
+  /** `only`: the file the pause was in — a pause that ends after the
+   *  editor moved to another file records nothing (the switch did). */
+  const note = (only = state.currentFileId) => {
+    if (!state.currentFileId || state.currentFileId !== only || state.currentProjectId || state.currentLocalSync) return;
     const head = state.editor?.view?.state.selection.main.head;
     if (Number.isFinite(head)) recordDocCaret(state.currentFileId, head);
   };
-  state.on("doc-content-changed", () => { clearTimeout(timer); timer = setTimeout(note, 1500); });
+  state.on("doc-content-changed", () => {
+    clearTimeout(timer);
+    const id = state.currentFileId;
+    timer = setTimeout(() => note(id), 1500);
+  });
   const flush = () => { note(); if (carets) write(CARETS_KEY, carets); };
   window.addEventListener("pagehide", flush);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flush(); });

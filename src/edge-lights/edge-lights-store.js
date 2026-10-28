@@ -89,13 +89,19 @@ export const DEFAULT_OPTIONS = {
   // A multiple of the overlay's own pace; 1 is how fast it first ran,
   // which was quicker than the lights should be.
   speed: 0.4,
+  // The Animation fill's particles: Snow's flakes and Hyperspace's rays,
+  // as a multiple of their first size.
+  flakeSize: 1,
+  raySize: 1,
 };
 
 export const LIMITS = {
   saturation: [0, 1.5],
-  opacity: [0.05, 1],
+  opacity: [0, 1],
   depth: [0.05, 0.5],
   speed: [0.05, 1.5],
+  flakeSize: [0.4, 2.5],
+  raySize: [0.4, 2.5],
 };
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -133,6 +139,8 @@ export function readOptions(settings) {
     opacity: clampNum(o.opacity, LIMITS.opacity, DEFAULT_OPTIONS.opacity),
     depth: clampNum(o.depth, LIMITS.depth, DEFAULT_OPTIONS.depth),
     speed: clampNum(o.speed, LIMITS.speed, DEFAULT_OPTIONS.speed),
+    flakeSize: clampNum(o.flakeSize, LIMITS.flakeSize, DEFAULT_OPTIONS.flakeSize),
+    raySize: clampNum(o.raySize, LIMITS.raySize, DEFAULT_OPTIONS.raySize),
   };
 }
 

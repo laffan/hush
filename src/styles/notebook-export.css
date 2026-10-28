@@ -95,12 +95,6 @@
 
 .notebook-export-modal .nxm-margin-input {
   width: 64px;
-  padding: 4px 6px;
-  border: 1px solid var(--panel-border);
-  border-radius: 4px;
-  background: var(--theme-bg, var(--bg));
-  color: var(--fg);
-  font-family: inherit;
   font-size: 12px;
 }
 
