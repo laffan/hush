@@ -6,12 +6,12 @@
  *     the 50 words before it and the 5 after — within four lines, cut
  *     from the top so the end nearest the caret is the part that shows,
  *     with the caret itself a 3px line in the style's cursor colour.
- *
- * The item is framed in a light border, its last-edited line moved below
- * the preview (files-panel.js).
  *   - A **Notebook** shows a small snapshot of its canvas as it was last
  *     saved.
  *   - A **Stack** lists its files, the one edited last picked out.
+ *
+ * The item is framed in a light border, its last-edited line moved below
+ * the preview (files-panel.js).
  *
  * What a card needs that the tree doesn't hold — a caret, a snapshot —
  * comes from inbox-preview-store.js; a stack's file list is read once
