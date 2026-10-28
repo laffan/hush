@@ -1,0 +1,74 @@
+/* Campfire Cursor — the text lit only round the caret (editor/plugins/
+   campfire.js places the light; campfire/campfire.js sets the options
+   on the root as --cf-base, --cf-peak, --cf-plateau, --cf-mid,
+   --cf-range and --cf-blend).
+
+   The mask is three layers, composited bottom-up: the oval of light
+   round the caret (full at its middle, out at its rim); clipped by the
+   caret's line band (with Current line only — otherwise the band is the
+   whole content); then the base opacity added everywhere. Only a surface
+   with a caret Hush draws gets it: the light is that caret's. */
+body.campfire-on .cursor-mode-surface:is(.block-cursor, .underline-cursor, .thick-cursor) .cm-editor.cf-surface > .cm-scroller > .cm-content {
+  --cf-glow: calc(var(--cf-peak, 1) * var(--cf-vis, 1));
+  --cf-ry: calc(var(--cf-range, 4) * var(--cf-lh, 24px));
+  --cf-rx: calc(var(--cf-ry) * 1.4);
+  -webkit-mask-image:
+    linear-gradient(rgb(0 0 0 / var(--cf-base, 0.02)), rgb(0 0 0 / var(--cf-base, 0.02))),
+    linear-gradient(to bottom, transparent var(--cf-band-top, 0px), #000 var(--cf-band-top, 0px), #000 var(--cf-band-bottom, 100%), transparent var(--cf-band-bottom, 100%)),
+    radial-gradient(var(--cf-rx) var(--cf-ry) at var(--cf-x, -9999px) var(--cf-y, -9999px),
+      rgb(0 0 0 / var(--cf-glow)) var(--cf-plateau, 0%),
+      rgb(0 0 0 / calc(var(--cf-glow) * 0.45)) var(--cf-mid, 45%),
+      transparent 100%);
+  mask-image:
+    linear-gradient(rgb(0 0 0 / var(--cf-base, 0.02)), rgb(0 0 0 / var(--cf-base, 0.02))),
+    linear-gradient(to bottom, transparent var(--cf-band-top, 0px), #000 var(--cf-band-top, 0px), #000 var(--cf-band-bottom, 100%), transparent var(--cf-band-bottom, 100%)),
+    radial-gradient(var(--cf-rx) var(--cf-ry) at var(--cf-x, -9999px) var(--cf-y, -9999px),
+      rgb(0 0 0 / var(--cf-glow)) var(--cf-plateau, 0%),
+      rgb(0 0 0 / calc(var(--cf-glow) * 0.45)) var(--cf-mid, 45%),
+      transparent 100%);
+  -webkit-mask-composite: source-over, source-in, source-over;
+  mask-composite: add, intersect, add;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+}
+
+/* The glow behind the text, in the caret's glow colour. */
+.cf-light {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  border-radius: 50%;
+  background: radial-gradient(closest-side,
+    var(--cursor-glow-color, var(--block-cursor-color, var(--cursor))),
+    color-mix(in srgb, var(--cursor-glow-color, var(--block-cursor-color, var(--cursor))) 35%, transparent) 45%,
+    transparent);
+  mix-blend-mode: var(--cf-blend, screen);
+  opacity: 0;
+  will-change: transform, opacity;
+}
+.cursor-mode-surface:not(:is(.block-cursor, .underline-cursor, .thick-cursor)) .cf-light { display: none; }
+
+/* ── The options modal (campfire/campfire-modal.js) ─────────────── */
+.tree-delete-modal-backdrop.campfire-backdrop { background: rgba(0, 0, 0, 0.12); }
+.tree-delete-modal.campfire-modal { max-width: 420px; }
+.campfire-modal .cf-form { margin: 14px 0 4px; }
+.campfire-modal .el-row { grid-template-columns: 112px 1fr 44px; }
+.campfire-modal .el-label { font: 12px system-ui, sans-serif; color: var(--sidebar-fg); }
+.campfire-modal .cf-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font: 12px system-ui, sans-serif;
+  color: var(--sidebar-fg);
+}
+.campfire-modal .cf-note {
+  font: 11px system-ui, sans-serif;
+  color: var(--sidebar-fg-muted, var(--sidebar-fg));
+  opacity: 0.8;
+  margin: 0 0 12px;
+}
+.campfire-modal .el-spacer { flex: 1; }

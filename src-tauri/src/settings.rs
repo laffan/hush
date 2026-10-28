@@ -679,6 +679,11 @@ pub struct AppSettings {
     // (src/edge-lights/edge-lights-store.js#readDeskOptions).
     #[serde(default)]
     pub edge_lights_by_desk: serde_json::Value,
+    // Campfire Cursor's options — `{ baseOpacity, followCursor,
+    // brightness, range, blend, currentLine }`. Whether it is lit is
+    // per-window and never stored. Opaque; see src/campfire/campfire-store.js.
+    #[serde(default)]
+    pub campfire: serde_json::Value,
 
     // The desk Write Now (triple-tapped Option) switches to; None or ""
     // stays on the desk in front. See src/write-now/write-now.js.
@@ -936,6 +941,7 @@ impl Default for AppSettings {
             edge_lights: serde_json::Value::Null,
             edge_lights_presets: serde_json::json!([]),
             edge_lights_by_desk: serde_json::json!({}),
+            campfire: serde_json::Value::Null,
             write_now_desk_id: None,
             auto_clear_empty_inbox: true,
             recent_activity: serde_json::Value::Null,

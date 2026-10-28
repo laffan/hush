@@ -52,6 +52,7 @@ import {
 } from "./markdown-extensions.js";
 import { createFlagHighlightPlugin, hexToRgba } from "./flag-highlight.js";
 import { createYouAreHerePlugin } from "./plugins/you-are-here.js";
+import { createCampfirePlugin } from "./plugins/campfire.js";
 import {
   defaultLocalSyncContext, buildShortcutExtension, createBaseExtensions,
   createStrikethroughFallback,
@@ -330,6 +331,7 @@ export function createEditor(container, state) {
       // Also in createBaseExtensions — see the note there.
       createOutlinePlugin(state),
       createCardPlugin(state),
+      createCampfirePlugin(), // also in createBaseExtensions
       projectViewField,
       separatorFilter,
       keymap.of([...hushDefaultKeymap, ...historyKeymap]),

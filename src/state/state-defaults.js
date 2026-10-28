@@ -128,6 +128,9 @@ export function createDefaultSettings() {
     edgeLightsPresets: [],
     // The Edge Lights options last begun on each desk: `{ [deskId]: options }`.
     edgeLightsByDesk: {},
+    // Campfire Cursor's options (src/campfire/campfire-store.js); whether
+    // it is lit is per window and never stored.
+    campfire: null,
     // The desk Write Now switches to; null stays on the desk in front
     // (see src/write-now/write-now.js).
     writeNowDeskId: null,

@@ -45,6 +45,7 @@ import { createTableRendererPlugin } from "./plugins/table-renderer.js";
 import { createRatchetExtensions } from "./ratchet.js";
 import { createWordLimitExtensions } from "./word-limit.js";
 import { createCardPlugin } from "../cards/card-doc-plugin.js";
+import { createCampfirePlugin } from "./plugins/campfire.js";
 
 /**
  * Marks a transaction as app-driven rather than user-typed: file loads,
@@ -256,6 +257,8 @@ export function createBaseExtensions(state, onChange, opts) {
     createFootnotePlugin(state),
     createFlagHighlightPlugin(state),
     createYouAreHerePlugin(),
+    // Campfire Cursor: idle until lit (campfire/campfire.js).
+    createCampfirePlugin(),
     // A pinned outline's panel is not a place to write in, and has no
     // current line to point at — see opts.lineIndicator.
     opts?.lineIndicator === false ? [] : createLineIndicatorPlugin(state, { flush: !!opts?.flushLineIndicator }),
