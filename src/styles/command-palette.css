@@ -191,7 +191,13 @@
   margin: 0;
   left: auto;
   top: auto;
+  /* One line here: a docked pane shows as its glyph, without its name. */
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
 }
+.cmd-palette-pane-indicators .tree-docked-pane { height: auto; }
+.cmd-palette-pane-indicators .tree-docked-pane-name { display: none; }
 
 .cmd-palette-shortcut kbd {
   display: inline-flex;

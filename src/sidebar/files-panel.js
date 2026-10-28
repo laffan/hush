@@ -254,6 +254,9 @@ export function createFilesPanel(container, state, hidePanel) {
       const wrap = document.createElement("span");
       wrap.className = "tree-item-cell";
       wrap.append(row, indicators);
+      // The row is padded by however tall its indicators are — a line of
+      // cells, and a line per docked pane (files-panel.css).
+      if (indicators.dataset.height) context?.li?.style.setProperty("--pane-ind-h", indicators.dataset.height + "px");
       return wrap;
     },
 

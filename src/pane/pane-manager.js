@@ -530,6 +530,7 @@ export function getPanesForContext(contextId) {
       fileType: p.fileType,
       pinned: !!p.pinned,
       gutter: !!p.gutter,
+      dockEdge: p.docked ? p.dockEdge || null : null,
     });
   }
   // Saved panes not built yet (another document's, or a hidden
@@ -542,6 +543,7 @@ export function getPanesForContext(contextId) {
       fileType: s.fileType,
       pinned: !!s.pinned,
       gutter: !!s.gutter,
+      dockEdge: s.docked ? s.dockEdge || null : null,
     });
   }
   return out;

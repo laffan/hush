@@ -1,9 +1,14 @@
 /**
- * Pane + sticky indicator strip painted under each doc/notebook row in
- * the files panel. One small outlined rectangle per floating pane the
- * file owns, followed by one small filled square per File Sticky
- * attached to it; cmd-hovering a cell reveals the pane's filename (or
- * the sticky's excerpt) in a small tooltip.
+ * Pane + sticky indicators painted under each doc/notebook row in the
+ * files panel. One small outlined rectangle per floating pane the file
+ * owns, followed by one small filled square per File Sticky attached to
+ * it; hovering a cell shows the pane's filename (or the sticky's
+ * excerpt) in a small tooltip.
+ *
+ * A *docked* pane is part of what the file opens onto, so it is listed
+ * rather than squared: a line of its own under the row (below any cards
+ * the row is open on), the pane icon filled on the side it is docked to,
+ * then the pane's filename — what clicking the row will put on screen.
  *
  * When the file's panes are hidden via the command palette
  * (`settings.panesHiddenByContext`), the pane cells dim so the row
@@ -39,25 +44,61 @@ function persistedPanesForContext(state, ctx) {
   if (!Array.isArray(list)) return [];
   return list
     .filter((p) => p && p.ownerContext === ctx && !p.gutter)
-    .map((p) => ({ fileName: p.fileName || "Untitled" }));
+    .map((p) => ({ fileName: p.fileName || "Untitled", dockEdge: p.docked ? p.dockEdge || null : null }));
 }
+
+/** The pane glyph (sidebar_icons/pane.svg's frame) with the region a
+ *  dock on `edge` occupies filled in. */
+const DOCK_FILL = {
+  left: "M4 3H9V21H4C2.9 21 2 20.1 2 19V5C2 3.9 2.9 3 4 3Z",
+  right: "M15 3H20C21.1 3 22 3.9 22 5V19C22 20.1 21.1 21 20 21H15Z",
+  top: "M4 3H20C21.1 3 22 3.9 22 5V10H2V5C2 3.9 2.9 3 4 3Z",
+  bottom: "M2 14H22V19C22 20.1 21.1 21 20 21H4C2.9 21 2 20.1 2 19Z",
+};
+function dockGlyph(edge) {
+  return `<svg viewBox="0 0 24 24" class="tree-dock-glyph" aria-hidden="true">`
+    + `<path class="tree-dock-fill" d="${DOCK_FILL[edge] || ""}"/>`
+    + `<path d="M2 19V5C2 3.9 2.9 3 4 3H20C21.1 3 22 3.9 22 5V19C22 20.1 21.1 21 20 21H4C2.9 21 2 20.1 2 19Z"/></svg>`;
+}
+
+/** Height the indicators take under the row (the sidebar pads the row
+ *  by it — files-panel.css, `--pane-ind-h`): a line of cells, and a line
+ *  per docked pane. */
+const CELLS_H = 15;
+const DOCKED_ROW_H = 17;
 
 function buildStrip(ctxPanes, stickies, hidden, inline) {
   const strip = document.createElement("span");
   strip.className = inline ? "tree-pane-indicators-inline" : "tree-pane-indicators";
-  for (const p of ctxPanes) {
+  const docked = inline ? [] : ctxPanes.filter((p) => p.dockEdge);
+  const floating = inline ? ctxPanes : ctxPanes.filter((p) => !p.dockEdge);
+  const cells = inline ? strip : document.createElement("span");
+  if (!inline) cells.className = "tree-pane-cells";
+  for (const p of floating) {
     const cell = document.createElement("span");
     cell.className = "tree-pane-cell" + (hidden ? " dimmed" : "");
     cell.dataset.paneName = p.fileName || "Untitled";
-    strip.appendChild(cell);
+    cells.appendChild(cell);
   }
   for (const s of stickies) {
     const cell = document.createElement("span");
     cell.className = "tree-pane-cell tree-sticky-cell";
     const excerpt = (s.text || "").trim().split("\n")[0].slice(0, 42);
     cell.dataset.paneName = excerpt || "Sticky";
-    strip.appendChild(cell);
+    cells.appendChild(cell);
   }
+  if (inline) return strip;
+  const hasCells = cells.childElementCount > 0;
+  if (hasCells) strip.appendChild(cells);
+  for (const p of docked) {
+    const row = document.createElement("span");
+    row.className = "tree-docked-pane" + (hidden ? " dimmed" : "");
+    row.dataset.paneName = `${p.fileName || "Untitled"} — docked ${p.dockEdge}`;
+    row.innerHTML = `${dockGlyph(p.dockEdge)}<span class="tree-docked-pane-name"></span>`;
+    row.lastChild.textContent = p.fileName || "Untitled";
+    strip.appendChild(row);
+  }
+  strip.dataset.height = String((hasCells ? CELLS_H : 2) + docked.length * DOCKED_ROW_H);
   return strip;
 }
 
@@ -112,8 +153,8 @@ export function attachPaneIndicatorTooltip(root) {
   };
   const hide = () => { if (_paneTooltipEl) _paneTooltipEl.style.display = "none"; };
   root.addEventListener("mousemove", (e) => {
-    const cell = e.target instanceof Element ? e.target.closest(".tree-pane-cell") : null;
-    if (cell && e.metaKey) showFor(cell, e.clientX, e.clientY);
+    const cell = e.target instanceof Element ? e.target.closest(".tree-pane-cell, .tree-docked-pane") : null;
+    if (cell) showFor(cell, e.clientX, e.clientY);
     else hide();
   });
   root.addEventListener("mouseleave", hide);

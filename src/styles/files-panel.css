@@ -131,14 +131,14 @@
 }
 
 .sl-item:has(.tree-pane-indicators) {
-  padding-bottom: 15px;
+  padding-bottom: var(--pane-ind-h, 15px);
 }
 
 /* A row open on sub-rows of its own (cards, headings, tab markers): the
    sub-rows start below its pane icons rather than under them, and the
    space the rule above leaves for the icons moves up with them. */
 .sl-item:has(> .sl-item-content .tree-pane-indicators) > .sl-list {
-  padding-top: 15px;
+  padding-top: var(--pane-ind-h, 15px);
 }
 .sl-item:has(> .sl-item-content .tree-pane-indicators):has(> .sl-list) {
   padding-bottom: 0;
@@ -152,7 +152,7 @@
    its strip under its name; its sub-rows are its contents. */
 .sl-item:is([data-type="document"], [data-type="notebook"]):has(> .sl-item-content .tree-pane-indicators):has(> .sl-list) {
   position: relative;
-  padding-bottom: 15px;
+  padding-bottom: var(--pane-ind-h, 15px);
 }
 .sl-item:is([data-type="document"], [data-type="notebook"]):has(> .sl-item-content .tree-pane-indicators) > .sl-list {
   padding-top: 0;
@@ -178,6 +178,40 @@
   gap: 2px;
   transition: opacity 0.12s ease;
 }
+
+/* The cells' line, then a line per docked pane under it. */
+.tree-pane-indicators { flex-direction: column; align-items: flex-start; gap: 0; }
+.tree-pane-cells {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  height: 13px;
+}
+/* A docked pane: the pane glyph filled on its docked side, and the
+   pane's filename — sized and dimmed like a card's line. */
+.tree-docked-pane {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 17px;
+  font-size: 12px;
+  opacity: 0.6;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+}
+.tree-docked-pane.dimmed { opacity: 0.3; }
+.tree-docked-pane-name { overflow: hidden; text-overflow: ellipsis; }
+.tree-dock-glyph {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+.tree-dock-glyph .tree-dock-fill { fill: currentColor; stroke: none; }
 
 .tree-pane-cell {
   box-sizing: border-box;
