@@ -246,10 +246,16 @@ export function createFilesPanel(container, state, hidePanel) {
       context?.li?.classList.toggle("inbox-preview-item", !!preview);
       const indicators = paneIndicatorsFor(item, state);
       if (!indicators && !preview) return row;
+      // Under a preview, the last-edited line moves below it.
+      const below = () => {
+        const edited = row.querySelector(".tree-item-inbox-edited");
+        edited?.classList.add("inbox-preview-edited");
+        return edited ? [preview, edited] : [preview];
+      };
       if (!indicators) {
         const wrap = document.createElement("span");
         wrap.className = "tree-item-cell";
-        wrap.append(row, preview);
+        wrap.append(row, ...below());
         return wrap;
       }
       // The gutter row carries the doc's pane icons INLINE, appended inside the
@@ -264,7 +270,7 @@ export function createFilesPanel(container, state, hidePanel) {
       if (item.type === "document" && hasPairedGutter(state, item)) return row;
       const wrap = document.createElement("span");
       wrap.className = "tree-item-cell";
-      wrap.append(row, ...(preview ? [preview] : []), indicators);
+      wrap.append(row, ...(preview ? below() : []), indicators);
       // The row is padded by however tall its indicators are — a line of
       // cells, and a line per docked pane (files-panel.css).
       if (indicators.dataset.height) context?.li?.style.setProperty("--pane-ind-h", indicators.dataset.height + "px");

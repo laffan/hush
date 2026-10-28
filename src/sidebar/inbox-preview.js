@@ -5,7 +5,7 @@
  *   - A **Doc** shows the stretch around its last caret position — up to
  *     the 50 words before it and the 5 after — within four lines, cut
  *     from the top so the end nearest the caret is the part that shows,
- *     with the caret itself a small dot in the style's cursor colour.
+ *     with the caret itself a 3px line in the style's cursor colour. The item is framed in a light border, with its last-edited line moved below the preview.
  *   - A **Notebook** shows a small snapshot of its canvas as it was last
  *     saved.
  *   - A **Stack** lists its files, the one edited last picked out.
