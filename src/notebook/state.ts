@@ -51,7 +51,7 @@ import { CARD_HEADER_HEIGHT } from "../cards/card-model";
 import { titledAreaFollowers } from "./drag-area-title";
 import { snapMovedToGrid, snapResizeDelta } from "./grid-snap";
 import { wordsBounds } from "./graph-pasteboard";
-import { flowNodePad } from "./renderer-flow-backdrop";
+import { flowNodeBox, NODE_PAD } from "./renderer-flow-backdrop";
 
 /**
  * A pinned outline is drawn against the frame, not the canvas, so its
@@ -296,12 +296,14 @@ export class DrawingState extends EventTarget {
     // arrow against the union of the whole group's bounds, not just
     // the lead member — otherwise the arrowhead lands inside the
     // group, pointing at one stray stroke instead of the cluster.
-    // A plain text node's arrows end at its outlined box, which sits
-    // `NODE_PAD` out from the words (renderer-flow-backdrop.ts).
+    // A plain text node's arrows end at its outlined box, an even
+    // `NODE_PAD` out from its words (renderer-flow-backdrop.ts); in a
+    // group, at the group's bounds padded by the same.
     getBounds: (s) => {
       const b = this.unionGroupBounds(s);
-      const p = flowNodePad(s);
-      return p ? { minX: b.minX - p, minY: b.minY - p, maxX: b.maxX + p, maxY: b.maxY + p } : b;
+      if (!s.groupId) return flowNodeBox(s, b, this.fontFamily) || b;
+      if (!flowNodeBox(s, b, this.fontFamily)) return b;
+      return { minX: b.minX - NODE_PAD, minY: b.minY - NODE_PAD, maxX: b.maxX + NODE_PAD, maxY: b.maxY + NODE_PAD };
     },
     getLayoutBounds: (s) => this.unionGroupBounds(s),
     // Text bounds depend on the canvas font as well as the shape.

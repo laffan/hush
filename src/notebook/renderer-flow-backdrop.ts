@@ -18,6 +18,7 @@
  */
 
 import type { Bounds, Shape, TextShape } from "./types";
+import { LINE_HEIGHT_RATIO, FONT_FAMILY } from "./types";
 import { getShapeBounds } from "./utils";
 import type { FlowchartLayer } from "./flowchart";
 
@@ -29,19 +30,55 @@ const BACKDROP_ALPHA = 0.85;
  *  at its parent's edge, and a wide pad would eat the start of it. */
 const BACKDROP_PAD = 3;
 const BACKDROP_RADIUS = 4;
-/** A chart node's outlined box sits this far out from its text — and
- *  its arrows end at the box (state.ts pads the node's anchor bounds by
- *  the same, `flowNodePad`). */
-export const NODE_PAD = 5;
-const NODE_RADIUS = 5;
+/** A chart node's outlined box sits this far out from its words on
+ *  every side — and its arrows end at the box (state.ts anchors them on
+ *  `flowNodeBox`). */
+export const NODE_PAD = 10;
+const NODE_RADIUS = 7;
 
-/** How far a shape's flowchart anchor sits outside its own bounds: a
- *  plain text node's outlined box (`NODE_PAD`); nothing for anything
- *  else. */
-export function flowNodePad(shape: Shape): number {
-  if (shape.type !== "text") return 0;
+// Where capitals start and the baseline falls below a text line's top,
+// per font: `{ capTop, baseline }` as fractions of the font size.
+const inkCache = new Map<string, { capTop: number; baseline: number }>();
+let inkCtx: CanvasRenderingContext2D | null = null;
+
+function inkMetrics(fontFamily: string): { capTop: number; baseline: number } {
+  const hit = inkCache.get(fontFamily);
+  if (hit) return hit;
+  let m = { capTop: 0.07, baseline: 0.8 };
+  try {
+    inkCtx = inkCtx || document.createElement("canvas").getContext("2d");
+    if (inkCtx) {
+      inkCtx.font = `100px ${fontFamily}, ${FONT_FAMILY}`;
+      inkCtx.textBaseline = "top";
+      const t = inkCtx.measureText("H");
+      m = { capTop: -t.actualBoundingBoxAscent / 100, baseline: t.actualBoundingBoxDescent / 100 };
+    }
+  } catch { /* keep the estimate */ }
+  inkCache.set(fontFamily, m);
+  return m;
+}
+
+/** The outlined box of a plain text node with bounds `b` (null for any
+ *  other shape). Text bounds put each line's leading, and a descender
+ *  allowance, below it, so a box padded evenly on the bounds sat lower
+ *  than its words. This box is padded from the ink instead: `NODE_PAD`
+ *  above the first line's capitals, beside the words, and below the
+ *  last line's baseline (descenders dip into the pad, as they do in a
+ *  button). Lines are taken at the shape's own size. */
+export function flowNodeBox(shape: Shape, b: Bounds, fontFamily: string): Bounds | null {
+  if (shape.type !== "text") return null;
   const t = shape as TextShape;
-  return t.outline || t.backgroundColor ? 0 : NODE_PAD;
+  if (t.outline || t.backgroundColor) return null;
+  const fs = t.fontSize || 16;
+  const ink = inkMetrics(t.fontFamily || fontFamily);
+  // getTextBounds: line slots of fs × LINE_HEIGHT_RATIO, plus 0.25 fs.
+  const lastTop = b.maxY - fs * 0.25 - fs * LINE_HEIGHT_RATIO;
+  return {
+    minX: b.minX - NODE_PAD,
+    minY: b.minY + ink.capTop * fs - NODE_PAD,
+    maxX: b.maxX + NODE_PAD,
+    maxY: Math.max(b.minY + ink.capTop * fs, lastTop + ink.baseline * fs) + NODE_PAD,
+  };
 }
 /** A chart node's backdrop also takes a hairline in the text colour at
  *  this strength, so a node reads as a box even on a canvas whose colour
@@ -153,14 +190,17 @@ export function drawTextBackdrop(
 ): void {
   if (shape.outline || shape.backgroundColor) return;
   const b = boundsOf(shape, fontFamily);
-  // An outlined chart node gets room round its words; a backdrop alone
-  // stays tight, so an arrow starting at its parent isn't eaten.
-  const pad = borderColor ? NODE_PAD : BACKDROP_PAD;
+  // An outlined chart node gets an even margin round its words; a
+  // backdrop alone stays tight, so an arrow starting at its parent
+  // isn't eaten.
+  const box = (borderColor && flowNodeBox(shape, b, fontFamily)) || {
+    minX: b.minX - BACKDROP_PAD, minY: b.minY - BACKDROP_PAD,
+    maxX: b.maxX + BACKDROP_PAD, maxY: b.maxY + BACKDROP_PAD,
+  };
   ctx.save();
   ctx.beginPath();
   (ctx as any).roundRect(
-    b.minX - pad, b.minY - pad,
-    b.maxX - b.minX + pad * 2, b.maxY - b.minY + pad * 2,
+    box.minX, box.minY, box.maxX - box.minX, box.maxY - box.minY,
     borderColor ? NODE_RADIUS : BACKDROP_RADIUS,
   );
   const alpha = ctx.globalAlpha;
