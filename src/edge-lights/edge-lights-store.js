@@ -4,7 +4,7 @@
  * pulling the WebGL code in.
  *
  * The options are remembered (`settings.edgeLights`, opaque
- * `serde_json::Value` on `AppSettings`): `{ kind, fill, distortion,
+ * `serde_json::Value` on `AppSettings`): `{ kind, fill,
  * animation, palette, customColors, saturation, opacity, depth, speed }`
  * — the last set begun anywhere — and per desk as well
  * (`settings.edgeLightsByDesk`, deskId → options), which is what
@@ -28,19 +28,15 @@ export const KINDS = [
 ];
 
 /** What fills the shape. **Colours** is the palette's light (the
- *  original); **Distortion** bends whatever the shape lies over — the
- *  shape becomes a mask over the page (edge-lights-distort.js); and
- *  **Animation** fills it with slow particles in the palette's colours
- *  (the shader). The menu calls `kind` the Shape. */
+ *  original); **Blur** blurs whatever the shape lies over — the shape
+ *  becomes a mask over the page (edge-lights-blur.js); and **Animation**
+ *  fills it with slow particles in the palette's colours (the shader).
+ *  The menu calls `kind` the Shape. (A Distortion fill offered Liquid
+ *  glass and RGB shift beside Blur; options saved with it read as Blur.) */
 export const FILLS = [
   { id: "colors", name: "Colors" },
-  { id: "distortion", name: "Distortion" },
-  { id: "animation", name: "Animation" },
-];
-export const DISTORTIONS = [
-  { id: "glass", name: "Liquid glass" },
   { id: "blur", name: "Blur" },
-  { id: "rgb", name: "RGB shift" },
+  { id: "animation", name: "Animation" },
 ];
 export const ANIMATIONS = [
   { id: "hyperspace", name: "Hyperspace" },
@@ -76,7 +72,6 @@ export const DEFAULT_CUSTOM_COLORS = ["#3dffa8", "#3dd5ff", "#ff7ad9"];
 export const DEFAULT_OPTIONS = {
   kind: "polar",
   fill: "colors",
-  distortion: "glass",
   animation: "snow",
   palette: "aurora",
   customColors: DEFAULT_CUSTOM_COLORS,
@@ -130,8 +125,7 @@ export function readOptions(settings) {
   const palette = o.palette === "polar" ? "glacier" : o.palette;
   return {
     kind: KINDS.some((k) => k.id === o.kind) ? o.kind : DEFAULT_OPTIONS.kind,
-    fill: FILLS.some((f) => f.id === o.fill) ? o.fill : DEFAULT_OPTIONS.fill,
-    distortion: DISTORTIONS.some((d) => d.id === o.distortion) ? o.distortion : DEFAULT_OPTIONS.distortion,
+    fill: o.fill === "distortion" ? "blur" : FILLS.some((f) => f.id === o.fill) ? o.fill : DEFAULT_OPTIONS.fill,
     animation: ANIMATIONS.some((a) => a.id === o.animation) ? o.animation : DEFAULT_OPTIONS.animation,
     palette: PALETTES.some((p) => p.id === palette) ? palette : DEFAULT_OPTIONS.palette,
     customColors: readCustomColors(o),
@@ -219,11 +213,11 @@ export function sameOptions(a, b) {
 }
 
 /** A name for the settings as they stand: their shape and what fills it
- *  — the palette, the distortion or the animation. */
+ *  — the palette, Blur, or the animation. */
 export function describeOptions(options) {
   const kind = KINDS.find((k) => k.id === options.kind)?.name || "";
-  const fill = options.fill === "distortion"
-    ? DISTORTIONS.find((d) => d.id === options.distortion)?.name
+  const fill = options.fill === "blur" || options.fill === "distortion"
+    ? "Blur"
     : options.fill === "animation"
       ? `${ANIMATIONS.find((a) => a.id === options.animation)?.name || ""} ${PALETTES.find((p) => p.id === options.palette)?.name || ""}`.trim()
       : PALETTES.find((p) => p.id === options.palette)?.name;

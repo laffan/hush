@@ -35,14 +35,6 @@ body.campfire-on .cursor-mode-surface:is(.block-cursor, .underline-cursor, .thic
   mask-size: 100% 100%;
 }
 
-/* Glow matches cursor colour: the text takes the caret's colour. Away
-   from the light it is at the base opacity anyway, so only the lit text
-   reads as coloured. */
-body.campfire-on.campfire-match-cursor .cursor-mode-surface:is(.block-cursor, .underline-cursor, .thick-cursor) .cm-editor.cf-surface > .cm-scroller > .cm-content,
-body.campfire-on.campfire-match-cursor .cursor-mode-surface:is(.block-cursor, .underline-cursor, .thick-cursor) .cm-editor.cf-surface > .cm-scroller > .cm-content * {
-  color: var(--block-cursor-color, var(--cursor)) !important;
-}
-
 /* ── The options modal (campfire/campfire-modal.js) ─────────────── */
 .tree-delete-modal-backdrop.campfire-backdrop { background: rgba(0, 0, 0, 0.12); }
 .tree-delete-modal.campfire-modal { max-width: 420px; }

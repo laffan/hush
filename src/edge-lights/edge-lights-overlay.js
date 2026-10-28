@@ -8,12 +8,11 @@
  * app rather than behind the text, and it belongs to no style.
  *
  * What it draws — Polar's curtains, Scuba's ripples, Thrum's patches — is the shader's
- * (edge-lights-shader.js); this module runs it. With the Distortion fill
- * each frame is drawn twice when the mask is due: once as a mask, handed
- * to the distortion layer (edge-lights-distort.js) as an image every
- * `MASK_MS`, then as the distortion's visible surface (glass rim, frost,
- * colour fringes), which is what the canvas shows — so the shape reads
- * even over a plain page, where the distortion has nothing to bend.
+ * (edge-lights-shader.js); this module runs it. With the Blur fill each
+ * frame is drawn twice when the mask is due: once as a mask, handed to
+ * the blur layer (edge-lights-blur.js) as an image every `MASK_MS`, then
+ * as a faint frost, which is what the canvas shows — so the shape reads
+ * even over a plain page, where there is nothing to blur.
  *
  * Cost: it is drawn at half the CSS resolution (it is all soft light),
  * at 30 fps, and a pixel further in than any lobe can reach leaves at
@@ -36,15 +35,14 @@ const RENDER_SCALE = 0.5;
 const FRAME_MS = 1000 / 30;
 const FADE_IN_MS = 2500;
 const FADE_OUT_MS = 1200;
-/** How often the Distortion fill's mask is passed on. Reading a frame
- *  out as an image costs a little; a dozen times a second is plenty for
- *  shapes this slow. */
-const MASK_MS = 80;
-/** The shader's `u_fill` for each fill: Distortion shows its surface
- *  (3); its mask (1) is drawn only when passed on. */
-const FILL_UNIFORM = { colors: 0, distortion: 3, animation: 2 };
+/** How often the Blur fill's mask is passed on. Reading a frame out as
+ *  an image costs a little; eight times a second is plenty for shapes
+ *  this slow. */
+const MASK_MS = 120;
+/** The shader's `u_fill` for each fill: Blur shows its frost (3); its
+ *  mask (1) is drawn only when passed on. */
+const FILL_UNIFORM = { colors: 0, blur: 3, animation: 2 };
 const ANIMATION_IDS = ["hyperspace", "snow"];
-const DISTORT_IDS = ["glass", "blur", "rgb"];
 
 /** Mount the overlay with `options` (resolved — see edge-lights-
  *  store.js#readOptions — plus `colors`, the palette's colours).
@@ -65,13 +63,13 @@ export function mountEdgeLights(options) {
   gl.useProgram(program);
   setupQuad(gl, program);
   const u = {};
-  for (const name of ["u_res", "u_time", "u_depth", "u_opacity", "u_sat", "u_fade", "u_kind", "u_count", "u_colors", "u_fill", "u_anim", "u_psize", "u_distort", "u_dark"]) {
+  for (const name of ["u_res", "u_time", "u_depth", "u_opacity", "u_sat", "u_fade", "u_kind", "u_count", "u_colors", "u_fill", "u_anim", "u_psize", "u_dark"]) {
     u[name] = gl.getUniformLocation(program, name);
   }
 
   let opts = options;
   let raf = 0;
-  let distort = null;        // the Distortion fill's layer, while it is the fill
+  let distort = null;        // the Blur fill's layer, while it is the fill
   let distortKey = "";
   let lastMask = 0;
   let lastDraw = 0;
@@ -98,24 +96,23 @@ export function mountEdgeLights(options) {
     gl.uniform1i(u.u_fill, FILL_UNIFORM[opts.fill] ?? 0);
     gl.uniform1i(u.u_anim, Math.max(0, ANIMATION_IDS.indexOf(opts.animation)));
     gl.uniform1f(u.u_psize, opts.animation === "snow" ? opts.flakeSize ?? 1 : opts.raySize ?? 1);
-    gl.uniform1i(u.u_distort, Math.max(0, DISTORT_IDS.indexOf(opts.distortion)));
     el.classList.toggle("edge-lights-unblended", UNBLENDED_KINDS.has(opts.kind));
     syncDistortion();
   }
 
-  /** The Distortion fill's layer follows the options: mounted (the
-   *  module loaded on first use) or rebuilt when its kind or strength
-   *  changes, removed when the fill is something else. */
+  /** The Blur fill's layer follows the options: mounted (the module
+   *  loaded on first use), its strength updated, removed when the fill
+   *  is something else. */
   function syncDistortion() {
-    const on = opts.fill === "distortion";
+    const on = opts.fill === "blur";
     if (!on) { distort?.remove(); distort = null; distortKey = ""; return; }
-    const key = `${opts.distortion}:${opts.opacity.toFixed(2)}`;
+    const key = opts.opacity.toFixed(2);
     if (key === distortKey) return;
     distortKey = key;
-    import("./edge-lights-distort.js").then(({ mountDistortion }) => {
-      if (distortKey !== key || opts.fill !== "distortion") return;
-      if (distort) distort.update(opts.distortion, opts.opacity);
-      else distort = mountDistortion(opts.distortion, opts.opacity);
+    import("./edge-lights-blur.js").then(({ mountBlur }) => {
+      if (distortKey !== key || opts.fill !== "blur") return;
+      if (distort) distort.update(opts.opacity);
+      else distort = mountBlur(opts.opacity);
       lastMask = 0;
     });
   }

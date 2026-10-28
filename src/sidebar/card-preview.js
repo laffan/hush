@@ -126,33 +126,59 @@ function currentRow(row, id) {
 }
 
 let hovered = null;      // { row, id } while the pointer is on a card row
+let installed = false;
 
-/** Preview card rows under `root` (the files panel) on hover. Listened
- *  for on the panel itself, once, with pointer events rather than
- *  `:hover` or a hover media query, so any row in the panel and any
- *  mouse-driven webview gets it; touch never does. */
+/** The card row under (x, y), looking through whatever lies over it — a
+ *  pane-icon strip, a hover overlay — rather than only at the topmost
+ *  element, which is what `pointerover` reports. */
+function rowAt(x, y) {
+  for (const el of document.elementsFromPoint(x, y)) {
+    if (el.closest?.(".hush-card-preview")) return hovered?.row || null; // on the preview: keep it
+    const row = el.closest?.(".tree-card-row");
+    if (row) return row;
+  }
+  return null;
+}
+
+/** Preview card rows on hover — every card row, wherever its file is
+ *  listed (Inbox, folders, projects, the Flagged list). One listener on
+ *  the document, installed once, hit-testing the pointer once a frame
+ *  through everything under it; pointer events rather than `:hover` or
+ *  a hover media query, so any mouse-driven webview gets it, and touch
+ *  never does. `root` is accepted for the caller's sake. */
 export function attachCardPreview(root, state) {
-  if (!root || root.__cardPreview) return;
-  root.__cardPreview = true;
-  root.addEventListener("pointerover", (e) => {
-    if (e.pointerType === "touch") return;
-    const row = e.target instanceof Element ? e.target.closest(".tree-card-row") : null;
-    if (!row) return;
+  if (installed) return;
+  installed = true;
+  let pending = null;
+  let raf = 0;
+  const check = () => {
+    raf = 0;
+    const e = pending;
+    pending = null;
+    if (!e || dragging) return;
+    const row = document.querySelector(".tree-card-row") ? rowAt(e.clientX, e.clientY) : null;
+    // Still on the row, or on its preview: keep it up.
+    if (row && row === hovered?.row) { clearTimeout(hideTimer); return; }
+    if (!row && !hovered) return;
+    if (!row) {
+      hovered = null;
+      clearTimeout(showTimer);
+      if (preview) scheduleHide();
+      return;
+    }
     hovered = { row, id: row.__cardItem?.id };
     clearTimeout(hideTimer);
     if (preview?.row === row) return;
     clearTimeout(showTimer);
     showTimer = setTimeout(() => void show(state, row), preview ? 60 : SHOW_DELAY_MS);
-  });
-  root.addEventListener("pointerout", (e) => {
-    const row = e.target instanceof Element ? e.target.closest(".tree-card-row") : null;
-    if (!row || row.contains(e.relatedTarget)) return;
-    if (hovered?.row === row) hovered = null;
-    clearTimeout(showTimer);
-    if (preview) scheduleHide();
-  });
+  };
+  document.addEventListener("pointermove", (e) => {
+    if (e.pointerType === "touch") return;
+    pending = e;
+    if (!raf) raf = requestAnimationFrame(check);
+  }, { passive: true });
   // Dragging the row itself, or clicking it, puts the preview away.
-  root.addEventListener("pointerdown", (e) => {
-    if (e.target instanceof Element && e.target.closest(".tree-card-row")) { hovered = null; hide(); }
-  });
+  document.addEventListener("pointerdown", (e) => {
+    if (e.target instanceof Element && rowAt(e.clientX, e.clientY) && !e.target.closest(".hush-card-preview")) { hovered = null; hide(); }
+  }, true);
 }

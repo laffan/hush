@@ -428,6 +428,7 @@ export function createFilesPanel(container, state, hidePanel) {
   listContainer.addEventListener("click", onActionClick);
   flaggedContainerEl.addEventListener("click", onActionClick);
   attachPaneIndicatorTooltip(listContainer);
+  attachPaneIndicatorTooltip(flaggedContainerEl);
   import("./card-preview.js").then((m) => m.attachCardPreview(container, state));
   // Option-click on a row opens the Send-to-desk modal (when desks on).
   import("./send-to-desk-modal.js").then((m) => m.attachDeskShortcuts(listContainer, state));

@@ -11,6 +11,13 @@
   border-radius: 6px;
 }
 
+/* The open (or selected) item's border goes to full strength, in the
+   title's own colour. */
+.sl-item.inbox-preview-item.selected > .sl-item-content .tree-item-cell,
+.sl-item.inbox-preview-item > .sl-item-content .tree-item-cell:has(.tree-item-row.active) {
+  border-color: currentColor;
+}
+
 .inbox-preview {
   display: block;
   margin: 4px 0 3px;
@@ -53,15 +60,17 @@
   line-height: 1.3;
 }
 
-/* A Notebook: its shapes as last saved, transparent, in the appearance
-   on screen (both snapshots are in the row; one shows). */
+/* A Notebook: the middle of its view as last saved (a 4:3 crop at one
+   standard scale), transparent, in the appearance on screen (both
+   snapshots are in the row; one shows). Cropped further, centred, when
+   the sidebar is narrow, rather than scaled down. */
 .inbox-preview-notebook img {
   display: block;
   width: 100%;
-  height: auto;
-  max-height: 110px;
-  object-fit: contain;
-  object-position: left top;
+  aspect-ratio: 4 / 3;
+  max-height: 140px;
+  object-fit: cover;
+  object-position: center;
 }
 .inbox-preview-notebook .inbox-thumb-dark { display: none; }
 html.dark-surface .inbox-preview-notebook .inbox-thumb-dark { display: block; }

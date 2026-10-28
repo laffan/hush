@@ -24,7 +24,7 @@ html.dark-surface .edge-lights.edge-lights-unblended {
 
 
 /* Blur: a full-window layer blurring what is behind it, masked by the
-   shape. */
+   shape (two of them, swapped as the mask changes — edge-lights-blur.js). */
 .edge-lights-distort {
   position: fixed;
   inset: 0;
@@ -35,9 +35,6 @@ html.dark-surface .edge-lights.edge-lights-unblended {
   mask-repeat: no-repeat;
   -webkit-mask-repeat: no-repeat;
 }
-
-/* Liquid glass and RGB shift: the page itself through the SVG filter. */
-body.edge-lights-distorting { filter: url(#hush-edge-distort); }
 
 /* The modal previews on the overlay, so its backdrop only just dims. */
 .tree-delete-modal-backdrop.edge-lights-backdrop {
@@ -386,8 +383,8 @@ body.edge-lights-distorting { filter: url(#hush-edge-distort); }
   background: rgba(128, 128, 128, 0.18);
 }
 
-/* Rows the fill takes away (the distortion and animation choices, the
-   palette and saturation for a distortion). `display: grid` on the rows
+/* Rows the fill takes away (the animation choices, the palette and
+   saturation for a blur). `display: grid` on the rows
    would otherwise outrank the attribute. */
 .edge-lights-modal .el-row[hidden],
 .edge-lights-modal .el-palettes[hidden],

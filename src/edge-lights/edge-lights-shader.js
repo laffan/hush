@@ -36,14 +36,13 @@
  *
  * Fill (`u_fill`) decides what the shape is filled with, once each kind
  * has worked out how strongly a pixel belongs to it: the colour above
- * (0); the strength alone, in white, as a mask the distortion layer
- * reads (1 — edge-lights-distort.js); particles in the palette's
+ * (0); the strength alone, in white, as a mask the blur layer
+ * reads (1 — edge-lights-blur.js); particles in the palette's
  * colours (2) — Hyperspace's streaks running out from the middle of the
  * window, or Snow's flakes drifting down in three depths (`u_anim`),
- * sized by `u_psize`; or the Distortion's own surface (3, `u_distort`),
- * drawn over what the distortion layer bends so the shape shows even
- * over a plain page, where there is nothing to bend: a glass rim and
- * sheen, a frost, or red and blue fringes. Opacity scales every fill
+ * sized by `u_psize`; or Blur's own surface (3), a faint frost drawn
+ * over what the blur layer blurs so the shape shows even over a plain
+ * page, where there is nothing to blur. Opacity scales every fill
  * down to nothing at 0.
  */
 
@@ -62,10 +61,9 @@ uniform float u_fade;
 uniform int   u_kind;     // 0 polar, 1 scuba, 2 thrum, 3 thrum dark
 uniform int   u_count;    // colours in use, 2..${MAX_SHADER_COLORS}
 uniform vec3  u_colors[${MAX_SHADER_COLORS}];
-uniform int   u_fill;     // 0 colours, 1 distortion mask, 2 animation
+uniform int   u_fill;     // 0 colours, 1 blur mask, 2 animation, 3 frost
 uniform int   u_anim;     // 0 hyperspace, 1 snow
 uniform float u_psize;    // particle size, a multiple of the first
-uniform int   u_distort;  // 0 glass, 1 blur, 2 rgb shift
 uniform int   u_dark;     // 1 on a dark page
 
 // 2D simplex noise (Ashima Arts / Ian McEwan, MIT) — smooth in every
@@ -224,24 +222,9 @@ vec4 fillOut(vec3 col, float a, vec2 px, float t) {
     return vec4(pc * pa, pa);
   }
   if (u_fill == 3) {
-    vec3 c;
-    float v;
-    if (u_distort == 0) {
-      // Glass: a bright rim where the shape begins, a faint sheen inside.
-      float rim = exp(-pow((g - 0.22) / 0.07, 2.0));
-      v = (0.5 * rim + 0.1 * g) * k;
-      c = u_dark == 1 ? vec3(1.0) : vec3(0.35, 0.4, 0.5);
-    } else if (u_distort == 1) {
-      // Frost: the shape clouds a little, light on dark and grey on light.
-      v = 0.16 * g * k;
-      c = u_dark == 1 ? vec3(1.0) : vec3(0.45);
-    } else {
-      // RGB shift: a red contour and a blue one, as a split edge shows.
-      float r = exp(-pow((g - 0.18) / 0.06, 2.0));
-      float b = exp(-pow((g - 0.34) / 0.06, 2.0));
-      v = max(r, b) * 0.55 * k;
-      c = (r + b) > 0.0 ? vec3(r, 0.1 * (r + b), b) / max(r, b) : vec3(0.0);
-    }
+    // Frost: the shape clouds a little, light on dark and grey on light.
+    float v = 0.16 * g * k;
+    vec3 c = u_dark == 1 ? vec3(1.0) : vec3(0.45);
     return vec4(c * v, v);
   }
   return vec4(col * a, a);

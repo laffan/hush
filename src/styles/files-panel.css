@@ -189,19 +189,19 @@
   height: 13px;
 }
 /* A docked pane: the pane glyph filled on its docked side, and the
-   pane's filename — sized and dimmed like a card's line. */
+   pane's filename — sized like a card's line, but at full strength:
+   it is a file that is open, not a part of this one. */
 .tree-docked-pane {
   display: flex;
   align-items: center;
   gap: 6px;
   height: 17px;
   font-size: 12px;
-  opacity: 0.6;
   white-space: nowrap;
   max-width: 100%;
   overflow: hidden;
 }
-.tree-docked-pane.dimmed { opacity: 0.3; }
+.tree-docked-pane.dimmed { opacity: 0.4; }
 .tree-docked-pane-name { overflow: hidden; text-overflow: ellipsis; }
 .tree-dock-glyph {
   flex: none;
@@ -220,7 +220,6 @@
   border: 1px solid currentColor;
   border-radius: 2px;
   background: transparent;
-  opacity: 0.55;
   flex: 0 0 auto;
 }
 
@@ -239,10 +238,9 @@
 }
 
 /* Hidden-panes dim rides on the pane cells only — stickies aren't part
-   of the hidden pane set, so their cells keep full strength. (0.17 ≈
-   the old strip-level 0.3 multiplied by the cell's own 0.55.) */
+   of the hidden pane set, so their cells keep full strength. */
 .tree-pane-cell.dimmed {
-  opacity: 0.17;
+  opacity: 0.3;
 }
 
 .tree-pane-indicators.dimmed {

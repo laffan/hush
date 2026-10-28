@@ -14,6 +14,7 @@ import { typeIcons, escHtml, attachLeafHoverHandlers } from "./files-panel-share
 import { visibleTopLevel, getIcon, flagOnlyButton } from "./files-panel-rows.js";
 import { rowColorRgba } from "./files-panel-row-menu.js";
 import { renderYouAreHereRows } from "./files-panel-you-are-here.js";
+import { paneIndicatorsFor } from "./files-panel-pane-indicators.js";
 
 let flaggedCollapsed = false;
 // Per-node collapse state for nested entries inside the Flagged section.
@@ -139,7 +140,18 @@ function renderFlaggedNode(item, state, isBubbled) {
   // collisions) but reads as just "Gutter" beneath its doc.
   const displayName = (item.type === "notebook" && item.gutter) ? "Gutter" : item.name;
   itemRow.innerHTML = `${getIcon(item)}<span class="tree-item-name">${escHtml(displayName)}</span>${button}`;
-  itemMain.appendChild(itemRow);
+  // A flagged document keeps its pane icons and docked-pane rows under
+  // it here too, as in the tree (files-panel-pane-indicators.js).
+  const indicators = item.type === "folder" ? null : paneIndicatorsFor(item, state);
+  if (indicators) {
+    const cell = document.createElement("span");
+    cell.className = "tree-item-cell";
+    cell.append(itemRow, indicators);
+    itemMain.appendChild(cell);
+    if (indicators.dataset.height) li.style.setProperty("--pane-ind-h", indicators.dataset.height + "px");
+  } else {
+    itemMain.appendChild(itemRow);
+  }
   itemLabel.appendChild(itemMain);
   itemContent.appendChild(itemLabel);
   li.appendChild(itemContent);
