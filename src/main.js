@@ -15,7 +15,7 @@ import { toggleCommandPalette, openFilePalette } from "./command-palette.js";
 import { fontFallbacks, themeBackgrounds, themeForegrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 import { applyNotebookSettings, previewNotebookStyle, setNotebookLeftInset } from "./notebook/notebook-bridge.js";
 import { setupModeSwitching } from "./main-modes.js";
-import { installNotebookAppearanceSync } from "./main-listeners.js";
+import { installAppListeners } from "./main-listeners.js";
 import { initPaneManager } from "./pane/pane-manager.js";
 import { initCmdButton } from "./cmd-button.js";
 import { initCmdHeldSliders } from "./cmd-held-sliders.js";
@@ -665,9 +665,9 @@ async function init() {
     if (state.currentNotebookFileId) applyNotebookSettings(state);
   });
 
-  // Notebook/appearance sync (extracted to main-listeners.js to keep
-  // init() under the line limit).
-  installNotebookAppearanceSync(state);
+  // Notebook/appearance sync and the modal shortcuts (extracted to
+  // main-listeners.js to keep init() under the line limit).
+  installAppListeners(state);
 
   // Local desk roots: load the deskId → folder map for UI badges and
   // subscribe to the per-root filesystem watcher (disk-wins reconcile).

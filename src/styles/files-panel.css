@@ -1670,3 +1670,13 @@ html[data-theme="dark"] .tree-item-inbox-edited.stale {
   display: flex;
   justify-content: flex-end;
 }
+
+/* ⌘ held over an alert modal: each option's key (ui/modal-shortcuts.js). */
+.modal-shortcut-hint {
+  display: none;
+  margin-left: 7px;
+  font: 500 10.5px/1 system-ui, sans-serif;
+  opacity: 0.6;
+  letter-spacing: 0.02em;
+}
+.modal-shortcuts-visible .modal-shortcut-hint { display: inline; }

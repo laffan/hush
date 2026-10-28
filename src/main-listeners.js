@@ -7,6 +7,7 @@
 import { applyAppearance } from "./settings/settings-ui.js";
 import { applyActiveStyle } from "./style-application.js";
 import { applyNotebookSettings } from "./notebook/notebook-bridge.js";
+import { installModalShortcuts } from "./ui/modal-shortcuts.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 
@@ -51,3 +52,10 @@ export function installNotebookAppearanceSync(state) {
   });
 }
 
+
+/** Everything this module installs, in one call from init(). */
+export function installAppListeners(state) {
+  installNotebookAppearanceSync(state);
+  // ⌘-held key hints and Return / ⌘-letter / esc for the alert modals.
+  installModalShortcuts();
+}
