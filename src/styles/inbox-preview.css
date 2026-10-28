@@ -1,0 +1,73 @@
+/* ===== Inbox preview cards (sidebar/inbox-preview.js) =====
+   An Inbox row reads as a card: its usual line on top, and under it a
+   glimpse of where the work on it left off. */
+
+.sl-item.inbox-preview-item > .sl-item-content .tree-item-cell {
+  padding-bottom: 2px;
+}
+
+.inbox-preview {
+  display: block;
+  margin: 4px 6px 4px 24px;  /* under the name, not the icon */
+  font-family: system-ui, sans-serif;
+  font-weight: 400;
+  text-decoration: none;
+  color: var(--sidebar-fg, var(--fg));
+}
+
+/* A Doc: four lines at most, cut from the top so the words next to the
+   caret are the ones that show. */
+.inbox-preview-doc {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  max-height: calc(4 * 1.4em);
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 1.4;
+  opacity: 0.62;
+}
+.inbox-preview-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* The caret: a small dot in the style's cursor colour. */
+.inbox-preview-caret {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 2px;
+  border-radius: 50%;
+  background: var(--cursor, currentColor);
+  vertical-align: middle;
+  opacity: 0.95;
+}
+
+/* A Notebook: its canvas as last saved, small. */
+.inbox-preview-notebook img {
+  display: block;
+  width: 100%;
+  max-height: 110px;
+  object-fit: cover;
+  object-position: center top;
+  border-radius: 4px;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.3));
+}
+
+/* A Stack: its files, the one edited last picked out. */
+.inbox-preview-stack {
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.inbox-preview-stack-file {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px;
+  border-radius: 3px;
+  opacity: 0.6;
+}
+.inbox-preview-stack-file.latest {
+  opacity: 0.9;
+  background: rgba(128, 128, 128, 0.14);
+}

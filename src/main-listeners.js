@@ -8,6 +8,7 @@ import { applyAppearance } from "./settings/settings-ui.js";
 import { applyActiveStyle } from "./style-application.js";
 import { applyNotebookSettings } from "./notebook/notebook-bridge.js";
 import { installModalShortcuts } from "./ui/modal-shortcuts.js";
+import { installCaretTracking } from "./sidebar/inbox-preview-store.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 
@@ -58,4 +59,6 @@ export function installAppListeners(state) {
   installNotebookAppearanceSync(state);
   // ⌘-held key hints and Return / ⌘-letter / esc for the alert modals.
   installModalShortcuts();
+  // The open document's caret, for the Inbox's preview cards.
+  installCaretTracking(state);
 }

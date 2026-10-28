@@ -7,6 +7,7 @@ import { SortableList } from "./sortable-list/sortable-list.js";
 import { findNode, findNodeByFileId, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode, reapplyGutterMarkers, isCardsHome } from "../state/tree-helpers.js";
 import { createPane } from "../pane/pane-manager.js";
 import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
+import { inboxPreviewFor } from "./inbox-preview.js";
 import { escHtml, showPromptModal, googleLinkBadgeHtml, computeNumberLabels, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
 import {
   isInboxId, isImagesId, isPdfsId, isTrashId, isAnySpecialId,
@@ -239,8 +240,18 @@ export function createFilesPanel(container, state, hidePanel) {
         }
       }
       if (item.type === "image" && item.fileId) attachImageTooltipToRow(row, item.fileId, item.name);
+      // An Inbox row is a card: its line as the header, and under it where
+      // the work on it left off (inbox-preview.js).
+      const preview = isInboxItem(state.fileTree, item) ? inboxPreviewFor(state, item) : null;
+      context?.li?.classList.toggle("inbox-preview-item", !!preview);
       const indicators = paneIndicatorsFor(item, state);
-      if (!indicators) return row;
+      if (!indicators && !preview) return row;
+      if (!indicators) {
+        const wrap = document.createElement("span");
+        wrap.className = "tree-item-cell";
+        wrap.append(row, preview);
+        return wrap;
+      }
       // The gutter row carries the doc's pane icons INLINE, appended inside the
       // name span so they sit directly after the "Gutter" text (not pushed to
       // the row's right edge by the name's flex:1).
@@ -253,7 +264,7 @@ export function createFilesPanel(container, state, hidePanel) {
       if (item.type === "document" && hasPairedGutter(state, item)) return row;
       const wrap = document.createElement("span");
       wrap.className = "tree-item-cell";
-      wrap.append(row, indicators);
+      wrap.append(row, ...(preview ? [preview] : []), indicators);
       // The row is padded by however tall its indicators are — a line of
       // cells, and a line per docked pane (files-panel.css).
       if (indicators.dataset.height) context?.li?.style.setProperty("--pane-ind-h", indicators.dataset.height + "px");

@@ -10,6 +10,8 @@
  * the hidden editor, so their open paths stash with the key computed
  * *before* they null the doc pointers.
  */
+import { recordDocCaret } from "../sidebar/inbox-preview-store.js";
+
 export function editorCacheKey(state) {
   if (state.currentProjectId) return `project:${state.currentProjectId}`;
   const ls = state.currentLocalSync;
@@ -26,4 +28,10 @@ export function stashActiveEditorState(state) {
   if (!state.editor?.stashDocState) return;
   const key = editorCacheKey(state);
   if (key) state.editor.stashDocState(key);
+  // Leaving a document is when its caret is where the work stopped — the
+  // Inbox's preview card shows the text around it.
+  if (key?.startsWith("doc:")) {
+    const head = state.editor.view?.state.selection.main.head;
+    if (Number.isFinite(head)) recordDocCaret(state.currentFileId, head);
+  }
 }

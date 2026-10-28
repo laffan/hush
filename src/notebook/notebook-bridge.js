@@ -60,6 +60,7 @@ async function tauriInvoke(cmd, args, options) {
 
 // Loading-overlay + save-gate helpers live in their own modules
 // (700-line cap).
+import { noteNotebookSaved } from "../sidebar/inbox-preview-store.js";
 import {
   LARGE_NOTEBOOK_SHAPE_COUNT,
   mountLoadingOverlay as _mountLoadingOverlay,
@@ -444,7 +445,9 @@ export async function saveNotebook(opts = {}) {
   const p = _saveNotebookInner(opts);
   _saveInFlight = p;
   try {
-    return await p;
+    const saved = await p; // then a snapshot for the Inbox's preview card
+    if (saved && canvasInstance) noteNotebookSaved(currentNotebookFileId, canvasInstance.container);
+    return saved;
   } finally {
     if (_saveInFlight === p) _saveInFlight = null;
     _saveGate.noteSaveEnded(performance.now() - saveStart);
