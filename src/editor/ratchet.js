@@ -12,7 +12,7 @@
  *     user turns it off, across sessions. Notebooks are a canvas, not a
  *     CodeMirror surface, so they never see any of this.
  *
- * Because the desk variant has no end time it relaxes three things the
+ * Because the desk variant has no end time it relaxes four things the
  * timed session doesn't:
  *
  *   1. **Line 1 stays editable.** A doc's name follows its first line
@@ -21,20 +21,27 @@
  *   2. **Text can be selected** — but the only thing a selection is
  *      good for is the strikethrough shortcut, which annotates its
  *      dispatch with `bypassRatchet` (see `editor/formatting.js`).
- *      Every other key collapses the selection back to the end of the
- *      document, where writing continues.
+ *      Every other key collapses the selection to its end, where
+ *      writing continues.
  *   3. **Committed text can be rearranged.** The rule the mode actually
  *      enforces is *your words don't change* — not *nothing moves*. A
  *      transaction that puts the same material back in a different
  *      order is a move, and moves are allowed: the sentence-shift
  *      shortcuts, a Shuffle Editor reorder, a Selection Focus reorder.
  *      Add a word or drop one and the same check refuses it.
+ *   4. **Writing can start anywhere.** A click (or any caret placement
+ *      that isn't typing — a find match, an outline jump) moves the lock
+ *      to the caret, and the user writes from there. What was already
+ *      on either side of it stays committed: no deleting, and the arrow
+ *      keys stay dead, as in a timed session.
  *
- * The lock point is per-surface state (`anchorField`): the position the
- * ratchet started from, mapped through every subsequent change. Edits
- * at or after it are the user writing forward; edits before it are the
- * ones this module exists to refuse — visibly, via a brief notice, so
- * an operation that can't land never just evaporates.
+ * The lock is per-surface state (`anchorField`): `from`, the position
+ * writing started at, and `to`, the end of what has been written since —
+ * mapped through every change, `to` growing with what is typed at it.
+ * Edits inside that stretch are the user writing; edits outside it, on
+ * committed text before or after, are the ones this module exists to
+ * refuse — visibly, via a brief notice, so an operation that can't land
+ * never just evaporates.
  */
 
 import { EditorState, StateField, StateEffect, Annotation, Prec } from "@codemirror/state";
@@ -144,37 +151,15 @@ function noticeRefusal(state) {
   ), 0);
 }
 
-/** Park the cursor at the end of the document (where writing
- *  continues). Returns true when it had to move. */
-function collapseToEnd(view) {
-  const end = view.state.doc.length;
-  const sel = view.state.selection.main;
-  if (sel.anchor === end && sel.head === end) return false;
-  view.dispatch({ selection: { anchor: end }, scrollIntoView: true });
-  return true;
-}
-
 /** Drop a live selection under a desk ratchet — "I'm done with that
- *  selection", fired by any key that isn't the strikethrough shortcut. */
+ *  selection", fired by any key that isn't the strikethrough shortcut.
+ *  The caret lands at the selection's end, and writing starts there. */
 function dropSelection(view, state) {
   if (!deskOnlyRatchet(state)) return false;
-  if (view.state.selection.main.empty) return false;
-  return collapseToEnd(view);
-}
-
-/**
- * Put a stray cursor back where writing continues. Selections are left
- * alone (they're the strikethrough handle) and so is a cursor sitting on
- * line 1 (the title stays editable). Called after a click / drag in the
- * editor, never on every selection change — programmatic jumps (outline
- * clicks, find matches, YOU ARE HERE) have to survive.
- */
-export function enforceRatchetSelection(view, state) {
-  if (!deskOnlyRatchet(state)) return false;
   const sel = view.state.selection.main;
-  if (!sel.empty) return false;
-  if (view.state.doc.lineAt(sel.head).number === 1) return false;
-  return collapseToEnd(view);
+  if (sel.empty) return false;
+  view.dispatch({ selection: { anchor: sel.to }, scrollIntoView: true });
+  return true;
 }
 
 // Navigation / undo / cut keys — dead in both modes.
@@ -189,11 +174,10 @@ const SELECTION_KEYS = ("Shift-ArrowLeft Shift-ArrowRight Shift-ArrowUp Shift-Ar
 /**
  * Build the ratchet extension set for one editing surface.
  *
- * `enforceSelection` adds the pointer handling (mouse blocked outright
- * during a timed session; a click under a desk ratchet returns the
- * cursor to the end) — the main editor opts in, reference surfaces
- * (panes, stack columns, Zen) take the keymap + filter only so a
- * programmatic jump can still move their cursor.
+ * `enforceSelection` adds the pointer handling (the mouse is blocked
+ * outright during a timed session) — the main editor opts in, reference
+ * surfaces (panes, stack columns, Zen) take the keymap + filter only so
+ * a programmatic jump can still move their cursor.
  *
  * `fragment` marks a surface holding a slice of a document rather than
  * the whole thing — the Selection Focus overlay. Two things change,
@@ -206,17 +190,26 @@ const SELECTION_KEYS = ("Shift-ArrowLeft Shift-ArrowRight Shift-ArrowUp Shift-Ar
  *     — only moved around, or struck through.
  */
 export function createRatchetExtensions(state, { enforceSelection = false, fragment = false } = {}) {
+  const at = (pos) => ({ from: pos, to: pos });
   const anchorField = StateField.define({
-    create: (editorState) => editorState.doc.length,
+    create: (editorState) => at(editorState.doc.length),
     update(value, tr) {
-      for (const e of tr.effects) if (e.is(ratchetAnchorEffect)) return e.value;
-      if (!tr.docChanged) return value;
+      for (const e of tr.effects) if (e.is(ratchetAnchorEffect)) return at(e.value);
+      if (!tr.docChanged) {
+        // Desk Ratchet: wherever the caret is put down — a click, a find
+        // match, an outline jump — is where writing starts (the arrow
+        // keys that would otherwise move it are dead). A selection is
+        // the strikethrough handle, and leaves the lock where it was.
+        const sel = tr.selection?.main;
+        if (sel && sel.empty && deskOnlyRatchet(state)) return at(sel.head);
+        return value;
+      }
       // A programmatic content swap (file load, pane mirror, sync pull)
       // is committed text arriving whole — re-lock behind its new end.
       // A timed session owns its anchor (captured from the cursor when
       // the session started), so it opts out of the re-lock.
-      if (tr.annotation(programmaticChange) && !timedRatchetActive(state)) return tr.newDoc.length;
-      return tr.changes.mapPos(value, -1);
+      if (tr.annotation(programmaticChange) && !timedRatchetActive(state)) return at(tr.newDoc.length);
+      return { from: tr.changes.mapPos(value.from, -1), to: tr.changes.mapPos(value.to, 1) };
     },
   });
 
@@ -231,7 +224,10 @@ export function createRatchetExtensions(state, { enforceSelection = false, fragm
     const startDoc = tr.startState.doc;
     // Clamped: a filter that throws would take the whole editor with it,
     // and an out-of-range anchor is one bad `setRatchetAnchor` away.
-    const anchor = Math.min(Math.max(0, tr.startState.field(anchorField, false) ?? 0), startDoc.length);
+    const lock = tr.startState.field(anchorField, false) || at(0);
+    const anchor = Math.min(Math.max(0, lock.from), startDoc.length);
+    // The end of what has been written since — committed text follows.
+    const writtenEnd = Math.min(Math.max(anchor, lock.to), startDoc.length);
     // The in-progress word: the user can backspace inside the word
     // they're typing, never into committed text. Scanning only back to
     // the anchor matters — a global search lands past the cursor in a
@@ -253,7 +249,7 @@ export function createRatchetExtensions(state, { enforceSelection = false, fragm
 
     let reject = false;
     tr.changes.iterChanges((fromA, toA) => {
-      if (fromA >= lockPoint) return;   // writing forward
+      if (fromA >= lockPoint && (fragment || toA <= writtenEnd)) return; // writing
       if (toA <= titleEnd) return;      // editing the title
       reject = true;
     });
@@ -292,24 +288,25 @@ export function createRatchetExtensions(state, { enforceSelection = false, fragm
   if (!enforceSelection) return [anchorField, filter, keys];
 
   const pointer = EditorView.domEventHandlers({
-    mousedown: (_e, view) => {
-      if (timedRatchetActive(state)) return true;     // the mouse is dead for the session
-      if (!deskOnlyRatchet(state)) return false;
-      // Wait for the release: collapsing mid-drag would fight the
-      // selection the user is dragging out.
-      const onUp = () => {
-        window.removeEventListener("mouseup", onUp, true);
-        setTimeout(() => enforceRatchetSelection(view, state), 0);
-      };
-      window.addEventListener("mouseup", onUp, true);
-      return false;
+    // The mouse is dead for a timed session — except to bring the
+    // keyboard back: after a sticky (or anything else) took focus, a
+    // click on the document refocuses it with the caret where it was.
+    // Under a desk ratchet a click puts the caret down and the lock
+    // follows it (anchorField).
+    mousedown: (e, view) => {
+      if (!timedRatchetActive(state)) return false;
+      if (!view.hasFocus) {
+        e.preventDefault();
+        view.focus();
+      }
+      return true;
     },
     keydown: (e, view) => {
       if (!deskOnlyRatchet(state)) return false;
       if (e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return false;
       if (e.key.length !== 1) return false;
       // A plain character after a strikethrough: drop the selection so
-      // the keystroke lands at the end instead of being refused.
+      // the keystroke lands after it instead of being refused.
       dropSelection(view, state);
       return false;
     },

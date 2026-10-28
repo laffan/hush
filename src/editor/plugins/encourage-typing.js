@@ -55,7 +55,10 @@ function buildFadeDecorations(view, baseLen, opacity) {
   const builder = new RangeSetBuilder();
   builder.add(
     baseLen, docLen,
-    Decoration.mark({ attributes: { style: `opacity: ${opacity.toFixed(2)}` } })
+    // `data-encourage-fade` lets Private mode's redaction bars, which
+    // are drawn in a layer of their own rather than on the glyphs, fade
+    // with the words they cover (plugins/private-mode.js).
+    Decoration.mark({ attributes: { style: `opacity: ${opacity.toFixed(2)}`, "data-encourage-fade": opacity.toFixed(2) } })
   );
   return builder.finish();
 }
@@ -108,6 +111,12 @@ function startFade(view, state) {
     encourageState.animFrame = requestAnimationFrame(tick);
   }
   tick();
+}
+
+/** How far the fade has come, 1 (none) down to 0 — read by the privacy
+ *  layer to know when its bars need redrawing. */
+export function encourageFadeOpacity() {
+  return encourageState?.fadeStart ? encourageState.opacity : 1;
 }
 
 /**

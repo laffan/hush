@@ -36,6 +36,27 @@
   stroke-width: 1;
 }
 
+/* Under the face while the pointer is over it: the time, and the
+   minutes to an alarm when one is set. */
+.wall-clock .wc-readout {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  text-align: center;
+  color: var(--wc-ink);
+  font: 500 12px/1.35 system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.wall-clock:hover .wc-readout,
+.wall-clock.dragging .wc-readout { opacity: 0.85; }
+.wall-clock .wc-readout-alarm { color: var(--wc-accent); font-size: 11px; }
+.wall-clock .wc-readout-alarm:empty { display: none; }
+
 /* The mark under the pointer thickens. */
 .wall-clock .wc-mark.hover { stroke-width: 2; }
 

@@ -144,6 +144,15 @@ export function deskRatchetGlyph(state, deskId) {
   return state?.settings?.desksMeta?.[deskId]?.ratchet ? DESK_RATCHET_GLYPH : "";
 }
 
+/** A desk wearing an icon carries its Ratchet mark on the icon instead:
+ *  the glyph inset in a small disc over the icon's lower-right corner
+ *  (custom-icons.css). "" when the desk isn't ratcheted. */
+export function deskRatchetBadge(state, deskId) {
+  return state?.settings?.desksMeta?.[deskId]?.ratchet
+    ? `<span class="desk-icon-ratchet-badge">${DESK_RATCHET_GLYPH}</span>`
+    : "";
+}
+
 export function escHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;

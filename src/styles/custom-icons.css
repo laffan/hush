@@ -57,6 +57,34 @@
   height: 15px;
 }
 
+/* A ratcheted desk's mark on its icon: the ratchet glyph inset in a
+   small disc over the icon's lower-right corner (files-panel-shared.js
+   #deskRatchetBadge). The disc takes the page colour so it cuts the
+   icon's strokes cleanly behind it. */
+.desk-switcher-icon,
+.desk-switcher-row-icon { position: relative; }
+.desk-icon-ratchet-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 46%;
+  height: 46%;
+  min-width: 9px;
+  min-height: 9px;
+  border-radius: 50%;
+  background: var(--theme-bg, var(--bg));
+  box-shadow: 0 0 0 1px currentColor;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.desk-icon-ratchet-badge .desk-ratchet-glyph {
+  width: 70%;
+  height: 70%;
+  margin: 0;
+  opacity: 0.9;
+}
+
 /* ----- The picker (ui/icon-picker-modal.js) ----- */
 
 .tree-delete-modal.icon-picker-modal {

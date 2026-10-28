@@ -65,6 +65,20 @@ body.private-mode .footnote-marginalia {
   .hush-privacy-layer { transition: none; }
 }
 
+/* Bars over words Encourage Typing is fading (plugins/private-mode.js),
+   in tenths of the fade: the bar's 0.5 scaled by what is left. */
+.hush-privacy-bar.hush-fade-0 { opacity: 0.00; }
+.hush-privacy-bar.hush-fade-1 { opacity: 0.05; }
+.hush-privacy-bar.hush-fade-2 { opacity: 0.10; }
+.hush-privacy-bar.hush-fade-3 { opacity: 0.15; }
+.hush-privacy-bar.hush-fade-4 { opacity: 0.20; }
+.hush-privacy-bar.hush-fade-5 { opacity: 0.25; }
+.hush-privacy-bar.hush-fade-6 { opacity: 0.30; }
+.hush-privacy-bar.hush-fade-7 { opacity: 0.35; }
+.hush-privacy-bar.hush-fade-8 { opacity: 0.40; }
+.hush-privacy-bar.hush-fade-9 { opacity: 0.45; }
+
+
 /* ===== Dummy Text Mode =====
 
    Dummy mode is the one privacy mode that must reach the glyphs, so it

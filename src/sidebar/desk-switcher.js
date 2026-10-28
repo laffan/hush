@@ -13,7 +13,7 @@
  * to refresh in place; outside clicks dismiss the popover.
  */
 
-import { escHtml, DRAG_HANDLE_SVG, deskRatchetGlyph } from "./files-panel-shared.js";
+import { escHtml, DRAG_HANDLE_SVG, deskRatchetGlyph, deskRatchetBadge } from "./files-panel-shared.js";
 import { isDesktopTauri } from "../command-palette-helpers.js";
 import { chevronSvg } from "../ui/chevron.js";
 import { customIconSvg, deskIconName, deskShowsName } from "../ui/custom-icons.js";
@@ -106,9 +106,13 @@ function render() {
   const nameSpan = header.querySelector(".desk-switcher-name");
   if (nameSpan && nameSpan.textContent !== label) nameSpan.textContent = label;
   const iconSpan = header.querySelector(".desk-switcher-icon");
-  if (iconSpan && iconSpan.dataset.icon !== (iconName || "")) {
-    iconSpan.dataset.icon = iconName || "";
-    iconSpan.innerHTML = iconName ? customIconSvg(iconName) : "";
+  // With an icon, the Ratchet mark sits on it (a disc over its corner)
+  // rather than after the name.
+  const badge = iconName && active ? deskRatchetBadge(_state, active.id) : "";
+  const iconKey = `${iconName || ""}|${badge ? "r" : ""}`;
+  if (iconSpan && iconSpan.dataset.icon !== iconKey) {
+    iconSpan.dataset.icon = iconKey;
+    iconSpan.innerHTML = iconName ? customIconSvg(iconName) + badge : "";
   }
   header.classList.toggle("has-icon", !!iconName);
   // An icon replaces the name unless the desk asks for both ("View Desk
@@ -126,7 +130,7 @@ function render() {
   // Ratchet badge for the desk the header is showing — the mode is
   // persistent, so the closed switcher has to carry it too.
   const ratchetSpan = header.querySelector(".desk-switcher-ratchet");
-  const ratchetMark = active ? deskRatchetGlyph(_state, active.id) : "";
+  const ratchetMark = active && !iconName ? deskRatchetGlyph(_state, active.id) : "";
   if (ratchetSpan && ratchetSpan.innerHTML !== ratchetMark) ratchetSpan.innerHTML = ratchetMark;
   // Refresh the popover body too, but only when one is open AND no
   // rename input is active. The active-rename case is left alone so
@@ -211,8 +215,10 @@ const LOCAL_PIN_PATH = `<path d="M8 14.75C8 14.75 3.75 10.4 3.75 6.75a4.25 4.25 
 function deskRowHtml(d, activeId, canArchive, isLocal = false, iconSlot = false, pinSlot = false) {
   const isActive = d.id === activeId;
   const mark = isActive ? CHECK : "";
-  // Desks in Ratchet mode wear the ratchet glyph after their name.
-  const ratchetGlyph = deskRatchetGlyph(_state, d.id);
+  // Desks in Ratchet mode wear the ratchet glyph after their name — or,
+  // with an icon, on it.
+  const rowIcon = iconSlot ? deskIconName(_state, d.id) : null;
+  const ratchetGlyph = rowIcon ? "" : deskRatchetGlyph(_state, d.id);
   // Local desks (operating from a user-picked folder) wear a small
   // outlined map pin before the name. Only here: the dropdown is the one
   // place a desk's kind is shown.
@@ -235,7 +241,7 @@ function deskRowHtml(d, activeId, canArchive, isLocal = false, iconSlot = false,
   return `<div class="desk-switcher-row${isActive ? " active" : ""}" data-desk-id="${d.id}">
     <button class="desk-switcher-row-pick" type="button" data-action="pick">
       <span class="desk-switcher-row-mark">${mark}</span>
-      ${pinHtml}${iconSlot ? `<span class="desk-switcher-row-icon">${customIconSvg(deskIconName(_state, d.id))}</span>` : ""}<span class="desk-switcher-row-name">${escHtml(d.name || "Untitled desk")}</span>${ratchetGlyph}
+      ${pinHtml}${iconSlot ? `<span class="desk-switcher-row-icon">${customIconSvg(rowIcon)}${rowIcon ? deskRatchetBadge(_state, d.id) : ""}</span>` : ""}<span class="desk-switcher-row-name">${escHtml(d.name || "Untitled desk")}</span>${ratchetGlyph}
     </button>
     <span class="desk-switcher-row-actions">${pencilBtn}${archiveBtn}${handle}</span>
   </div>`;

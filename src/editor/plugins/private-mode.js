@@ -29,6 +29,7 @@
  */
 import { ViewPlugin, Decoration, layer, RectangleMarker, Direction } from "@codemirror/view";
 import { RangeSetBuilder, StateEffect } from "@codemirror/state";
+import { encourageFadeOpacity } from "./encourage-typing.js";
 
 /** Dispatched into every live view when privacy is toggled from outside
  *  the editor (the command palette, the shortcut, a settings change) —
@@ -109,6 +110,13 @@ function blackoutMarkers(view, stateRef) {
     while ((node = walker.nextNode())) {
       const text = node.nodeValue;
       if (!text) continue;
+      // Words Encourage Typing is fading take a bar that fades with them,
+      // in tenths (private-mode.css) — the bars cover the glyphs, so the
+      // glyphs' own opacity never shows.
+      const fadeEl = node.parentElement?.closest?.("[data-encourage-fade]");
+      const cls = fadeEl
+        ? `${BAR_CLASS} hush-fade-${Math.round(Number(fadeEl.dataset.encourageFade) * 10)}`
+        : BAR_CLASS;
       let i = 0;
       while (i < text.length) {
         while (i < text.length && isBlank(text[i])) i++;
@@ -122,7 +130,7 @@ function blackoutMarkers(view, stateRef) {
           const rc = rects[r];
           if (rc.width <= 0 || rc.height <= 0) continue;
           out.push(new RectangleMarker(
-            BAR_CLASS, rc.left - baseLeft, rc.top - baseTop, rc.width, rc.height,
+            cls, rc.left - baseLeft, rc.top - baseTop, rc.width, rc.height,
           ));
         }
         if (out.length >= MAX_BARS) return out;
@@ -139,7 +147,9 @@ function blackoutMarkers(view, stateRef) {
  *  from poking a transaction into every open surface. */
 function privacySignature(stateRef) {
   return `${stateRef.privateMode ? 1 : 0}:${privacyModeOf(stateRef)}:` +
-    `${(stateRef.settings.dummyText || "").length}`;
+    `${(stateRef.settings.dummyText || "").length}:` +
+    // Encourage Typing's fade, in the tenths the bars are drawn at.
+    `${Math.round(encourageFadeOpacity() * 10)}`;
 }
 
 export function createPrivacyLayer(stateRef) {

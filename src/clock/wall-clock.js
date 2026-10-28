@@ -65,6 +65,8 @@ function setMarkLength(mark, i, len) {
   mark.setAttribute("y2", fmt(C - R_OUT * cos));
 }
 
+const TIME_FORMAT = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit" });
+
 function buildFace() {
   const el = document.createElement("div");
   el.className = "wall-clock";
@@ -98,7 +100,18 @@ function buildFace() {
   const hour = hand("wc-hour", HOUR_HAND);
   const minute = hand("wc-minute", MINUTE_HAND);
   el.appendChild(svg);
-  return { el, marks, hour, minute };
+  // Shown under the face while the pointer is over it (clock.css): the
+  // time, and with an alarm set, the minutes until it goes off.
+  const readout = document.createElement("div");
+  readout.className = "wc-readout";
+  readout.setAttribute("aria-hidden", "true");
+  readout.innerHTML = `<div class="wc-readout-time"></div><div class="wc-readout-alarm"></div>`;
+  el.appendChild(readout);
+  return {
+    el, marks, hour, minute,
+    time: readout.querySelector(".wc-readout-time"),
+    alarm: readout.querySelector(".wc-readout-alarm"),
+  };
 }
 
 export function initWallClock(state) {
@@ -167,6 +180,7 @@ export function initWallClock(state) {
     const h = (d.getHours() % 12) + m / 60;
     face.minute.setAttribute("transform", `rotate(${fmt(m * 6)} ${C} ${C})`);
     face.hour.setAttribute("transform", `rotate(${fmt(h * 30)} ${C} ${C})`);
+    renderReadout(now);
 
     if (ringingAt != null) return; // the blink runs its course
     // Read live rather than from `clock`: a write lands in `state.settings`
@@ -178,6 +192,18 @@ export function initWallClock(state) {
     if (until > 0) return;
     if (-until <= ALARM_STALE_MS) ring(at);
     else clearAlarm(at); // it went by while nobody could see it
+  }
+
+  function renderReadout(now) {
+    const time = TIME_FORMAT.format(now);
+    if (face.time.textContent !== time) face.time.textContent = time;
+    const at = getClock(state).alarmAt;
+    let alarm = "";
+    if (at != null && at > now) {
+      const mins = Math.max(1, Math.round((at - now) / 60000));
+      alarm = `Alarm in ${mins} min`;
+    }
+    if (face.alarm.textContent !== alarm) face.alarm.textContent = alarm;
   }
 
   function ring(at) {
