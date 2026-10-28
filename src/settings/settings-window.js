@@ -16,6 +16,7 @@ import {
 import { setSyncSubTab } from "./settings-tabs-sync.js";
 import { installActivityCapture, configureActivityLog } from "../activity-log.js";
 import { shortcutKeyFromEvent } from "../shortcuts.js";
+import { assignTripleTap } from "../ui/triple-tap-gestures.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -454,6 +455,15 @@ function bindAll() {
       }
     });
   }
+
+  // Shortcuts tab — triple taps: a gesture moves to the action it's
+  // picked for, and the tab redraws to show who lost it.
+  document.querySelectorAll(".triple-tap-select").forEach((sel) => {
+    sel.addEventListener("change", async () => {
+      await saveSetting("tripleTaps", assignTripleTap(settings, sel.dataset.tripleAction, sel.value));
+      render();
+    });
+  });
 
   // Shortcuts tab — filetype filter dropdown
   const shortcutFiletypeSelect = document.getElementById("shortcut-filetype-filter");

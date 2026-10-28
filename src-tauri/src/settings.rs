@@ -684,6 +684,14 @@ pub struct AppSettings {
     // per-window and never stored. Opaque; see src/campfire/campfire-store.js.
     #[serde(default)]
     pub campfire: serde_json::Value,
+    // The Campfire options last begun on each desk, deskId → options
+    // (src/campfire/campfire-store.js#readDeskCampfireOptions).
+    #[serde(default)]
+    pub campfire_by_desk: serde_json::Value,
+    // Triple-tap gestures, action → gesture ("" = none); Null takes the
+    // defaults. Opaque; see src/ui/triple-tap-gestures.js.
+    #[serde(default)]
+    pub triple_taps: serde_json::Value,
     // Inbox item previews per desk, deskId → bool (absent = on). Opaque;
     // see src/sidebar/inbox-preview.js#inboxPreviewsOn.
     #[serde(default)]
@@ -946,6 +954,8 @@ impl Default for AppSettings {
             edge_lights_presets: serde_json::json!([]),
             edge_lights_by_desk: serde_json::json!({}),
             campfire: serde_json::Value::Null,
+            campfire_by_desk: serde_json::json!({}),
+            triple_taps: serde_json::Value::Null,
             inbox_preview_by_desk: serde_json::json!({}),
             write_now_desk_id: None,
             auto_clear_empty_inbox: true,

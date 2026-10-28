@@ -8,7 +8,7 @@
  * stops being one Hush draws — a style with the system caret — the
  * campfire goes out, since there is no glow left to see by.
  */
-import { readCampfireOptions, saveCampfireOptions, isCampfireOn, campfireAvailable } from "./campfire-store.js";
+import { readCampfireOptions, readDeskCampfireOptions, saveCampfireOptions, isCampfireOn, campfireAvailable } from "./campfire-store.js";
 import { setCampfire } from "../editor/plugins/campfire.js";
 
 let watching = false;
@@ -64,12 +64,13 @@ export function cancelCampfirePreview(state) {
   apply(isCampfireOn(state) ? readCampfireOptions(state.settings) : null);
 }
 
-/** Light the campfire with `options` (remembered), or say why it can't
- *  be lit. Returns whether it is lit. */
-export function beginCampfire(state, options = readCampfireOptions(state.settings)) {
+/** Light the campfire with `options` (remembered — for this desk, and as
+ *  the last anywhere), or say why it can't be lit. Returns whether it is
+ *  lit. Without options it lights with this desk's last. */
+export function beginCampfire(state, options = readDeskCampfireOptions(state.settings, state.settings?.activeDeskId)) {
   if (!campfireAvailable(state.settings)) { void toast(UNAVAILABLE); return false; }
   state.runtime.campfire = true;
-  void saveCampfireOptions(state, options);
+  void saveCampfireOptions(state, options, state.settings?.activeDeskId || null);
   apply(readCampfireOptions({ campfire: options }));
   watch(state);
   return true;
@@ -80,6 +81,8 @@ export function endCampfire(state) {
   apply(null);
 }
 
+/** On with this desk's last settings, or off — the palette's toggle and
+ *  triple-tapped ⌘ (triple-tap-triggers.js). */
 export function toggleCampfire(state) {
   if (isCampfireOn(state)) endCampfire(state);
   else beginCampfire(state);

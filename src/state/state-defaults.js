@@ -131,6 +131,11 @@ export function createDefaultSettings() {
     // Campfire Cursor's options (src/campfire/campfire-store.js); whether
     // it is lit is per window and never stored.
     campfire: null,
+    // The Campfire options last begun on each desk: `{ [deskId]: options }`.
+    campfireByDesk: {},
+    // Triple-tap gestures, action → gesture (ui/triple-tap-gestures.js);
+    // null takes the defaults.
+    tripleTaps: null,
     // Inbox item previews, per desk: `{ [deskId]: false }` turns a desk's
     // off (sidebar/inbox-preview.js); on unless set.
     inboxPreviewByDesk: {},

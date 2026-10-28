@@ -8,6 +8,7 @@
  */
 
 import { escHtml, escAttr } from "./settings-tabs.js";
+import { TRIPLE_TAP_ACTIONS, TRIPLE_TAP_GESTURES, readTripleTaps } from "../ui/triple-tap-gestures.js";
 
 export const shortcutCategories = [
   {
@@ -243,6 +244,8 @@ export function renderShortcutsTab(settings, searchQuery = "", filetype = "all")
     </div>
   `;
 
+  html += renderTripleTaps(settings, q);
+
   // Pinned conflicts — always visible at the top when any exist.
   if (conflictItems.length > 0) {
     html += `<div class="settings-section shortcut-conflicts-section"><h2>Conflicts</h2>`;
@@ -275,6 +278,25 @@ export function renderShortcutsTab(settings, searchQuery = "", filetype = "all")
   }
 
   return html;
+}
+
+/** Triple taps — which gesture runs which action (ui/triple-tap-
+ *  gestures.js). A gesture picked here is taken from whichever action
+ *  had it (settings-window.js). Shown unless a search matches none of
+ *  them. */
+function renderTripleTaps(settings, q) {
+  const taps = readTripleTaps(settings);
+  const rows = TRIPLE_TAP_ACTIONS.filter((a) => !q || "triple tap".includes(q) || a.label.toLowerCase().includes(q));
+  if (!rows.length) return "";
+  const options = (current) => [`<option value=""${current ? "" : " selected"}>None</option>`,
+    ...TRIPLE_TAP_GESTURES.map((g) => `<option value="${g.id}"${current === g.id ? " selected" : ""}>${escHtml(g.label)}</option>`)].join("");
+  return `<div class="settings-section"><h2>Triple taps</h2>
+    <p class="settings-help">Three quick taps of a modifier key, with nothing else pressed — or, for the ⇧ + … and ⌥ + … gestures, with that key held while the other is tapped. Campfire Cursor and Edge Lights turn on with the settings last used on this desk, or off.</p>
+    ${rows.map((a) => `<div class="settings-row">
+      <label>${highlightMatch(a.label, q)}</label>
+      <select class="triple-tap-select" data-triple-action="${a.id}">${options(taps[a.id])}</select>
+    </div>`).join("")}
+  </div>`;
 }
 
 function renderShortcutRow(settings, def, query, categoryLabel) {

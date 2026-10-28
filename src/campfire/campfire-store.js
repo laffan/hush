@@ -43,8 +43,23 @@ export function readCampfireOptions(settings) {
   };
 }
 
-export function saveCampfireOptions(state, options) {
-  return state.updateSettings({ campfire: readCampfireOptions({ campfire: options }) });
+/** Remember `options` as the last begun — app-wide, and for `deskId`
+ *  when given (`settings.campfireByDesk`, what triple-tapped ⌘ brings
+ *  back on that desk). */
+export function saveCampfireOptions(state, options, deskId = null) {
+  const clean = readCampfireOptions({ campfire: options });
+  const patch = { campfire: clean };
+  if (deskId) {
+    const byDesk = state.settings?.campfireByDesk;
+    patch.campfireByDesk = { ...(byDesk && typeof byDesk === "object" ? byDesk : {}), [deskId]: clean };
+  }
+  return state.updateSettings(patch);
+}
+
+/** The options last begun on `deskId`, else the last begun anywhere. */
+export function readDeskCampfireOptions(settings, deskId) {
+  const own = deskId ? settings?.campfireByDesk?.[deskId] : null;
+  return own && typeof own === "object" ? readCampfireOptions({ campfire: own }) : readCampfireOptions(settings);
 }
 
 export function isCampfireOn(state) {

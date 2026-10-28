@@ -54,7 +54,7 @@ export function endEdgeLights(state) {
 }
 
 /** On with the settings last used on this desk (else the last used
- *  anywhere), or off — triple-tapped ⌘ (edge-lights-trigger.js), no
+ *  anywhere), or off — triple-tapped ⇧⌘ by default (triple-tap-triggers.js), no
  *  modal in between. */
 export function toggleEdgeLights(state) {
   if (isEdgeLightsOn(state)) endEdgeLights(state);

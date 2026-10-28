@@ -6,7 +6,7 @@
  * sidebar closed, Zen Focus. Each step is skipped when it is already so.
  * The steps run behind a fade to black (write-now-veil.js) that lifts
  * once the caret is waiting below the blank lines. Reached by tapping
- * Option three times (write-now-trigger.js) or from the command palette.
+ * Option three times (triple-tap-triggers.js) or from the command palette.
  *
  * Full screen on iPad is Hush's own: iPadOS gives an app no way to make
  * its window fill the screen (that is the system's window controls), so

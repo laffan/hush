@@ -1,5 +1,5 @@
 /**
- * Courier — the quick-send sheet. Triple-tap Shift (courier-trigger.js)
+ * Courier — the quick-send sheet. Triple-tap Shift (triple-tap-triggers.js)
  * and it slides up from the bottom of the window over whatever is on
  * screen, Zen Focus included; send a note and it slides away again with
  * the caret back where it was.

@@ -8,7 +8,7 @@
  *
  * Same shell as the sidebar's modals (`.tree-delete-modal`).
  */
-import { LIMITS, readCampfireOptions, isCampfireOn, campfireAvailable } from "./campfire-store.js";
+import { LIMITS, readDeskCampfireOptions, isCampfireOn, campfireAvailable } from "./campfire-store.js";
 import { previewCampfire, cancelCampfirePreview, beginCampfire, endCampfire } from "./campfire.js";
 
 const SLIDERS = [
@@ -19,7 +19,8 @@ const SLIDERS = [
 
 export function openCampfireModal(state) {
   const on = isCampfireOn(state);
-  const draft = readCampfireOptions(state.settings);
+  // Opens on what this desk last began.
+  const draft = readDeskCampfireOptions(state.settings, state.settings?.activeDeskId);
   const available = campfireAvailable(state.settings);
 
   document.querySelectorAll(".tree-delete-modal-backdrop").forEach((el) => el.remove());
