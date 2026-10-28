@@ -1,6 +1,8 @@
 /**
- * The Edge Lights modal — type (Polar, Scuba or Thrum), colour,
- * saturation, opacity, depth and speed, then Begin or Cancel, with the
+ * The Edge Lights modal — shape (Polar, Scuba, Thrum, Thrum Dark), fill
+ * (Colors, a Distortion of what the shape lies over, or an Animation of
+ * particles), colour, saturation, opacity (a distortion's strength),
+ * depth and speed, then Begin or Cancel, with the
  * saved presets in a rail on the left (edge-lights-presets.js). Custom's
  * colours are a row of two to six wells, shown while Custom is chosen.
  * Every change is drawn at once on the overlay behind it (the backdrop is
@@ -13,7 +15,8 @@
 import { escHtml } from "../sidebar/files-panel-shared.js";
 import { installColorPickers } from "../ui/color-picker.js";
 import {
-  KINDS, PALETTES, LIMITS, MIN_COLORS, MAX_COLORS, readOptions, paletteColors, nextCustomColor, isEdgeLightsOn,
+  KINDS, FILLS, DISTORTIONS, ANIMATIONS, PALETTES, LIMITS, MIN_COLORS, MAX_COLORS,
+  readDeskOptions, paletteColors, nextCustomColor, isEdgeLightsOn,
 } from "./edge-lights-store.js";
 import {
   previewEdgeLights, cancelEdgeLightsPreview, beginEdgeLights, endEdgeLights,
@@ -42,7 +45,8 @@ function customRowHtml(colors) {
 
 export function openEdgeLightsModal(state) {
   const on = isEdgeLightsOn(state);
-  const draft = readOptions(state.settings);
+  // Opens on what this desk last began (the lights in use, while on).
+  const draft = readDeskOptions(state.settings, state.settings?.activeDeskId);
 
   document.querySelectorAll(".tree-delete-modal-backdrop").forEach((el) => el.remove());
   const backdrop = document.createElement("div");
@@ -55,10 +59,22 @@ export function openEdgeLightsModal(state) {
     <div class="el-rail"></div>
     <div class="el-form">
     <label class="el-row">
-      <span class="el-label">Type</span>
+      <span class="el-label">Shape</span>
       <select class="el-kind">${KINDS.map((k) => `<option value="${k.id}">${escHtml(k.name)}</option>`).join("")}</select>
     </label>
-    <div class="el-label">Colour</div>
+    <label class="el-row">
+      <span class="el-label">Fill</span>
+      <select class="el-fill">${FILLS.map((f) => `<option value="${f.id}">${escHtml(f.name)}</option>`).join("")}</select>
+    </label>
+    <label class="el-row el-fill-sub" data-for="distortion">
+      <span class="el-label">Distortion</span>
+      <select class="el-distortion">${DISTORTIONS.map((d) => `<option value="${d.id}">${escHtml(d.name)}</option>`).join("")}</select>
+    </label>
+    <label class="el-row el-fill-sub" data-for="animation">
+      <span class="el-label">Animation</span>
+      <select class="el-animation">${ANIMATIONS.map((a) => `<option value="${a.id}">${escHtml(a.name)}</option>`).join("")}</select>
+    </label>
+    <div class="el-label el-colour-label">Colour</div>
     <div class="el-palettes" role="radiogroup" aria-label="Colour">
       ${PALETTES.map((p) => `
         <button type="button" class="el-palette" role="radio" data-palette="${p.id}" title="${escHtml(p.name)}">
@@ -68,7 +84,7 @@ export function openEdgeLightsModal(state) {
     </div>
     <div class="el-custom-row" hidden></div>
     ${SLIDERS.map((s) => `
-      <label class="el-row">
+      <label class="el-row" data-row="${s.key}">
         <span class="el-label">${s.label}</span>
         <input type="range" data-key="${s.key}" min="${LIMITS[s.key][0]}" max="${LIMITS[s.key][1]}" step="${s.step}" />
         <span class="el-value" data-value="${s.key}"></span>
@@ -98,11 +114,25 @@ export function openEdgeLightsModal(state) {
 
   const kind = modal.querySelector(".el-kind");
   kind.value = draft.kind;
+  const fill = modal.querySelector(".el-fill");
+  const distortion = modal.querySelector(".el-distortion");
+  const animation = modal.querySelector(".el-animation");
   const customRow = modal.querySelector(".el-custom-row");
   const renderCustomRow = () => { customRow.innerHTML = customRowHtml(draft.customColors); };
   renderCustomRow();
 
   const sync = () => {
+    fill.value = draft.fill;
+    distortion.value = draft.distortion;
+    animation.value = draft.animation;
+    modal.querySelectorAll(".el-fill-sub").forEach((row) => { row.hidden = row.dataset.for !== draft.fill; });
+    // A distortion has no colour: the palette goes, and opacity is how
+    // strongly it bends what is under it.
+    const distorting = draft.fill === "distortion";
+    modal.querySelector(".el-colour-label").hidden = distorting;
+    modal.querySelector(".el-palettes").hidden = distorting;
+    modal.querySelector('[data-row="saturation"]').hidden = distorting;
+    modal.querySelector('[data-row="opacity"] .el-label').textContent = distorting ? "Strength" : "Opacity";
     modal.querySelectorAll(".el-palette").forEach((b) => {
       const sel = b.dataset.palette === draft.palette;
       b.classList.toggle("selected", sel);
@@ -110,7 +140,7 @@ export function openEdgeLightsModal(state) {
     });
     modal.querySelector('[data-palette="custom"] .el-swatch')
       ?.setAttribute("style", swatchStyle(paletteColors({ ...draft, palette: "custom" })));
-    customRow.hidden = draft.palette !== "custom";
+    customRow.hidden = distorting || draft.palette !== "custom";
     for (const s of SLIDERS) {
       modal.querySelector(`input[data-key="${s.key}"]`).value = String(draft[s.key]);
       modal.querySelector(`[data-value="${s.key}"]`).textContent = pct(draft[s.key]);
@@ -130,6 +160,9 @@ export function openEdgeLightsModal(state) {
     draft.kind = kind.value;
     sync();
   });
+  for (const [el, key] of [[fill, "fill"], [distortion, "distortion"], [animation, "animation"]]) {
+    el.addEventListener("change", () => { draft[key] = el.value; sync(); });
+  }
   // Delegated: the wells are rebuilt whenever a colour is added or dropped.
   customRow.addEventListener("input", (e) => {
     const well = e.target.closest?.('input[type="color"]');

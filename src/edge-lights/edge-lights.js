@@ -6,7 +6,7 @@
  * options it shows are drawn as they change, behind it — and Cancel puts
  * back what was there before it opened: the lights as they were, or none.
  */
-import { readOptions, saveOptions, paletteColors, isEdgeLightsOn } from "./edge-lights-store.js";
+import { readOptions, readDeskOptions, saveOptions, paletteColors, isEdgeLightsOn } from "./edge-lights-store.js";
 
 let overlay = null;
 
@@ -41,10 +41,10 @@ export function cancelEdgeLightsPreview(state) {
 }
 
 /** Begin (or, while on, re-tune) the lights with `options`, which are
- *  remembered for next time. */
+ *  remembered for next time — for this desk, and as the last anywhere. */
 export async function beginEdgeLights(state, options) {
   state.runtime.edgeLights = true;
-  void saveOptions(state, options);
+  void saveOptions(state, options, state.settings?.activeDeskId || null);
   await show(options);
 }
 
@@ -53,9 +53,10 @@ export function endEdgeLights(state) {
   hide();
 }
 
-/** On with the settings last used (the modal's, a preset's), or off —
- *  triple-tapped ⌘ (edge-lights-trigger.js), no modal in between. */
+/** On with the settings last used on this desk (else the last used
+ *  anywhere), or off — triple-tapped ⌘ (edge-lights-trigger.js), no
+ *  modal in between. */
 export function toggleEdgeLights(state) {
   if (isEdgeLightsOn(state)) endEdgeLights(state);
-  else void beginEdgeLights(state, readOptions(state.settings));
+  else void beginEdgeLights(state, readDeskOptions(state.settings, state.settings?.activeDeskId));
 }

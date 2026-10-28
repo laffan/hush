@@ -33,6 +33,13 @@
  * a slow noise field; the last is what the far reach fades into. With
  * three colours this is exactly the original two-along, one-at-the-reach
  * mix. Output is premultiplied.
+ *
+ * Fill (`u_fill`) decides what the shape is filled with, once each kind
+ * has worked out how strongly a pixel belongs to it: the colour above
+ * (0); the strength alone, in white, as a mask the distortion layer
+ * reads (1 — edge-lights-distort.js); or particles in the palette's
+ * colours (2) — Hyperspace's streaks running out from the middle of the
+ * window, or Snow's flakes drifting down in three depths (`u_anim`).
  */
 
 export const MAX_SHADER_COLORS = 6;
@@ -50,6 +57,8 @@ uniform float u_fade;
 uniform int   u_kind;     // 0 polar, 1 scuba, 2 thrum, 3 thrum dark
 uniform int   u_count;    // colours in use, 2..${MAX_SHADER_COLORS}
 uniform vec3  u_colors[${MAX_SHADER_COLORS}];
+uniform int   u_fill;     // 0 colours, 1 distortion mask, 2 animation
+uniform int   u_anim;     // 0 hyperspace, 1 snow
 
 // 2D simplex noise (Ashima Arts / Ian McEwan, MIT) — smooth in every
 // direction, so the shapes have no grid in them. Range about -1..1.
@@ -140,6 +149,71 @@ float roundedEdgeDistance(vec2 p, float k) {
   return max(-k * log(e), 0.0);
 }
 
+// Snow: one depth of flakes — a sparse grid of soft dots, each cell's
+// flake at its own place, the whole layer falling and swaying.
+float snowLayer(vec2 uv, float scale, float speed, float t, out float id) {
+  vec2 p = uv * scale + vec2(sin(t * 0.21 + uv.y * 3.0) * 0.35, t * speed);
+  vec2 cell = floor(p);
+  vec2 h = hash2(cell + scale);
+  id = h.y;
+  vec2 o = 0.5 + (h - 0.5) * 0.7;
+  float r = 0.07 + 0.07 * h.x;
+  float d = length(fract(p) - o);
+  return smoothstep(r, r * 0.25, d) * step(0.45, h.x);
+}
+
+// Hyperspace: thin streaks, one per narrow wedge round the middle of the
+// window, each running outward on its own clock and lengthening as it
+// goes, as stars do past a ship at speed.
+float warpLayer(vec2 q, float wedges, float seed, float t, out float id) {
+  float r = length(q);
+  float a = (atan(q.y, q.x) / 6.2831853 + 0.5) * wedges;
+  float wedge = floor(a);
+  vec2 h = hash2(vec2(wedge, seed));
+  id = h.x;
+  float head = fract(h.y + t * (0.12 + 0.25 * h.x)) * 1.4;
+  float len = 0.04 + 0.22 * head * head;
+  float along = smoothstep(head - len, head, r) * (1.0 - smoothstep(head, head + 0.01, r));
+  float across = 1.0 - smoothstep(0.06, 0.32, abs(fract(a) - 0.5));
+  return along * across * smoothstep(0.05, 0.25, head) * step(0.3, h.x);
+}
+
+// The particles at this pixel, 0..1, and which palette colour they are.
+float particles(vec2 px, float t, out float id) {
+  float s = min(u_res.x, u_res.y);
+  float best = 0.0;
+  float i0, i1, i2;
+  if (u_anim == 1) {
+    vec2 uv = px / s;
+    float a = snowLayer(uv, 26.0, 0.9, t, i0) * 0.55;
+    float b = snowLayer(uv, 15.0, 1.4, t, i1) * 0.8;
+    float c = snowLayer(uv, 8.0, 2.1, t, i2);
+    best = max(a, max(b, c));
+    id = c >= b && c >= a ? i2 : (b >= a ? i1 : i0);
+  } else {
+    vec2 q = (px - 0.5 * u_res) / s;
+    float a = warpLayer(q, 140.0, 1.7, t, i0);
+    float b = warpLayer(q, 90.0, 5.3, t * 1.3, i1) * 0.8;
+    best = max(a, b);
+    id = a >= b ? i0 : i1;
+  }
+  return best;
+}
+
+// What the pixel becomes, given its colour and how strongly it belongs
+// to the shape (already scaled by opacity and the fade).
+vec4 fillOut(vec3 col, float a, vec2 px, float t) {
+  if (u_fill == 1) return vec4(a, a, a, a);
+  if (u_fill == 2) {
+    float id;
+    float p = particles(px, t, id);
+    vec3 pc = paletteColor(0.3 + 0.4 * id, 0.0);
+    float pa = clamp(p, 0.0, 1.0) * clamp(a * 3.0, 0.0, 1.0);
+    return vec4(pc * pa, pa);
+  }
+  return vec4(col * a, a);
+}
+
 void main() {
   vec2 px = gl_FragCoord.xy;
   float t = u_time;
@@ -191,7 +265,7 @@ void main() {
       float sd = clamp(1.0 - xt * (1.15 - 0.15 * throb) / 1.3, 0.0, 1.0);
       aT = clamp(sd * sd * (3.0 - 2.0 * sd) * (1.0 + 1.5 * u_opacity), 0.0, 1.0) * u_fade;
     }
-    outColor = vec4(colT * aT, aT);
+    outColor = fillOut(colT, aT, px, t);
     return;
   }
 
@@ -237,5 +311,5 @@ void main() {
   vec3 col = paletteColor(m, x);
 
   float a = clamp(glow, 0.0, 1.0) * u_opacity * u_fade;
-  outColor = vec4(col * a, a);
+  outColor = fillOut(col, a, px, t);
 }`;

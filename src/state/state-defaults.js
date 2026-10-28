@@ -126,6 +126,8 @@ export function createDefaultSettings() {
     edgeLights: null,
     // Named Edge Lights settings: `[{ id, name, options }]`.
     edgeLightsPresets: [],
+    // The Edge Lights options last begun on each desk: `{ [deskId]: options }`.
+    edgeLightsByDesk: {},
     // The desk Write Now switches to; null stays on the desk in front
     // (see src/write-now/write-now.js).
     writeNowDeskId: null,

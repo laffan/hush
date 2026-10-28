@@ -675,6 +675,10 @@ pub struct AppSettings {
     // styles. Opaque; see src/edge-lights/edge-lights-presets.js.
     #[serde(default)]
     pub edge_lights_presets: serde_json::Value,
+    // The Edge Lights options last begun on each desk, deskId → options
+    // (src/edge-lights/edge-lights-store.js#readDeskOptions).
+    #[serde(default)]
+    pub edge_lights_by_desk: serde_json::Value,
 
     // The desk Write Now (triple-tapped Option) switches to; None or ""
     // stays on the desk in front. See src/write-now/write-now.js.
@@ -931,6 +935,7 @@ impl Default for AppSettings {
             midnight_until: None,
             edge_lights: serde_json::Value::Null,
             edge_lights_presets: serde_json::json!([]),
+            edge_lights_by_desk: serde_json::json!({}),
             write_now_desk_id: None,
             auto_clear_empty_inbox: true,
             recent_activity: serde_json::Value::Null,

@@ -22,6 +22,26 @@ html.dark-surface .edge-lights.edge-lights-unblended {
   mix-blend-mode: normal;
 }
 
+/* The Distortion fill: the canvas only draws the shape as a mask for
+   the distortion layer (edge-lights-distort.js), so it isn't seen. */
+.edge-lights.edge-lights-masking { opacity: 0 !important; }
+
+/* Blur: a full-window layer blurring what is behind it, masked by the
+   shape. */
+.edge-lights-distort {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--z-edge-lights);
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+}
+
+/* Liquid glass and RGB shift: the page itself through the SVG filter. */
+body.edge-lights-distorting { filter: url(#hush-edge-distort); }
+
 /* The modal previews on the overlay, so its backdrop only just dims. */
 .tree-delete-modal-backdrop.edge-lights-backdrop {
   background: rgba(0, 0, 0, 0.12);
@@ -379,3 +399,10 @@ html.dark-surface .edge-lights.edge-lights-unblended {
 .edge-lights-modal .el-begin {
   background: rgba(128, 128, 128, 0.18);
 }
+
+/* Rows the fill takes away (the distortion and animation choices, the
+   palette and saturation for a distortion). `display: grid` on the rows
+   would otherwise outrank the attribute. */
+.edge-lights-modal .el-row[hidden],
+.edge-lights-modal .el-palettes[hidden],
+.edge-lights-modal .el-colour-label[hidden] { display: none; }

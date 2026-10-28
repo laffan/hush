@@ -3,9 +3,12 @@
  * renderer so the command palette and the modal can read them without
  * pulling the WebGL code in.
  *
- * The options are app-wide and remembered (`settings.edgeLights`,
- * opaque `serde_json::Value` on `AppSettings`): `{ kind, palette,
- * customColors, saturation, opacity, depth, speed }`. Whether the lights
+ * The options are remembered (`settings.edgeLights`, opaque
+ * `serde_json::Value` on `AppSettings`): `{ kind, fill, distortion,
+ * animation, palette, customColors, saturation, opacity, depth, speed }`
+ * — the last set begun anywhere — and per desk as well
+ * (`settings.edgeLightsByDesk`, deskId → options), which is what
+ * triple-tapped ⌘ brings back on that desk. Whether the lights
  * are *on* is not: it is this window's, for this session
  * (`state.runtime.edgeLights`), the way a mode is — something begun,
  * not a preference. Named sets of options are presets
@@ -22,6 +25,26 @@ export const KINDS = [
   { id: "scuba", name: "Scuba" },
   { id: "thrum", name: "Thrum" },
   { id: "thrumDark", name: "Thrum Dark" },
+];
+
+/** What fills the shape. **Colours** is the palette's light (the
+ *  original); **Distortion** bends whatever the shape lies over — the
+ *  shape becomes a mask over the page (edge-lights-distort.js); and
+ *  **Animation** fills it with slow particles in the palette's colours
+ *  (the shader). The menu calls `kind` the Shape. */
+export const FILLS = [
+  { id: "colors", name: "Colors" },
+  { id: "distortion", name: "Distortion" },
+  { id: "animation", name: "Animation" },
+];
+export const DISTORTIONS = [
+  { id: "glass", name: "Liquid glass" },
+  { id: "blur", name: "Blur" },
+  { id: "rgb", name: "RGB shift" },
+];
+export const ANIMATIONS = [
+  { id: "hyperspace", name: "Hyperspace" },
+  { id: "snow", name: "Snow" },
 ];
 
 /** Kinds the overlay composites as plain paint in every appearance —
@@ -52,6 +75,9 @@ export const DEFAULT_CUSTOM_COLORS = ["#3dffa8", "#3dd5ff", "#ff7ad9"];
 
 export const DEFAULT_OPTIONS = {
   kind: "polar",
+  fill: "colors",
+  distortion: "glass",
+  animation: "snow",
   palette: "aurora",
   customColors: DEFAULT_CUSTOM_COLORS,
   // 0 is grey, 1 the palette as drawn, up to 1.5 for more vivid.
@@ -98,6 +124,9 @@ export function readOptions(settings) {
   const palette = o.palette === "polar" ? "glacier" : o.palette;
   return {
     kind: KINDS.some((k) => k.id === o.kind) ? o.kind : DEFAULT_OPTIONS.kind,
+    fill: FILLS.some((f) => f.id === o.fill) ? o.fill : DEFAULT_OPTIONS.fill,
+    distortion: DISTORTIONS.some((d) => d.id === o.distortion) ? o.distortion : DEFAULT_OPTIONS.distortion,
+    animation: ANIMATIONS.some((a) => a.id === o.animation) ? o.animation : DEFAULT_OPTIONS.animation,
     palette: PALETTES.some((p) => p.id === palette) ? palette : DEFAULT_OPTIONS.palette,
     customColors: readCustomColors(o),
     saturation: clampNum(o.saturation, LIMITS.saturation, DEFAULT_OPTIONS.saturation),
@@ -107,8 +136,22 @@ export function readOptions(settings) {
   };
 }
 
-export function saveOptions(state, options) {
-  return state.updateSettings({ edgeLights: { ...readOptions({ edgeLights: options }) } });
+/** Remember `options` as the last begun — app-wide, and for `deskId`
+ *  when given. */
+export function saveOptions(state, options, deskId = null) {
+  const clean = { ...readOptions({ edgeLights: options }) };
+  const patch = { edgeLights: clean };
+  if (deskId) {
+    const byDesk = state.settings?.edgeLightsByDesk;
+    patch.edgeLightsByDesk = { ...(byDesk && typeof byDesk === "object" ? byDesk : {}), [deskId]: clean };
+  }
+  return state.updateSettings(patch);
+}
+
+/** The options last begun on `deskId`, else the last begun anywhere. */
+export function readDeskOptions(settings, deskId) {
+  const own = deskId ? settings?.edgeLightsByDesk?.[deskId] : null;
+  return own && typeof own === "object" ? readOptions({ edgeLights: own }) : readOptions(settings);
 }
 
 /** The colours `options` draws with. */
@@ -167,11 +210,16 @@ export function sameOptions(a, b) {
   return JSON.stringify(readOptions({ edgeLights: a })) === JSON.stringify(readOptions({ edgeLights: b }));
 }
 
-/** A name for the settings as they stand: their type and palette. */
+/** A name for the settings as they stand: their shape and what fills it
+ *  — the palette, the distortion or the animation. */
 export function describeOptions(options) {
   const kind = KINDS.find((k) => k.id === options.kind)?.name || "";
-  const palette = PALETTES.find((p) => p.id === options.palette)?.name || "";
-  return [kind, palette].filter(Boolean).join(" · ");
+  const fill = options.fill === "distortion"
+    ? DISTORTIONS.find((d) => d.id === options.distortion)?.name
+    : options.fill === "animation"
+      ? `${ANIMATIONS.find((a) => a.id === options.animation)?.name || ""} ${PALETTES.find((p) => p.id === options.palette)?.name || ""}`.trim()
+      : PALETTES.find((p) => p.id === options.palette)?.name;
+  return [kind, fill || ""].filter(Boolean).join(" · ");
 }
 
 /** Whether the lights are on in this window. */
