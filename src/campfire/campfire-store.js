@@ -12,19 +12,9 @@
  *                 the text at its centre is fully lit; above 1 the fully
  *                 lit middle widens, below 1 even the middle stays dim
  *   range         how far the light reaches, in lines
- *   blend         how the light's own glow mixes with the page behind
- *                 the text — or "none" for no glow, only the text lit
  *   currentLine   only the caret's line is lit
  */
 import { resolveCursorPaint } from "../editor/block-cursor.js";
-
-export const BLENDS = [
-  { id: "screen", name: "Screen" },
-  { id: "soft-light", name: "Soft light" },
-  { id: "overlay", name: "Overlay" },
-  { id: "color-dodge", name: "Colour dodge" },
-  { id: "none", name: "No glow" },
-];
 
 export const LIMITS = {
   baseOpacity: [0, 0.5],
@@ -37,7 +27,6 @@ export const DEFAULTS = Object.freeze({
   followCursor: true,
   brightness: 1,
   range: 4,
-  blend: "screen",
   currentLine: false,
 });
 
@@ -51,7 +40,6 @@ export function readCampfireOptions(settings) {
     followCursor: typeof raw.followCursor === "boolean" ? raw.followCursor : DEFAULTS.followCursor,
     brightness: clamp(raw.brightness, LIMITS.brightness, DEFAULTS.brightness),
     range: clamp(raw.range, LIMITS.range, DEFAULTS.range),
-    blend: BLENDS.some((b) => b.id === raw.blend) ? raw.blend : DEFAULTS.blend,
     currentLine: typeof raw.currentLine === "boolean" ? raw.currentLine : DEFAULTS.currentLine,
   };
 }

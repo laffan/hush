@@ -23,7 +23,7 @@ function apply(options) {
   const root = document.documentElement.style;
   document.body.classList.toggle("campfire-on", !!options);
   if (!options) {
-    for (const p of ["--cf-base", "--cf-peak", "--cf-plateau", "--cf-mid", "--cf-range", "--cf-blend"]) root.removeProperty(p);
+    for (const p of ["--cf-base", "--cf-peak", "--cf-plateau", "--cf-mid", "--cf-range"]) root.removeProperty(p);
     setCampfire(null);
     return;
   }
@@ -35,7 +35,6 @@ function apply(options) {
   root.setProperty("--cf-plateau", `${plateau}%`);
   root.setProperty("--cf-mid", `${plateau + (100 - plateau) * 0.45}%`);
   root.setProperty("--cf-range", String(options.range));
-  root.setProperty("--cf-blend", options.blend === "none" ? "normal" : options.blend);
   setCampfire(options);
 }
 

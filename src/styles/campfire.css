@@ -1,7 +1,8 @@
 /* Campfire Cursor — the text lit only round the caret (editor/plugins/
    campfire.js places the light; campfire/campfire.js sets the options
-   on the root as --cf-base, --cf-peak, --cf-plateau, --cf-mid,
-   --cf-range and --cf-blend).
+   on the root as --cf-base, --cf-peak, --cf-plateau, --cf-mid and
+   --cf-range). Only the characters are lit — the mask is on the text,
+   and nothing is drawn behind it.
 
    The mask is three layers, composited bottom-up: the oval of light
    round the caret (full at its middle, out at its rim); clipped by the
@@ -33,23 +34,6 @@ body.campfire-on .cursor-mode-surface:is(.block-cursor, .underline-cursor, .thic
   -webkit-mask-size: 100% 100%;
   mask-size: 100% 100%;
 }
-
-/* The glow behind the text, in the caret's glow colour. */
-.cf-light {
-  position: absolute;
-  left: 0;
-  top: 0;
-  pointer-events: none;
-  border-radius: 50%;
-  background: radial-gradient(closest-side,
-    var(--cursor-glow-color, var(--block-cursor-color, var(--cursor))),
-    color-mix(in srgb, var(--cursor-glow-color, var(--block-cursor-color, var(--cursor))) 35%, transparent) 45%,
-    transparent);
-  mix-blend-mode: var(--cf-blend, screen);
-  opacity: 0;
-  will-change: transform, opacity;
-}
-.cursor-mode-surface:not(:is(.block-cursor, .underline-cursor, .thick-cursor)) .cf-light { display: none; }
 
 /* ── The options modal (campfire/campfire-modal.js) ─────────────── */
 .tree-delete-modal-backdrop.campfire-backdrop { background: rgba(0, 0, 0, 0.12); }

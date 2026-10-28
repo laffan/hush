@@ -7,11 +7,10 @@
  * Lit, a surface's text is masked (styles/campfire.css): everywhere it
  * shows at the base opacity, and round the caret a soft oval of light
  * shows it fully — or, with Current line only, the part of that oval on
- * the caret's line. Behind the text a glow in the caret's glow colour
- * sits under the same spot, blended with the page as the options say.
- * The plugin keeps the spot under the caret: it writes the caret's
- * place in the text as CSS properties on the content element (the mask)
- * and moves the glow element.
+ * the caret's line. Only the characters are lit: the mask is on the
+ * text, so the page behind it is untouched. The plugin keeps the spot
+ * under the caret by writing the caret's place in the text as CSS
+ * properties on the content element.
  *
  * There is one fire: at the caret of the doc last written in. Every
  * other surface stays dark. With "follows the cursor" on, the light goes
@@ -44,11 +43,7 @@ try {
 class CampfireView {
   constructor(view) {
     this.view = view;
-    this.light = null;
     this.vis = 1;
-    this.coords = null;
-    this.onScroll = () => this.placeLight();
-    view.scrollDOM.addEventListener("scroll", this.onScroll, { passive: true });
     views.add(this);
     if (lit) this.measure();
   }
@@ -92,9 +87,6 @@ class CampfireView {
     const s = this.view.contentDOM.style;
     if (!on || !c) {
       for (const p of ["--cf-x", "--cf-y", "--cf-band-top", "--cf-band-bottom"]) s.removeProperty(p);
-      this.light?.remove();
-      this.light = null;
-      this.coords = null;
       return;
     }
     const x = c.left - content.left;
@@ -110,32 +102,7 @@ class CampfireView {
       s.removeProperty("--cf-band-top");
       s.removeProperty("--cf-band-bottom");
     }
-    this.coords = { x, y: (top + bottom) / 2, lh, contentLeft: content.left, contentTop: content.top };
-    this.placeLight();
     this.writeVis(this === active ? this.vis : 0, true);
-  }
-
-  /** The glow behind the text: a sibling of the scroller, so the text
-   *  paints over it and its blend reaches the page behind the editor. */
-  placeLight() {
-    if (!this.coords || opts.blend === "none") { this.light?.remove(); this.light = null; return; }
-    if (!this.light) {
-      this.light = document.createElement("div");
-      this.light.className = "cf-light";
-      this.light.setAttribute("aria-hidden", "true");
-      this.view.dom.insertBefore(this.light, this.view.scrollDOM);
-    }
-    const ed = this.view.dom.getBoundingClientRect();
-    const content = this.view.contentDOM.getBoundingClientRect();
-    const ry = opts.range * this.coords.lh;
-    const rx = ry * 1.4;
-    const cx = content.left - ed.left + this.coords.x;
-    const cy = content.top - ed.top + this.coords.y;
-    Object.assign(this.light.style, {
-      width: `${rx * 2}px`,
-      height: `${ry * 2}px`,
-      transform: `translate(${cx - rx}px, ${cy - ry}px)`,
-    });
   }
 
   writeVis(v, force = false) {
@@ -143,21 +110,16 @@ class CampfireView {
     if (!force && q === this.written) return;
     this.written = q;
     this.view.contentDOM.style.setProperty("--cf-vis", String(q));
-    if (this.light) this.light.style.opacity = String(Math.min(0.5, 0.22 * opts.brightness) * q);
   }
 
   clear() {
     this.view.dom.classList.remove("cf-surface");
     const s = this.view.contentDOM.style;
     for (const p of ["--cf-x", "--cf-y", "--cf-lh", "--cf-vis", "--cf-band-top", "--cf-band-bottom"]) s.removeProperty(p);
-    this.light?.remove();
-    this.light = null;
-    this.coords = null;
     this.written = undefined;
   }
 
   destroy() {
-    this.view.scrollDOM.removeEventListener("scroll", this.onScroll);
     this.clear();
     views.delete(this);
     if (active === this) active = null;

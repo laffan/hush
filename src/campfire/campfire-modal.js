@@ -1,16 +1,14 @@
 /**
  * Campfire Cursor Options — the text's opacity away from the light, the
- * light's brightness and range, how its glow blends with the page,
- * whether it follows the caret's blink or pulse, and whether only the
- * caret's line is lit. Every change is drawn at once on the doc behind
- * the modal (the backdrop only just dims); Cancel puts back what was
+ * light's brightness and range, whether it follows the caret's blink or
+ * pulse, and whether only the caret's line is lit. Every change is
+ * drawn at once on the doc behind the modal (the backdrop only just dims); Cancel puts back what was
  * there. While the campfire is lit it opens on its options, with Apply
  * in place of Begin and a Turn off beside them.
  *
  * Same shell as the sidebar's modals (`.tree-delete-modal`).
  */
-import { escHtml } from "../sidebar/files-panel-shared.js";
-import { BLENDS, LIMITS, readCampfireOptions, isCampfireOn, campfireAvailable } from "./campfire-store.js";
+import { LIMITS, readCampfireOptions, isCampfireOn, campfireAvailable } from "./campfire-store.js";
 import { previewCampfire, cancelCampfirePreview, beginCampfire, endCampfire } from "./campfire.js";
 
 const SLIDERS = [
@@ -39,11 +37,6 @@ export function openCampfireModal(state) {
           <input type="range" data-key="${s.key}" min="${LIMITS[s.key][0]}" max="${LIMITS[s.key][1]}" step="${s.step}" />
           <span class="el-value" data-value="${s.key}"></span>
         </label>`).join("")}
-      <label class="el-row">
-        <span class="el-label">Glow blend</span>
-        <select class="cf-blend">${BLENDS.map((b) => `<option value="${b.id}">${escHtml(b.name)}</option>`).join("")}</select>
-        <span></span>
-      </label>
       <label class="cf-check"><input type="checkbox" class="cf-follow" /> Glow follows the cursor's blink or pulse</label>
       <label class="cf-check"><input type="checkbox" class="cf-line" /> Only the current line is lit</label>
     </div>
@@ -55,7 +48,6 @@ export function openCampfireModal(state) {
   backdrop.appendChild(modal);
   document.body.appendChild(backdrop);
 
-  const blend = modal.querySelector(".cf-blend");
   const follow = modal.querySelector(".cf-follow");
   const line = modal.querySelector(".cf-line");
 
@@ -64,7 +56,6 @@ export function openCampfireModal(state) {
       modal.querySelector(`input[data-key="${s.key}"]`).value = String(draft[s.key]);
       modal.querySelector(`[data-value="${s.key}"]`).textContent = s.show(draft[s.key]);
     }
-    blend.value = draft.blend;
     follow.checked = draft.followCursor;
     line.checked = draft.currentLine;
     previewCampfire(state, draft);
@@ -74,7 +65,6 @@ export function openCampfireModal(state) {
   modal.querySelectorAll('input[type="range"]').forEach((input) => {
     input.addEventListener("input", () => { draft[input.dataset.key] = parseFloat(input.value); sync(); });
   });
-  blend.addEventListener("change", () => { draft.blend = blend.value; sync(); });
   follow.addEventListener("change", () => { draft.followCursor = follow.checked; sync(); });
   line.addEventListener("change", () => { draft.currentLine = line.checked; sync(); });
 
@@ -90,7 +80,7 @@ export function openCampfireModal(state) {
   };
   function onKey(e) {
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancel(); }
-    else if (e.key === "Enter" && !e.target.closest?.("select")) { e.preventDefault(); e.stopPropagation(); begin(); }
+    else if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); begin(); }
   }
   document.addEventListener("keydown", onKey, true);
 
