@@ -65,10 +65,19 @@ export async function pruneEmptyUntitled(state) {
 }
 
 /** A document with nothing past its first line — a title, or a Write Now
- *  timestamp, and no more. */
+ *  timestamp, and no more. Blank lines go first, whatever made them
+ *  blank: plain newlines (Write Now's, the typewriter runway's), `\r`,
+ *  invisible characters (zero-width and non-breaking spaces, line and
+ *  paragraph separators, a BOM), and lines holding nothing but markdown
+ *  markers (`#`, `-`, `*`, `>`) — none of them is writing. */
 export function hasOnlyFirstLine(content) {
   if (typeof content !== "string") return false;
-  return content.split("\n").filter((l) => l.trim()).length <= 1;
+  const lines = content
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
+    .replace(/[\u00A0\u2028\u2029\r]/g, (c) => (c === "\r" ? "" : c === "\u00A0" ? " " : "\n"))
+    .split("\n")
+    .filter((l) => l.replace(/^[\s#>*+-]*$/, "").trim());
+  return lines.length <= 1;
 }
 
 /** Settings → General, "Automatically clear empty inbox items on start":

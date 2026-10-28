@@ -84,6 +84,7 @@ function notebookPreview(item) {
   if (!thumbs) return null;
   const el = document.createElement("div");
   el.className = "inbox-preview inbox-preview-notebook";
+  el.dataset.fileId = item.fileId;
   // Both appearances, transparent: the stylesheet shows the one for the
   // page on screen, so an appearance change needs no new snapshot.
   for (const variant of ["light", "dark"]) {

@@ -2,19 +2,40 @@
    An Inbox row reads as a card: its usual line on top, and under it a
    glimpse of where the work on it left off. */
 
-/* The whole item framed in a very light border: name, preview and the
-   last-edited line under them. */
-.sl-item.inbox-preview-item > .sl-item-content .tree-item-cell {
-  display: block;
-  padding: 5px 7px 6px;
+/* The whole item framed in a very light border — everything about the
+   file inside it, top to bottom: its title, the preview, its docked
+   panes, its cards, and its last-edited time. The <li> is the frame (the
+   cards are its child list), laid out as a column so the time, which
+   files-panel.js puts on the <li> itself, can close it. The hover tint
+   is the <li>'s own, so it stays inside the frame. */
+.sl-item.inbox-preview-item {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  margin: 2px 0 4px;
+  padding: 4px 6px 5px !important;
   border: 1px solid color-mix(in srgb, var(--sidebar-fg, var(--fg)) 10%, transparent);
   border-radius: 6px;
 }
+.sl-item.inbox-preview-item > .sl-item-content { order: 0; }
+.sl-item.inbox-preview-item > .sl-list { order: 1; }
+.sl-item.inbox-preview-item > .inbox-preview-edited { order: 2; }
+.sl-item.inbox-preview-item > .sl-item-content .tree-item-cell {
+  display: block;
+  position: static;
+}
+/* Docked panes come right after the preview, in the flow, rather than
+   pinned under the cards as in the tree. */
+.sl-item.inbox-preview-item > .sl-item-content .tree-pane-indicators {
+  position: static !important;
+  inset: auto !important;
+  margin: 3px 0 0 !important;
+}
 
-/* The open (or selected) item's border goes to full strength, in the
-   title's own colour. */
-.sl-item.inbox-preview-item.selected > .sl-item-content .tree-item-cell,
-.sl-item.inbox-preview-item > .sl-item-content .tree-item-cell:has(.tree-item-row.active) {
+/* Hovered, open or selected: the frame takes the title's own colour. */
+.sl-item.inbox-preview-item:hover,
+.sl-item.inbox-preview-item.selected,
+.sl-item.inbox-preview-item:has(> .sl-item-content .tree-item-row.active) {
   border-color: currentColor;
 }
 
@@ -27,13 +48,13 @@
   color: var(--sidebar-fg, var(--fg));
 }
 
-/* A Doc: two lines at most, cut from the top so the words next to the
+/* A Doc: three lines at most, cut from the top so the words next to the
    caret are the ones that show. */
 .inbox-preview-doc {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  max-height: calc(2 * 1.4em);
+  max-height: calc(3 * 1.4em);
   overflow: hidden;
   font-size: 11.5px;
   line-height: 1.4;
@@ -43,19 +64,25 @@
   white-space: normal;
   word-break: break-word;
 }
-/* The caret: a dotted line in the text's own colour. */
+/* The caret: a 3px line in the style's cursor colour, greyed until
+   the pointer is on the item. */
 .inbox-preview-caret {
   display: inline-block;
-  width: 0;
+  width: 3px;
   height: 1.15em;
   margin: 0 1px;
-  border-left: 1.5px dotted currentColor;
+  background: var(--cursor, currentColor);
   vertical-align: text-bottom;
+  filter: grayscale(1);
+  transition: filter 0.15s ease;
 }
+.sl-item.inbox-preview-item:hover .inbox-preview-caret { filter: none; }
 
-/* The last-edited line, moved below the preview (files-panel.js). */
+/* The last-edited line, last in the frame (files-panel.js). Lined up
+   with the preview text, past the row's fold-arrow slot. */
 .inbox-preview-edited {
   display: block;
+  margin: 3px 0 0 var(--inbox-text-indent, 18px);
   font-size: 11px;
   line-height: 1.3;
 }

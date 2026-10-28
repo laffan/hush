@@ -61,6 +61,7 @@ async function tauriInvoke(cmd, args, options) {
 // Loading-overlay + save-gate helpers live in their own modules
 // (700-line cap).
 import { noteNotebookSaved } from "../sidebar/inbox-preview-store.js";
+import { captureScene } from "../sidebar/inbox-notebook-scene.js";
 import {
   LARGE_NOTEBOOK_SHAPE_COUNT,
   mountLoadingOverlay as _mountLoadingOverlay,
@@ -442,11 +443,13 @@ export async function saveNotebook(opts = {}) {
   }
   perf.count(notebookDirty ? "save:run:content" : "save:run:cameraOnly"); // PERF-HUD (temporary)
   const saveStart = performance.now();
+  // Inbox snapshot scene: taken now, while the canvas shows this notebook.
+  const thumbFileId = currentNotebookFileId, thumbScene = canvasInstance ? captureScene(canvasInstance) : null;
   const p = _saveNotebookInner(opts);
   _saveInFlight = p;
   try {
-    const saved = await p; // then a snapshot for the Inbox's preview card
-    if (saved && canvasInstance) noteNotebookSaved(currentNotebookFileId, canvasInstance);
+    const saved = await p;
+    if (saved) noteNotebookSaved(thumbFileId, thumbScene);
     return saved;
   } finally {
     if (_saveInFlight === p) _saveInFlight = null;

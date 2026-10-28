@@ -246,11 +246,17 @@ export function createFilesPanel(container, state, hidePanel) {
       context?.li?.classList.toggle("inbox-preview-item", !!preview);
       const indicators = paneIndicatorsFor(item, state);
       if (!indicators && !preview) return row;
-      // Under a preview, the last-edited line moves below it.
+      // Under a preview the last-edited line closes the item: it goes on
+      // the row's <li>, which the stylesheet lays out as title, preview,
+      // docked panes, cards, then this (inbox-preview.css).
       const below = () => {
         const edited = row.querySelector(".tree-item-inbox-edited");
-        edited?.classList.add("inbox-preview-edited");
-        return edited ? [preview, edited] : [preview];
+        if (edited && context?.li) {
+          context.li.querySelector(":scope > .inbox-preview-edited")?.remove();
+          edited.classList.add("inbox-preview-edited");
+          context.li.appendChild(edited);
+        }
+        return [preview];
       };
       if (!indicators) {
         const wrap = document.createElement("span");
