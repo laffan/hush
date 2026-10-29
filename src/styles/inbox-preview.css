@@ -167,3 +167,14 @@ html.dark-surface .inbox-preview-notebook .inbox-thumb-light { display: none; }
 .tree-item-row.has-expanded-view .tree-item-name {
   margin-right: 49px;
 }
+
+/* In an expanded project, a document that is part of the joined buffer
+   (not a note) has the doc-to-doc connector running down its left, at
+   30px (files-panel.css): its preview, docked panes and last-edited
+   time start under its name instead, clear of the line. */
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item.inbox-preview-item[data-type="document"]:not([data-use-as-note="true"]) {
+  --inbox-text-indent: 36px;
+}
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item.inbox-preview-item[data-type="document"]:not([data-use-as-note="true"]) > .sl-item-content :is(.inbox-preview, .tree-pane-indicators) {
+  margin-left: 18px !important;
+}
