@@ -45,11 +45,12 @@
   font-family: system-ui, sans-serif;
   font-weight: 400;
   text-decoration: none;
-  color: var(--sidebar-fg, var(--fg));
+  /* The title's own colour; each kind of preview sets its strength. */
+  color: inherit;
 }
 
 /* A Doc: three lines at most, cut from the top so the words next to the
-   caret are the ones that show. */
+   caret are the ones that show; at half the title's strength. */
 .inbox-preview-doc {
   display: flex;
   flex-direction: column;
@@ -58,7 +59,7 @@
   overflow: hidden;
   font-size: 11.5px;
   line-height: 1.4;
-  opacity: 0.62;
+  opacity: 0.5;
 }
 .inbox-preview-text {
   white-space: normal;
@@ -126,8 +127,9 @@ html.dark-surface .inbox-preview-notebook .inbox-thumb-light { display: none; }
   background: rgba(128, 128, 128, 0.14);
 }
 
-/* Opening a document from its card: the words the card showed glow in
-   the cursor colour for a moment, then fade (sidebar/inbox-flash.js). */
+/* Opening a document from its card: the word either side of where the
+   caret was glows in the cursor colour for a moment, then fades
+   (sidebar/inbox-flash.js). */
 .hush-inbox-flash {
   border-radius: 2px;
   animation: hush-inbox-flash 1.4s ease-out forwards;
