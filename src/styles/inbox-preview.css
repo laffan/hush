@@ -1,6 +1,9 @@
-/* ===== Inbox preview cards (sidebar/inbox-preview.js) =====
-   An Inbox row reads as a card: its usual line on top, and under it a
-   glimpse of where the work on it left off. */
+/* ===== Expanded view: preview cards (sidebar/inbox-preview.js,
+   sidebar/expanded-view.js) =====
+   In a folder, project or Inbox shown expanded, each file's row reads as
+   a card: its usual line on top, and under it a glimpse of where the
+   work on it left off. (The class names still say "inbox": the Inbox
+   was the first, and is the default, expanded view.) */
 
 /* The whole item framed in a very light border — everything about the
    file inside it, top to bottom: its title, the preview, its docked
@@ -143,4 +146,24 @@ html.dark-surface .inbox-preview-notebook .inbox-thumb-light { display: none; }
     background: transparent;
     box-shadow: 0 0 0 0 transparent;
   }
+}
+
+/* The expanded-view button, left of a folder's / project's / Inbox's menu
+   (sidebar/expanded-view.js). Like a project's Desktop button it stays in
+   view while the view is on — the menu beside it still waits for the
+   hover, and off hover the strip drops its backing. */
+.tree-action-expand { margin-right: 4px; }
+.tree-item-row.has-expanded-view .tree-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.sl-item:not(.sl-hovered) > .sl-item-content .tree-item-row.has-expanded-view .tree-actions {
+  background: transparent;
+}
+.sl-item:not(.sl-hovered) > .sl-item-content .tree-item-row.has-expanded-view .tree-actions > :not(.tree-action-expand) {
+  opacity: 0;
+  pointer-events: none;
+}
+.tree-item-row.has-expanded-view .tree-item-name {
+  margin-right: 49px;
 }

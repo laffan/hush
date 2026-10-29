@@ -696,6 +696,10 @@ pub struct AppSettings {
     // see src/sidebar/inbox-preview.js#inboxPreviewsOn.
     #[serde(default)]
     pub inbox_preview_by_desk: serde_json::Value,
+    // Expanded views in the sidebar, container id → bool. Opaque; see
+    // src/sidebar/expanded-view.js.
+    #[serde(default)]
+    pub expanded_views: serde_json::Value,
 
     // The desk Write Now (triple-tapped Option) switches to; None or ""
     // stays on the desk in front. See src/write-now/write-now.js.
@@ -957,6 +961,7 @@ impl Default for AppSettings {
             campfire_by_desk: serde_json::json!({}),
             triple_taps: serde_json::Value::Null,
             inbox_preview_by_desk: serde_json::json!({}),
+            expanded_views: serde_json::json!({}),
             write_now_desk_id: None,
             auto_clear_empty_inbox: true,
             recent_activity: serde_json::Value::Null,

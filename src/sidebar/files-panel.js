@@ -8,6 +8,7 @@ import { findNode, findNodeByFileId, normalizeProjectChildren, enforceSpecialPos
 import { createPane } from "../pane/pane-manager.js";
 import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
 import { inboxPreviewFor } from "./inbox-preview.js";
+import { canExpandView, isExpandedView, inExpandedView, expandViewButton, toggleExpandedView } from "./expanded-view.js";
 import { escHtml, showPromptModal, googleLinkBadgeHtml, computeNumberLabels, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
 import {
   isInboxId, isImagesId, isPdfsId, isTrashId, isAnySpecialId,
@@ -229,20 +230,27 @@ export function createFilesPanel(container, state, hidePanel) {
           // Inbox rows carry their last-edit time under the filename —
           // the Inbox is a staging area, and how long something has been
           // sitting in it is the fact that decides what to do with it.
-          // Archive rows carry it too, without the Inbox's week-old red.
+          // Archive rows carry it too, without the Inbox's week-old red,
+          // and so does any file shown as a card in an expanded view.
           const label = `${numPrefix}${escHtml(displayName)}`;
           const nameHtml = (isInboxItem(state.fileTree, item) && inboxNameHtml(state, item, label))
-            || (isArchiveItem(state.fileTree, item) && inboxNameHtml(state, item, label, false))
+            || ((isArchiveItem(state.fileTree, item) || inExpandedView(state, item)) && inboxNameHtml(state, item, label, false))
             || `<span class="tree-item-name">${label}</span>`;
           // A Desktop with content in it keeps its hover button in view.
           if (showsDesktopButton(state, item, inTrash)) row.classList.add("has-desktop-content");
           row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}${nameHtml}${trailing}`;
+          // A folder, project or Inbox: the expanded-view button, left of
+          // its menu (expanded-view.js); kept in view while it's on.
+          if (canExpandView(item, inTrash)) {
+            row.querySelector(":scope > .tree-actions")?.insertAdjacentHTML("afterbegin", expandViewButton(state, item));
+            row.classList.toggle("has-expanded-view", isExpandedView(state, item.id));
+          }
         }
       }
       if (item.type === "image" && item.fileId) attachImageTooltipToRow(row, item.fileId, item.name);
-      // An Inbox row is a card: its line as the header, and under it where
-      // the work on it left off (inbox-preview.js).
-      const preview = isInboxItem(state.fileTree, item) ? inboxPreviewFor(state, item) : null;
+      // In an expanded view a file's row is a card: its line as the
+      // header, and under it where the work on it left off.
+      const preview = inExpandedView(state, item) ? inboxPreviewFor(state, item) : null;
       context?.li?.classList.toggle("inbox-preview-item", !!preview);
       const indicators = paneIndicatorsFor(item, state);
       if (!indicators && !preview) return row;
@@ -575,6 +583,11 @@ function onActionClick(e) {
   const nodeId = actionsEl?.dataset.nodeId || actionBtn.dataset.nodeId;
   if (!nodeId || !storedState) return;
 
+  if (action === "toggle-expanded-view") {
+    // The sidebar redraws on the settings change (main-listeners.js).
+    void toggleExpandedView(storedState, nodeId);
+    return;
+  }
   if (action === "open-menu") {
     const flagOnly = actionBtn.dataset.menuFlagOnly === "1";
     openRowMenu(actionBtn, nodeId, storedState, flagOnly, dispatchRowAction);

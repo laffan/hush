@@ -136,9 +136,12 @@ export function createDefaultSettings() {
     // Triple-tap gestures, action → gesture (ui/triple-tap-gestures.js);
     // null takes the defaults.
     tripleTaps: null,
-    // Inbox item previews, per desk: `{ [deskId]: false }` turns a desk's
-    // off (sidebar/inbox-preview.js); on unless set.
+    // Inbox item previews, per desk, as they were set before the expanded
+    // view replaced the setting: a desk's `false` still starts its Inbox
+    // collapsed (sidebar/expanded-view.js). Read only.
     inboxPreviewByDesk: {},
+    // Expanded views: container id → true / false (sidebar/expanded-view.js).
+    expandedViews: {},
     // The desk Write Now switches to; null stays on the desk in front
     // (see src/write-now/write-now.js).
     writeNowDeskId: null,

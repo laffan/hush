@@ -1,6 +1,7 @@
 /**
- * Inbox preview cards. Under an Inbox row's own line (icon, name, last
- * edited, menu) sits a glimpse of where the work on it left off:
+ * Preview cards, for the files of any container in the expanded view
+ * (expanded-view.js — the Inbox by default). Under a file row's own line
+ * (icon, name, menu) sits a glimpse of where the work on it left off:
  *
  *   - A **Doc** shows the stretch around its last caret position — up to
  *     the 24 words before it and the 5 after, run together on one line —
@@ -22,9 +23,8 @@
  * and cached until the stack's file changes.
  */
 import { escHtml } from "./files-panel-shared.js";
-import { findNodeByFileId, findParentOfNode } from "../state/tree-helpers.js";
+import { findNodeByFileId } from "../state/tree-helpers.js";
 import { getIcon } from "./files-panel-rows.js";
-import { AppState } from "../state/state.js";
 import { docCaret, notebookThumb } from "./inbox-preview-store.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
@@ -154,20 +154,11 @@ function stackPreview(state, item) {
   return el;
 }
 
-/** Whether the desk an Inbox row is in shows previews — Settings →
- *  General → Show Inbox Item Preview, kept per desk (on unless turned
- *  off): `settings.inboxPreviewByDesk[deskId] === false` turns it off. */
-export function inboxPreviewsOn(state, item) {
-  const parentId = findParentOfNode(state.fileTree, item.id)?.id || "";
-  const prefix = AppState.INBOX_ID + ":";
-  const deskId = parentId.startsWith(prefix) ? parentId.slice(prefix.length) : state.settings?.activeDeskId;
-  return state.settings?.inboxPreviewByDesk?.[deskId] !== false;
-}
-
-/** The preview card body for an Inbox row, or null when there is
- *  nothing to show (or the desk shows none). */
+/** The preview card body for a file's row in an expanded view
+ *  (expanded-view.js decides which rows), or null when there is nothing
+ *  to show. */
 export function inboxPreviewFor(state, item) {
-  if (!item?.fileId || !inboxPreviewsOn(state, item)) return null;
+  if (!item?.fileId) return null;
   if (item.type === "document") return docPreview(state, item);
   if (item.type === "notebook") return notebookPreview(item);
   if (item.type === "stack") return stackPreview(state, item);

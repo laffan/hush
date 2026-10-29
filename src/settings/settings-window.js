@@ -282,11 +282,6 @@ function bindAll() {
   bindCheckbox("setting-show-tooltips", "showTooltips");
   bindCheckbox("setting-show-recent-files", "showRecentFiles");
   bindCheckbox("setting-auto-clear-inbox", "autoClearEmptyInbox");
-  // Kept per desk: the box is the active desk's.
-  document.getElementById("setting-inbox-preview")?.addEventListener("change", (e) => {
-    const map = settings.inboxPreviewByDesk && typeof settings.inboxPreviewByDesk === "object" ? settings.inboxPreviewByDesk : {};
-    saveSetting("inboxPreviewByDesk", { ...map, [settings.activeDeskId]: e.target.checked });
-  });
   bindSelect("setting-desk-display-mode", "deskDisplayMode");
   bindCheckbox("setting-touch-mode", "touchMode");
   bindCheckbox("setting-hide-system-chrome", "hideSystemChrome");
