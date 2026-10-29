@@ -3,11 +3,12 @@
  * edited, menu) sits a glimpse of where the work on it left off:
  *
  *   - A **Doc** shows the stretch around its last caret position — up to
- *     the 50 words before it and the 5 after, run together on one line
- *     — within two lines, cut from the top so the end nearest the caret
- *     is the part that shows, with the caret a dotted line in the text's
- *     colour (against the last word when it was in the space after it).
- *   - A **Notebook** shows a small snapshot of its shapes as last saved,
+ *     the 24 words before it and the 5 after, run together on one line —
+ *     within three lines, cut from the top so the end nearest the caret
+ *     is the part that shows. There is no caret mark: opening the
+ *     document puts the caret there and makes that stretch glow for a
+ *     moment (inbox-flash.js), which says where it was.
+ *   - A **Notebook** shows a snapshot of its view as last saved,
  *     transparent so the sidebar shows through, in the appearance on
  *     screen.
  *   - A **Stack** lists its files, each with its type's icon, in an
@@ -27,19 +28,24 @@ import { AppState } from "../state/state.js";
 import { docCaret, notebookThumb } from "./inbox-preview-store.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
-const WORDS_BEFORE = 50;
+/** About what the preview's three lines hold, so the text that glows
+ *  when the document opens (inbox-flash.js) is the text the preview
+ *  showed. */
+const WORDS_BEFORE = 24;
 const WORDS_AFTER = 5;
 
-/** The words around `caret` in `content`: `{ before, after }`, front
- *  matter left out and line breaks flattened to spaces. The caret
- *  defaults to the end of the document. */
+/** The words around `caret` in `content`: `{ before, after, from, to }`
+ *  — the text with front matter left out and line breaks flattened to
+ *  spaces, and where that stretch lies in `content` (whitespace at its
+ *  ends left out). The caret defaults to the end of the document. */
 export function docExcerpt(content, caret) {
   let text = String(content || "");
   let pos = Number.isFinite(caret) ? Math.max(0, Math.min(caret, text.length)) : text.length;
   const fm = /^---\n[\s\S]*?\n---\n?/.exec(text);
+  const base = fm ? fm[0].length : 0;
   if (fm) {
-    text = text.slice(fm[0].length);
-    pos = Math.max(0, pos - fm[0].length);
+    text = text.slice(base);
+    pos = Math.max(0, pos - base);
   }
   const beforeTokens = text.slice(0, pos).split(/(\s+)/);
   let words = 0;
@@ -56,6 +62,14 @@ export function docExcerpt(content, caret) {
     end++;
     if (words >= WORDS_AFTER) break;
   }
+  // Where the stretch lies in `content`, its outer whitespace trimmed.
+  const rawBefore = beforeTokens.slice(start).join("");
+  const rawAfter = afterTokens.slice(0, end).join("");
+  let from = base + pos - rawBefore.length;
+  let to = base + pos + rawAfter.length;
+  const all = String(content || "");
+  while (from < to && /\s/.test(all[from])) from++;
+  while (to > from && /\s/.test(all[to - 1])) to--;
   // One run of text: line breaks and runs of space become one space.
   let before = beforeTokens.slice(start).join("").replace(/\s+/g, " ").trimStart();
   let after = afterTokens.slice(0, end).join("").replace(/\s+/g, " ").trimEnd();
@@ -65,7 +79,7 @@ export function docExcerpt(content, caret) {
     before = before.trimEnd();
     if (after) after = ` ${after.trimStart()}`;
   }
-  return { before, after };
+  return { before, after, from, to };
 }
 
 function docPreview(state, item) {
@@ -75,7 +89,7 @@ function docPreview(state, item) {
   if (!before.trim() && !after.trim()) return null;
   const el = document.createElement("div");
   el.className = "inbox-preview inbox-preview-doc";
-  el.innerHTML = `<div class="inbox-preview-text">${escHtml(before)}<span class="inbox-preview-caret" aria-hidden="true"></span>${escHtml(after)}</div>`;
+  el.innerHTML = `<div class="inbox-preview-text">${escHtml(before + after)}</div>`;
   return el;
 }
 

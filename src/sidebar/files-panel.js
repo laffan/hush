@@ -306,7 +306,15 @@ export function createFilesPanel(container, state, hidePanel) {
         if (item.type === "notebook") state.openNotebook(item.fileId);
         else if (item.type === "pdf") state.openPdf(item.fileId);
         else if (item.type === "stack") state.openStack(item.fileId);
-        else state.openFile(item.fileId);
+        else {
+          // From its Inbox card: back to the spot the card showed, glowing.
+          const fromCard = !!event?.target?.closest?.(".inbox-preview-item");
+          void Promise.resolve(state.openFile(item.fileId)).then(() => {
+            if (fromCard && state.currentFileId === item.fileId) {
+              requestAnimationFrame(() => import("./inbox-flash.js").then((m) => m.flashInboxExcerpt(state.editor?.view, item.fileId)));
+            }
+          });
+        }
         if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
         return;
       }

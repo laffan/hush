@@ -64,20 +64,6 @@
   white-space: normal;
   word-break: break-word;
 }
-/* The caret: a 3px line in the style's cursor colour, greyed until
-   the pointer is on the item. */
-.inbox-preview-caret {
-  display: inline-block;
-  width: 3px;
-  height: 1.15em;
-  margin: 0 1px;
-  background: var(--cursor, currentColor);
-  vertical-align: text-bottom;
-  filter: grayscale(1);
-  transition: filter 0.15s ease;
-}
-.sl-item.inbox-preview-item:hover .inbox-preview-caret { filter: none; }
-
 /* The last-edited line, last in the frame (files-panel.js). Lined up
    with the preview text, past the row's fold-arrow slot. */
 .inbox-preview-edited {
@@ -138,4 +124,21 @@ html.dark-surface .inbox-preview-notebook .inbox-thumb-light { display: none; }
 .inbox-preview-stack-file.latest {
   opacity: 0.9;
   background: rgba(128, 128, 128, 0.14);
+}
+
+/* Opening a document from its card: the words the card showed glow in
+   the cursor colour for a moment, then fade (sidebar/inbox-flash.js). */
+.hush-inbox-flash {
+  border-radius: 2px;
+  animation: hush-inbox-flash 1.4s ease-out forwards;
+}
+@keyframes hush-inbox-flash {
+  0%, 25% {
+    background: color-mix(in srgb, var(--cursor, #888) 26%, transparent);
+    box-shadow: 0 0 10px 2px color-mix(in srgb, var(--cursor, #888) 30%, transparent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
