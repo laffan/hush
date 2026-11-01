@@ -3,7 +3,7 @@
  *
  * A Desktop *replaces* whatever was open, so opening a file from one is
  * a one-way trip: the Desktop is gone and there's no obvious way back to
- * the arrangement you were reading. This is that way back — a small
+ * the project you were looking at. This is that way back — a small
  * fixed bar in the upper left carrying the Desktop's project name, plus
  * an `×` for users who'd rather it weren't there.
  *
@@ -20,11 +20,11 @@
  * is what keeps it from following you around the app.
  */
 
-import { findDesktopContainer } from "./desktop-files.js";
+import { findDesktopContainer } from "./desktop-view.js";
 
 let _state = null;
 let _pending = null;  // armed for the next open: { containerId, name }
-let _target = null;   // what the visible bar points at, plus `fromKey`
+let _target = null;   // what the visible bar points at
 let _bar = null;
 let _backBtn = null;
 let _wired = false;
@@ -49,10 +49,6 @@ function ensureBar() {
     // pointing at the Desktop you just left.
     const m = await import("./desktop-view.js");
     await m.openDesktop(_state, target.containerId);
-    // The file you were just in is the one thing on that Desktop
-    // guaranteed to be stale, so regenerate its thumbnail rather than
-    // dropping the user back onto a picture of what it used to say.
-    if (target.fromKey) m.refreshDesktopEntry(target.fromKey);
   });
 
   const dismiss = document.createElement("button");
@@ -79,16 +75,6 @@ function hide() {
   _bar?.classList.add("hidden");
 }
 
-/** The surface the user just landed on, keyed the way a Desktop keys its
- *  thumbnails: fileId for files, node id for a nested project's Desktop.
- *  Read at surface-change time, when the `current*` pointers are set. */
-function landedKey(state) {
-  return state.currentNotebookFileId || state.currentPdfFileId
-    || state.currentStackFileId || state.currentFileId
-    || state.currentProjectId || (typeof window !== "undefined" && window.__hushDesktopOpenId)
-    || null;
-}
-
 /** Every surface change either consumes the armed crumb or clears the
  *  one on screen — a navigation that didn't come from a Desktop is
  *  exactly the signal that the crumb no longer applies. */
@@ -96,15 +82,14 @@ function onSurfaceChange() {
   const armed = _pending;
   _pending = null;
   if (!armed) { hide(); return; }
-  armed.fromKey = landedKey(_state);
   show(armed);
 }
 
 /**
  * Arm the crumb for the open that's about to happen. Call immediately
  * before any `state.open*` / `openDesktop` initiated from a Desktop —
- * a thumbnail double-click, an outline row, a hover action, or the same
- * gestures inside a Desktop pane.
+ * a stack's double-click, a row's Open, a material item, a nested
+ * project.
  */
 export function armDesktopReturn(state, containerId) {
   if (!state || !containerId) return;

@@ -1,7 +1,7 @@
 /**
  * Sticky-note shared constants + pure helpers — extracted from
  * sticky-notes.js (700-line cap): sizing/font clamps, the scope glyphs,
- * the collapsed-header excerpt, and the Desktop-pinning hooks.
+ * the collapsed-header excerpt, and the open Desktop's project.
  */
 
 export const DEFAULT_SIZE = 300;
@@ -22,7 +22,6 @@ export const ICON_CLOSE = `<svg viewBox="0 0 10 10"><line x1="2" y1="2" x2="8" y
 // reads the same across the app.
 export const CTX_ICON = {
   file: `<svg viewBox="0 0 16 16"><line x1="4" y1="4" x2="12" y2="4"/><line x1="4" y1="8" x2="12" y2="8"/><line x1="4" y1="12" x2="9" y2="12"/></svg>`,
-  desktop: `<svg viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="0.8" fill="none"/><rect x="9" y="2" width="5" height="5" rx="0.8" fill="none"/><rect x="2" y="9" width="5" height="5" rx="0.8" fill="none"/><rect x="9" y="9" width="5" height="5" rx="0.8" fill="none"/></svg>`,
   desk: `<svg viewBox="0 0 24 24"><path d="M4 7L4 17"/><path d="M1 7L23 7"/><path d="M14 14H20"/><path d="M20 7L20 17"/><path d="M14 7L14 17"/></svg>`,
   global: `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><line x1="2" y1="8" x2="14" y2="8"/><ellipse cx="8" cy="8" rx="3" ry="6"/></svg>`,
 };
@@ -36,7 +35,6 @@ export const CTX_MENU = [
 ];
 
 export function ctxIconFor(kind) {
-  if (kind === "desktop") return CTX_ICON.desktop;
   return CTX_ICON[kind === "project" ? "file" : kind] || CTX_ICON.global;
 }
 
@@ -49,18 +47,10 @@ export function excerptFor(text) {
   return t.length > 42 ? t.slice(0, 42).trimEnd() + "…" : t;
 }
 
-/** The project whose Desktop takeover is currently open, or null.
- *  (Set by desktop-view.js — drives the desktop-pinned sticky scope.) */
+/** The project whose Desktop is open, or null (desktop/board/board-view.js
+ *  sets it) — a project sticky added there belongs to that project. */
 export function desktopOpenId() {
   return (typeof window !== "undefined" && window.__hushDesktopOpenId) || null;
-}
-
-/** Live zoom of the open Desktop's canvas (1 when none is open). Rides
- *  the world→screen hook so there's only one bridge to keep in sync. */
-export function desktopZoom() {
-  const toScreen = typeof window !== "undefined" ? window.__hushDesktopWorldToScreen : null;
-  const p = toScreen ? toScreen({ x: 0, y: 0 }) : null;
-  return p && typeof p.zoom === "number" && p.zoom > 0 ? p.zoom : 1;
 }
 
 export function clampAxis(requested, size, viewport) {

@@ -275,24 +275,34 @@
 .board-outline-item.level-3 { opacity: 0.6; font-size: 12px; }
 .board-outline-item:hover,
 .board-outline-item:focus-visible { background: rgba(128, 128, 128, 0.14); opacity: 1; outline: none; }
-.board-outline-empty {
-  padding: 3px 6px;
-  font-size: 12px;
-  font-style: italic;
-  opacity: 0.5;
+.board-open-pane {
+  align-self: flex-start;
+  padding: 5px 12px;
+  border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent);
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  opacity: 0.75;
   cursor: pointer;
 }
+.board-open-pane:hover { opacity: 1; background: rgba(128, 128, 128, 0.12); }
 
 /* The outline module (outline/outline-canvas-element.js) — a canvas
-   object there, a block in the flow here. */
+   object there, a block in the flow here. Its type is a Doc outline's
+   (outline.css's :root --outline-font-size: the document's size less
+   2px, plus the step a Doc outline's −/+ set), so there is no −/+ of
+   its own here. */
 .board-view .nb-outline.board-outline-module {
-  --nb-outline-size: 14px;
+  --outline-font-size: calc(var(--font-size) - 2px + var(--outline-font-step, 0px));
   position: relative;
   width: 100%;
   pointer-events: auto;
   background: transparent;
 }
-.board-view .board-outline-module .outline-footer > .outline-footer-btn:last-child { display: none; }
+.board-view .board-outline-module .outline-footer > .outline-footer-btn:last-child,
+.board-view .board-outline-module .outline-footer-size { display: none; }
 .board-notes { margin-top: 12px; }
 .board-notes-label {
   margin-bottom: 5px;

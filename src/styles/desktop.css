@@ -1,9 +1,7 @@
-/* ===== Desktop (canvas overview of a desk / project) =====
+/* ===== Desktop (a project's board — desktop/board/, desktop-board.css) =====
    Same takeover pattern as the PDF shelf: mounts inside #app,
    `body.desktop-active` hides the editor surfaces underneath while
-   they keep their layout, so closing is a single class flip. The body
-   hosts a full NotesCanvas, so unlike the shelf nothing scrolls —
-   the canvas owns pan/zoom. */
+   they keep their layout, so closing is a single class flip. */
 
 .desktop-view {
   position: absolute;
@@ -48,8 +46,8 @@ body.desktop-active .side-panel-resize {
 }
 
 /* Panes belonging to whatever file the Desktop replaced must not show
-   through it — but a pane the Desktop itself opened ("Open as pane" on
-   a thumbnail) must. Note this hides the *panes*, one by one, rather
+   through it — but a pane the Desktop itself opened (a row's pane, a
+   material file's) must. Note this hides the *panes*, one by one, rather
    than hiding #pane-container and letting Desktop panes opt back in
    with `visibility: visible`. That reads as equivalent (visibility is
    inherited, so a descendant can override a hidden ancestor) and it is
@@ -67,17 +65,16 @@ body.desktop-active .side-panel-resize {
    `dt:<id>`. This rule is what covers the gap: **pinned** panes stay
    displayed across every context, so without it a pinned pane from the
    replaced file would float over the Desktop. (Sticky notes live in
-   #sticky-container and stay — desktop-pinned stickies show.) */
+   #sticky-container and stay.) */
 body.desktop-active #pane-container > .floating-pane:not(.desktop-pane) {
   visibility: hidden;
 }
 
-/* The canvas runs edge to edge, exactly like a notebook — so the 30 px
-   macOS title-bar strip goes away with it (notebook / PDF / stack modes
-   drop it the same way). `display: none` rather than the visibility
-   list above: #drag-region is z-index 80, above .desktop-view, and a
-   merely-invisible one would still swallow pointer events across the
-   whole top edge of the canvas. */
+/* The board runs edge to edge — so the 30 px macOS title-bar strip
+   goes away with it (notebook / PDF / stack modes drop it the same
+   way). `display: none` rather than the visibility list above:
+   #drag-region is z-index 80, above .desktop-view, and a merely-invisible
+   one would still swallow pointer events across the board's top edge. */
 body.desktop-active #drag-region {
   display: none;
 }
@@ -142,168 +139,4 @@ body.desktop-active #drag-region {
   border-left: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
   opacity: 0.7;
   line-height: 1;
-}
-
-/* ── Canvas host ───────────────────────────────────────────────── */
-
-.desktop-canvas-host {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-}
-
-.desktop-loading {
-  position: absolute;
-  inset: 0;
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  opacity: 0.7;
-  background: var(--theme-bg, var(--bg));
-  pointer-events: none;
-}
-
-/* Corner chip shown while a Desktop *pane* fills in the thumbnails its
-   cache couldn't serve. The canvas is already up and interactive
-   underneath — this just says the blanks are still coming. */
-.desktop-pane-loading {
-  position: absolute;
-  right: 10px;
-  bottom: 8px;
-  z-index: 5;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 11px;
-  pointer-events: none;
-  opacity: 0.75;
-  background: var(--theme-bg, var(--bg));
-  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
-}
-
-/* ── Hover controls over a file thumbnail ──────────────────────── */
-
-.desktop-hover {
-  position: absolute;
-  z-index: 20;
-  display: flex;
-  gap: 4px;
-  /* Anchored at the shape's top-right screen corner — tuck the pair
-     just inside the thumbnail. */
-  transform: translate(calc(-100% - 6px), 6px);
-}
-
-.desktop-hover.hidden {
-  display: none;
-}
-
-.desktop-hover-btn {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
-  background: var(--theme-bg, var(--bg));
-  color: var(--fg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  opacity: 0.92;
-  padding: 0;
-}
-
-.desktop-hover-btn:hover {
-  opacity: 1;
-  border-color: var(--fg);
-}
-
-/* Outline button when the doc's outline column is showing. */
-.desktop-hover-btn.active {
-  opacity: 1;
-  border-color: var(--fg);
-  background: var(--fg);
-  color: var(--theme-bg, var(--bg));
-}
-
-.desktop-hover-btn svg {
-  width: 15px;
-  height: 15px;
-}
-
-/* ── Hover labels ──────────────────────────────────────────────── */
-
-/* Single-thumbnail caption — labels are hover-only on Desktops. */
-.desktop-hover-label {
-  position: absolute;
-  z-index: 19;
-  transform: translateX(-50%);
-  pointer-events: none;
-  text-align: center;
-  font-family: var(--ui-font-family);
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--fg);
-  opacity: 0.85;
-  max-width: 340px;
-}
-
-.desktop-hover-label.hidden {
-  display: none;
-}
-
-/* Both caption lines clip independently so a long constituent name
-   can't stretch the block past the thumbnail. */
-.desktop-hover-label-name,
-.desktop-hover-label-slice {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Second line: which slice of a stack thumbnail the pointer is over. */
-.desktop-hover-label-slice {
-  opacity: 0.7;
-  font-size: 11px;
-}
-
-.desktop-hover-label-slice:empty {
-  display: none;
-}
-
-/* Pile title list — left-aligned beneath the stack; interactive:
-   hovering a row peeks that member out of the pile's left side,
-   clicking moves it to the top. */
-.desktop-stack-labels {
-  position: absolute;
-  z-index: 19;
-  text-align: left;
-  font-family: var(--ui-font-family);
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--fg);
-  max-width: 340px;
-}
-
-.desktop-stack-labels.hidden {
-  display: none;
-}
-
-.desktop-stack-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-  opacity: 0.75;
-  padding: 1px 6px 1px 0;
-}
-
-.desktop-stack-label:hover {
-  opacity: 1;
-  text-decoration: underline;
-}
-
-.desktop-stack-label.hovered {
-  font-weight: 600;
-  opacity: 0.95;
 }

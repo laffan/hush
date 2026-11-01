@@ -27,7 +27,7 @@ export function closeContextMenu() {
 /** Does scope `key` describe the note's current attachment? Project and
  *  file notes both read as "Document" (they share the pink body). */
 function contextKeyMatches(kind, key) {
-  if (key === "file") return kind === "file" || kind === "project" || kind === "desktop";
+  if (key === "file") return kind === "file" || kind === "project";
   return kind === key;
 }
 
@@ -112,7 +112,7 @@ function changeContext(note, key, hooks) {
     target = hooks.appState()?.getActiveDesk?.()?.id || null;
     if (!target) return;
   }
-  note.el.classList.remove("sticky-file", "sticky-project", "sticky-desk", "sticky-global", "sticky-desktop");
+  note.el.classList.remove("sticky-file", "sticky-project", "sticky-desk", "sticky-global");
   delete note.wx;
   delete note.wy;
   note.kind = key;

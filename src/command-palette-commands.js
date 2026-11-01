@@ -249,27 +249,20 @@ function buildCommands(state) {
         const { x, y } = paneAnchorClickPoint(s);
         createPane(f.fileId, f.name, f.type, x, y);
       }) },
-    // === DESKTOPS (canvas overview of a project) ===
+    // === DESKTOPS (a project's board, desktop/board/) ===
     { id: "open-project-desktop", section: "Desktops", label: "Open Project Desktop", icon: icons.project, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.currentProjectId,
       action: async (s) => {
         (await import("./desktop/desktop-view.js")).openDesktop(s, s.currentProjectId);
       } },
     // Shown while a file that lives inside a project is open: jumps to
-    // that project's Desktop with the file's thumbnail selected + centred.
+    // that project's Desktop, scrolled to the file's row.
     { id: "view-in-desktop", section: "Desktops", label: "View in Desktop", icon: icons.project, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !currentFileDesktopTarget(s),
       action: async (s) => {
         const target = currentFileDesktopTarget(s);
         if (!target) return;
         (await import("./desktop/desktop-view.js")).openDesktop(s, target.projectId, { focusKey: target.focusKey });
-      } },
-    { id: "refresh-desktop-thumbnails", section: "Desktops", label: "Refresh Desktop Thumbnails", icon: icons.files, shortcutKey: null, ctx: "shared",
-      // Shown only while a Desktop is open (checked via the body class so
-      // the palette doesn't pull the notebook renderer into its graph).
-      hiddenIf: () => !document.body.classList.contains("desktop-active"),
-      action: async () => {
-        (await import("./desktop/desktop-view.js")).refreshDesktopThumbnails();
       } },
     { id: "extract-selected", section: "Create", label: "Create New From Selected", icon: icons.newFile, shortcutKey: null, ctx: "shared",
       action: (s) => createNewFromSelected(s) },

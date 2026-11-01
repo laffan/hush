@@ -34,7 +34,7 @@ import {
   isCardItem, augmentTreeWithCards, foldCardParents, noteCardFolds, stripCardsFromTree, renderCardRow, renderCardsHomeRow, cardsHomeIsEmpty, openCard,
   dropCardOnRow, dropCardOutside, trackCardRowHover, onCardIndexChange,
 } from "./files-panel-cards.js";
-import { showsDesktopButton, onDesktopContentChange } from "./files-panel-desktop-badge.js";
+import { showsDesktopButton } from "./files-panel-desktop-badge.js";
 import { importFileIntoPdf } from "../pdf/pdf-manual-import.js"; // static: its picker must open inside the click
 import { renderFlaggedSection } from "./files-panel-flagged.js";
 import { renderDeskYouAreHere } from "./files-panel-you-are-here.js";
@@ -682,7 +682,6 @@ export function initFilesPanelTabSync(state) {
   state.on("doc-content-changed", () => scheduleTabRefresh(state));
   // A notebook's card rows come from what its canvas publishes.
   onCardIndexChange(() => scheduleTabRefresh(state));
-  onDesktopContentChange(() => scheduleTabRefresh(state));
 }
 
 async function openImagePreview(filename, name) {

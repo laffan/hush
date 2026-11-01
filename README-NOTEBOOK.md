@@ -30,7 +30,7 @@ src/notebook/
   flowchart.ts (+ flowchart-geometry.ts)  Portable flowchart layer (ported from Steiner)
   outline-shape.ts        Outline text shapes: layout, footer / checkbox hit zones, pinned origin
   outline-edit.ts         The outline layer's writes: text from its editor, measured heights
-  flowchart-snapshot.ts   A FlowchartLayer for a saved envelope (Desktop thumbnails, Versions)
+  flowchart-snapshot.ts   A FlowchartLayer for a saved envelope (Versions)
   drag-area-markdown.ts   A drag area's contents as markdown, in reading order (its Copy button)
   card-shape.ts           Card text shapes: the model (add / patch / remove / convert, grid slots)
   card-geometry.ts        A card's box (bounds without an import cycle through utils.ts)

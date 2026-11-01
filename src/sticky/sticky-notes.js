@@ -16,11 +16,8 @@
  *   - "desk"    → a desk node id; visible while that desk is active —
  *                 pale yellow
  *   - "global"  → always visible — pale blue
- *   - "desktop" → pinned to a project Desktop's canvas background
- *                 (world coordinates, rides pan/zoom) — created
- *                 automatically when Add File Sticky runs while a
- *                 Desktop is open; visible only on that Desktop —
- *                 pale pink
+ *   (A "desktop" note — pinned to the old canvas Desktop — loads as a
+ *   "project" note on the same project; noteFromSerialized.)
  *
  * Like panes: draggable by the header, double-click the header to
  * collapse, active note rises to the top of the sticky z-band (which
@@ -44,18 +41,11 @@ import {
   ctxIconFor, excerptFor, desktopOpenId,
   clampAxis, clampSize, clampFont,
 } from "./sticky-shared.js";
-import {
-  repositionDesktopNotes as repositionDesktop,
-  desktopStickyRows, revealDesktopSticky, repaintDesktop, bindDesktopSelection,
-  desktopStickiesFor,
-} from "./sticky-desktop.js";
 import { setupDrag, setupResize } from "./sticky-interact.js";
 import { toggleContextMenu } from "./sticky-context-menu.js";
 import { initStickyClaims, claimedElsewhere, publishClaims } from "./sticky-window-claims.js";
 
 const notes = new Map(); // id → note record
-/** Re-anchor + re-scale desktop-pinned notes against the live camera. */
-const repositionDesktopNotes = () => repositionDesktop(notes);
 let appState = null;
 let containerEl = null;
 let zCounter = 1;
@@ -78,19 +68,8 @@ export function initStickyNotes(state) {
     "no-file-state",
     "active-desk-changed", "desktop-opened", "desktop-closed",
   ]) state.on(ev, refresh);
-  // Desktop-pinned notes track the canvas camera.
-  state.on("desktop-opened", () => {
-    repositionDesktopNotes();
-    bindDesktopSelection(notes);
-  });
-  document.addEventListener("desktop-camera-changed", repositionDesktopNotes);
-  // Hooks the notebook shape shelf reads to list desktop-pinned notes
-  // (same shape as the Desktop's other window.__hush* bridges).
+  // The sidebar's file rows list a file's stickies (files-panel-pane-indicators.js).
   window.__hushFileStickies = fileStickiesFor;
-  window.__hushDesktopStickiesFor = (id) => desktopStickiesFor(notes, id);
-  window.__hushDesktopStickies = () => desktopStickyRows(notes);
-  window.__hushRevealDesktopSticky = (id) =>
-    revealDesktopSticky(notes, id, (n) => { n.el.style.zIndex = ++zCounter; });
   // Renames / deletions: refresh labels and prune notes whose target
   // no longer exists in the tree.
   state.on("files-changed", () => { pruneOrphans(); refreshLabels(); refreshVisibility(); });
@@ -138,8 +117,6 @@ function schedulePersist() {
       serialized.push({
         id: n.id, kind: n.kind, target: n.target,
         x: n.x, y: n.y,
-        // Desktop-pinned notes carry canvas world coordinates too.
-        ...(typeof n.wx === "number" ? { wx: n.wx, wy: n.wy } : {}),
         width: n.width, height: n.height,
         collapsed: !!n.collapsed,
         fontSize: n.fontSize,
@@ -162,7 +139,8 @@ function schedulePersist() {
 function noteFromSerialized(s) {
   const width = clampSize(s.width);
   const note = {
-    id: s.id, kind: s.kind, target: s.target ?? null,
+    // The canvas Desktop is gone; a note pinned to one is its project's.
+    id: s.id, kind: s.kind === "desktop" ? "project" : s.kind, target: s.target ?? null,
     x: clampAxis(s.x ?? 40, width, window.innerWidth),
     y: clampAxis(s.y ?? 40, HEADER_HEIGHT, window.innerHeight),
     width, height: clampSize(s.height),
@@ -171,7 +149,6 @@ function noteFromSerialized(s) {
     text: typeof s.text === "string" ? s.text : "",
     createdAt: s.createdAt || Date.now(),
   };
-  if (typeof s.wx === "number" && typeof s.wy === "number") { note.wx = s.wx; note.wy = s.wy; }
   return note;
 }
 
@@ -294,19 +271,14 @@ function activeProjectNodeId(s) {
   return node ? nearestAncestorProjectId(s.fileTree || [], node.id) : null;
 }
 
-/** A Desktop *replaces* the open file (openDesktop calls clearActiveFile),
- *  so there's no currentFileContext to find — but adding a File Sticky is
- *  still valid there (addSticky re-kinds it to "desktop" and pins it), so
- *  the entry has to stay offered or that path is unreachable. */
-export function canAddFileSticky(s) { return !!currentFileContext(s) || !!desktopOpenId(); }
+export function canAddFileSticky(s) { return !!currentFileContext(s); }
 export function canAddProjectSticky(s) { return !!activeProjectNodeId(s); }
 
 // fileRef kind → the context prefix currentFileContext() builds.
 const CTX_PREFIX = { doc: "doc:", notebook: "nb:", pdf: "pdf:", stack: "st:" };
 
-/** File-level stickies attached to one file, for the Desktop's thumbnail
- *  badges. Read live per frame by the canvas renderer, so the notes ride
- *  on top of the cached thumbnail image instead of being baked into it. */
+/** File-level stickies attached to one file, for the sidebar's file
+ *  rows. */
 function fileStickiesFor(kind, fileId) {
   const prefix = CTX_PREFIX[kind];
   if (!prefix || !fileId) return [];
@@ -327,20 +299,7 @@ export function addSticky(state, kind, opts = {}) {
   appState = appState || state;
   ensureContainer();
   let target = null;
-  let world = null;
-  if (kind === "file" && desktopOpenId()) {
-    // A File Sticky added while a Desktop is open pins itself to the
-    // Desktop's background automatically.
-    kind = "desktop";
-    target = desktopOpenId();
-    const toWorld = window.__hushDesktopScreenToWorld;
-    if (toWorld) {
-      world = toWorld({
-        x: Math.round(window.innerWidth / 2 - DEFAULT_SIZE / 2) + (notes.size % 6) * 26,
-        y: Math.round(window.innerHeight / 2 - DEFAULT_SIZE / 2) + (notes.size % 6) * 26,
-      });
-    }
-  } else if (kind === "file") {
+  if (kind === "file") {
     target = opts.target || currentFileContext(state);
     if (!target) return;
   } else if (kind === "project") {
@@ -366,15 +325,12 @@ export function addSticky(state, kind, opts = {}) {
     text: typeof opts.text === "string" ? opts.text : "",
     createdAt: Date.now(),
   };
-  if (world) { note.wx = world.x; note.wy = world.y; }
   buildNoteDOM(note);
   notes.set(note.id, note);
   activateNote(note);
   if (opts.focus !== false) note.textarea.focus();
   // A note sent to a file or desk that isn't on screen must start hidden.
   if (opts.target) refreshVisibility();
-  if (note.kind === "desktop") repositionDesktopNotes();
-  repaintDesktop(); // shows on its thumbnail badge / on any Desktop pane
   schedulePersist();
   emitStickiesChanged();
 }
@@ -440,8 +396,6 @@ function buildNoteDOM(note) {
   textarea.addEventListener("input", () => {
     note.text = textarea.value;
     if (note._excerptEl) note._excerptEl.textContent = excerptFor(note.text);
-    // Shown by a file's thumbnail badge, and painted verbatim by a pane.
-    if (note.kind === "file" || note.kind === "desktop") repaintDesktop();
     schedulePersist();
   });
   el.appendChild(textarea);
@@ -494,11 +448,10 @@ function buildNoteDOM(note) {
 }
 
 // Pointer-interaction callbacks for the extracted drag/resize helpers —
-// keeps registry, persistence, and Desktop repaint owned by this module.
+// keeps registry and persistence owned by this module.
 const interactHooks = {
   activate: (n) => activateNote(n),
   persist: () => schedulePersist(),
-  repaintDesktop: () => repaintDesktop(),
 };
 
 // Same arrangement for the Document / Desk / App switcher — see
@@ -581,7 +534,6 @@ function closeNote(id) {
   if (!note) return;
   note.el.remove();
   notes.delete(id);
-  repaintDesktop(); // drop its thumbnail badge, if it had one
   schedulePersist();
   emitStickiesChanged();
 }
@@ -625,10 +577,6 @@ function noteVisible(note) {
     }
     case "file":
       return currentFileContext(s) === note.target;
-    case "desktop":
-      // Pinned to a project's Desktop background — visible only while
-      // that Desktop is open.
-      return desktopOpenId() === note.target;
     default:
       return false;
   }
@@ -641,7 +589,7 @@ function labelFor(note) {
     const desk = tree.find((n) => n.type === "desk" && n.id === note.target);
     return desk?.name || "Desk";
   }
-  if (note.kind === "project" || note.kind === "desktop") {
+  if (note.kind === "project") {
     return findNode(tree, note.target)?.name || "Project";
   }
   const fileId = String(note.target || "").replace(/^(doc|nb|pdf|st):/, "");
@@ -675,7 +623,7 @@ function targetStillExists(kind, target) {
   if (!target) return false;
   if (!tree.length) return true; // can't verify yet — keep the note
   if (kind === "desk") return tree.some((n) => n.type === "desk" && n.id === target);
-  if (kind === "project" || kind === "desktop") {
+  if (kind === "project") {
     const node = findNode(tree, target);
     return isRealProjectNode(node);
   }

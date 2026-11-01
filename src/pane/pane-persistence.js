@@ -216,6 +216,8 @@ export async function restorePanes(deps, listOverride) {
   const now = [];
   for (const s of list) {
     if (!s || !s.fileId || !s.fileType) continue;
+    // A canvas-Desktop pane: that view is gone, so the pane goes too.
+    if (s.fileType === "desktop") continue;
     if (!hidden && participates(s, ctx)) now.push(s);
     else _dormant.push(s);
   }

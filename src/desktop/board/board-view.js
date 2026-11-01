@@ -17,12 +17,11 @@
  * written in as headings (board-model.js). The project's other files —
  * notebooks, stacks, notes, PDFs — sit at the foot as its material.
  *
- * Takes over the main view as the canvas Desktop does (desktop-view.js
- * routes a project's Desktop here; a desk's Desktop, and the project's
- * free canvas — the header's **Canvas** — stay there): the same
- * `body.desktop-active`, `__hushDesktopOpenId` and `desktop-opened` /
- * `desktop-closed`, so panes, stickies and the return crumb treat both
- * alike. Re-renders on file changes, deferred while anything on the
+ * Takes over the main view (desktop-view.js is the entry point every
+ * caller uses): `body.desktop-active` hides what is underneath,
+ * `__hushDesktopOpenId` makes it the pane context (`dt:<projectId>`) and
+ * the project stickies' project, and `desktop-opened` / `desktop-closed`
+ * tell the return crumb and the stickies. Re-renders on file changes, deferred while anything on the
  * board has the keyboard so typing is never pulled out from under.
  */
 import { findNode } from "../../state/tree-helpers.js";
@@ -64,7 +63,7 @@ function somethingIsOpen() {
 function wire() {
   if (wired) return;
   wired = true;
-  // Opening a file replaces the board, as it does the canvas Desktop.
+  // Opening a file replaces the board.
   const close = () => { if (containerId && somethingIsOpen()) closeProjectBoard(); };
   for (const ev of ["file-opened", "notebook-open", "pdf-open", "stack-open"]) state.on(ev, close);
   state.on("multi-select-changed", () => { if ((state.selectedDocIds || []).length >= 2) closeProjectBoard(); });
@@ -203,10 +202,11 @@ function openFull(leaf) {
   void openLeaf(state, leaf);
 }
 
+/** A material file in a floating pane (a document's own pane is its
+ *  row's). */
 async function openFloating(node) {
   const { createPane } = await import("../../pane/pane-manager.js");
-  const type = node.type === "project" ? "desktop" : node.type;
-  await createPane(node.type === "project" ? node.id : node.fileId, node.name, type,
+  await createPane(node.fileId, node.name, node.type,
     window.innerWidth * 0.7, window.innerHeight * 0.35, { desktopPane: true, ownerContext: "dt:" + containerId });
 }
 
@@ -224,14 +224,9 @@ function render() {
   head.className = "board-head";
   head.innerHTML = `<div class="board-head-titles"><h1 class="board-title">${escHtml(project.name || "Project")}</h1>`
     + `<div class="board-stats">${docs.length} document${docs.length === 1 ? "" : "s"} · ${words.toLocaleString()} words</div></div>`
-    + `<div class="board-head-actions"><button type="button" class="board-head-btn" data-act="canvas" title="The project's free canvas — notes, drawings and stickies placed anywhere">Canvas</button>`
+    + `<div class="board-head-actions">`
     + `<button type="button" class="board-head-btn board-close" data-act="close" title="Close (Esc)" aria-label="Close">×</button></div>`;
   head.querySelector('[data-act="close"]').addEventListener("click", closeProjectBoard);
-  head.querySelector('[data-act="canvas"]').addEventListener("click", async () => {
-    const id = containerId;
-    closeProjectBoard();
-    (await import("../desktop-view.js")).openDesktop(state, id, { canvas: true });
-  });
   host.appendChild(head);
 
   const list = document.createElement("div");
@@ -312,10 +307,8 @@ function docRow(node, project, live) {
   const title = document.createElement("div");
   title.className = "board-row-title";
   title.innerHTML = `<span class="board-row-name">${escHtml(node.name || "Untitled")}</span>`
-    + `<button type="button" class="board-icon-btn" data-act="open" title="Open">${OPEN_ICON}</button>`
-    + `<button type="button" class="board-icon-btn" data-act="pane" title="Open as a floating pane">${PANE_ICON}</button>`;
+    + `<button type="button" class="board-icon-btn" data-act="open" title="Open">${OPEN_ICON}</button>`;
   title.querySelector('[data-act="open"]').addEventListener("click", () => openFull(leaf));
-  title.querySelector('[data-act="pane"]').addEventListener("click", () => openFloating(node));
   const outline = buildOutline(content, {
     name: node.name,
     onHover: (h) => stack.reveal(h ? stack.pageOfOffset(h.from) : null),
@@ -411,7 +404,7 @@ function materialSection(project) {
     const chip = document.createElement("div");
     chip.className = "board-material-item";
     chip.innerHTML = `${getIcon(node, state)}<span class="board-material-name">${escHtml(node.name || "Untitled")}</span>`
-      + `<button type="button" class="board-icon-btn" title="Open as a floating pane">${PANE_ICON}</button>`;
+      + (node.type === "project" ? "" : `<button type="button" class="board-icon-btn" title="Open as a floating pane">${PANE_ICON}</button>`);
     chip.addEventListener("click", (e) => {
       if (e.target.closest(".board-icon-btn")) { void openFloating(node); return; }
       if (node.type === "project") { armDesktopReturn(state, containerId); void openProjectBoard(state, node.id); return; }

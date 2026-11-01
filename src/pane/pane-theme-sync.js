@@ -46,7 +46,6 @@ export async function previewPaneStyle(styleObj) {
         bridge.computeNotebookSettings({ ...appState, settings: synthSettings }, null),
       );
       restoreNotebookPaneBackground(pane);
-      if (pane.fileType === "desktop") await restoreDesktopPaneBackground(pane);
     }
   }
 }
@@ -64,7 +63,6 @@ export async function syncPaneThemes() {
       if (!bridge) bridge = await getNotebookBridge();
       pane.notebook.applySettings(bridge.computeNotebookSettings(appState, lockedStyleId));
       restoreNotebookPaneBackground(pane);
-      if (pane.fileType === "desktop") await restoreDesktopPaneBackground(pane);
     }
     // Track tree-side renames — covers manual renames and the auto-
     // rename-from-first-line that fires for fresh "Untitled" docs.
@@ -95,9 +93,3 @@ function restoreNotebookPaneBackground(pane) {
   s.notify("theme");
 }
 
-/** A Desktop pane's canvas carries the project's own background, which
- *  the notebook-settings pass above just overwrote. Put it back. */
-async function restoreDesktopPaneBackground(pane) {
-  const { applyDesktopPaneBackground } = await import("../desktop/desktop-pane.js");
-  applyDesktopPaneBackground(pane);
-}

@@ -22,7 +22,6 @@ import { createBaseExtensions } from "./base-extensions.js";
 import { propertiesEdit } from "./plugins/properties.js";
 import { outlineZenSurface } from "./plugins/outline-view.js";
 import { cardsHidden } from "../cards/card-facet.js";
-import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { zenTitleLock, settleZenTitleLock } from "./zen-title-lock.js";
 import { createProjectViewField, createSeparatorFilter } from "./plugins/project-view.js";
 import { applyBlockCursor } from "./block-cursor.js";
@@ -369,10 +368,9 @@ export function enterZenFocus(state) {
   const unbindLineIndicator = bindLineIndicatorToContainer(overlay, state);
 
   // Build the Zen shadow editor. createBaseExtensions covers markdown,
-  // callouts, links, etc. — but it intentionally omits focus mode (and
-  // a few other doc-only plugins) because panes don't need them.
-  // Zen *does* want sentence-level dim, so we add focus mode here on
-  // top of the base set.
+  // callouts, links, focus mode, etc. Focus mode must not be added a
+  // second time here: two plugins nest their marks, and the sentence
+  // fade multiplied through the nesting and jumped at its end.
   // Zen writes its whole buffer back over the source on exit, so a cap
   // it didn't enforce would be enforced on the write-back instead —
   // trimming the tail of the document rather than the words the user
@@ -398,7 +396,6 @@ export function enterZenFocus(state) {
     ),
     extensions: [
       ...extensions,
-      createFocusModePlugin(state),
       // Replace the raw `---hush-separator---` line with the dashed
       // block widget so project-view zens look like the main editor.
       // The separator filter rides along so accidental keystrokes can't

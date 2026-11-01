@@ -11,7 +11,7 @@
  */
 import { escHtml } from "../../sidebar/files-panel-shared.js";
 import { stripInlineMarkdown } from "../../outline/outline-model.ts";
-import { paginate, headingsOf, leadOf, pageOf } from "./board-model.js";
+import { paginate, headingsOf, pageOf } from "./board-model.js";
 
 /** Sheets drawn behind the top one, at most. */
 const MAX_BEHIND = 5;
@@ -81,8 +81,9 @@ export function buildStack(content, { onClick, onOpen } = {}) {
 }
 
 /** A document's outline: its headings, nested by level, each hovering to
- *  its page and clicking to its place. Without headings it shows the
- *  document's first words, which hover to page 1 and click to the top. */
+ *  its page and clicking to its place. Without headings there is nothing
+ *  to point into, so an **Open as Pane** button stands in its place and
+ *  opens the row's pane at the top. */
 export function buildOutline(content, { onHover, onPick, name = "" }) {
   const heads = headingsOf(content);
   // A title heading that only repeats the document's name (the row says
@@ -91,8 +92,7 @@ export function buildOutline(content, { onHover, onPick, name = "" }) {
   const el = document.createElement("div");
   el.className = "board-outline";
   if (!heads.length) {
-    const lead = leadOf(content);
-    el.innerHTML = `<div class="board-outline-empty">${lead ? `${escHtml(lead)}…` : "Empty document"}</div>`;
+    el.innerHTML = `<button type="button" class="board-open-pane">Open as Pane</button>`;
     el.firstChild.addEventListener("click", () => onPick({ from: 0, to: 0 }));
     return el;
   }

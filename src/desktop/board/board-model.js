@@ -22,7 +22,7 @@
  */
 import { findNode } from "../../state/tree-helpers.js";
 import { parseOutlineLine, stripInlineMarkdown } from "../../outline/outline-model.ts";
-import { stripFrontmatter, findFrontmatterRange } from "../../editor/frontmatter.js";
+import { findFrontmatterRange } from "../../editor/frontmatter.js";
 
 export const WORDS_PER_PAGE = 500;
 export const EMPTY_OUTLINE = "- [ ] ";
@@ -127,12 +127,6 @@ export function headingsOf(content) {
     if (m) out.push({ text: stripInlineMarkdown(m[2]), level: m[1].length, from, to: from + line.length });
   }
   return out;
-}
-
-/** The first words of the body, for a document with no headings. */
-export function leadOf(content, words = 14) {
-  const body = stripFrontmatter(String(content || "")).replace(/<<<[\s\S]*?>>>/g, " ");
-  return body.split(/\s+/).filter(Boolean).slice(0, words).join(" ");
 }
 
 // ── Writing board data ─────────────────────────────────────────────

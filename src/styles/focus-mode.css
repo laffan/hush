@@ -45,6 +45,14 @@ body.focus-mode-active .floating-pane.active {
   opacity: calc(1 - (1 - var(--focus-mode-opacity, 0.5)) * var(--fm-p, 1));
   transition: none;
 }
+/* A fading span inside another dim or fading span stands down, as a dim
+   inside a dim does above — opacity multiplies, and a surface carrying
+   two focus-mode plugins (Zen did) would otherwise fade the sentence it
+   left to dim × dim and then jump back to dim when the fade ended: the
+   blink. */
+:is(.focus-mode-dim, .focus-mode-entering) :is(.focus-mode-dim, .focus-mode-entering) {
+  opacity: 1;
+}
 
 /* A rendered table is a block widget, and CodeMirror never wraps block
    widgets in mark spans, so the dim can't reach it. It's also only
