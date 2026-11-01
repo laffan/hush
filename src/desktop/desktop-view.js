@@ -33,6 +33,7 @@ import { initDesktopConnections, applyDocConnections } from "./desktop-connectio
 import { openFileRef, openFileRefWithGutter, openFileRefSecondary } from "./desktop-open.js";
 import { armDesktopReturn } from "./desktop-return.js";
 import { canvasToScreen, screenToCanvas } from "../notebook/utils.ts";
+import { isBoardOpen, boardContainerId, openProjectBoard, closeProjectBoard } from "./board/board-view.js";
 
 let _host = null;
 let _canvasHost = null;
@@ -61,15 +62,11 @@ const _searchText = new Map();
 // the per-doc / bulk outline toggles (desktop-outline.js).
 let _outline = null;
 
-export function isDesktopOpen() {
-  return !!_containerId;
-}
+// A project's Desktop is its board (board/board-view.js) unless asked
+// for its free canvas (`opts.canvas`); these answer for either.
+export const isDesktopOpen = () => !!_containerId || isBoardOpen();
+export const currentDesktopContainerId = () => _containerId || boardContainerId();
 
-export function currentDesktopContainerId() {
-  return _containerId;
-}
-
-/** Desktops open on a 20% grid; the bg flyout overrides it per project. */
 const DESKTOP_BG_DEFAULT = { backgroundPattern: "grid", gridSpacing: 25, gridOpacity: 0.2 };
 
 function collectOpts() {
@@ -214,9 +211,12 @@ function initDesktop(state) {
  *  centres that file's thumbnail once the canvas lands (used by the
  *  "View in Desktop" palette entry). */
 export async function openDesktop(state, containerId, opts = {}) {
+  const container = findDesktopContainer(state, containerId);
+  if (container?.type === "project" && !opts.canvas) { if (_containerId) closeDesktop(); return openProjectBoard(state, containerId, opts); }
+  closeProjectBoard();
   if (!_host) initDesktop(state);
   _state = state;
-  if (!findDesktopContainer(state, containerId)) return;
+  if (!container) return;
   _focusKey = opts.focusKey || null;
   if (_containerId === containerId) {
     if (_focusKey && _hydrated) focusThumb(_focusKey);
@@ -251,6 +251,7 @@ export async function openDesktop(state, containerId, opts = {}) {
 }
 
 export function closeDesktop() {
+  closeProjectBoard();
   if (!_containerId) return;
   const closed = _containerId;
   persistNow();
@@ -270,9 +271,8 @@ export function closeDesktop() {
 
 // ── Chrome ──────────────────────────────────────────────────────────
 
-/** The Desktop has no header of its own — the canvas fills the takeover
- *  and its two view actions (Reset View / Refresh Thumbnails) live in
- *  the background-settings flyout's Desktop section, bottom right. */
+/** No header: the canvas fills the takeover; Reset View / Refresh
+ *  Thumbnails live in the background flyout's Desktop section. */
 function renderChrome() {
   _host.innerHTML = `<div class="desktop-canvas-host"></div>`;
   _canvasHost = _host.querySelector(".desktop-canvas-host");

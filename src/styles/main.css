@@ -47,6 +47,7 @@
 @import './pdf-bookmarks.css';
 @import './pdf-reading.css';
 @import './desktop.css';
+@import './desktop-board.css';
 @import './stack.css';
 @import './shortcuts-modal.css';
 @import './folding.css';

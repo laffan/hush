@@ -67,6 +67,9 @@ export function schedulePersist() {
 export function serializePanes() {
   const serialized = [];
   for (const [, p] of panes) {
+    // A Desktop board row's pane lives only while the board is up
+    // (desktop/board/board-pane.js).
+    if (p.desktopRow) continue;
     serialized.push({
       fileId: p.fileId,
       fileName: p.fileName,

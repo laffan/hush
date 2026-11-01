@@ -1,0 +1,413 @@
+/* ===== Project Desktop board (src/desktop/board/) =====
+   A project top to bottom: per row a stack of pages, its outline, and —
+   when opened — a pane; rows linked by the sidebar's I-beam, drawn
+   large. The host is the canvas Desktop's takeover box (.desktop-view,
+   desktop.css), scrolling instead of panning. */
+
+.board-view {
+  --board-stack-w: 156px;
+  --board-stack-h: 202px;
+  --board-stack-col: 200px;
+  --board-outline-w: 280px;
+  --board-gap: 28px;
+  --board-ink: color-mix(in srgb, var(--fg) 55%, transparent);
+  display: block;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 40px 80px;
+  font-family: var(--ui-font-family);
+}
+
+.board-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 -40px 18px;
+  padding: 46px 40px 14px;
+  background: var(--theme-bg, var(--bg));
+  border-bottom: 1px solid var(--panel-border, rgba(128, 128, 128, 0.25));
+}
+.board-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+.board-stats {
+  margin-top: 3px;
+  font-size: 12px;
+  opacity: 0.5;
+}
+.board-head-actions { display: flex; gap: 6px; align-items: center; }
+.board-head-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.board-head-btn:hover { opacity: 1; background: rgba(128, 128, 128, 0.12); }
+.board-close { width: 28px; padding: 0; font-size: 18px; line-height: 1; }
+
+.board-empty {
+  margin: 24px 0 0;
+  font-size: 13px;
+  opacity: 0.55;
+}
+
+/* ── A row ── */
+/* "View in Desktop" lands on a row and picks it out for a moment. */
+.board-row.flash { animation: board-row-flash 1.4s ease-out; border-radius: 8px; }
+@keyframes board-row-flash {
+  from { background: color-mix(in srgb, var(--cursor, var(--fg)) 14%, transparent); }
+  to { background: transparent; }
+}
+.board-row {
+  display: grid;
+  grid-template-columns: var(--board-stack-col) var(--board-outline-w) minmax(0, 1fr);
+  gap: var(--board-gap);
+  align-items: start;
+}
+
+.board-col-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.board-stack-label {
+  margin-top: 10px;
+  font-size: 11px;
+  opacity: 0.5;
+  text-align: center;
+}
+
+/* The stack: sheets behind (one per page past the first, a few at
+   most), the first page on top, and a lifted sheet the outline's hover
+   brings up. Thumbnails read as paper whatever the appearance. */
+.board-stack {
+  position: relative;
+  width: var(--board-stack-w);
+  height: var(--board-stack-h);
+  margin-right: calc(var(--behind, 0) * 4px);
+  margin-bottom: calc(var(--behind, 0) * 4px);
+  cursor: pointer;
+}
+.board-sheet {
+  position: absolute;
+  inset: 0;
+  border-radius: 2px;
+  background: #fdfdfb;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+.board-sheet-behind {
+  transform: translate(calc(var(--i) * 4px), calc(var(--i) * 4px));
+  background: #f4f4f1;
+}
+.board-sheet-top { transition: opacity 160ms ease; }
+.board-stack:hover .board-sheet-top { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.16); }
+.board-sheet-lifted {
+  opacity: 0;
+  transform: translate(10px, 6px);
+  transition: opacity 160ms ease, transform 200ms ease;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+}
+.board-stack.revealing .board-sheet-lifted { opacity: 1; transform: translate(-6px, -8px) rotate(-1.2deg); }
+.board-stack.revealing .board-sheet-top { opacity: 0.55; }
+.board-page-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 9.5px;
+}
+
+/* A page in miniature: text at a fixed small size, so a full page fills
+   the sheet the way a printed one would. */
+.board-page {
+  padding: 12px 11px;
+  color: #2a2a2a;
+  font-family: var(--font-family, Georgia, serif);
+  font-size: 4.6px;
+  line-height: 1.5;
+  overflow: hidden;
+  height: 100%;
+  box-sizing: border-box;
+}
+.board-page .bp-h { font-weight: 700; margin: 3px 0 2px; }
+.board-page .bp-h1 { font-size: 8px; }
+.board-page .bp-h2 { font-size: 6.4px; }
+.board-page .bp-h3 { font-size: 5.4px; }
+.board-page .bp-p { margin-bottom: 2.5px; text-indent: 5px; }
+.board-page .bp-li { padding-left: 6px; margin-bottom: 1px; }
+
+/* The placeholder's stack: a dashed outline of one, holding a title
+   field and Create. */
+.board-stack-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 1.5px dashed var(--board-ink);
+  border-radius: 3px;
+  cursor: default;
+}
+.board-ph-title {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 6px;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 20%, transparent);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  text-align: center;
+  outline: none;
+}
+.board-ph-title:focus { border-bottom-color: color-mix(in srgb, var(--fg) 55%, transparent); }
+.board-ph-create {
+  padding: 6px 16px;
+  border: 1px solid color-mix(in srgb, var(--fg) 35%, transparent);
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.board-ph-create:hover { background: rgba(128, 128, 128, 0.14); }
+.board-ph-remove {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  border: none;
+  background: none;
+  color: var(--fg);
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+}
+.board-stack-placeholder:hover .board-ph-remove { opacity: 0.5; }
+.board-ph-remove:hover { opacity: 0.9 !important; }
+
+/* ── The outline column ── */
+.board-col-outline { min-width: 0; padding-top: 2px; }
+.board-row-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.board-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+}
+.board-row-name.muted { font-weight: 500; opacity: 0.5; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.board-icon-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--fg);
+  opacity: 0;
+  cursor: pointer;
+}
+.board-icon-btn svg { width: 14px; height: 14px; }
+.board-row:hover .board-icon-btn,
+.board-material-item:hover .board-icon-btn { opacity: 0.55; }
+.board-icon-btn:hover { opacity: 1 !important; background: rgba(128, 128, 128, 0.14); }
+
+.board-outline {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.board-outline-item {
+  display: block;
+  width: 100%;
+  padding: 3px 6px 3px calc(6px + var(--depth, 0) * 14px);
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-outline-item.level-1 { font-weight: 600; opacity: 0.95; }
+.board-outline-item.level-3 { opacity: 0.6; font-size: 12px; }
+.board-outline-item:hover,
+.board-outline-item:focus-visible { background: rgba(128, 128, 128, 0.14); opacity: 1; outline: none; }
+.board-outline-empty {
+  padding: 3px 6px;
+  font-size: 12px;
+  font-style: italic;
+  opacity: 0.5;
+  cursor: pointer;
+}
+
+/* The outline module (outline/outline-canvas-element.js) — a canvas
+   object there, a block in the flow here. */
+.board-view .nb-outline.board-outline-module {
+  --nb-outline-size: 14px;
+  position: relative;
+  width: 100%;
+  pointer-events: auto;
+  background: transparent;
+}
+.board-view .board-outline-module .outline-footer > .outline-footer-btn:last-child { display: none; }
+.board-notes { margin-top: 12px; }
+.board-notes-label {
+  margin-bottom: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.45;
+}
+.board-notes-add {
+  padding: 2px 6px;
+  border: none;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  opacity: 0;
+  cursor: pointer;
+}
+.board-row:hover .board-notes-add { opacity: 0.45; }
+.board-notes-add:hover { opacity: 0.9 !important; }
+
+/* ── The pane column: the row's pane, once opened (board-pane.js) ── */
+.board-col-pane { min-width: 0; }
+.board-pane-slot { position: relative; display: none; isolation: isolate; }
+/* A pane carries its stacking order inline (pane-manager's zForPane);
+   inside the row it sits in the page, under the sticky header. */
+.board-view .board-pane-slot > .floating-pane { z-index: 0 !important; }
+.board-pane-slot.open { display: block; }
+.board-view .floating-pane.board-row-pane {
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+}
+
+/* ── The link between rows: the sidebar's I-beam at board scale, a
+   dashed-box button halfway down it ── */
+.board-connector {
+  position: relative;
+  width: var(--board-stack-col);
+  height: 64px;
+}
+.board-ibeam {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  bottom: 8px;
+  width: 26px;
+  transform: translateX(-50%);
+  background:
+    linear-gradient(var(--board-ink), var(--board-ink)) top / 100% 1.5px no-repeat,
+    linear-gradient(var(--board-ink), var(--board-ink)) bottom / 100% 1.5px no-repeat,
+    linear-gradient(var(--board-ink), var(--board-ink)) center / 1.5px 100% no-repeat;
+  opacity: 0.6;
+  pointer-events: none;
+}
+.board-connector.last { height: 52px; }
+.board-connector.last .board-ibeam {
+  bottom: auto;
+  height: 24px;
+  background:
+    linear-gradient(var(--board-ink), var(--board-ink)) top / 100% 1.5px no-repeat,
+    linear-gradient(var(--board-ink), var(--board-ink)) center / 1.5px 100% no-repeat;
+}
+.board-add {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  opacity: 0.55;
+  cursor: pointer;
+}
+.board-connector.last .board-add { top: 38px; }
+.board-add svg { width: 20px; height: 20px; }
+.board-add:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 8%, var(--theme-bg, var(--bg))); }
+
+/* ── Material: the project's other files ── */
+.board-material { margin-top: 36px; }
+.board-material-title {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.45;
+}
+.board-material-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.board-material-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 260px;
+  padding: 6px 6px 6px 10px;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.3));
+  border-radius: 7px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.board-material-item:hover { background: rgba(128, 128, 128, 0.1); }
+.board-material-item > svg,
+.board-material-item > .tree-type-icon { flex: none; width: 14px; height: 14px; }
+.board-material-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Narrow windows: the pane drops under its row. */
+@media (max-width: 900px) {
+  .board-view { padding: 0 18px 60px; }
+  .board-head { margin: 0 -18px 18px; padding-left: 18px; padding-right: 18px; }
+  .board-row { grid-template-columns: var(--board-stack-col) minmax(0, 1fr); }
+  .board-col-pane { grid-column: 1 / -1; }
+}

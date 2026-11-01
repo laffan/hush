@@ -138,4 +138,10 @@ pub struct TreeNode {
     // it until they ask for it (sync/desk-adopt-settle.js).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archive_untidied: Option<bool>,
+    // On a project: its Desktop board's own data — placeholder documents
+    // (title + outline, in place between the project's documents) and
+    // the notes written beside each document. Opaque to Rust; shaped by
+    // `desktop/board/board-model.js`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board: Option<serde_json::Value>,
 }
