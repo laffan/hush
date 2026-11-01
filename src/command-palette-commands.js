@@ -236,12 +236,10 @@ function buildCommands(state) {
       }, { asPane: true }) },
     { id: "open-file", section: "Open", label: "Open document, notebook, or project", icon: icons.files, shortcutKey: null, ctx: "shared",
       keepOpen: true,
-      action: (s, p) => enterFilePicker(p, s, "Open file…", (f) => {
-        if (f.type === "notebook") s.openNotebook(f.fileId);
-        else if (f.type === "project") s.openProject(f.fileId);
-        else if (f.type === "stack") s.openStack(f.fileId);
-        else s.openFile(f.fileId);
-      }, { includeProjects: true }) },
+      action: async (s, p) => {
+        const { openLeafOnItsDesk } = await import("./state/cross-desk.js");
+        enterFilePicker(p, s, "Open file…", (f) => void openLeafOnItsDesk(s, f), { includeProjects: true, allDesksToggle: true });
+      } },
     { id: "open-pane", section: "Open", label: "Open as pane", icon: icons.pane, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: (s, p) => enterFilePicker(p, s, "Open as pane…", (f) => {

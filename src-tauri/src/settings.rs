@@ -271,6 +271,12 @@ pub struct AppSettings {
     pub show_recent_files: bool,
     #[serde(default = "default_recent_files_panel_height")]
     pub recent_files_panel_height: u32,
+    /// Recent Files lists every desk's files (its header's desk toggle).
+    #[serde(default)]
+    pub recent_files_all_desks: bool,
+    /// The ⌘O picker searches every desk (its input's desk toggle).
+    #[serde(default)]
+    pub open_picker_all_desks: bool,
     /// Sidebar file browser: list every doc's markdown headings as
     /// indented child rows (command palette: Show / Hide Project Headings).
     #[serde(default)]
@@ -879,6 +885,8 @@ impl Default for AppSettings {
             sticky_headers: false,
             show_recent_files: false,
             recent_files_panel_height: default_recent_files_panel_height(),
+            recent_files_all_desks: false,
+            open_picker_all_desks: false,
             show_project_headings: false,
             recent_file_ids: Vec::new(),
             recent_file_ids_by_desk: serde_json::json!({}),

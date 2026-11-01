@@ -11,6 +11,7 @@
 }
 
 .cmd-palette {
+  position: relative;
   width: 420px;
   max-height: 60vh;
   display: flex;
@@ -214,3 +215,92 @@
   color: var(--sidebar-fg);
   line-height: 1;
 }
+
+/* ---- File picker: the desk toggle and the desk names ----
+   The toggle sits at the right end of the input (command-palette.js
+   setAccessory); pressed, the list is every desk's files and a row from
+   another desk carries its desk's name after its own. */
+.cmd-palette.has-accessory .cmd-palette-input { padding-right: 52px; }
+.cmd-palette-accessory {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+}
+.cmd-palette-desk-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  opacity: 0.4;
+  cursor: pointer;
+}
+.cmd-palette-desk-toggle:hover { opacity: 0.8; background: rgba(128, 128, 128, 0.14); }
+.cmd-palette-desk-toggle.active {
+  opacity: 0.9;
+  border-color: color-mix(in srgb, var(--fg) 30%, transparent);
+  background: rgba(128, 128, 128, 0.14);
+}
+.cmd-palette-desk-toggle svg { width: 17px; height: 17px; }
+.cmd-palette-desk-name {
+  margin-left: 8px;
+  font-size: 11.5px;
+  opacity: 0.45;
+  white-space: nowrap;
+}
+
+/* ---- File picker: the hover preview (command-palette-preview.js) ----
+   A second's rest on a row flies a card out to the left of the palette,
+   level with the row: the expanded view's preview of the file. */
+.cmd-palette-preview {
+  position: fixed;
+  z-index: 1;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+  font-family: system-ui, -apple-system, sans-serif;
+  pointer-events: none;
+  animation: cmd-palette-preview-fly 180ms ease-out both;
+}
+@keyframes cmd-palette-preview-fly {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cmd-palette-preview { animation: none; }
+}
+.cmd-palette-preview-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cmd-palette-preview-title > svg,
+.cmd-palette-preview-title > .tree-type-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.cmd-palette-preview-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmd-palette-preview-desk {
+  margin-top: 1px;
+  font-size: 11px;
+  opacity: 0.5;
+}
+.cmd-palette-preview .inbox-preview-doc { max-height: calc(6 * 1.4em); opacity: 0.6; }
+.cmd-palette-preview .inbox-preview-notebook img { max-height: 180px; }

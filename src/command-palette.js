@@ -15,6 +15,8 @@ import { buildActiveModeTurnoffs } from "./command-palette-turnoffs.js";
 import { groupBySection, buildRecentCommands, recordRecentCommand } from "./command-palette-sections.js";
 import { getActiveModeContext } from "./state/mode-context.js";
 import { buildPinnedCommands } from "./midnight/midnight-commands.js";
+import { attachRowPreview, hidePalettePreview } from "./command-palette-preview.js";
+import { openLeafOnItsDesk } from "./state/cross-desk.js";
 
 let overlay = null;
 let activeIndex = 0;
@@ -30,7 +32,22 @@ let recentEligibleIds = new Set();
 let suspendedNotebookText = null;
 
 function isOpen() { return overlay !== null; }
+
+/** A control at the right end of the input — the file picker's desk
+ *  toggle. Every new list (`setItems`) clears it; the picker that wants
+ *  one puts it back. */
+function setAccessory(el) {
+  const palette = overlay?.querySelector(".cmd-palette");
+  if (!palette) return;
+  palette.querySelector(":scope > .cmd-palette-accessory")?.remove();
+  palette.classList.toggle("has-accessory", !!el);
+  if (!el) return;
+  el.classList.add("cmd-palette-accessory");
+  palette.appendChild(el);
+}
+
 function close() {
+  hidePalettePreview();
   if (overlay) { overlay.remove(); overlay = null; }
   // Hand focus back to a suspended notebook text editor and resume
   // its blur-commit. Actions that need the editor alive (Zotero) null
@@ -75,11 +92,8 @@ export function openFilePalette(state, mode) {
       createPane(f.fileId, f.name, f.type, x, y);
     });
   } else {
-    enterFilePicker(api, state, "Open file…", (f) => {
-      if (f.type === "notebook") state.openNotebook(f.fileId);
-      else if (f.type === "project") state.openProject(f.fileId);
-      else state.openFile(f.fileId);
-    }, { includeProjects: true });
+    enterFilePicker(api, state, "Open file…", (f) => void openLeafOnItsDesk(state, f),
+      { includeProjects: true, allDesksToggle: true });
   }
 }
 
@@ -108,10 +122,12 @@ function paletteApi(state) {
       allCommands = items;
       filteredCommands = [...items];
       activeIndex = 0;
+      setAccessory(null);
       if (placeholder !== undefined && input) input.placeholder = placeholder;
       if (input) { input.value = ""; input.focus(); }
       if (list) renderList(list, state);
     },
+    setAccessory,
     close() { close(); },
   };
 }
@@ -175,11 +191,13 @@ function open(state) {
       allCommands = items;
       filteredCommands = [...items];
       activeIndex = 0;
+      setAccessory(null);
       if (placeholder !== undefined) input.placeholder = placeholder;
       input.value = "";
       input.focus();
       renderList(list, state);
     },
+    setAccessory,
     close() { close(); },
   };
 
@@ -277,6 +295,7 @@ function open(state) {
   // `keyboardNav` stays true and the per-row `pointerenter` no-ops so
   // arrow keys aren't yanked back to the cursor's resting position.
   overlay.addEventListener("mousemove", () => { keyboardNav = false; });
+  list.addEventListener("scroll", hidePalettePreview, { passive: true });
 
   // Expose runCommand on the list element so renderList's per-row click
   // handlers can route through the same keepOpen-aware path.
@@ -284,6 +303,7 @@ function open(state) {
 }
 
 function renderList(listEl, state) {
+  hidePalettePreview();
   listEl.innerHTML = "";
   // Group for display, then adopt the grouped order as the real one:
   // arrow keys and Enter index into `filteredCommands`, so the array and
@@ -345,6 +365,8 @@ function renderList(listEl, state) {
       });
       row.appendChild(btn);
     }
+    // A file-picker row's hover preview, flying out to the left.
+    if (cmd.previewLeaf) attachRowPreview(row, cmd.previewLeaf, state);
     row.addEventListener("click", () => {
       const run = listEl.__runCommand;
       if (run) run(cmd);

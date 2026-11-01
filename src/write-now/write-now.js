@@ -22,10 +22,8 @@ import { isEmptyUntitled } from "../state/empty-untitled.js";
 import { mainEditorHoldsDoc } from "../state/open-surface.js";
 import { deactivateAllPanes } from "../pane/pane-manager.js";
 import { raiseVeil, lowerVeil, windowSettled } from "./write-now-veil.js";
+import { switchDeskAndLand } from "../state/cross-desk.js";
 
-/** How long a desk switch may take to land before Write Now carries on
- *  regardless (a local desk's folder can be slow to answer). */
-const DESK_LANDING_MS = 5000;
 
 let running = false;
 
@@ -128,14 +126,7 @@ async function switchToWriteNowDesk(state) {
   const deskId = state.settings?.writeNowDeskId;
   if (!deskId || deskId === state.settings?.activeDeskId) return;
   if (!(state.settings?.desks || []).some((d) => d.id === deskId)) return;
-  const landed = new Promise((resolve) => {
-    const done = () => { clearTimeout(timer); state.off("desk-overview-restore", done); resolve(); };
-    const timer = setTimeout(done, DESK_LANDING_MS);
-    // main.js's desk-switch handler emits this once the desk's file is open.
-    state.on("desk-overview-restore", done);
-  });
-  await state.setActiveDesk(deskId);
-  await landed;
+  await switchDeskAndLand(state, deskId);
 }
 
 /** The main editor already holds an empty, unnamed document on the

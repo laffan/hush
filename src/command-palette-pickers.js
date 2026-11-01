@@ -19,9 +19,10 @@ import { paneIndicatorsFor } from "./sidebar/files-panel-pane-indicators.js";
 import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "./pane/pane-state.js";
 import { sendSelectedToFile } from "./selection-extract.js";
 import { addNotebookAsGutter } from "./project/gutter-commands.js";
-import { typeIcons, leafIcon, deskRatchetGlyph, NEW_WINDOW_SVG } from "./sidebar/files-panel-shared.js";
+import { typeIcons, leafIcon, deskRatchetGlyph, NEW_WINDOW_SVG, escHtml } from "./sidebar/files-panel-shared.js";
 import { collectFileLeaves, activeDeskSubtree } from "./command-palette-helpers.js";
 import { getDeskRecentFileIds } from "./state/recent-files.js";
+import { allDeskLeaves, recentAcrossDesks } from "./state/cross-desk.js";
 import deskRaw from "./sidebar/sidebar_icons/desk.svg?raw";
 import { customIconSvg, deskIconName } from "./ui/custom-icons.js";
 import { multiWindowAvailable, openDeskInNewWindow } from "./multi-window.js";
@@ -174,22 +175,71 @@ export function enterDeskPicker(palette, state) {
 /** Replace the palette's command list with file rows that pipe back into
  *  `onPick(fileLeaf)` on selection. Used by both "Open…" commands.
  *  `includeProjects` is opt-in because the floating-pane path doesn't
- *  support project types — only the main editor can host the joined view. */
-export function enterFilePicker(palette, state, placeholder, onPick, { includeProjects = false } = {}) {
-  let leaves = collectFileLeaves(activeDeskSubtree(state));
+ *  support project types — only the main editor can host the joined view.
+ *
+ *  `allDesksToggle` puts the desk button at the right of the input:
+ *  pressed, the list is every desk's files (`openPickerAllDesks`,
+ *  remembered), each from another desk carrying its desk's name, and the
+ *  leaf handed to `onPick` carries its `deskId` — the opener goes to
+ *  that desk first (state/cross-desk.js). Rows rest-hover to a preview
+ *  (command-palette-preview.js). */
+export function enterFilePicker(palette, state, placeholder, onPick, { includeProjects = false, allDesksToggle = false } = {}) {
+  const allDesks = allDesksToggle && !!state.settings?.openPickerAllDesks && deskCount(state) > 1;
+  const activeDeskId = state.getActiveDesk?.()?.id || null;
+  let leaves = allDesks ? allDeskLeaves(state) : collectFileLeaves(activeDeskSubtree(state));
   if (!includeProjects) leaves = leaves.filter((f) => f.type !== "project");
   // Sort MRU-first; files not in the MRU keep their tree order behind it.
-  // The MRU is per-desk, matching the desk-scoped leaf list above.
-  const recents = getDeskRecentFileIds(state, state.getActiveDesk?.()?.id || null);
+  // The MRU is per-desk, matching the desk-scoped leaf list above; across
+  // desks it is every desk's, interleaved by when each file was opened.
+  const recents = allDesks ? recentAcrossDesks(state, Infinity).map((r) => r.fileId) : getDeskRecentFileIds(state, activeDeskId);
   const rank = new Map(recents.map((id, i) => [id, i]));
   leaves = leaves.slice().sort((a, b) => (rank.get(a.fileId) ?? Infinity) - (rank.get(b.fileId) ?? Infinity));
-  const items = leaves.map((f) => ({
-    id: "file-" + f.id, label: f.name, shortcutKey: null,
-    icon: leafIcon(f),
-    paneIndicators: paneIndicatorsFor({ fileId: f.fileId, type: f.type }, state),
-    action: () => onPick(f),
-  }));
-  palette.setItems(items, placeholder);
+  const items = leaves.map((f) => {
+    const elsewhere = allDesks && f.deskId && f.deskId !== activeDeskId;
+    return {
+      id: "file-" + f.id, label: f.name, shortcutKey: null,
+      icon: leafIcon(f),
+      // The desk is searchable too: "journal march" finds March on the
+      // Journal desk.
+      keywords: elsewhere ? f.deskName : undefined,
+      labelSuffix: elsewhere ? `<span class="cmd-palette-desk-name">${escHtml(f.deskName)}</span>` : undefined,
+      paneIndicators: paneIndicatorsFor({ fileId: f.fileId, type: f.type }, state),
+      previewLeaf: f,
+      action: () => onPick(f),
+    };
+  });
+  palette.setItems(items, allDesks ? placeholder.replace(/…$/, " on any desk…") : placeholder);
+  if (allDesksToggle && deskCount(state) > 1 && palette.setAccessory) {
+    palette.setAccessory(deskToggle(allDesks, async () => {
+      const input = document.querySelector(".cmd-palette-input");
+      const query = input?.value || "";
+      await state.updateSettings({ openPickerAllDesks: !allDesks });
+      enterFilePicker(palette, state, placeholder, onPick, { includeProjects, allDesksToggle });
+      // Keep what was typed, filtered against the new list.
+      if (input && query) {
+        input.value = query;
+        input.dispatchEvent(new Event("input"));
+      }
+    }));
+  }
+}
+
+const deskCount = (state) => (state.fileTree || []).filter((n) => n.type === "desk").length;
+
+/** The picker's "search all desks" button. */
+function deskToggle(on, onToggle) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "cmd-palette-desk-toggle" + (on ? " active" : "");
+  btn.innerHTML = deskRaw;
+  const label = on ? "Searching all desks" : "Search all desks";
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  btn.setAttribute("aria-pressed", String(on));
+  // Keep the caret in the input.
+  btn.addEventListener("mousedown", (e) => e.preventDefault());
+  btn.addEventListener("click", (e) => { e.stopPropagation(); void onToggle(); });
+  return btn;
 }
 
 /** Re-export so command-palette.js can keep using a single import path

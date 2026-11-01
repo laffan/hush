@@ -659,12 +659,50 @@ html.phone .cmd-floating-button.panel-open {
 
 .recent-files-header {
   flex: 0 0 auto;
-  padding: 8px 20px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px 4px 20px;
   font-size: 11px;
   font-weight: 600;
-  opacity: 0.55;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+.recent-files-title { opacity: 0.55; }
+
+/* Opposite the header: every desk's recents, or the active desk's
+   (recent-files-panel.js). Shown only with more than one desk. */
+.recent-files-desk-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--fg);
+  opacity: 0.35;
+  cursor: pointer;
+}
+.recent-files-desk-toggle[hidden] { display: none; }
+.recent-files-desk-toggle:hover { opacity: 0.75; background: rgba(128, 128, 128, 0.12); }
+.recent-files-desk-toggle.active {
+  opacity: 0.85;
+  border-color: color-mix(in srgb, var(--fg) 28%, transparent);
+}
+.recent-files-desk-toggle svg { width: 14px; height: 14px; }
+
+/* A row from another desk names it, after the file's own name. */
+.recent-files-desk {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  opacity: 0.45;
 }
 
 .recent-files-list {

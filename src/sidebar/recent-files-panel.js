@@ -11,14 +11,21 @@
  * since moved to another desk drops out rather than opening across the
  * switcher.
  *
+ * The desk toggle at the right of the header (`recentFilesAllDesks`)
+ * swaps that for every desk's recents in one list, newest first
+ * (state/cross-desk.js#recentAcrossDesks), each row from another desk
+ * carrying its desk's name; opening one goes to its desk first.
+ *
  * Each row shows the file's type icon + name. Hover surfaces two minimal
- * icons: remove (drops the file from the desk's MRU) and flag (toggles
+ * icons: remove (drops the file from its desk's MRU) and flag (toggles
  * the tree node's `flagged` state). No dropdown menu.
  */
 
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { getDeskRecentFileIds, setDeskRecentFileIds } from "../state/recent-files.js";
-import { typeIcons } from "./files-panel-shared.js";
+import { typeIcons, escHtml } from "./files-panel-shared.js";
+import { recentAcrossDesks, openLeafOnItsDesk } from "../state/cross-desk.js";
+import deskRaw from "./sidebar_icons/desk.svg?raw";
 
 const MIN_HEIGHT = 60;
 const MAX_HEIGHT_FRAC = 0.7;
@@ -35,7 +42,15 @@ export function createRecentFilesPanel(state) {
 
   const header = document.createElement("div");
   header.className = "recent-files-header";
-  header.textContent = "Recent";
+  header.innerHTML = `<span class="recent-files-title">Recent</span>`;
+  const deskToggle = document.createElement("button");
+  deskToggle.type = "button";
+  deskToggle.className = "recent-files-desk-toggle";
+  deskToggle.innerHTML = deskRaw;
+  deskToggle.addEventListener("click", () => {
+    void state.updateSettings({ recentFilesAllDesks: !state.settings.recentFilesAllDesks });
+  });
+  header.appendChild(deskToggle);
 
   const list = document.createElement("div");
   list.className = "recent-files-list";
@@ -75,6 +90,22 @@ export function createRecentFilesPanel(state) {
   function render() {
     list.innerHTML = "";
     const deskId = state.getActiveDesk?.()?.id || null;
+    const multiDesk = (state.fileTree || []).filter((n) => n.type === "desk").length > 1;
+    const allDesks = multiDesk && !!state.settings.recentFilesAllDesks;
+    deskToggle.hidden = !multiDesk;
+    deskToggle.classList.toggle("active", allDesks);
+    const label = allDesks ? "Showing every desk" : "Show every desk";
+    deskToggle.title = label;
+    deskToggle.setAttribute("aria-label", label);
+    deskToggle.setAttribute("aria-pressed", String(allDesks));
+    if (allDesks) {
+      const rows = recentAcrossDesks(state, 50);
+      for (const r of rows) {
+        list.appendChild(buildRow(state, r.node, r.fileId, r.deskId, render, r.deskId !== deskId ? r.deskName : null));
+      }
+      if (!rows.length) list.appendChild(emptyRow());
+      return;
+    }
     // Resolve against the active desk's subtree only — an id that has
     // wandered to another desk (or been deleted) simply drops out.
     const scope = activeDeskChildren(state, deskId);
@@ -87,12 +118,7 @@ export function createRecentFilesPanel(state) {
       list.appendChild(buildRow(state, node, fileId, deskId, render));
       rendered++;
     }
-    if (rendered === 0) {
-      const empty = document.createElement("div");
-      empty.className = "recent-files-empty";
-      empty.textContent = "No recent files yet.";
-      list.appendChild(empty);
-    }
+    if (rendered === 0) list.appendChild(emptyRow());
   }
 
   // Repaint on file opens (MRU shifts), settings changes (flagged flips,
@@ -128,7 +154,16 @@ function activeDeskChildren(state, deskId) {
   return desk ? (desk.children || []) : [];
 }
 
-function buildRow(state, node, fileId, deskId, refresh) {
+function emptyRow() {
+  const empty = document.createElement("div");
+  empty.className = "recent-files-empty";
+  empty.textContent = "No recent files yet.";
+  return empty;
+}
+
+/** `otherDesk` is the desk's name when the row's file lives on a desk
+ *  other than the active one (all-desks mode). */
+function buildRow(state, node, fileId, deskId, refresh, otherDesk = null) {
   const row = document.createElement("div");
   row.className = "recent-files-row";
   if (node.flagged) row.classList.add("flagged");
@@ -143,6 +178,12 @@ function buildRow(state, node, fileId, deskId, refresh) {
   label.className = "recent-files-label";
   label.textContent = node.name || "Untitled";
   row.appendChild(label);
+  if (otherDesk) {
+    const desk = document.createElement("span");
+    desk.className = "recent-files-desk";
+    desk.innerHTML = escHtml(otherDesk);
+    row.appendChild(desk);
+  }
 
   const actions = document.createElement("span");
   actions.className = "recent-files-actions";
@@ -172,7 +213,8 @@ function buildRow(state, node, fileId, deskId, refresh) {
   row.appendChild(actions);
 
   row.addEventListener("click", () => {
-    state.openFile(fileId);
+    if (otherDesk) void openLeafOnItsDesk(state, { type: node.type, fileId, deskId });
+    else state.openFile(fileId);
   });
 
   return row;

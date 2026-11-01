@@ -469,6 +469,10 @@ export function createDefaultSettings() {
     // user-resizable via the panel's top border.
     showRecentFiles: false,
     recentFilesPanelHeight: 150,
+    // The desk toggles: Recent Files and the ⌘O picker list every
+    // desk's files rather than the active desk's (state/cross-desk.js).
+    recentFilesAllDesks: false,
+    openPickerAllDesks: false,
     // Sidebar file browser — when on, every doc row lists its markdown
     // headings as small indented child rows (command palette:
     // Show / Hide Project Headings). Clicking one jumps to the section.
