@@ -23,6 +23,7 @@ import { propertiesEdit } from "./plugins/properties.js";
 import { outlineZenSurface } from "./plugins/outline-view.js";
 import { cardsHidden } from "../cards/card-facet.js";
 import { createFocusModePlugin } from "./plugins/focus-mode.js";
+import { zenTitleLock, settleZenTitleLock } from "./zen-title-lock.js";
 import { createProjectViewField, createSeparatorFilter } from "./plugins/project-view.js";
 import { applyBlockCursor } from "./block-cursor.js";
 import { bindLineIndicatorToContainer } from "./line-indicator.js";
@@ -411,10 +412,14 @@ export function enterZenFocus(state) {
       outlineZenSurface.of(true),
       // Cards stay out of Zen, folded away like the rest of their markdown.
       cardsHidden.of(true),
+      // Titles are off limits: faded, uneditable, and the caret steps
+      // over them (zen-title-lock.js).
+      zenTitleLock(),
       recentre,
     ],
   });
   const zenView = new EditorView({ state: editorState, parent: stage });
+  settleZenTitleLock(zenView);
   placeZenFrost(overlay, state, zenView);
 
   // The freshly-built Zen editor includes the active theme, whose

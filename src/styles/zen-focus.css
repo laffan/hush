@@ -209,3 +209,10 @@ body.zen-focus-active > .column-mover {
 .zen-focus-hint.visible {
   opacity: 0.7;
 }
+
+/* A title is off limits in Zen (editor/zen-title-lock.js): faded, and
+   the pointer reads it as text it can't type into. */
+.zen-focus-overlay .zen-title-locked {
+  opacity: 0.6;
+  cursor: default;
+}

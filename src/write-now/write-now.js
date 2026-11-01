@@ -2,10 +2,12 @@
  * Write Now — a fresh document, set up to write an idea down before it
  * goes: full screen, Midnight mode, the chosen desk (Settings → General →
  * Write Now), a new document headed with the time (`2026.9.23-12h33`,
- * which the naming rule makes its filename) and ten blank lines, the
- * sidebar closed, Zen Focus. Each step is skipped when it is already so.
- * The steps run behind a fade to black (write-now-veil.js) that lifts
- * once the caret is waiting below the blank lines. Reached by tapping
+ * which the naming rule makes its filename) with the caret on the line
+ * under it, the sidebar closed, Zen Focus — where the title line is off
+ * limits (editor/zen-title-lock.js), so the caret can't stray back onto
+ * the timestamp. Each step is skipped when it is already so. The steps
+ * run behind a fade to black (write-now-veil.js) that lifts once the
+ * caret is waiting under the timestamp. Reached by tapping
  * Option three times (triple-tap-triggers.js) or from the command palette.
  *
  * Full screen on iPad is Hush's own: iPadOS gives an app no way to make
@@ -24,8 +26,6 @@ import { raiseVeil, lowerVeil, windowSettled } from "./write-now-veil.js";
 /** How long a desk switch may take to land before Write Now carries on
  *  regardless (a local desk's folder can be slow to answer). */
 const DESK_LANDING_MS = 5000;
-/** Blank lines between the timestamp and where the caret lands. */
-const BLANK_LINES = 10;
 
 let running = false;
 
@@ -54,7 +54,7 @@ export async function writeNow(state) {
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     const head = insertTimestampHead(state);
     if (!state.zenFocus) state.toggleZenFocus();
-    if (head) restoreBlankLines(state.runtime.zenView || state.editor?.view, head);
+    if (head) restoreCaretLine(state.runtime.zenView || state.editor?.view, head);
     // The fullscreen handler re-focuses the editor 100 ms after the
     // switch, and the native animation keeps resizing the window past
     // that; lift the veil only once both are over.
@@ -75,13 +75,13 @@ export function writeNowStamp(d = new Date()) {
   return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}-${d.getHours()}h${mm}`;
 }
 
-/** The document's opening text: the timestamp and ten blank lines,
- *  caret on the line after them. */
+/** The document's opening text: the timestamp, caret on the line under
+ *  it. */
 function headText(stamp) {
-  return stamp + "\n".repeat(BLANK_LINES + 1);
+  return stamp + "\n";
 }
 
-/** Head the empty document with the time and the blank lines. Dispatched
+/** Head the empty document with the time. Dispatched
  *  as a user edit: the document goes dirty and saves, and the caret
  *  leaving line 1 is what names the file after the timestamp
  *  (state-naming.js). Returns the stamp, or null when nothing was
@@ -101,13 +101,14 @@ function insertTimestampHead(state) {
   return stamp;
 }
 
-/** Put the blank lines back in the editor being typed into. Opening Zen
- *  emits `mode-changed`, and with typewriter mode off that strips every
- *  trailing blank line from the main editor (`stripTypewriterRunway`)
- *  — which, before anything is typed, is all ten of them. Zen's own
- *  editor is the one written in until it closes, and its write-back
- *  carries them home once there is text below them. */
-function restoreBlankLines(view, stamp) {
+/** Put the line under the timestamp back in the editor being typed
+ *  into, caret on it. Opening Zen emits `mode-changed`, and with
+ *  typewriter mode off that strips every trailing blank line from the
+ *  main editor (`stripTypewriterRunway`) — before anything is typed,
+ *  the one under the stamp. Zen's own editor is the one written in
+ *  until it closes, and its write-back carries it home once there is
+ *  text on it. */
+function restoreCaretLine(view, stamp) {
   if (!view) return;
   const text = headText(stamp);
   const doc = view.state.doc.toString();
