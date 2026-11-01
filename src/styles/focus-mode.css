@@ -29,6 +29,31 @@ body.focus-mode-active .floating-pane.active {
   opacity: 1;
 }
 
+/* The sentence changes with a fade (plugins/focus-mode.js, FADE_MS):
+   the new one comes up from the dim level, the one the caret left goes
+   down to it — a dim span whose animation starts at full strength and
+   ends at the span's own opacity. The script sets a negative
+   animation-delay on a span redrawn mid-fade, so the two keyframes carry
+   on rather than starting over at each keystroke. */
+.focus-mode-entering {
+  animation: focus-sentence-in 300ms ease both;
+}
+.focus-mode-leaving {
+  animation: focus-sentence-out 300ms ease both;
+}
+@keyframes focus-sentence-in {
+  from { opacity: var(--focus-mode-opacity, 0.5); }
+  to { opacity: 1; }
+}
+@keyframes focus-sentence-out {
+  from { opacity: 1; }
+  to { opacity: var(--focus-mode-opacity, 0.5); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .focus-mode-entering,
+  .focus-mode-leaving { animation: none; }
+}
+
 /* A rendered table is a block widget, and CodeMirror never wraps block
    widgets in mark spans, so the dim can't reach it. It's also only
    rendered while the caret is outside it (the caret inside reveals the

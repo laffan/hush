@@ -230,11 +230,12 @@ export function createFilesPanel(container, state, hidePanel) {
           // Inbox rows carry their last-edit time under the filename —
           // the Inbox is a staging area, and how long something has been
           // sitting in it is the fact that decides what to do with it.
-          // Archive rows carry it too, without the Inbox's week-old red,
-          // and so does any file shown as a card in an expanded view.
+          // Archive rows carry it too, without the Inbox's week-old red.
+          // A card in any other expanded view doesn't: the date is the
+          // Inbox's (and the Archive's) business, not the card's.
           const label = `${numPrefix}${escHtml(displayName)}`;
           const nameHtml = (isInboxItem(state.fileTree, item) && inboxNameHtml(state, item, label))
-            || ((isArchiveItem(state.fileTree, item) || inExpandedView(state, item)) && inboxNameHtml(state, item, label, false))
+            || (isArchiveItem(state.fileTree, item) && inboxNameHtml(state, item, label, false))
             || `<span class="tree-item-name">${label}</span>`;
           // A Desktop with content in it keeps its hover button in view.
           if (showsDesktopButton(state, item, inTrash)) row.classList.add("has-desktop-content");

@@ -624,6 +624,9 @@ html[data-theme="dark"] .sidebar-timer.break-now {
 }
 
 .timer-ring.visible { display: flex; }
+/* Zen Focus hides the sidebar behind it, timer box and all, so the ring
+   stands in for it there — over the overlay — whatever the sidebar was. */
+body.zen-focus-active .timer-ring { display: flex; z-index: var(--z-over-zen); }
 .timer-ring.dragging { cursor: grabbing; opacity: 1; }
 .timer-ring:hover,
 .timer-ring:focus-visible { opacity: 1; outline: none; }

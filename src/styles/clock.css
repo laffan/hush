@@ -22,6 +22,9 @@
   -webkit-touch-callout: none;
 }
 
+/* Zen Focus covers every piece of chrome; the clock stays over it. */
+body.zen-focus-active .wall-clock { z-index: var(--z-over-zen); }
+
 .wall-clock.over-mark { cursor: pointer; }
 .wall-clock.dragging { cursor: grabbing; }
 

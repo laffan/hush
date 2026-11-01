@@ -3,7 +3,7 @@
  * Uses the same sentence-boundary detection as sentence-navigator.js.
  */
 import { ViewPlugin, Decoration, EditorView } from "@codemirror/view";
-import { RangeSetBuilder, Prec } from "@codemirror/state";
+import { RangeSetBuilder, Prec, StateEffect } from "@codemirror/state";
 import { syntaxHighlighting } from "@codemirror/language";
 import { tagHighlighter, tags } from "@lezer/highlight";
 
@@ -87,6 +87,35 @@ export function focusSentenceBounds(view, state) {
 
 const dimMark = Decoration.mark({ class: "focus-mode-dim" });
 
+/** How long the current sentence takes to come up, and the one it left
+ *  to go back down (styles/focus-mode.css holds the same number). */
+const FADE_MS = 300;
+
+/** Ends a fade: an empty transaction would not reach `update` with
+ *  anything to tell it apart from an ordinary one. */
+const fadeDone = StateEffect.define();
+
+/** A mark for a sentence still fading, its animation already `elapsed`
+ *  ms in. CodeMirror redraws a mark span whenever its range changes —
+ *  every keystroke in the sentence — and a fresh span would start its
+ *  animation over; the negative delay picks it up where the last one
+ *  was. */
+function fadeMark(cls, elapsed) {
+  return Decoration.mark({
+    class: cls,
+    attributes: { style: `animation-delay: -${Math.round(elapsed)}ms` },
+  });
+}
+
+/** `range` with `cut` taken out of it — none, one or two pieces. */
+function subtract(range, cut) {
+  if (cut.to <= range.from || cut.from >= range.to || cut.from === cut.to) return [range];
+  const out = [];
+  if (range.from < cut.from) out.push({ from: range.from, to: cut.from });
+  if (cut.to < range.to) out.push({ from: cut.to, to: range.to });
+  return out;
+}
+
 // A stable class on heading tokens, so styles/focus-mode.css can grey a
 // heading out while it sits in a dim span. The markdown HighlightStyle
 // paints headings through generated class names, and a HighlightStyle
@@ -109,29 +138,55 @@ const headingClass = syntaxHighlighting(
 // `cm-focus-mode` on the editor root covers what no mark can wrap
 // (rendered tables); it is per surface because a pane's focus mode is
 // its own, so <body> can't say.
+//
+// The sentence changes with a fade rather than a cut (FADE_MS): the new
+// one comes up from the dim level (`.focus-mode-entering`) while the one
+// the caret left goes back down to it (`.focus-mode-leaving`, a dim span
+// that starts its animation at full strength). Only the last sentence
+// left fades; one left before it, mid-fade, drops straight to the dim.
 export function createFocusModePlugin(state) {
   return [headingClass, Prec.lowest(ViewPlugin.fromClass(
     class {
       constructor(view) {
+        this.view = view;
         this.lastFocusMode = state.focusMode;
-        this.decorations = this.buildDecorations(view);
+        this.current = null;   // { from, to } the caret's sentence
+        this.leaving = null;   // { from, to } the one it left, fading out
+        this.changedAt = 0;    // when the sentence last changed
+        this.timer = null;
+        this.decorations = this.buildDecorations(view, false);
       }
 
       update(update) {
         const focusChanged = state.focusMode !== this.lastFocusMode;
         this.lastFocusMode = state.focusMode;
+        const ended = update.transactions.some((tr) => tr.effects.some((e) => e.is(fadeDone)));
+        if (update.docChanged) {
+          const map = (r) => r && { from: update.changes.mapPos(r.from, -1), to: update.changes.mapPos(r.to, 1) };
+          this.current = map(this.current);
+          this.leaving = map(this.leaving);
+        }
         if (
           focusChanged ||
+          ended ||
           update.docChanged ||
           update.selectionSet ||
           update.viewportChanged
         ) {
-          this.decorations = this.buildDecorations(update.view);
+          // Turning focus mode on or off is not a sentence change.
+          this.decorations = this.buildDecorations(update.view, !focusChanged);
         }
       }
 
-      buildDecorations(view) {
-        if (!state.focusMode) return Decoration.none;
+      destroy() {
+        clearTimeout(this.timer);
+      }
+
+      buildDecorations(view, animate) {
+        if (!state.focusMode) {
+          this.current = this.leaving = null;
+          return Decoration.none;
+        }
 
         const doc = view.state.doc;
         if (doc.length === 0) return Decoration.none;
@@ -151,17 +206,52 @@ export function createFocusModePlugin(state) {
           sentStart = posToOffset(doc, ss);
           sentEnd = posToOffset(doc, se);
         }
+        const next = { from: sentStart, to: sentEnd };
+
+        // A new sentence is one that starts somewhere else: typing on
+        // in the same one only moves its end.
+        const now = performance.now();
+        if (this.current && this.current.from !== next.from) {
+          if (animate) {
+            this.leaving = this.current;
+            this.changedAt = now;
+            clearTimeout(this.timer);
+            this.timer = setTimeout(() => {
+              this.timer = null;
+              this.leaving = null;
+              try { this.view.dispatch({ effects: fadeDone.of(null) }); } catch { /* view gone */ }
+            }, FADE_MS + 20);
+          } else {
+            this.leaving = null;
+          }
+        }
+        this.current = next;
+        const elapsed = now - this.changedAt;
+        const fading = animate !== false && elapsed < FADE_MS && this.changedAt > 0;
+        if (!fading) this.leaving = null;
+
+        // The marked ranges in document order; whatever lies between
+        // them is dimmed.
+        const marks = [];
+        if (fading && next.to > next.from) marks.push({ ...next, deco: fadeMark("focus-mode-entering", elapsed) });
+        else marks.push({ ...next, deco: null });
+        if (fading && this.leaving) {
+          const out = fadeMark("focus-mode-dim focus-mode-leaving", elapsed);
+          for (const piece of subtract(this.leaving, next)) {
+            const from = Math.max(0, piece.from), to = Math.min(doc.length, piece.to);
+            if (to > from) marks.push({ from, to, deco: out });
+          }
+        }
+        marks.sort((a, b) => a.from - b.from);
 
         const builder = new RangeSetBuilder();
-
-        // Dim everything before the current sentence
-        if (sentStart > 0) {
-          builder.add(0, sentStart, dimMark);
+        let pos = 0;
+        for (const m of marks) {
+          if (m.from > pos) builder.add(pos, m.from, dimMark);
+          if (m.deco && m.to > m.from) builder.add(m.from, m.to, m.deco);
+          pos = Math.max(pos, m.to);
         }
-        // Dim everything after the current sentence
-        if (sentEnd < doc.length) {
-          builder.add(sentEnd, doc.length, dimMark);
-        }
+        if (pos < doc.length) builder.add(pos, doc.length, dimMark);
 
         return builder.finish();
       }

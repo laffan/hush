@@ -3,7 +3,7 @@
  * cards: each direct child (not the files further in) framed, with its
  * preview (inbox-preview.js — a document's last words, a notebook's
  * snapshot, a stack's files), its docked panes, its cards and its
- * last-edited time. The expand button left of a row's menu turns it on
+ * last-edited time (Inbox and Archive cards only). The expand button left of a row's menu turns it on
  * or off for that container.
  *
  * Remembered per container across sessions: `settings.expandedViews`,

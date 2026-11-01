@@ -78,6 +78,9 @@
    *                      bands so the palette, Settings and the style
    *                      editor (and anything the palette opens) come up
    *                      over it rather than behind it
+   *   --z-over-zen       the wall clock and the timer ring while Zen is
+   *                      up — the two pieces of chrome a writer keeps in
+   *                      view inside it (still under Edge Lights)
    *   --z-edge-lights    the Edge Lights overlay — click-through,
    *                      over every piece of the app Zen included, under
    *                      the palette and the modals (its own among them)
@@ -105,6 +108,7 @@
   --z-sticky: 250;
   --z-overlay: 300;
   --z-zen: 390;
+  --z-over-zen: 392;
   --z-edge-lights: 395;
   --z-popover: 400;
   --z-modal: 500;
