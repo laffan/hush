@@ -123,6 +123,19 @@ export function renderEditorTab(settings) {
           <span class="slider-value">${((s.typewriterLineOpacity ?? 0.08) * 100).toFixed(0)}%</span>
         </div>
       </div>
+      <div class="settings-slider-row">
+        <label>Line thickness</label>
+        <div class="slider-group">
+          <input type="range" id="setting-typewriter-line-thickness" min="1" max="6" step="1" value="${s.typewriterLineThickness ?? 2}" />
+          <span class="slider-value">${s.typewriterLineThickness ?? 2}px</span>
+        </div>
+      </div>
+      <div class="settings-row">
+        <label>Line style</label>
+        <select id="setting-typewriter-line-style">
+          ${["solid", "dashed"].map((v) => `<option value="${v}" ${(s.typewriterLineStyle || "solid") === v ? "selected" : ""}>${v === "solid" ? "Solid" : "Dashed"}</option>`).join("")}
+        </select>
+      </div>
     </div>
 
     <div class="settings-section">

@@ -291,6 +291,8 @@ function bindAll() {
   // only sticky headers, panes, typewriter and footnotes remain here.
   bindCheckbox("setting-sticky-headers", "stickyHeaders");
   bindSlider("setting-typewriter-line-opacity", "typewriterLineOpacity", "%", v => (v * 100).toFixed(0));
+  bindSlider("setting-typewriter-line-thickness", "typewriterLineThickness", "px");
+  bindSelect("setting-typewriter-line-style", "typewriterLineStyle");
   bindSlider("setting-focus-mode-opacity", "focusModeOpacity", "%", v => (v * 100).toFixed(0));
   bindSlider("setting-comment-opacity", "commentOpacity", "%", v => (v * 100).toFixed(0));
   bindSlider("setting-zen-focus-font-size", "zenFocusFontSize", "px");

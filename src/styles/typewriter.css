@@ -1,14 +1,26 @@
-/* ===== Typewriter Mode ===== */
+/* ===== Typewriter Mode =====
+   The line's thickness (--tw-line-thickness) and its style
+   (html.tw-line-dashed) come from Settings → Editor → Typewriter, set on
+   the root by style-application.js; its opacity is set inline. A dashed
+   line is a repeating gradient rather than a border, so the element
+   keeps one box whatever the style and the hover/drag thickening below
+   works on both. */
 
 .typewriter-boundary {
+  --tw-ink: var(--accent);
   position: fixed;
   left: 0;
   right: 0;
-  height: 2px;
+  height: var(--tw-line-thickness, 2px);
   cursor: row-resize;
   transition: opacity 0.2s, height 0.15s;
-  background: var(--accent);
+  background: var(--tw-ink);
   z-index: var(--z-shelf);
+}
+
+html.tw-line-dashed .typewriter-boundary,
+html.tw-line-dashed .pane-tw-line::before {
+  background: repeating-linear-gradient(90deg, var(--tw-ink) 0 8px, transparent 8px 14px);
 }
 
 /* Hide the global boundary when a pane is focused (the pane renders
@@ -23,49 +35,49 @@ body.notebook-mode .typewriter-boundary {
 @media (hover: hover) {
   .typewriter-boundary:hover {
     opacity: 0.5 !important;
-    height: 4px;
+    height: calc(var(--tw-line-thickness, 2px) + 2px);
   }
 }
 
 .typewriter-boundary.dragging {
   opacity: 0.5 !important;
-  height: 4px;
+  height: calc(var(--tw-line-thickness, 2px) + 2px);
 }
 
 /* A pane's (or stack column's) own typewriter line — pane-editor.js.
    The element is a thin grab strip centred on the line, so it can be
-   dragged like the main editor's boundary; the visible 1px rule is its
-   ::before. */
+   dragged like the main editor's boundary; the visible rule — the
+   setting's thickness, centred on the strip — is its ::before. */
 .pane-tw-line {
   position: absolute;
   left: 0;
   right: 0;
-  height: 6px;
-  transform: translateY(-3px);
+  height: calc(var(--tw-line-thickness, 1px) + 5px);
+  transform: translateY(-50%);
   cursor: row-resize;
   z-index: 5;
   touch-action: none;
 }
 .pane-tw-line::before {
+  --tw-ink: var(--fg, #888);
   content: "";
   position: absolute;
   left: 0;
   right: 0;
-  top: 2.5px;
-  height: 1px;
-  background: var(--fg, #888);
+  top: 50%;
+  transform: translateY(-50%);
+  height: var(--tw-line-thickness, 1px);
+  background: var(--tw-ink);
   opacity: var(--pane-tw-opacity, 0.25);
   transition: opacity 0.2s, height 0.15s, top 0.15s;
 }
 @media (hover: hover) {
   .pane-tw-line:hover::before {
     opacity: 0.5;
-    height: 3px;
-    top: 1.5px;
+    height: calc(var(--tw-line-thickness, 1px) + 2px);
   }
 }
 .pane-tw-line.dragging::before {
   opacity: 0.5;
-  height: 3px;
-  top: 1.5px;
+  height: calc(var(--tw-line-thickness, 1px) + 2px);
 }

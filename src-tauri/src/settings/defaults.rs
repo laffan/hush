@@ -267,6 +267,12 @@ pub fn default_focus_mode_opacity() -> f64 {
 pub fn default_typewriter_line_opacity() -> f64 {
     0.08
 }
+pub fn default_typewriter_line_thickness() -> f64 {
+    2.0
+}
+pub fn default_typewriter_line_style() -> String {
+    "solid".to_string()
+}
 pub fn default_comment_opacity() -> f64 {
     0.5
 }

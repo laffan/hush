@@ -84,6 +84,12 @@ export function applyFocusModeOpacity(state) {
   const co = (typeof cv === "number" && cv >= 0 && cv <= 1) ? cv : 0.5;
   document.documentElement.style.setProperty("--comment-opacity", String(co));
   document.documentElement.style.setProperty("--comment-mark-opacity", String(co * 2 / 3));
+  // The typewriter line's rule (Settings → Editor → Typewriter): its
+  // thickness, and whether it is drawn solid or dashed (typewriter.css).
+  const tv = Number(state.settings.typewriterLineThickness);
+  const tw = Number.isFinite(tv) ? Math.min(6, Math.max(1, Math.round(tv))) : 2;
+  document.documentElement.style.setProperty("--tw-line-thickness", tw + "px");
+  document.documentElement.classList.toggle("tw-line-dashed", state.settings.typewriterLineStyle === "dashed");
 }
 
 /** Pull the active desk's saved global style id and pin it as the

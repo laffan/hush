@@ -62,6 +62,9 @@ export function createDefaultSettings() {
     lineIndicatorHighlightThickness: null,
     lineIndicatorFullWidth: null,
     typewriterLineOpacity: 0.08,
+    // The typewriter line's rule: 1–6 px, "solid" or "dashed".
+    typewriterLineThickness: 2,
+    typewriterLineStyle: "solid",
     // %% comment %% opacity. Markers dim to 2/3 of this value so the
     // delimiters fade further than the body content.
     commentOpacity: 0.5,

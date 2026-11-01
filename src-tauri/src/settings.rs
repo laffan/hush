@@ -68,6 +68,10 @@ pub struct AppSettings {
     pub make_space_column_offset: f64,
     #[serde(default = "default_typewriter_line_opacity")]
     pub typewriter_line_opacity: f64,
+    #[serde(default = "default_typewriter_line_thickness")]
+    pub typewriter_line_thickness: f64,
+    #[serde(default = "default_typewriter_line_style")]
+    pub typewriter_line_style: String,
     #[serde(default = "default_comment_opacity")]
     pub comment_opacity: f64,
     #[serde(default = "default_focus_mode_opacity")]
@@ -790,6 +794,8 @@ impl Default for AppSettings {
             make_space_direction: default_make_space_direction(),
             make_space_column_offset: 0.0,
             typewriter_line_opacity: default_typewriter_line_opacity(),
+            typewriter_line_thickness: default_typewriter_line_thickness(),
+            typewriter_line_style: default_typewriter_line_style(),
             comment_opacity: default_comment_opacity(),
             focus_mode_opacity: default_focus_mode_opacity(),
             padding: default_padding(),
