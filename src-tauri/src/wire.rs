@@ -133,4 +133,9 @@ pub struct TreeNode {
     // a folder the user made is an item like any other.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archive_group: Option<String>,
+    // On a desk's Archive: the user chose to leave an Archive their
+    // folder already had as it was, so the month / year tidying skips
+    // it until they ask for it (sync/desk-adopt-settle.js).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archive_untidied: Option<bool>,
 }

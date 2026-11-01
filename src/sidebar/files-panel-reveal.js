@@ -51,9 +51,13 @@ function openedNodeId(state, event, fileId) {
  *                     disclosure toggle runs
  */
 let installed = false;
+let liveSortable = () => null;
+let liveAfterRender = null;
 export function installRevealOnOpen(state, getSortable, afterRender) {
   if (installed) return;
   installed = true;
+  liveSortable = getSortable;
+  liveAfterRender = afterRender;
   const reveal = (event, fileId) => {
     const nodeId = openedNodeId(state, event, fileId);
     if (!nodeId) return;
@@ -86,4 +90,21 @@ export function installRevealOnOpen(state, getSortable, afterRender) {
   else if (state.currentPdfFileId) reveal("pdf-open", state.currentPdfFileId);
   else if (state.currentStackFileId) reveal("stack-open", state.currentStackFileId);
   else reveal("file-opened");
+}
+
+/** Fold the given rows shut — both halves of the collapse state, as
+ *  revealing opens them. A desk made from a folder that already held
+ *  folders starts with them closed (sync/desk-adopt-settle.js). */
+export function collapseRows(state, ids) {
+  if (!ids?.length) return;
+  const sortable = liveSortable();
+  const persisted = state.settings?.collapsedFolderIds;
+  const collapsed = sortable?.state?.collapsedIds
+    || new Set(Array.isArray(persisted) ? persisted : defaultCollapsedIds(state));
+  for (const id of ids) collapsed.add(id);
+  state.updateSettings({ collapsedFolderIds: [...collapsed] });
+  if (sortable) {
+    sortable.render();
+    liveAfterRender?.();
+  }
 }

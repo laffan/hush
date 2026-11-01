@@ -248,6 +248,8 @@ export async function adoptDeskFolder(state, title = "Choose a folder to use as 
     try { await plugin("start_watch", { path: picked.path }); } catch (_) {}
   }
   state.emit("desks-changed");
+  const settle = await import("./desk-adopt-settle.js");
+  if (deskId && !outcome?.adopted) settle.collapseAdoptedFolders(state, deskId);
   if (deskId) await state.setActiveDesk(deskId);
   // One JS-side reconcile so the adoption surfaces what the Rust-side
   // post-adopt scan saw: files the provider hasn't delivered yet get
@@ -270,6 +272,7 @@ export async function adoptDeskFolder(state, title = "Choose a folder to use as 
       "info",
     );
   } catch (_) {}
+  if (deskId && !outcome?.adopted) await settle.offerArchiveTidy(state, deskId);
   return deskId;
 }
 

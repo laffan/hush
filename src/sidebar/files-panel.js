@@ -536,6 +536,9 @@ function dispatchRowAction(action, nodeId, opts) {
     }
   } else if (action === "export-archive") {
     import("./archive-export.js").then((m) => m.exportArchive(storedState, nodeId));
+  } else if (action === "organize-archive") {
+    const node = findNode(storedState.fileTree, nodeId);
+    if (node) import("../sync/desk-adopt-settle.js").then((m) => m.organizeArchive(storedState, node));
   } else if (action === "archive") {
     import("../state/state-tree.js").then((m) => m.archiveTreeNode(storedState, nodeId)).then(refresh);
   } else if (action === "new-stack-here") {

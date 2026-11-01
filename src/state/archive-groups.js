@@ -64,6 +64,8 @@ function uniqueName(siblings, name, type) {
 
 /** Tidy one Archive node in place. Returns true when anything moved. */
 export function tidyArchiveNode(archive, mtimes, now = new Date()) {
+  // Left as it came (sync/desk-adopt-settle.js) until Organize Archive.
+  if (archive.archiveUntidied) return false;
   const kids = archive.children || (archive.children = []);
   const groups = kids.filter((c) => c.type === "folder" && c.archiveGroup);
   const entries = [];
