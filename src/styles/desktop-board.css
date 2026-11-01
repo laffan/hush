@@ -5,9 +5,10 @@
    desktop.css), scrolling instead of panning. */
 
 .board-view {
-  --board-stack-w: 156px;
-  --board-stack-h: 202px;
-  --board-stack-col: 200px;
+  /* A page large enough to read: twice the canvas Desktop's thumbnail. */
+  --board-stack-w: 312px;
+  --board-stack-h: 404px;
+  --board-stack-col: 360px;
   --board-outline-w: 280px;
   --board-gap: 28px;
   --board-ink: color-mix(in srgb, var(--fg) 55%, transparent);
@@ -96,8 +97,8 @@
   position: relative;
   width: var(--board-stack-w);
   height: var(--board-stack-h);
-  margin-right: calc(var(--behind, 0) * 4px);
-  margin-bottom: calc(var(--behind, 0) * 4px);
+  margin-right: calc(var(--behind, 0) * 6px);
+  margin-bottom: calc(var(--behind, 0) * 6px);
   cursor: pointer;
 }
 .board-sheet {
@@ -110,49 +111,49 @@
   overflow: hidden;
 }
 .board-sheet-behind {
-  transform: translate(calc(var(--i) * 4px), calc(var(--i) * 4px));
+  transform: translate(calc(var(--i) * 6px), calc(var(--i) * 6px));
   background: #f4f4f1;
 }
 .board-sheet-top { transition: opacity 160ms ease; }
 .board-stack:hover .board-sheet-top { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.16); }
 .board-sheet-lifted {
   opacity: 0;
-  transform: translate(10px, 6px);
+  transform: translate(16px, 10px);
   transition: opacity 160ms ease, transform 200ms ease;
   pointer-events: none;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
 }
-.board-stack.revealing .board-sheet-lifted { opacity: 1; transform: translate(-6px, -8px) rotate(-1.2deg); }
+.board-stack.revealing .board-sheet-lifted { opacity: 1; transform: translate(-10px, -14px) rotate(-1.2deg); }
 .board-stack.revealing .board-sheet-top { opacity: 0.55; }
 .board-page-badge {
   position: absolute;
-  right: 6px;
-  bottom: 5px;
-  padding: 1px 5px;
+  right: 10px;
+  bottom: 9px;
+  padding: 2px 7px;
   border-radius: 3px;
   background: rgba(0, 0, 0, 0.62);
   color: #fff;
-  font-size: 9.5px;
+  font-size: 11px;
 }
 
 /* A page in miniature: text at a fixed small size, so a full page fills
    the sheet the way a printed one would. */
 .board-page {
-  padding: 12px 11px;
+  padding: 24px 22px;
   color: #2a2a2a;
   font-family: var(--font-family, Georgia, serif);
-  font-size: 4.6px;
+  font-size: 9.2px;
   line-height: 1.5;
   overflow: hidden;
   height: 100%;
   box-sizing: border-box;
 }
-.board-page .bp-h { font-weight: 700; margin: 3px 0 2px; }
-.board-page .bp-h1 { font-size: 8px; }
-.board-page .bp-h2 { font-size: 6.4px; }
-.board-page .bp-h3 { font-size: 5.4px; }
-.board-page .bp-p { margin-bottom: 2.5px; text-indent: 5px; }
-.board-page .bp-li { padding-left: 6px; margin-bottom: 1px; }
+.board-page .bp-h { font-weight: 700; margin: 6px 0 4px; }
+.board-page .bp-h1 { font-size: 16px; }
+.board-page .bp-h2 { font-size: 12.8px; }
+.board-page .bp-h3 { font-size: 10.8px; }
+.board-page .bp-p { margin-bottom: 5px; text-indent: 10px; }
+.board-page .bp-li { padding-left: 12px; margin-bottom: 2px; }
 
 /* The placeholder's stack: a dashed outline of one, holding a title
    field and Create. */

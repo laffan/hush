@@ -95,17 +95,21 @@ const FADE_MS = 300;
  *  anything to tell it apart from an ordinary one. */
 const fadeDone = StateEffect.define();
 
-/** A mark for a sentence still fading, its animation already `elapsed`
- *  ms in. CodeMirror redraws a mark span whenever its range changes —
- *  every keystroke in the sentence — and a fresh span would start its
- *  animation over; the negative delay picks it up where the last one
- *  was. */
-function fadeMark(cls, elapsed) {
-  return Decoration.mark({
-    class: cls,
-    attributes: { style: `animation-delay: -${Math.round(elapsed)}ms` },
-  });
-}
+/** The two fading marks. Neither carries a CSS animation: their opacity
+ *  is a calc over `--fm-p`, the fade's eased progress (0 → 1), which the
+ *  plugin steps on the editor element frame by frame. A CSS opacity
+ *  animation lifts the span onto a compositing layer of its own while
+ *  it runs, and WebKit repaints the text as it drops back off at the
+ *  end — under Zen's frosted blur that read as a blink. A span redrawn
+ *  mid-fade (every keystroke in the sentence) simply reads the current
+ *  `--fm-p`, so the fade carries on. */
+const enteringMark = Decoration.mark({ class: "focus-mode-entering" });
+const leavingMark = Decoration.mark({ class: "focus-mode-dim focus-mode-leaving" });
+
+const reducedMotion = () => {
+  try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; }
+};
+const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 
 /** `range` with `cut` taken out of it — none, one or two pieces. */
 function subtract(range, cut) {
@@ -153,7 +157,8 @@ export function createFocusModePlugin(state) {
         this.current = null;   // { from, to } the caret's sentence
         this.leaving = null;   // { from, to } the one it left, fading out
         this.changedAt = 0;    // when the sentence last changed
-        this.timer = null;
+        this.frame = 0;        // the running fade's animation frame
+        this.fading = false;
         this.decorations = this.buildDecorations(view, false);
       }
 
@@ -179,7 +184,29 @@ export function createFocusModePlugin(state) {
       }
 
       destroy() {
-        clearTimeout(this.timer);
+        cancelAnimationFrame(this.frame);
+      }
+
+      /** Run the fade: `--fm-p` from 0 to 1 over FADE_MS on the editor,
+       *  then drop the fading marks (an effect, so `update` rebuilds). It
+       *  is set to 0 here, before the marks first render, so the new
+       *  sentence never shows a frame at full strength. */
+      startFade(now) {
+        cancelAnimationFrame(this.frame);
+        this.changedAt = now;
+        this.fading = true;
+        const dom = this.view.dom;
+        dom.style.setProperty("--fm-p", "0");
+        const step = () => {
+          const t = Math.min(1, (performance.now() - this.changedAt) / FADE_MS);
+          dom.style.setProperty("--fm-p", ease(t).toFixed(4));
+          if (t < 1) { this.frame = requestAnimationFrame(step); return; }
+          this.frame = 0;
+          this.fading = false;
+          this.leaving = null;
+          try { this.view.dispatch({ effects: fadeDone.of(null) }); } catch { /* view gone */ }
+        };
+        this.frame = requestAnimationFrame(step);
       }
 
       buildDecorations(view, animate) {
@@ -212,31 +239,24 @@ export function createFocusModePlugin(state) {
         // in the same one only moves its end.
         const now = performance.now();
         if (this.current && this.current.from !== next.from) {
-          if (animate) {
+          if (animate && !reducedMotion()) {
             this.leaving = this.current;
-            this.changedAt = now;
-            clearTimeout(this.timer);
-            this.timer = setTimeout(() => {
-              this.timer = null;
-              this.leaving = null;
-              try { this.view.dispatch({ effects: fadeDone.of(null) }); } catch { /* view gone */ }
-            }, FADE_MS + 20);
+            this.startFade(now);
           } else {
             this.leaving = null;
           }
         }
         this.current = next;
-        const elapsed = now - this.changedAt;
-        const fading = animate !== false && elapsed < FADE_MS && this.changedAt > 0;
+        const fading = animate !== false && this.fading;
         if (!fading) this.leaving = null;
 
         // The marked ranges in document order; whatever lies between
         // them is dimmed.
         const marks = [];
-        if (fading && next.to > next.from) marks.push({ ...next, deco: fadeMark("focus-mode-entering", elapsed) });
+        if (fading && next.to > next.from) marks.push({ ...next, deco: enteringMark });
         else marks.push({ ...next, deco: null });
         if (fading && this.leaving) {
-          const out = fadeMark("focus-mode-dim focus-mode-leaving", elapsed);
+          const out = leavingMark;
           for (const piece of subtract(this.leaving, next)) {
             const from = Math.max(0, piece.from), to = Math.min(doc.length, piece.to);
             if (to > from) marks.push({ from, to, deco: out });
