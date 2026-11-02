@@ -4,9 +4,11 @@
  * replacing the grid: each one is the hit in its line (the Find panel's
  * snippet, `find-panel-search.js#lineAndSnippet`, the match marked), and
  * under it the desk and file it is in. ↑ / ↓ move through them, Enter or
- * a click opens one — on its desk, the hit selected.
+ * a click opens one — on its desk, the hit centred, selected and briefly
+ * lit.
  *
- * Plain, case-insensitive text. Documents are searched first, from the
+ * Words are separate terms and "quoted text" an exact phrase, as in a web
+ * search (desk-dashboard-query.js). Documents are searched first, from the
  * live editor when the document is the one open and otherwise from the
  * library cache, so their results come at once; notebooks follow, their
  * text shapes read through the Find panel's loader. A notebook's envelope
@@ -14,7 +16,10 @@
  * text kept for the next query. Trash is left out.
  */
 
-import { findMatchesIn, lineAndSnippet } from "./find-panel-search.js";
+import { EditorView } from "@codemirror/view";
+import { parseQuery, termRegex, matchesOf, fileHits } from "./desk-dashboard-query.js";
+import { flashRange } from "../editor/flash-range.js";
+import { programmaticChange } from "../editor/base-extensions.js";
 import { loadContent } from "./find-panel-sources.js";
 import { decodeNotebookContent } from "../notebook/notebook-content.ts";
 import { escHtml } from "./files-panel-shared.js";
@@ -25,7 +30,6 @@ const MAX_ROWS = 60;
 /** Hits listed from any one file, so one long file can't fill the list. */
 const PER_FILE = 5;
 const DEBOUNCE_MS = 140;
-const OPTS = { caseSensitive: false, wholeWord: false, useRegex: false };
 
 const SEARCH_GLYPH = `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>`;
 
@@ -62,40 +66,42 @@ export function mountDashboardSearch(state, slot, layer, close) {
 
   async function run() {
     const query = input.value.trim();
+    const terms = parseQuery(query);
     const my = ++token;
     rows = [];
     picked = -1;
-    if (!query) { hide(); return; }
+    if (!terms.length) { hide(); return; }
     const files = searchableFiles(state);
     let more = 0;
-    const take = (file, hits) => {
-      for (const h of hits.slice(0, PER_FILE)) {
-        if (rows.length < MAX_ROWS) rows.push({ ...file, ...h, query });
+    const take = (file, segments) => {
+      const { hits, total } = fileHits(segments, terms, PER_FILE);
+      for (const h of hits) {
+        if (rows.length < MAX_ROWS) rows.push({ ...file, ...h });
         else more++;
       }
-      more += Math.max(0, hits.length - PER_FILE);
+      more += total - hits.length;
     };
     // Documents: in memory already, so the first answer is immediate.
     for (const f of files.filter((f) => f.kind === "document")) {
-      take(f, docHits(query, docText(state, f.fileId)));
+      take(f, [{ text: docText(state, f.fileId) }]);
     }
     // Notebooks: loaded once each, then kept. While any is still to
     // load, the documents' results show with a note that more may come.
     const notebooks = files.filter((f) => f.kind === "notebook");
-    if (notebooks.some((f) => !notebookText.has(f.fileId))) paint(query, more, true);
+    if (notebooks.some((f) => !notebookText.has(f.fileId))) paint(more, true);
     for (const f of notebooks) {
       if (!notebookText.has(f.fileId)) {
         const raw = await loadContent(state, f.fileId);
         if (my !== token) return;
         notebookText.set(f.fileId, shapeTexts(raw));
       }
-      take(f, shapeHits(notebookText.get(f.fileId), query));
+      take(f, notebookText.get(f.fileId));
     }
     if (my !== token) return;
-    paint(query, more, false);
+    paint(more, false);
   }
 
-  function paint(query, more, loading) {
+  function paint(more, loading) {
     picked = rows.length ? 0 : -1;
     const body = rows.map((r, i) => {
       const s = r.snippet;
@@ -105,7 +111,7 @@ export function mountDashboardSearch(state, slot, layer, close) {
       </button>`;
     }).join("");
     const foot = loading ? `<div class="desk-dash-results-note">Searching notebooks…</div>`
-      : !rows.length ? `<div class="desk-dash-results-note">No matches for “${escHtml(query)}”</div>`
+      : !rows.length ? `<div class="desk-dash-results-note">No matches</div>`
       : more ? `<div class="desk-dash-results-note">${more} more not shown</div>` : "";
     popup.innerHTML = body + foot;
     place();
@@ -195,11 +201,8 @@ function docText(state, fileId) {
   return typeof cached === "string" ? cached : "";
 }
 
-function docHits(query, text) {
-  return findMatchesIn(text, query, OPTS).map((m, nth) => ({ nth, snippet: lineAndSnippet(text, m.from, m.to) }));
-}
-
-/** A notebook envelope's text shapes, as `[{ shapeId, text }]`. */
+/** A notebook envelope's text shapes, as `[{ shapeId, text }]` — the
+ *  segments `fileHits` searches. */
 function shapeTexts(raw) {
   try {
     const shapes = decodeNotebookContent(raw)?.shapes;
@@ -210,20 +213,13 @@ function shapeTexts(raw) {
   } catch (_) { return []; }
 }
 
-function shapeHits(texts, query) {
-  const out = [];
-  for (const { shapeId, text } of texts || []) {
-    for (const m of findMatchesIn(text, query, OPTS)) out.push({ shapeId, snippet: lineAndSnippet(text, m.from, m.to) });
-  }
-  return out;
-}
-
 // ── Opening a result ──────────────────────────────────────────────────
 
 /** Close the dashboard, go to the result's desk, open its file and land
- *  on the hit: a document's nth match selected and scrolled to (counted
- *  again in the opened buffer, so an edit since the search can't send
- *  the selection somewhere stale), a notebook panned to its shape. */
+ *  on the hit: a document's match (its term's nth, counted again in the
+ *  opened buffer, so an edit since the search can't send the selection
+ *  somewhere stale) scrolled to the middle of the editor, selected and
+ *  briefly lit; a notebook panned to its shape. */
 async function open(state, row, close) {
   if (!row) return;
   close();
@@ -241,11 +237,23 @@ async function open(state, row, close) {
   if (state.currentFileId !== row.fileId || state.currentProjectId) await state.openFile(row.fileId);
   const view = await poll(() => (state.currentFileId === row.fileId ? state.editor?.view : null));
   if (!view) return;
-  const hits = findMatchesIn(view.state.doc.toString(), row.query, OPTS);
+  // One frame for the opened buffer to lay out, so "centre" is measured
+  // against the real document rather than the one it replaced.
+  await new Promise((r) => requestAnimationFrame(r));
+  const hits = matchesOf(view.state.doc.toString(), termRegex(row.term));
   const hit = hits[Math.min(row.nth, hits.length - 1)];
   if (!hit) return;
-  view.dispatch({ selection: { anchor: hit.from, head: hit.to }, scrollIntoView: true });
+  // Marked programmatic so caret-follow (editor/caret-follow.js), which
+  // reads a selection set just after a keystroke — the Enter that picked
+  // the result — as a caret move to follow, doesn't re-scroll it to the
+  // nearest edge.
+  view.dispatch({
+    selection: { anchor: hit.from, head: hit.to },
+    effects: EditorView.scrollIntoView(hit.from, { y: "center" }),
+    annotations: programmaticChange.of(true),
+  });
   view.focus();
+  flashRange(view, hit.from, hit.to);
 }
 
 async function poll(get, ms = 1200) {

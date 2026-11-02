@@ -175,18 +175,24 @@
   gap: 10px;
   min-width: 0;
   padding: 12px 14px 12px;
-  border: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+  /* Only the desk you are on is outlined, in full ink; the rest keep a
+     transparent border so every card sits on the same lines. */
+  border: 1px solid transparent;
   border-radius: 8px;
-  transition: border-color 0.15s;
 }
-.desk-dash-card:hover { border-color: color-mix(in srgb, var(--fg) 20%, transparent); }
-/* The desk you are on: its border in full ink. */
-.desk-dash-card.active,
-.desk-dash-card.active:hover { border-color: var(--fg); }
-.desk-dash-card.dragging {
-  opacity: 0.5;
-  border-style: dashed;
+.desk-dash-card.active { border-color: var(--fg); }
+.desk-dash-card.dragging { opacity: 0.4; }
+
+/* Where a dragged card will land: a rule in the gap before or after the
+   card under the pointer (placed by desk-dashboard.js#wireReorder). */
+.desk-dash-grid { position: relative; }
+.desk-dash-drop {
+  position: absolute;
+  border-radius: 1px;
+  background: var(--fg);
+  pointer-events: none;
 }
+.desk-dash-drop[hidden] { display: none; }
 .desk-dash-grid.reordering,
 .desk-dash-grid.reordering * { cursor: grabbing !important; user-select: none; }
 
@@ -246,8 +252,7 @@
   opacity: 0.45;
   transition: opacity 0.15s;
 }
-.desk-dash-card:hover .desk-dash-current,
-.desk-dash-card:focus-within .desk-dash-current { opacity: 0; }
+.desk-dash-card:hover .desk-dash-current { opacity: 0; }
 @media (hover: none) {
   .desk-dash-current { display: none; }
 }
@@ -255,19 +260,28 @@
 /* ---- Toolbar (hover) ---- */
 .desk-dash-tools {
   position: absolute;
+  visibility: hidden;
   top: 12px;
   right: 10px;
   display: flex;
   align-items: center;
   gap: 2px;
   opacity: 0;
-  transition: opacity 0.15s;
+  /* Visibility flips after the fade out, but at once on the way in, so
+     a grip pressed the moment the card is reached already answers. */
+  transition: opacity 0.15s, visibility 0s linear 0.15s;
 }
-.desk-dash-card:hover .desk-dash-tools,
-.desk-dash-card:focus-within .desk-dash-tools { opacity: 1; }
+/* Only on the card the pointer is over — not one that merely kept focus
+   from an earlier click. */
+.desk-dash-card:hover .desk-dash-tools { opacity: 1; visibility: visible; transition: opacity 0.15s, visibility 0s; }
+/* Mid-drag the pointer crosses other cards: their toolbars stay down and
+   nothing inside them answers the pointer (the drop is placed from the
+   cards' rects, not from what is under the pointer). */
+.desk-dash-grid.reordering .desk-dash-tools { opacity: 0; visibility: hidden; }
+.desk-dash-grid.reordering .desk-dash-card > * { pointer-events: none; }
 /* No hover on touch: the toolbar stays up. */
 @media (hover: none) {
-  .desk-dash-tools { opacity: 1; }
+  .desk-dash-tools { opacity: 1; visibility: visible; }
 }
 .desk-dash-tools button,
 .desk-dash-grip {
@@ -342,7 +356,10 @@
 }
 
 /* ---- Recently edited ---- */
+/* Recent files stay in the background until their card is pointed at. */
 .desk-dash-recent {
+  opacity: 0.5;
+  transition: opacity 0.15s;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -365,6 +382,10 @@
   border: none;
   border-radius: 5px;
   cursor: pointer;
+}
+.desk-dash-card:hover .desk-dash-recent { opacity: 1; }
+@media (hover: none) {
+  .desk-dash-recent { opacity: 1; }
 }
 .desk-dash-file:hover { background: rgba(128, 128, 128, 0.1); }
 .desk-dash-file .tree-type-icon,

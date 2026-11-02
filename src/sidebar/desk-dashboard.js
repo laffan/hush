@@ -72,13 +72,19 @@ export function openDeskDashboard(state) {
 
   let dragging = false;
   let pending = false;
+  let lastHtml = "";
   const busy = () => dragging || !!grid.querySelector(".desk-dash-name:focus");
 
   function render() {
     if (!deskDashboardAvailable(state)) { close(); return; }
     if (busy()) { pending = true; return; }
     pending = false;
-    grid.innerHTML = deskList(state).map((d) => cardHtml(state, d)).join("");
+    // Saves elsewhere fire files-changed constantly; only rebuild the
+    // cards when what they show has actually changed.
+    const html = deskList(state).map((d) => cardHtml(state, d)).join("");
+    if (html === lastHtml) return;
+    lastHtml = html;
+    grid.innerHTML = html;
   }
   const settle = () => { if (pending) render(); };
 
@@ -279,9 +285,11 @@ function wireNames(state, grid, settle) {
   });
 }
 
-/** Drag a card by its grip into a new place in the grid. The cards move
- *  live under the pointer; the drop commits the order through
- *  `state.reorderDesks`, whose `desks-changed` re-renders the grid. */
+/** Drag a card by its grip into a new place in the grid. The cards stay
+ *  put while it moves; a rule in the gap before or after the card under
+ *  the pointer shows where it will land (none while the drop would leave
+ *  it where it is). The drop moves the card and commits the order
+ *  through `state.reorderDesks`, whose `desks-changed` re-renders. */
 function wireReorder(state, grid, setDragging) {
   grid.addEventListener("pointerdown", (e) => {
     const grip = e.target instanceof Element ? e.target.closest(".desk-dash-grip") : null;
@@ -292,25 +300,41 @@ function wireReorder(state, grid, setDragging) {
     card.classList.add("dragging");
     grid.classList.add("reordering");
     const startOrder = cardIds(grid);
+    const marker = document.createElement("div");
+    marker.className = "desk-dash-drop";
+    marker.hidden = true;
+    grid.appendChild(marker);
+    let target = null; // { card, before }
+
     const onMove = (me) => {
-      const over = [...grid.querySelectorAll(".desk-dash-card")].find((c) => {
-        if (c === card) return false;
+      const cards = [...grid.querySelectorAll(".desk-dash-card")];
+      const over = cards.find((c) => {
         const r = c.getBoundingClientRect();
         return me.clientX >= r.left && me.clientX <= r.right && me.clientY >= r.top && me.clientY <= r.bottom;
       });
+      // In a gap between cards the last answer stands.
       if (!over) return;
+      if (over === card) { target = null; marker.hidden = true; return; }
       const r = over.getBoundingClientRect();
-      // Before or after the card under the pointer, by which half of it
-      // the pointer is in (reading order: left half goes before).
-      const before = me.clientX < r.left + r.width / 2;
-      grid.insertBefore(card, before ? over : over.nextSibling);
+      // One column (a narrow window) stacks the cards, so it is the upper
+      // or lower half that decides, and the rule lies across the gap.
+      const stacked = getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/).length < 2;
+      const before = stacked ? me.clientY < r.top + r.height / 2 : me.clientX < r.left + r.width / 2;
+      // A drop beside the card's own place moves nothing: no rule there.
+      const i = cards.indexOf(over);
+      const j = cards.indexOf(card);
+      if ((before && i === j + 1) || (!before && i === j - 1)) { target = null; marker.hidden = true; return; }
+      target = { card: over, before };
+      placeMarker(grid, marker, r, before, stacked);
     };
     const onUp = async () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      marker.remove();
       card.classList.remove("dragging");
       grid.classList.remove("reordering");
+      if (target) grid.insertBefore(card, target.before ? target.card : target.card.nextSibling);
       const ids = cardIds(grid);
       // Still "dragging" while the order commits, so the render its
       // desks-changed asks for waits and then runs once, in the new order.
@@ -321,6 +345,33 @@ function wireReorder(state, grid, setDragging) {
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
   });
+}
+
+/** Lay the drop rule in the middle of the gap beside a card's rect `r`:
+ *  upright between columns, flat between stacked cards. */
+function placeMarker(grid, marker, r, before, stacked) {
+  const g = grid.getBoundingClientRect();
+  const cs = getComputedStyle(grid);
+  const ox = grid.scrollLeft - g.left;
+  const oy = grid.scrollTop - g.top;
+  if (stacked) {
+    const half = (parseFloat(cs.rowGap) || 14) / 2;
+    marker.style.left = `${r.left + ox}px`;
+    marker.style.width = `${r.width}px`;
+    const y = (before ? r.top - half : r.bottom + half) + oy - 1;
+    marker.style.top = `${Math.max(0, Math.min(y, grid.scrollHeight - 2))}px`;
+    marker.style.height = "2px";
+  } else {
+    const half = (parseFloat(cs.columnGap) || 14) / 2;
+    // Kept inside the grid: before the first column or after the last
+    // there is no gap, and the grid clips what overflows it.
+    const x = (before ? r.left - half : r.right + half) + ox - 1;
+    marker.style.left = `${Math.max(0, Math.min(x, grid.scrollWidth - 2))}px`;
+    marker.style.width = "2px";
+    marker.style.top = `${r.top + oy}px`;
+    marker.style.height = `${r.height}px`;
+  }
+  marker.hidden = false;
 }
 
 const cardIds = (grid) => [...grid.querySelectorAll(".desk-dash-card")].map((c) => c.dataset.deskId);

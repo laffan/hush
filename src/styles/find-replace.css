@@ -318,6 +318,17 @@
   border-radius: 2px;
 }
 
+/* Where a jump just landed (editor/flash-range.js — the Desk Dashboard's
+   search): lit, held a moment, then faded out. */
+.cm-flash-range {
+  border-radius: 2px;
+  animation: cm-flash-range 1.6s ease-out forwards;
+}
+@keyframes cm-flash-range {
+  0%, 35% { background: rgba(255, 215, 0, 0.6); }
+  100% { background: rgba(255, 215, 0, 0); }
+}
+
 .cm-find-match-current {
   background: rgba(255, 165, 0, 0.45);
   outline: 1px solid rgba(255, 165, 0, 0.7);
