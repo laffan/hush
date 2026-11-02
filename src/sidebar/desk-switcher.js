@@ -25,6 +25,7 @@ let _outsideClickHandler = null;
 
 const CHEVRON = chevronSvg("down");
 const PLUS = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+const GRID = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="4" width="6.5" height="6.5" rx="1.25"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.25"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.25"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.25"/></svg>`;
 const CHECK = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 const PENCIL = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
 // Archive box, not a trash can — a desk is put away here, not destroyed.
@@ -204,8 +205,10 @@ function buildPopoverBody(state) {
   // Same rule for the local-desk pin: once any desk is local, every row
   // keeps its slot.
   const pinSlots = desks.some((d) => !!roots[d.id]);
+  // The Desk Dashboard, under Add desk — offered with two desks or more.
   wrap.innerHTML = desks.map((d) => deskRowHtml(d, activeId, canArchive, !!roots[d.id], iconSlots, pinSlots)).join("")
-    + addRowHtml(iconSlots, pinSlots);
+    + addRowHtml(iconSlots, pinSlots)
+    + (desks.length > 1 ? dashboardRowHtml(iconSlots, pinSlots) : "");
   return wrap;
 }
 
@@ -254,6 +257,13 @@ function addRowHtml(iconSlot = false, pinSlot = false) {
   </button>`;
 }
 
+function dashboardRowHtml(iconSlot = false, pinSlot = false) {
+  return `<button class="desk-switcher-row desk-switcher-add desk-switcher-dashboard" type="button" data-action="dashboard">
+    <span class="desk-switcher-row-mark">${GRID}</span>
+    ${pinSlot ? `<span class="desk-switcher-row-pin"></span>` : ""}${iconSlot ? `<span class="desk-switcher-row-icon"></span>` : ""}<span class="desk-switcher-row-name">Dashboard</span>
+  </button>`;
+}
+
 async function onPopoverClick(ev, popover) {
   // While a rename input is open, route everything to it. The input
   // lives inside the row's `<button data-action="pick">`, and browsers
@@ -279,6 +289,11 @@ async function onPopoverClick(ev, popover) {
     const newId = await startNewDeskFlow(_state);
     // Backed out — put the popover back where it was.
     if (!newId) setTimeout(() => openPopover(), 0);
+    return;
+  }
+  if (action === "dashboard") {
+    closePopover();
+    (await import("./desk-dashboard.js")).openDeskDashboard(_state);
     return;
   }
   const row = actionEl.closest(".desk-switcher-row");

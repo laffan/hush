@@ -22,6 +22,8 @@ import { currentProjectNode } from "./progress/progress-data.js";
 const timerIcon = `<svg viewBox="0 0 24 24"><circle cx="12" cy="13.5" r="7.5"/><path d="M10 3 H14 M12 3 V6 M12 13.5 V9.5 M17.8 7.7 L19.3 6.2"/></svg>`;
 // Progress — a month's bars.
 const progressIcon = `<svg viewBox="0 0 24 24"><path d="M4 20 H20 M7 17 V12 M11 17 V7 M15 17 V10 M19 17 V5"/></svg>`;
+// Desk Dashboard — a 2 × 2 grid of cards.
+const dashboardIcon = `<svg viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.25"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.25"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.25"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.25"/></svg>`;
 // Wall clock — a plain face with two hands.
 const clockIcon = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7 V12 L15.5 14"/></svg>`;
 
@@ -49,6 +51,13 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
       hiddenIf: (s) => !multiDesk(s),
       keepOpen: true,
       action: (s, p) => enterDeskPicker(p, s) },
+    // Every desk as a card: icon and name, YOU ARE HERE, recent edits
+    // (sidebar/desk-dashboard.js). Also the sidebar footer's grid button
+    // and "Dashboard" in the desk switcher.
+    { id: "desk-dashboard", section: "Desks", label: "View Desk Dashboard", icon: dashboardIcon, shortcutKey: null, ctx: "shared",
+      keywords: "desks overview grid all desks summary home",
+      hiddenIf: (s) => !multiDesk(s),
+      action: async (s) => (await import("./sidebar/desk-dashboard.js")).openDeskDashboard(s) },
     // A tiny-icons glyph the desk switcher shows in place of the desk's
     // name; the picker's Reset puts the name back (sidebar/change-icon.js).
     { id: "desk-icon", section: "Desks", label: "Change Desk Icon", icon: icons.desk, shortcutKey: null, ctx: "shared",

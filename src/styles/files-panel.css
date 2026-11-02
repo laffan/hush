@@ -1161,6 +1161,12 @@ button.desk-switcher-row.desk-switcher-add {
   margin-top: 2px;
   padding-top: 8px;
 }
+/* Dashboard follows Add desk under the same rule, not a second one. */
+button.desk-switcher-row.desk-switcher-dashboard {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 6px;
+}
 
 .desk-switcher-row-mark {
   width: 14px;

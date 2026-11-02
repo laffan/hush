@@ -19,6 +19,7 @@ import { mountProgressCenter } from "./sidebar-progress.js";
 import { createRecentFilesPanel } from "./recent-files-panel.js";
 import { mountTimerBox } from "../timer/timer-box.js";
 import { chevronSvg } from "../ui/chevron.js";
+import { DASHBOARD_ICON, deskDashboardAvailable, openDeskDashboard } from "./desk-dashboard.js";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
 
 function svgInner(raw) {
@@ -94,7 +95,22 @@ export function createSidebar(state) {
   settingsBtn.innerHTML = `<span class="panel-footer-icon"><svg viewBox="0 0 24 24">${svgInner(settingsRaw)}</svg></span><span class="panel-footer-label">Settings</span>`;
   settingsBtn.addEventListener("click", () => openSettingsWindow(state));
 
+  // Desk Dashboard — every desk in one grid. Only there with two desks
+  // or more, so it follows the desk list.
+  const dashBtn = document.createElement("button");
+  dashBtn.className = "panel-footer-btn panel-footer-dashboard";
+  dashBtn.type = "button";
+  dashBtn.title = "Desk Dashboard";
+  dashBtn.setAttribute("aria-label", "Desk Dashboard");
+  dashBtn.innerHTML = `<span class="panel-footer-icon">${DASHBOARD_ICON}</span><span class="panel-footer-label">Dashboard</span>`;
+  dashBtn.addEventListener("click", () => openDeskDashboard(state));
+  const syncDashBtn = () => { dashBtn.hidden = !deskDashboardAvailable(state); };
+  syncDashBtn();
+  state.on("desks-changed", syncDashBtn);
+  state.on("settings-changed", syncDashBtn);
+
   footer.appendChild(addBtn);
+  footer.appendChild(dashBtn);
   footer.appendChild(settingsBtn);
 
   // Right-aligned sync/progress group

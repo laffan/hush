@@ -223,6 +223,7 @@ html.ios .panel-overlay-footer {
 .panel-footer-btn:hover {
   background: rgba(128, 128, 128, 0.12);
 }
+.panel-footer-btn[hidden] { display: none; }
 
 .panel-footer-icon {
   display: inline-flex;
