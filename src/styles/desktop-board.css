@@ -8,7 +8,8 @@
   /* A page large enough to read: twice the canvas Desktop's thumbnail. */
   --board-stack-w: 312px;
   --board-stack-h: 404px;
-  --board-stack-col: 360px;
+  --board-stack-col: 360px; /* board-render.js STACK_COL */
+  --board-indent: 56px;     /* board-render.js INDENT: per nested project */
   --board-outline-w: 280px;
   --board-gap: 28px;
   --board-ink: color-mix(in srgb, var(--fg) 55%, transparent);
@@ -169,20 +170,16 @@
   border-radius: 3px;
   cursor: default;
 }
-.board-ph-title {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 4px 6px;
-  border: none;
-  border-bottom: 1px solid color-mix(in srgb, var(--fg) 20%, transparent);
-  background: none;
-  color: var(--fg);
-  font: inherit;
-  font-size: 13px;
+.board-ph-name {
+  max-width: 100%;
+  font-size: 15px;
+  font-weight: 600;
   text-align: center;
-  outline: none;
+  overflow-wrap: anywhere;
 }
-.board-ph-title:focus { border-bottom-color: color-mix(in srgb, var(--fg) 55%, transparent); }
+.board-ph-name.empty { font-weight: 400; font-style: italic; opacity: 0.45; }
+.board-ph-create:disabled { opacity: 0.35; cursor: default; }
+.board-ph-create:disabled:hover { background: none; }
 .board-ph-create {
   padding: 6px 16px;
   border: 1px solid color-mix(in srgb, var(--fg) 35%, transparent);
@@ -226,7 +223,33 @@
   font-size: 14px;
   font-weight: 600;
 }
-.board-row-name.muted { font-weight: 500; opacity: 0.5; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+/* The name is the outline's first item — a button like the headings
+   under it (board-view.js docRow). */
+button.board-row-name {
+  flex: 0 1 auto;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.board-row-name:hover,
+button.board-row-name:focus-visible { background: rgba(128, 128, 128, 0.14); outline: none; }
+/* "Outline" over a placeholder's outline, "Notes" over a document's:
+   one label, and the module's root items start right under its first
+   letter. */
+.board-section-label,
+.board-notes-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.45;
+}
 .board-icon-btn {
   flex: none;
   display: inline-flex;
@@ -298,20 +321,26 @@
   --outline-font-size: calc(var(--font-size) - 2px + var(--outline-font-step, 0px));
   position: relative;
   width: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 0;
   pointer-events: auto;
   background: transparent;
 }
-.board-view .board-outline-module .outline-footer > .outline-footer-btn:last-child,
-.board-view .board-outline-module .outline-footer-size { display: none; }
+/* No frame, no footer: the label above is the module's heading, and a
+   board outline has no type size, pin or hide-completed of its own. Its
+   lines start at the column's edge, with room on the left for the item
+   grip (the drag handle floats in it, level with the label's first
+   letter). */
+.board-view .board-outline-module .outline-footer { display: none; }
+.board-view .board-outline-module .cm-scroller { padding: 0 0 2px 0 !important; }
+/* board-view.js alignModule measures the shift that puts a root item's
+   grip on the column edge (the line's hanging indent is empty space). */
+.board-view .board-outline-module .cm-content { margin-left: calc(-1 * var(--board-outline-shift, 0px)) !important; }
+.board-view .board-row-title .board-section-label,
+.board-view .board-notes-label { padding-left: 0; }
 .board-notes { margin-top: 12px; }
-.board-notes-label {
-  margin-bottom: 5px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.45;
-}
+.board-notes-label { display: block; margin-bottom: 5px; }
 .board-notes-add {
   padding: 2px 6px;
   border: none;
@@ -337,39 +366,33 @@
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
 }
 
-/* ── The link between rows: the sidebar's I-beam at board scale, a
-   dashed-box button halfway down it ── */
+/* ── The link between rows: the sidebar's I-beam at board scale
+   (board-render.js buildConnector draws it as SVG — it bends where a
+   nested project begins or ends), a dashed-box button on its lower
+   stretch, and the name of a nested project it leads into ── */
 .board-connector {
   position: relative;
-  width: var(--board-stack-col);
+  width: 100%;
   height: 64px;
 }
+.board-connector.head { height: 36px; }
+.board-connector.head .board-ibeam,
+.board-connector.head .board-add { display: none; }
 .board-ibeam {
   position: absolute;
-  left: 50%;
-  top: 8px;
-  bottom: 8px;
-  width: 26px;
-  transform: translateX(-50%);
-  background:
-    linear-gradient(var(--board-ink), var(--board-ink)) top / 100% 1.5px no-repeat,
-    linear-gradient(var(--board-ink), var(--board-ink)) bottom / 100% 1.5px no-repeat,
-    linear-gradient(var(--board-ink), var(--board-ink)) center / 1.5px 100% no-repeat;
-  opacity: 0.6;
+  left: 0;
+  top: 0;
+  overflow: visible;
   pointer-events: none;
 }
-.board-connector.last { height: 52px; }
-.board-connector.last .board-ibeam {
-  bottom: auto;
-  height: 24px;
-  background:
-    linear-gradient(var(--board-ink), var(--board-ink)) top / 100% 1.5px no-repeat,
-    linear-gradient(var(--board-ink), var(--board-ink)) center / 1.5px 100% no-repeat;
+.board-ibeam path {
+  fill: none;
+  stroke: var(--board-ink);
+  stroke-width: 1.5;
+  opacity: 0.6;
 }
 .board-add {
   position: absolute;
-  left: 50%;
-  top: 50%;
   transform: translate(-50%, -50%);
   display: inline-flex;
   align-items: center;
@@ -384,12 +407,45 @@
   opacity: 0.55;
   cursor: pointer;
 }
-.board-connector.last .board-add { top: 38px; }
 .board-add svg { width: 20px; height: 20px; }
 .board-add:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 8%, var(--theme-bg, var(--bg))); }
+.board-group-label {
+  position: absolute;
+  transform: translateY(-50%);
+  display: inline-flex;
+  gap: 6px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.6;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.board-group-label .sep { opacity: 0.5; font-weight: 400; }
+.board-group-label:hover { opacity: 1; background: rgba(128, 128, 128, 0.12); }
+/* A nested project with nothing in it: a dashed slot under its name. */
+.board-row-group .board-group-empty {
+  width: var(--board-stack-w);
+  padding: 14px 0;
+  border: 1.5px dashed color-mix(in srgb, var(--fg) 25%, transparent);
+  border-radius: 3px;
+  font-size: 12px;
+  text-align: center;
+  opacity: 0.55;
+}
 
 /* ── Material: the project's other files ── */
-.board-material { margin-top: 36px; }
+.board-material { margin-top: 36px; display: flex; flex-direction: column; gap: 28px; }
+/* A notebook among the material: its name over the notebook itself, an
+   inline pane the width of the board. */
+.board-row-notebook { display: block; }
+.board-row-notebook .board-row-title > svg,
+.board-row-notebook .board-row-title > .tree-type-icon { flex: none; width: 15px; height: 15px; opacity: 0.7; }
 .board-material-title {
   margin: 0 0 10px;
   font-size: 11px;

@@ -1708,3 +1708,11 @@ html[data-theme="dark"] .tree-item-inbox-edited.stale {
   letter-spacing: 0.02em;
 }
 .modal-shortcuts-visible .modal-shortcut-hint { display: inline; }
+
+/* A Project Desktop placeholder (files-panel-placeholders.js): where a
+   document will go, under the name it will take — a dashed page, the
+   name in italics and faded, since nothing is written yet. */
+.tree-placeholder-row { cursor: pointer; }
+.tree-placeholder-row .tree-type-icon { opacity: 0.55; }
+.tree-placeholder-row .tree-item-name { font-style: italic; opacity: 0.55; }
+.tree-placeholder-row:hover .tree-item-name { opacity: 0.85; }

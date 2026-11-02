@@ -100,7 +100,7 @@ function specialIdDeskOf(id) {
 }
 
 // Skip predicate for outline-number labels (specials + synthetic rows).
-export const numberSkip = (n) => isAnySpecialId(n.id) || isTabMarkerItem(n) || isHeadingItem(n);
+export const numberSkip = (n) => isAnySpecialId(n.id) || isTabMarkerItem(n) || isHeadingItem(n) || n.type === "placeholder";
 
 /** A doc has a paired gutter when one of its project siblings is a gutter
  *  notebook stamped for this doc. Such docs show their pane icons on the

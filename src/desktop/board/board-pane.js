@@ -40,6 +40,7 @@ function mount(pane, slot) {
   pane._inlineHost = slot;
   slot.classList.add("open");
   slot.style.height = (pane.inline.height || HEIGHT) + "px";
+  slot.closest(".board-row")?.classList.add("has-pane");
   const el = pane.el;
   el.classList.add("inline-pane", "board-row-pane");
   Object.assign(el.style, { position: "absolute", left: "0px", top: "0px", width: "100%", height: "100%", transform: "" });
@@ -57,27 +58,45 @@ function scrollTo(pane, from) {
   view.focus();
 }
 
-/** Open the row's pane in `slot`, or scroll the one already there. */
-export async function openRowPane(state, { fileId, name, slot, containerId, from = 0 }) {
+/** Open the row's pane in `slot`, or scroll the one already there. A
+ *  material notebook's row is a pane from the start (`type: "notebook"`,
+ *  the way a wikilink peeks one inline), with no place to scroll to. */
+export async function openRowPane(state, { fileId, name, slot, containerId, from = 0, type = "document", height = HEIGHT, focus = true }) {
   const existing = rowPaneFor(fileId);
   if (existing) {
     mount(existing, slot);
-    scrollTo(existing, from);
+    if (focus) scrollTo(existing, from);
     return existing;
   }
+  // A re-render while the pane is still being made reuses that one.
+  if (making.has(fileId)) {
+    const pane = await making.get(fileId);
+    if (pane) mount(pane, slot);
+    return pane;
+  }
+  const job = makePane(fileId, name, type, containerId, height);
+  making.set(fileId, job);
+  const pane = await job.finally(() => making.delete(fileId));
+  if (!pane) return null;
+  mount(pane, slot.isConnected ? slot : pane._inlineHost || slot);
+  if (focus) requestAnimationFrame(() => scrollTo(pane, from));
+  return pane;
+}
+
+const making = new Map();
+
+async function makePane(fileId, name, type, containerId, height) {
   const { createPane } = await import("../../pane/pane-manager.js");
-  const pane = await createPane(fileId, name, "document", 0, 0, {
+  const pane = await createPane(fileId, name, type, 0, 0, {
     ownerContext: "dt:" + containerId,
     allowDuplicate: true,
     desktopPane: true,
     skipFocus: true,
-    inline: { anchorTitle: "", occurrence: 0, height: HEIGHT },
+    inline: { anchorTitle: "", occurrence: 0, height },
   });
   if (!pane) return null;
   pane.desktopRow = true;
   rowPanes.set(fileId, pane);
-  mount(pane, slot);
-  requestAnimationFrame(() => scrollTo(pane, from));
   return pane;
 }
 

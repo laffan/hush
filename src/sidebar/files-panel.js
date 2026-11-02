@@ -30,6 +30,7 @@ import {
 } from "./files-panel-actions.js";
 import { isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree, renderTabMarkerRow, openDocAtTab } from "./files-panel-tabs.js";
 import { isHeadingItem, augmentTreeWithHeadings, stripHeadingsFromTree, renderHeadingRow, openDocAtHeading } from "./files-panel-headings.js";
+import { isPlaceholderItem, augmentTreeWithPlaceholders, stripPlaceholdersFromTree, renderPlaceholderRow } from "./files-panel-placeholders.js";
 import {
   isCardItem, augmentTreeWithCards, foldCardParents, noteCardFolds, stripCardsFromTree, renderCardRow, renderCardsHomeRow, cardsHomeIsEmpty, openCard,
   dropCardOnRow, dropCardOutside, trackCardRowHover, onCardIndexChange,
@@ -98,7 +99,7 @@ export function createFilesPanel(container, state, hidePanel) {
 
   reapplyGutterMarkers(state.fileTree);
   renderedDeskId = renderedDeskIdFor(state);
-  const sortedTree = augmentTreeWithCards(state, augmentTreeWithHeadings(state, augmentTreeWithTabs(state, sortInboxByEdited(state, normalizeProjectChildren(visibleTopLevel(state))))));
+  const sortedTree = augmentTreeWithCards(state, augmentTreeWithHeadings(state, augmentTreeWithTabs(state, augmentTreeWithPlaceholders(state, sortInboxByEdited(state, normalizeProjectChildren(visibleTopLevel(state)))))));
   numberLabels = computeNumberLabels(sortedTree, numberSkip, isInboxId);
 
   sortableInstance = new SortableList(listContainer, {
@@ -110,7 +111,7 @@ export function createFilesPanel(container, state, hidePanel) {
     canDrop: (draggedItem, targetItem) => {
       // Tab markers and heading rows are synthetic — they can never be a
       // drop target and the dragged item can never be one (canDrag blocks them).
-      if (isTabMarkerItem(targetItem) || isHeadingItem(targetItem)) return false;
+      if (isTabMarkerItem(targetItem) || isHeadingItem(targetItem) || isPlaceholderItem(targetItem)) return false;
       // Card rows move between files, not around the tree: their drops
       // are onDropExternal's and onDragOutside's (files-panel-cards.js).
       if (isCardItem(draggedItem) || isCardItem(targetItem)) return false;
@@ -141,7 +142,7 @@ export function createFilesPanel(container, state, hidePanel) {
       return false;
     },
     canDrag: (item, ev) => {
-      if (isTabMarkerItem(item) || isHeadingItem(item)) return false;
+      if (isTabMarkerItem(item) || isHeadingItem(item) || isPlaceholderItem(item)) return false;
       // A container's cards notebook is pinned to its top (tree-helpers.js):
       // it moves only when ⌘ is held, which carries it out as a pane, the
       // way any notebook goes; canDrop gives it nowhere in the list.
@@ -173,6 +174,7 @@ export function createFilesPanel(container, state, hidePanel) {
         });
       }
       if (isCardItem(item)) return renderCardRow(item);
+      if (isPlaceholderItem(item)) return renderPlaceholderRow(state, item, () => { if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel(); });
       if (isHeadingItem(item)) {
         return renderHeadingRow(item, (entry) => {
           if (state.selectedDocIds.length) state.clearSelectedDocs();
@@ -294,7 +296,7 @@ export function createFilesPanel(container, state, hidePanel) {
 
     onClick: (item, event) => {
       // A cards notebook's row opens through its own listener.
-      if (isCardsHome(item)) return;
+      if (isCardsHome(item) || isPlaceholderItem(item)) return;
       if (isCardItem(item)) {
         if (state.selectedDocIds.length) state.clearSelectedDocs();
         void openCard(state, item);
@@ -389,7 +391,7 @@ export function createFilesPanel(container, state, hidePanel) {
     onChange: (newData) => {
       // Tab markers and heading rows are synthetic — strip them before any
       // tree write so the persisted tree never inherits one (re-added on render).
-      const cleaned = stripCardsFromTree(stripHeadingsFromTree(stripTabMarkersFromTree(newData)));
+      const cleaned = stripPlaceholdersFromTree(stripCardsFromTree(stripHeadingsFromTree(stripTabMarkersFromTree(newData))));
       if (isAllDesksMode(state)) {
         // The top level *is* the desk list. Re-pin specials inside each
         // desk (a cross-desk move can land an item beside Inbox/Trash).
@@ -620,7 +622,7 @@ function refreshList(state) {
     // contents (project, PDFs, Inbox) into whichever desk the panel was
     // first built on. That is how content "moved desks" overnight.
     renderedDeskId = renderedDeskIdFor(state);
-    const sorted = augmentTreeWithCards(state, augmentTreeWithHeadings(state, augmentTreeWithTabs(state, sortInboxByEdited(state, normalizeProjectChildren(visibleTopLevel(state))))));
+    const sorted = augmentTreeWithCards(state, augmentTreeWithHeadings(state, augmentTreeWithTabs(state, augmentTreeWithPlaceholders(state, sortInboxByEdited(state, normalizeProjectChildren(visibleTopLevel(state)))))));
     numberLabels = computeNumberLabels(sorted, numberSkip, isInboxId);
     foldCardParents(sorted, sortableInstance.state.collapsedIds);
     sortableInstance.setData(sorted);

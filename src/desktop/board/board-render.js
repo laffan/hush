@@ -114,36 +114,82 @@ export function buildOutline(content, { onHover, onPick, name = "" }) {
 
 const PLUS_BOX = `<svg viewBox="0 0 20 20"><rect x="3" y="2.5" width="14" height="15" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.4 2"/><path d="M10 7v6M7 10h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`;
 
-/** The link between two rows — the sidebar's I-beam, drawn large — with
- *  the add-a-placeholder button midway down it. `last` draws the stem
- *  down from the last row with no foot below it. */
-export function buildConnector({ onAdd, last = false, title = "Add a placeholder document here" }) {
+/** The stack column's width and the indent per nested project — the
+ *  connector is drawn in pixels, so these are the stylesheet's
+ *  `--board-stack-col` / `--board-indent` as numbers. */
+export const STACK_COL = 360;
+export const INDENT = 56;
+const FOOT = 13;
+const xAt = (depth) => STACK_COL / 2 + depth * INDENT;
+
+/** The link between two rows — the sidebar's I-beam, drawn large: a
+ *  foot under the upper stack, a stem, a foot over the lower one. When
+ *  the rows sit at different depths (a nested project begins or ends)
+ *  the stem bends across between them, and entering a nested project it
+ *  names it (`groups`, each a click to that project's own Desktop).
+ *  Midway down the lower stretch is the add-a-placeholder button.
+ *  `last` runs the stem down past the last row — back out to the
+ *  board's own depth — with no foot below. */
+export function buildConnector({ from = 0, to = 0, last = false, groups = [], onAdd, onGroup, title = "Add a placeholder document here" }) {
+  const bend = from !== to;
+  const h = last ? (bend ? 76 : 52) : (bend ? 96 : 64);
+  const x1 = xAt(from), x2 = xAt(to);
+  const turn = 26;
+  const end = last ? h - 6 : h - 8;
+  let d = `M${x1 - FOOT} 8H${x1 + FOOT}M${x1} 8`;
+  if (bend) {
+    const r = Math.min(8, Math.abs(x2 - x1) / 2), dir = Math.sign(x2 - x1);
+    d += `V${turn - r}Q${x1} ${turn} ${x1 + dir * r} ${turn}H${x2 - dir * r}Q${x2} ${turn} ${x2} ${turn + r}`;
+  }
+  d += `V${end}`;
+  if (!last) d += `M${x2 - FOOT} ${end}H${x2 + FOOT}`;
   const el = document.createElement("div");
-  el.className = "board-connector" + (last ? " last" : "");
-  el.innerHTML = `<div class="board-ibeam"></div>`;
+  el.className = "board-connector" + (last ? " last" : "") + (bend ? " bend" : "");
+  el.style.height = h + "px";
+  el.innerHTML = `<svg class="board-ibeam" width="${Math.max(x1, x2) + FOOT + 2}" height="${h}" aria-hidden="true"><path d="${d}"/></svg>`;
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "board-add";
   btn.innerHTML = PLUS_BOX;
   btn.title = title;
   btn.setAttribute("aria-label", title);
+  btn.style.left = x2 + "px";
+  btn.style.top = (last ? (bend ? turn + 22 : 34) : ((bend ? turn : 8) + end) / 2) + "px";
   btn.addEventListener("click", onAdd);
   el.appendChild(btn);
+  if (groups.length) {
+    const label = document.createElement("button");
+    label.type = "button";
+    label.className = "board-group-label";
+    label.style.left = (x2 + FOOT + 14) + "px";
+    label.style.top = (bend ? turn : 8) + "px";
+    label.innerHTML = groups.map((g) => `<span>${escHtml(g.name || "Project")}</span>`).join(`<span class="sep">/</span>`);
+    label.title = "Open this project's own Desktop";
+    label.addEventListener("click", () => onGroup?.(groups[groups.length - 1]));
+    el.appendChild(label);
+  }
   return el;
 }
 
-/** A placeholder's dashed stack: its title to name it by, and Create. */
-export function buildPlaceholderStack(ph, { onTitle, onCreate, onRemove }) {
+/** A placeholder's dashed stack: the name its document will take — its
+ *  outline's first item — and Create, which waits for one. Returns
+ *  `{ el, setName(name) }` so the outline's edits can update it. */
+export function buildPlaceholderStack(name, { onCreate, onRemove }) {
   const el = document.createElement("div");
   el.className = "board-stack board-stack-placeholder";
   el.innerHTML = `<button type="button" class="board-ph-remove" title="Remove placeholder" aria-label="Remove placeholder">×</button>`
-    + `<input class="board-ph-title" type="text" spellcheck="false" placeholder="Untitled" />`
+    + `<div class="board-ph-name"></div>`
     + `<button type="button" class="board-ph-create">Create</button>`;
-  const input = el.querySelector(".board-ph-title");
-  input.value = ph.title || "";
-  input.addEventListener("input", () => onTitle(input.value));
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); onCreate(); } });
-  el.querySelector(".board-ph-create").addEventListener("click", onCreate);
+  const nameEl = el.querySelector(".board-ph-name");
+  const create = el.querySelector(".board-ph-create");
+  const setName = (n) => {
+    nameEl.textContent = n || "Untitled";
+    nameEl.classList.toggle("empty", !n);
+    create.disabled = !n;
+    create.title = n ? `Create “${n}” here` : "The outline's first item names the document — write one to create it";
+  };
+  setName(name);
+  create.addEventListener("click", () => { if (!create.disabled) onCreate(); });
   el.querySelector(".board-ph-remove").addEventListener("click", onRemove);
-  return el;
+  return { el, setName };
 }

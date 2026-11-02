@@ -4,23 +4,29 @@
  *
  * **Rows** are the project's text, in reading order: every document that
  * feeds the joined buffer (`collectDocumentIds`' rule — not a "Use as
- * note" doc), and between them the user's **placeholders**, documents not
- * written yet. The rest of the project — notebooks, stacks, notes, PDFs —
- * is its **material**, listed apart.
+ * note" doc), nested projects' documents included, each at the `depth`
+ * of the project it sits in (0 for the board's own); and between them
+ * the user's **placeholders**, documents not written yet. The rest — the
+ * notes, notebooks, stacks and PDFs, nested projects' too — is the
+ * project's **material**, listed apart.
  *
  * **Board data** rides the project's tree node as `board` (Rust
  * `TreeNode.board`, opaque there), so it syncs with the desk:
  *
- *   { placeholders: [{ id, afterId, title, outline }],
+ *   { placeholders: [{ id, afterId, parentId?, outline }],
  *     notes: { [fileId]: "- [ ] …" } }
  *
- * A placeholder sits after the document whose node id is `afterId`
- * (null: before the first); several in one gap keep their array order;
- * one whose document has gone falls to the end. `outline` and the notes
- * are outline markdown — nested checklists, what the outline module
- * (outline/outline-canvas-element.js) edits.
+ * A placeholder sits after the node `afterId` (a document, or a nested
+ * project, in whatever container holds it); with no `afterId` it sits at
+ * the head of the container `parentId` (absent: the board's project).
+ * Several in one gap keep their array order; one whose node has gone
+ * falls to the end. `outline` and the notes are outline markdown —
+ * nested checklists, what the outline module
+ * (outline/outline-canvas-element.js) edits. A placeholder's **name** is
+ * its outline's first item (placeholderName); without one it can't be
+ * created.
  */
-import { findNode } from "../../state/tree-helpers.js";
+import { findNode, findParentOfNode, isRealProjectNode } from "../../state/tree-helpers.js";
 import { parseOutlineLine, stripInlineMarkdown } from "../../outline/outline-model.ts";
 import { findFrontmatterRange } from "../../editor/frontmatter.js";
 
@@ -35,52 +41,91 @@ export const boardData = (project) => {
   };
 };
 
-/** The project's text documents, in order (tree nodes). */
-export function textDocs(project) {
-  const out = [];
-  const walk = (nodes) => {
-    for (const n of nodes || []) {
-      if (n.type === "document" && n.fileId && !n.useAsNote) out.push(n);
-      if (n.children?.length && n.type !== "project") walk(n.children);
-    }
-  };
-  walk(project?.children);
-  return out;
+const isTextDoc = (n) => n.type === "document" && n.fileId && !n.useAsNote;
+const isNested = (n) => n.type === "project" && isRealProjectNode(n);
+
+/** An outline's items with words in them. */
+function outlineItems(outline) {
+  return String(outline || "").split("\n").map((l, i) => parseOutlineLine(l, i))
+    .filter((it) => it && stripInlineMarkdown(it.text || "").trim());
 }
 
-/** Everything else in the project — notebooks, stacks, notes, PDFs, a
- *  nested project — as tree nodes, in tree order. */
+/** A placeholder's outline, reading an older placeholder's separate
+ *  title as its first item. */
+export function placeholderOutline(ph) {
+  const title = String(ph?.title || "").trim();
+  if (title && !outlineItems(ph.outline).length) return `- [ ] ${title}`;
+  return ph?.outline || EMPTY_OUTLINE;
+}
+
+/** The name a placeholder's document will take: its outline's first
+ *  item, or "" when it has none yet. */
+export function placeholderName(ph) {
+  const first = outlineItems(placeholderOutline(ph))[0];
+  return first ? stripInlineMarkdown(first.text).replace(/[<>:"/\\|?*]/g, "").trim().slice(0, 50) : "";
+}
+
+/** The project's other files — notes, notebooks, stacks, PDFs — its
+ *  nested projects' included, as tree nodes in tree order. */
 export function materials(project) {
   const out = [];
   const walk = (nodes) => {
     for (const n of nodes || []) {
       if (n.cardsHome || n.pdfAlias) continue;
       if (n.type === "document" && n.useAsNote) out.push(n);
-      else if (["notebook", "stack", "pdf", "project"].includes(n.type) && !n.gutter) out.push(n);
-      if (n.children?.length && n.type !== "project") walk(n.children);
+      else if (["notebook", "stack", "pdf"].includes(n.type) && !n.gutter) out.push(n);
+      if (n.children?.length) walk(n.children);
     }
   };
   walk(project?.children);
   return out;
 }
 
-/** The board's rows: `{ kind: "doc", node }` and
- *  `{ kind: "placeholder", ph }`, in order. */
+/** The board's rows, in order:
+ *    `{ kind: "doc", node, depth, containerId, gap }`
+ *    `{ kind: "placeholder", ph, depth, containerId, gap }`
+ *    `{ kind: "group", node, depth }` — a nested project with nothing in it
+ *  `depth` counts nested projects; `containerId` is the node a row lives
+ *  in, and `gap` the `afterId` a placeholder put just before it takes.
+ *  Every row also carries `groups`: the nested projects it is the first
+ *  row of, outermost first, for the connector to name. */
 export function boardRows(project) {
-  const docs = textDocs(project);
   const { placeholders } = boardData(project);
-  const ids = new Set(docs.map((d) => d.id));
-  const after = (key) => placeholders.filter((p) => (p.afterId || null) === key)
-    .map((ph) => ({ kind: "placeholder", ph }));
-  const rows = [...after(null)];
-  for (const node of docs) {
-    rows.push({ kind: "doc", node });
-    rows.push(...after(node.id));
-  }
-  // Placeholders whose document is gone keep their place at the end.
-  for (const ph of placeholders) {
-    if (ph.afterId && !ids.has(ph.afterId)) rows.push({ kind: "placeholder", ph });
-  }
+  const rows = [];
+  const placed = new Set();
+  let entering = [];
+  const push = (row) => { row.groups = entering; entering = []; rows.push(row); };
+  const phRow = (ph, depth, containerId) => {
+    placed.add(ph.id);
+    push({ kind: "placeholder", ph, depth, containerId, gap: ph.afterId || null });
+  };
+  const walk = (container, depth, isTop) => {
+    const start = rows.length;
+    for (const ph of placeholders) {
+      if (!ph.afterId && ((ph.parentId || project.id) === container.id || (isTop && !ph.parentId))) phRow(ph, depth, container.id);
+    }
+    let prev = null;
+    for (const n of container.children || []) {
+      if (isTextDoc(n)) {
+        push({ kind: "doc", node: n, depth, containerId: container.id, gap: prev });
+        prev = n.id;
+      } else if (isNested(n)) {
+        entering = [...entering, n];
+        const before = rows.length;
+        walk(n, depth + 1, false);
+        if (rows.length === before) push({ kind: "group", node: n, depth: depth + 1 });
+        prev = n.id;
+      } else if (n.type === "folder" && n.children?.length) {
+        walk(n, depth, false);
+        continue;
+      } else continue;
+      for (const ph of placeholders) if (ph.afterId === n.id) phRow(ph, depth, container.id);
+    }
+    return rows.length > start;
+  };
+  walk(project, 0, true);
+  // Placeholders whose place has gone keep it at the end.
+  for (const ph of placeholders) if (!placed.has(ph.id)) phRow(ph, 0, project.id);
   return rows;
 }
 
@@ -135,14 +180,24 @@ function writeBoard(project, data) {
   project.board = { placeholders: data.placeholders, notes: data.notes };
 }
 
-export async function addPlaceholder(state, projectId, afterId) {
+/** Add a placeholder in a gap: after node `afterId`, or at the head of
+ *  `parentId` (null: the board's project). It goes before the
+ *  placeholder `beforePhId` when given (adding just above one), else
+ *  last in the gap. */
+export async function addPlaceholder(state, projectId, { afterId = null, parentId = null, beforePhId = null } = {}) {
   const project = findNode(state.fileTree, projectId);
   if (!project) return null;
   const data = boardData(project);
-  const ph = { id: crypto.randomUUID(), afterId: afterId || null, title: "", outline: EMPTY_OUTLINE };
-  // A new placeholder goes last among any already in that gap.
-  const lastInGap = data.placeholders.map((p) => p.afterId || null).lastIndexOf(afterId || null);
-  data.placeholders.splice(lastInGap + 1, 0, ph);
+  const ph = { id: crypto.randomUUID(), afterId: afterId || null, outline: EMPTY_OUTLINE };
+  if (!afterId && parentId && parentId !== projectId) ph.parentId = parentId;
+  const sameGap = (p) => (p.afterId || null) === ph.afterId && (ph.afterId || (p.parentId || null) === (ph.parentId || null));
+  const before = beforePhId ? data.placeholders.findIndex((p) => p.id === beforePhId) : -1;
+  let at = before;
+  if (at < 0) {
+    at = data.placeholders.length;
+    for (let i = data.placeholders.length - 1; i >= 0; i--) if (sameGap(data.placeholders[i])) { at = i + 1; break; }
+  }
+  data.placeholders.splice(at, 0, ph);
   writeBoard(project, data);
   await state.saveFileTree();
   return ph;
@@ -176,53 +231,63 @@ export function setNotes(state, projectId, fileId, text) {
   writeBoard(project, data);
 }
 
-/** A placeholder's document text: its title as the first line (a level
- *  1 heading) and each outline item as a heading one level deeper per
- *  step of nesting — so the document's own outline, where the
- *  placeholder's was, reads as the plan did. Empty when there is neither
- *  title nor outline: a blank document. */
+/** A placeholder's document text: its first outline item as the
+ *  title line (a level 1 heading) and every other item as a heading, one
+ *  level deeper per step of nesting (never above level 2) — so the
+ *  document's own outline, where the placeholder's was, reads as the
+ *  plan did. */
 export function placeholderContent(ph) {
-  const title = String(ph.title || "").trim();
-  const items = String(ph.outline || "").split("\n").map((l, i) => parseOutlineLine(l, i))
-    .filter((it) => it && stripInlineMarkdown(it.text || "").trim());
-  if (!title && !items.length) return "";
-  const top = title ? 2 : 1;
-  const lines = title ? [`# ${title}`, ""] : [];
-  for (const it of items) {
-    const level = Math.min(6, top + (it.depth || 0));
+  const items = outlineItems(placeholderOutline(ph));
+  if (!items.length) return "";
+  const lines = [`# ${stripInlineMarkdown(items[0].text).trim()}`, ""];
+  for (const it of items.slice(1)) {
+    const level = Math.min(6, Math.max(2, (it.depth || 0) + 1));
     lines.push(`${"#".repeat(level)} ${stripInlineMarkdown(it.text).trim()}`, "");
   }
   return lines.join("\n");
 }
 
-/** Turn a placeholder into a document in its place. */
+/** The container a placeholder will be created in. */
+function placeholderContainer(state, project, ph) {
+  if (ph.afterId) {
+    const after = findNode(state.fileTree, ph.afterId);
+    if (after) return findParentOfNode(state.fileTree, ph.afterId) || project;
+  }
+  return (ph.parentId && findNode(state.fileTree, ph.parentId)) || project;
+}
+
+/** Turn a placeholder into a document in its place, named by its
+ *  outline's first item. Refused (null) while it has none. */
 export async function createFromPlaceholder(state, projectId, phId) {
   const project = findNode(state.fileTree, projectId);
   if (!project) return null;
   const data = boardData(project);
   const ph = data.placeholders.find((p) => p.id === phId);
   if (!ph) return null;
-  const content = placeholderContent(ph);
-  const title = String(ph.title || "").trim();
-  const made = await state.newFile(projectId, {
+  const name = placeholderName(ph);
+  if (!name) return null;
+  const container = placeholderContainer(state, project, ph);
+  const made = await state.newFile(container.id, {
     openImmediately: false,
-    initialName: title || undefined,
-    initialContent: content,
+    initialName: name,
+    initialContent: placeholderContent(ph),
   });
   if (!made) return null;
   // newFile puts it last; move it to the placeholder's gap — after the
-  // document it followed, ahead of anything after that.
-  const kids = project.children || [];
+  // node it followed (or first), ahead of anything after that.
+  const kids = container.children || [];
   const idx = kids.findIndex((c) => c.fileId === made.fileId);
   if (idx >= 0) {
     const [node] = kids.splice(idx, 1);
     const anchor = ph.afterId ? kids.findIndex((c) => c.id === ph.afterId) : -1;
     const at = ph.afterId && anchor < 0 ? kids.length : anchor + 1;
     kids.splice(at, 0, node);
-    // Placeholders that followed this one now follow the new document.
+    // Placeholders that followed this one in its gap now follow the new
+    // document.
+    const gap = (p) => `${p.afterId || ""}|${p.afterId ? "" : p.parentId || ""}`;
+    const mine = data.placeholders.indexOf(ph);
     for (const p of data.placeholders) {
-      if (p !== ph && (p.afterId || null) === (ph.afterId || null)
-        && data.placeholders.indexOf(p) > data.placeholders.indexOf(ph)) p.afterId = node.id;
+      if (p !== ph && gap(p) === gap(ph) && data.placeholders.indexOf(p) > mine) { p.afterId = node.id; delete p.parentId; }
     }
   }
   data.placeholders = data.placeholders.filter((p) => p.id !== phId);
