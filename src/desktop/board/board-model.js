@@ -14,15 +14,15 @@
  * `TreeNode.board`, opaque there), so it syncs with the desk:
  *
  *   { placeholders: [{ id, afterId, parentId?, outline }],
- *     notes: { [fileId]: "- [ ] …" } }
+ *     notes: { [fileId]: "plain text" } }
  *
  * A placeholder sits after the node `afterId` (a document, or a nested
  * project, in whatever container holds it); with no `afterId` it sits at
  * the head of the container `parentId` (absent: the board's project).
  * Several in one gap keep their array order; one whose node has gone
- * falls to the end. `outline` and the notes are outline markdown —
- * nested checklists, what the outline module
- * (outline/outline-canvas-element.js) edits. A placeholder's **name** is
+ * falls to the end. `outline` is outline markdown — a nested checklist,
+ * what the outline module (outline/outline-canvas-element.js) edits; a
+ * document's notes are plain text. A placeholder's **name** is
  * its outline's first item (placeholderName); without one it can't be
  * created.
  */
@@ -226,7 +226,7 @@ export function setNotes(state, projectId, fileId, text) {
   const project = findNode(state.fileTree, projectId);
   if (!project) return;
   const data = boardData(project);
-  if (!text || !text.replace(/^\s*-\s*\[[ xX]\]\s*$/gm, "").trim()) delete data.notes[fileId];
+  if (!String(text || "").trim()) delete data.notes[fileId];
   else data.notes[fileId] = text;
   writeBoard(project, data);
 }

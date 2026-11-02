@@ -133,6 +133,7 @@ export function closeProjectBoard() {
   void closeRowPanes();
   for (const m of modules.values()) m.destroy();
   modules.clear();
+  noteFields.clear();
   containerId = null;
   window.__hushDesktopOpenId = null;
   document.body.classList.remove("desktop-active");
@@ -254,6 +255,7 @@ function render() {
   const list = document.createElement("div");
   list.className = "board-rows";
   const live = new Set();
+  liveNotes.clear();
   rows.forEach((row, i) => {
     const prev = rows[i - 1];
     if (prev) list.appendChild(connector(prev, row));
@@ -271,6 +273,7 @@ function render() {
   host.appendChild(materialSection(project, live));
 
   for (const [key, m] of modules) if (!live.has(key)) { m.destroy(); modules.delete(key); }
+  for (const key of noteFields.keys()) if (!liveNotes.has(key)) noteFields.delete(key);
   host.scrollTop = scroll;
 }
 
@@ -373,7 +376,7 @@ function docRow(node, project, live) {
     onHover: (h) => stack.reveal(h ? stack.pageOfOffset(h.from) : null),
     onPick: (h) => openPane(h.from),
   });
-  outlineCol.append(title, outline, notesBlock(node, project, live));
+  outlineCol.append(title, outline, notesBlock(node, project));
 
   const paneCol = document.createElement("div");
   paneCol.className = "board-col-pane";
@@ -383,35 +386,57 @@ function docRow(node, project, live) {
   return row;
 }
 
-/** A document's notes — an outline module once there are any, a quiet
- *  "Add notes" until then. */
-function notesBlock(node, project, live) {
+/** A document's notes — plain text under its outline, once there are
+ *  any; a quiet "+ Notes" until then. The field is kept across
+ *  re-renders (`noteFields`), so its caret and undo survive one, and
+ *  grows with what is written in it. */
+function notesBlock(node, project) {
   const wrap = document.createElement("div");
   wrap.className = "board-notes";
-  const key = "notes:" + node.fileId;
-  const text = boardData(project).notes[node.fileId];
-  const mount = async (initial, focus) => {
-    live.add(key);
-    const m = await outlineModule(key, initial, (next) => {
-      persistLater(key, () => setNotes(state, containerId, node.fileId, next));
-    });
-    wrap.innerHTML = `<div class="board-notes-label">Notes</div>`;
-    wrap.appendChild(m.el);
-    alignModule(m);
-    if (focus) m.focusAt();
+  const key = node.fileId;
+  liveNotes.add(key);
+  const text = notesText(boardData(project).notes[key]);
+  const mount = (focus) => {
+    let field = noteFields.get(key);
+    if (!field) {
+      field = document.createElement("textarea");
+      field.className = "board-notes-text";
+      field.rows = 1;
+      field.spellcheck = true;
+      field.placeholder = "Notes on this document…";
+      field.value = text;
+      field.addEventListener("input", () => {
+        grow(field);
+        persistLater("notes:" + key, () => setNotes(state, containerId, key, field.value));
+      });
+      noteFields.set(key, field);
+    }
+    wrap.innerHTML = `<label class="board-notes-label">Notes</label>`;
+    wrap.appendChild(field);
+    requestAnimationFrame(() => grow(field));
+    if (focus) field.focus();
   };
-  if (text || modules.has(key)) {
-    live.add(key);
-    void mount(modules.get(key)?.getText() ?? text, false);
-  } else {
+  if (text || noteFields.has(key)) mount(false);
+  else {
     const add = document.createElement("button");
     add.type = "button";
     add.className = "board-notes-add";
     add.textContent = "+ Notes";
-    add.addEventListener("click", () => void mount(EMPTY_OUTLINE, true));
+    add.addEventListener("click", () => mount(true));
     wrap.appendChild(add);
   }
   return wrap;
+}
+
+const noteFields = new Map();
+const liveNotes = new Set();
+const grow = (field) => { field.style.height = "auto"; field.style.height = field.scrollHeight + "px"; };
+
+/** Notes as text. Notes written while they were an outline arrive as a
+ *  checklist; their boxes are dropped, the words and indents kept. */
+function notesText(stored) {
+  const t = String(stored || "");
+  return t.split("\n").map((l) => l.replace(/^(\s*)[-*+]\s+\[[ xX]\]\s?/, "$1")).join("\n").replace(/\s+$/, "");
 }
 
 function placeholderRow(ph, live) {

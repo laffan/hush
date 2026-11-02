@@ -51,6 +51,19 @@ function findSentenceEnd(doc, pos) {
   let ch = pos.ch;
   const content = getLine(doc, line);
 
+  // A caret just after a sentence's closing punctuation (and any closing
+  // quote or mark) is still in that sentence — its start is found
+  // backwards from here. Scanning on forward would run through the next
+  // sentence too, lighting both at once.
+  let back = ch;
+  while (back > 0 && /["')\]}*_`=~]/.test(content.charAt(back - 1))) back--;
+  if (back > 0 && /[.!?]/.test(content.charAt(back - 1))
+      && (ch >= content.length || /[\s"')\]}*_`=~]/.test(content.charAt(ch)))) {
+    while (ch < content.length && /["')\]}*_`=~]/.test(content.charAt(ch))) ch++;
+    while (ch < content.length && /[ \t]/.test(content.charAt(ch))) ch++;
+    return { line, ch };
+  }
+
   while (ch < content.length) {
     if (/[.!?]/.test(content.charAt(ch))) {
       ch++;
@@ -252,9 +265,18 @@ export function createFocusModePlugin(state) {
 
         // The marked ranges in document order; whatever lies between
         // them is dimmed.
+        // Only what wasn't lit already comes up: where the new sentence
+        // overlaps the one just left, it stays at full strength rather
+        // than dropping to the dim level and fading back (a blink).
         const marks = [];
-        if (fading && next.to > next.from) marks.push({ ...next, deco: enteringMark });
-        else marks.push({ ...next, deco: null });
+        if (fading && next.to > next.from) {
+          const fresh = this.leaving ? subtract(next, this.leaving) : [next];
+          for (const piece of fresh) marks.push({ ...piece, deco: enteringMark });
+          if (this.leaving) {
+            const from = Math.max(next.from, this.leaving.from), to = Math.min(next.to, this.leaving.to);
+            if (to > from) marks.push({ from, to, deco: null });
+          }
+        } else marks.push({ ...next, deco: null });
         if (fading && this.leaving) {
           const out = leavingMark;
           for (const piece of subtract(this.leaving, next)) {

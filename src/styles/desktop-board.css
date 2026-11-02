@@ -341,6 +341,30 @@ button.board-row-name:focus-visible { background: rgba(128, 128, 128, 0.14); out
 .board-view .board-notes-label { padding-left: 0; }
 .board-notes { margin-top: 12px; }
 .board-notes-label { display: block; margin-bottom: 5px; }
+/* A document's notes: plain text, the size of the outline beside it, no
+   frame until it has the keyboard; grows with what is written. */
+.board-notes-text {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 1.5em;
+  margin: 0;
+  padding: 4px 6px;
+  margin-left: -6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--ui-font-family);
+  font-size: var(--outline-font-size);
+  line-height: 1.5;
+  resize: none;
+  overflow: hidden;
+  outline: none;
+}
+.board-notes-text:hover { border-color: color-mix(in srgb, var(--fg) 12%, transparent); }
+.board-notes-text:focus { border-color: color-mix(in srgb, var(--fg) 28%, transparent); }
+.board-notes-text::placeholder { color: var(--fg); opacity: 0.35; }
 .board-notes-add {
   padding: 2px 6px;
   border: none;
@@ -356,7 +380,15 @@ button.board-row-name:focus-visible { background: rgba(128, 128, 128, 0.14); out
 
 /* ── The pane column: the row's pane, once opened (board-pane.js) ── */
 .board-col-pane { min-width: 0; }
-.board-pane-slot { position: relative; display: none; isolation: isolate; }
+.board-pane-slot {
+  position: relative;
+  display: none;
+  isolation: isolate;
+  /* Showing a pane scrolls the board only as far as it must, clear of
+     the sticky header (board-pane.js scrollTo). */
+  scroll-margin-top: 120px;
+  scroll-margin-bottom: 24px;
+}
 /* A pane carries its stacking order inline (pane-manager's zForPane);
    inside the row it sits in the page, under the sticky header. */
 .board-view .board-pane-slot > .floating-pane { z-index: 0 !important; }

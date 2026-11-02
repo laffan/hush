@@ -14,7 +14,6 @@
  * anything while the board is up. One pane per row: a second heading
  * scrolls the pane that is there.
  */
-import { EditorView } from "@codemirror/view";
 import { panes } from "../../pane/pane-state.js";
 
 const HEIGHT = 460;
@@ -49,13 +48,27 @@ function mount(pane, slot) {
   requestAnimationFrame(() => pane.editor?.view?.requestMeasure?.());
 }
 
-/** Scroll a pane's editor so `from` sits near the top, caret there. */
+/** Scroll a pane's editor so `from` sits near the top, caret there.
+ *  Only the pane's own scroller moves: CodeMirror's scrollIntoView also
+ *  scrolls every scrollable ancestor to line the target up, which pulled
+ *  the whole board down until the pane's top (position 0 — the
+ *  document's name) sat under the sticky header. The board itself moves
+ *  only as far as it takes to show the pane (`nearest`). */
 function scrollTo(pane, from) {
   const view = pane.editor?.view;
   if (!view) return;
   const a = Math.max(0, Math.min(view.state.doc.length, from || 0));
-  view.dispatch({ selection: { anchor: a }, effects: EditorView.scrollIntoView(a, { y: "start", yMargin: 16 }) });
-  view.focus();
+  view.dispatch({ selection: { anchor: a } });
+  view.requestMeasure({
+    read: () => {
+      const scroller = view.scrollDOM;
+      const target = view.documentTop + view.lineBlockAt(a).top;
+      return scroller.scrollTop + target - scroller.getBoundingClientRect().top - 16;
+    },
+    write: (top) => { view.scrollDOM.scrollTop = Math.max(0, top); },
+  });
+  view.contentDOM.focus({ preventScroll: true });
+  pane._inlineHost?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 /** Open the row's pane in `slot`, or scroll the one already there. A
