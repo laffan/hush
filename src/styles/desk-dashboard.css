@@ -84,6 +84,9 @@
   transition: border-color 0.15s;
 }
 .desk-dash-card:hover { border-color: color-mix(in srgb, var(--fg) 20%, transparent); }
+/* The desk you are on: its border in full ink. */
+.desk-dash-card.active,
+.desk-dash-card.active:hover { border-color: var(--fg); }
 .desk-dash-card.dragging {
   opacity: 0.5;
   border-style: dashed;
@@ -202,8 +205,10 @@
 /* ---- YOU ARE HERE ---- */
 .desk-dash-yah {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
   min-width: 0;
   padding: 0;
   font: inherit;
@@ -214,7 +219,24 @@
   border: none;
   cursor: pointer;
 }
+.desk-dash-yah-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+}
 .desk-dash-yah .yah-badge { flex: 0 0 auto; }
+/* The marker's note, on the editor's red tint (.cm-youarehere-note). */
+.desk-dash-yah-note {
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: rgba(255, 43, 43, 0.16);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
 .desk-dash-yah:hover .yah-badge { filter: brightness(1.08); }
 .desk-dash-yah-file {
   min-width: 0;

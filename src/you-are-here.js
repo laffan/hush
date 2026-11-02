@@ -39,6 +39,40 @@ export function findMarkerOffsets(text) {
   return out;
 }
 
+/** Sentence-ending punctuation (a run of it, `?!` or `...`) and any
+ *  closing quote or bracket straight after it. */
+const NOTE_STOP = /[.?!\u2026\u203d]+["'\u201d\u2019)\]]*/;
+
+/** End of the note that follows a token ending at `from`, on a line
+ *  that stops at `stop`: null unless a colon follows the token at once.
+ *  The note runs through its first sentence-ending punctuation, else to
+ *  `stop`, trailing whitespace dropped; a colon with nothing after it is
+ *  no note — a tint over a lone colon reads as a stray smudge. Shared by
+ *  the editor's tint (editor/plugins/you-are-here.js) and the Desk
+ *  Dashboard, so both read the same words as the note. */
+export function noteEnd(text, from, stop) {
+  if (text[from] !== ":") return null;
+  let to = stop;
+  const m = text.slice(from + 1, stop).match(NOTE_STOP);
+  if (m) to = from + 1 + m.index + m[0].length;
+  while (to > from + 1 && /\s/.test(text[to - 1])) to--;
+  return to > from + 1 ? to : null;
+}
+
+/** The note attached to the first marker in `text` (`YOUAREHERE: …`),
+ *  without its colon, or "" when the marker has none. */
+export function markerNote(text) {
+  const o = typeof text === "string" ? text.indexOf(YAH_TOKEN) : -1;
+  if (o < 0) return "";
+  const end = o + YAH_TOKEN.length;
+  const nl = text.indexOf("\n", end);
+  const lineEnd = nl === -1 ? text.length : nl;
+  const next = text.indexOf(YAH_TOKEN, end);
+  const stop = next !== -1 && next < lineEnd ? next : lineEnd;
+  const to = noteEnd(text, end, stop);
+  return to == null ? "" : text.slice(end + 1, to).trim();
+}
+
 /** The desk node an id lives under, or null for strays / Local Sync. */
 function deskOfNode(state, nodeId) {
   const tree = state.fileTree || [];

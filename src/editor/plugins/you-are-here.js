@@ -25,29 +25,11 @@ import { RangeSetBuilder } from "@codemirror/state";
 // Circular at module level (base-extensions imports this plugin), but
 // only the runtime value is used, so the live binding resolves fine.
 import { programmaticChange } from "../base-extensions.js";
-import { YAH_TOKEN, findMarkerOffsets } from "../../you-are-here.js";
+import { YAH_TOKEN, findMarkerOffsets, noteEnd } from "../../you-are-here.js";
 
 const markDeco = Decoration.mark({ class: "cm-youarehere" });
 const markWithNoteDeco = Decoration.mark({ class: "cm-youarehere cm-youarehere-has-note" });
 const noteDeco = Decoration.mark({ class: "cm-youarehere-note" });
-
-/** Sentence-ending punctuation (a run of it, `?!` or `...`) and any
- *  closing quote or bracket straight after it. */
-const NOTE_STOP = /[.?!\u2026\u203d]+["'\u201d\u2019)\]]*/;
-
-/** End of the note that follows a token ending at `from`, on a line
- *  that stops at `stop`: null unless a colon follows the token at once.
- *  The note runs through its first sentence-ending punctuation, else to
- *  `stop`, trailing whitespace dropped; a colon with nothing after it is
- *  no note — a tint over a lone colon reads as a stray smudge. */
-function noteEnd(text, from, stop) {
-  if (text[from] !== ":") return null;
-  let to = stop;
-  const m = text.slice(from + 1, stop).match(NOTE_STOP);
-  if (m) to = from + 1 + m.index + m[0].length;
-  while (to > from + 1 && /\s/.test(text[to - 1])) to--;
-  return to > from + 1 ? to : null;
-}
 
 export function createYouAreHerePlugin() {
   return ViewPlugin.fromClass(

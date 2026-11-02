@@ -24,7 +24,7 @@
 import { escHtml, leafIcon, typeIcons, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
 import { isDesktopTauri, collectFileLeaves } from "../command-palette-helpers.js";
 import { customIconSvg, deskIconName } from "../ui/custom-icons.js";
-import { youAreHereEntriesFor, jumpToYouAreHere } from "../you-are-here.js";
+import { youAreHereEntriesFor, jumpToYouAreHere, markerNote } from "../you-are-here.js";
 import { switchDeskAndLand, openLeafOnItsDesk } from "../state/cross-desk.js";
 
 /** How many recently edited files a card lists. */
@@ -150,6 +150,19 @@ function ago(at) {
   return new Date(at * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+/** The note the marker carries (`YOUAREHERE: …`), read from the live
+ *  editor when the marker's document is the one open, else from the
+ *  library's cached copy. Documents only: a notebook's text lives in its
+ *  envelope, which the cache doesn't hold and the dashboard won't load. */
+function yahNote(state, entry) {
+  if (entry.fileType !== "document") return "";
+  const live = state.currentFileId === entry.fileId && !state.currentProjectId
+    ? state.editor?.view?.state.doc.toString()
+    : null;
+  const text = live ?? (state.files || []).find((f) => f.id === entry.fileId)?.content;
+  return markerNote(text);
+}
+
 function cardHtml(state, d) {
   const active = d.id === state.settings?.activeDeskId;
   const icon = deskIconName(state, d.id);
@@ -161,9 +174,11 @@ function cardHtml(state, d) {
   const nameTip = isLocal ? (lockName ? "" : "Rename (renames the folder too)") : "Rename";
 
   const yah = youAreHereEntriesFor(state, [d.id])[0];
+  const note = yah ? yahNote(state, yah) : "";
   const yahHtml = yah
     ? `<button type="button" class="desk-dash-yah" data-action="yah">
-        <span class="yah-badge">YOU ARE HERE</span><span class="desk-dash-yah-file">${escHtml(yah.fileName)}</span>
+        <span class="desk-dash-yah-line"><span class="yah-badge">YOU ARE HERE</span><span class="desk-dash-yah-file">${escHtml(yah.fileName)}</span></span>
+        ${note ? `<span class="desk-dash-yah-note">${escHtml(note)}</span>` : ""}
       </button>`
     : "";
 
