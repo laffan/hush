@@ -43,6 +43,102 @@
   letter-spacing: 0.06em;
   opacity: 0.55;
 }
+/* ---- Search all Desks (desk-dashboard-search.js) ---- */
+.desk-dash-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: min(260px, 45vw);
+  margin-right: 12px;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
+  border-radius: 6px;
+  transition: border-color 0.15s;
+}
+.desk-dash-search:focus-within { border-color: color-mix(in srgb, var(--fg) 35%, transparent); }
+.desk-dash-search svg {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  opacity: 0.45;
+}
+.desk-dash-search-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+  padding: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.desk-dash-search-input::placeholder { color: inherit; opacity: 0.4; }
+.desk-dash-search-input::-webkit-search-cancel-button { display: none; }
+
+/* Fixed and placed from the field (it hangs past the modal's edge when
+   the grid is short), on the modal's own paper. */
+.desk-dash-results {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+.desk-dash-results[hidden] { display: none; }
+.desk-dash-result {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.desk-dash-result:hover,
+.desk-dash-result.picked { background: rgba(128, 128, 128, 0.12); }
+.desk-dash-result-text {
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.desk-dash-result-text mark {
+  background: rgba(255, 215, 0, 0.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.desk-dash-result-where {
+  font-size: 11px;
+  opacity: 0.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.desk-dash-results-note {
+  padding: 6px 8px;
+  font-size: 12px;
+  opacity: 0.5;
+}
+
 .desk-dash-close {
   font: inherit;
   font-size: 20px;

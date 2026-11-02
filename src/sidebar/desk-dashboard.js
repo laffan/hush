@@ -26,6 +26,7 @@ import { isDesktopTauri, collectFileLeaves } from "../command-palette-helpers.js
 import { customIconSvg, deskIconName } from "../ui/custom-icons.js";
 import { youAreHereEntriesFor, jumpToYouAreHere, markerNote } from "../you-are-here.js";
 import { switchDeskAndLand, openLeafOnItsDesk } from "../state/cross-desk.js";
+import { mountDashboardSearch } from "./desk-dashboard-search.js";
 
 /** How many recently edited files a card lists. */
 const RECENT_COUNT = 5;
@@ -61,6 +62,7 @@ export function openDeskDashboard(state) {
     <div class="desk-dash" role="dialog" aria-modal="true" aria-label="Desk dashboard">
       <div class="desk-dash-head">
         <span class="desk-dash-title">Desks</span>
+        <span class="desk-dash-search-slot"></span>
         <button type="button" class="desk-dash-close" aria-label="Close">×</button>
       </div>
       <div class="desk-dash-grid"></div>
@@ -85,12 +87,14 @@ export function openDeskDashboard(state) {
     open = null;
     window.removeEventListener("keydown", onKey, true);
     for (const ev of EVENTS) state.off(ev, render);
+    search.destroy();
     root.remove();
   }
   function onKey(e) {
     if (e.key !== "Escape") return;
     // Escape in a name field abandons the edit, not the dashboard.
-    if (e.target instanceof Element && e.target.closest(".desk-dash-name")) return;
+    // The search field takes its own Escape (clear, then close).
+    if (e.target instanceof Element && e.target.closest(".desk-dash-name, .desk-dash-search-input")) return;
     // A modal opened over the dashboard (the icon picker, a name prompt)
     // takes its own Escape.
     if (document.querySelector(".tree-delete-modal-backdrop")) return;
@@ -108,6 +112,7 @@ export function openDeskDashboard(state) {
   // hear them.
   root.addEventListener("keydown", (e) => e.stopPropagation());
 
+  const search = mountDashboardSearch(state, root.querySelector(".desk-dash-search-slot"), root, close);
   grid.addEventListener("click", (e) => onGridClick(state, e, close));
   wireNames(state, grid, settle);
   wireReorder(state, grid, (on) => { dragging = on; if (!on) settle(); });
