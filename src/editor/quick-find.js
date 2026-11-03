@@ -4,7 +4,8 @@
  *
  * Bound to Cmd+F (see `shortcutQuickFind`). Unlike the sidebar Find panel
  * (Cmd+Shift+F), this is a tiny floating input anchored to the focused
- * editor. As you type it highlights every match and automatically selects
+ * editor — at the top of the window over the main editor, and inside the
+ * pane, under its title bar, when the editor is a floating pane's. As you type it highlights every match and automatically selects
  * the first instance at or after the cursor. Cmd+G / Cmd+Shift+G (the
  * find-next / find-prev shortcuts) step through matches, wrapping at the
  * ends. Esc closes and returns focus to the editor.
@@ -39,6 +40,7 @@ let replaceInputEl = null;
 let twirlEl = null;
 let repositionHandler = null;
 let escHandler = null;
+let followFrame = 0;   // the per-frame tracking of a pane's place (paneHost)
 // Disclosure state outlives the bar: it's rebuilt from scratch on every
 // open, and a user who is replacing tends to keep replacing.
 let replaceOpen = false;
@@ -65,6 +67,7 @@ export function openQuickFind(view) {
   inputEl.value = seed;
   queryStr = seed;
   position();
+  followPane();
   recompute(/*selectAfterCursor=*/true);
   inputEl.focus();
   inputEl.select();
@@ -72,6 +75,8 @@ export function openQuickFind(view) {
 }
 
 export function closeQuickFind() {
+  cancelAnimationFrame(followFrame);
+  followFrame = 0;
   if (activeView) clearFindHighlights(activeView);
   if (barEl) {
     barEl.remove();
@@ -270,8 +275,47 @@ function replaceAllInDocument() {
   return true;
 }
 
+/** The content box of the floating pane `view` is in, or null for the
+ *  main editor and every other surface. */
+function paneHost(view) {
+  return view?.dom?.closest?.(".floating-pane-content") || null;
+}
+
+/** A pane can be dragged or resized while the bar is up, and neither
+ *  fires an event the bar hears, so while it searches a pane it re-reads
+ *  the pane's place each frame and moves only when that changed. */
+function followPane() {
+  cancelAnimationFrame(followFrame);
+  followFrame = 0;
+  if (!paneHost(activeView)) return;
+  let last = "";
+  const tick = () => {
+    const host = paneHost(activeView);
+    if (!barEl || !host) { followFrame = 0; return; }
+    const r = host.getBoundingClientRect();
+    const key = `${r.left},${r.top},${r.width}`;
+    if (key !== last) { last = key; position(); }
+    followFrame = requestAnimationFrame(tick);
+  };
+  followFrame = requestAnimationFrame(tick);
+}
+
 function position() {
   if (!barEl || !activeView) return;
+  // In a floating pane the bar belongs to the pane: centred across its
+  // content, just under its title bar, and no wider than the pane — at
+  // the window's top it sat well away from what it was searching.
+  const host = paneHost(activeView);
+  if (host) {
+    const h = host.getBoundingClientRect();
+    const w = Math.min(224, Math.max(120, h.width - 16));
+    barEl.style.width = w < 224 ? `${w}px` : "";
+    barEl.style.left = `${h.left + (h.width - w) / 2}px`;
+    barEl.style.right = "";
+    barEl.style.top = `${h.top + 8}px`;
+    return;
+  }
+  barEl.style.width = "";
   // Center horizontally over the editor and drop the bar to the same
   // vertical slot as the Google Docs link pill (sync bar) — both clear
   // the iOS status bar / Dynamic Island via env(safe-area-inset-top)
