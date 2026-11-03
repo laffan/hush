@@ -6,6 +6,7 @@ import { ViewPlugin, Decoration, EditorView } from "@codemirror/view";
 import { RangeSetBuilder, Prec, StateEffect } from "@codemirror/state";
 import { syntaxHighlighting } from "@codemirror/language";
 import { tagHighlighter, tags } from "@lezer/highlight";
+import { stepFade } from "../../ui/fade-step.js";
 
 // ===== Sentence boundary detection (mirrors sentence-navigator.js) =====
 
@@ -161,8 +162,15 @@ const headingClass = syntaxHighlighting(
 // the caret left goes back down to it (`.focus-mode-leaving`, a dim span
 // that starts its animation at full strength). Only the last sentence
 // left fades; one left before it, mid-fade, drops straight to the dim.
+//
+// Turning the mode on or off fades too, over the same FADE_MS: the dim
+// comes down from full strength on the way in, and on the way out the
+// marks stay while it goes back up, and only then are dropped. That is
+// `--fm-in` on the editor (0 no dim … 1 the dim the slider sets), stepped
+// from script like `--fm-p`; the CSS folds it into `--fm-dim`, the level
+// every mark reads.
 export function createFocusModePlugin(state) {
-  return [headingClass, Prec.lowest(ViewPlugin.fromClass(
+  const plugin = ViewPlugin.fromClass(
     class {
       constructor(view) {
         this.view = view;
@@ -172,13 +180,48 @@ export function createFocusModePlugin(state) {
         this.changedAt = 0;    // when the sentence last changed
         this.frame = 0;        // the running fade's animation frame
         this.fading = false;
+        this.level = state.focusMode ? 1 : 0; // --fm-in
+        this.exiting = false;  // off, but still fading out
+        this.stopLevel = () => {};
         this.decorations = this.buildDecorations(view, false);
+      }
+
+      /** Fade `--fm-in` to `to` from wherever it is; `done` at the end. */
+      fadeLevel(to, done) {
+        this.stopLevel();
+        const dom = this.view.dom;
+        this.stopLevel = stepFade(this.level, to, (v) => {
+          this.level = v;
+          dom.style.setProperty("--fm-in", v.toFixed(4));
+        }, done);
       }
 
       update(update) {
         const focusChanged = state.focusMode !== this.lastFocusMode;
         this.lastFocusMode = state.focusMode;
         const ended = update.transactions.some((tr) => tr.effects.some((e) => e.is(fadeDone)));
+        if (focusChanged && state.focusMode) {
+          // On (or back on mid-exit): from no dim, or from where the exit
+          // had got to, down to the slider's level. Stopping the exit's
+          // stepper also drops its ending.
+          this.exiting = false;
+          this.fadeLevel(1);
+        } else if (focusChanged && this.decorations.size) {
+          // Off: keep the marks where they are while the dim lifts, then
+          // drop them (the fadeDone rebuilds to nothing). The end is
+          // dispatched from a microtask: under reduced motion the fade
+          // ends at once, inside this update, where no dispatch may run.
+          this.exiting = true;
+          this.fadeLevel(0, () => queueMicrotask(() => {
+            this.exiting = false;
+            try { this.view.dispatch({ effects: fadeDone.of(null) }); } catch { /* view gone */ }
+          }));
+          return;
+        }
+        if (this.exiting) {
+          if (update.docChanged) this.decorations = this.decorations.map(update.changes);
+          return;
+        }
         if (update.docChanged) {
           const map = (r) => r && { from: update.changes.mapPos(r.from, -1), to: update.changes.mapPos(r.to, 1) };
           this.current = map(this.current);
@@ -198,6 +241,7 @@ export function createFocusModePlugin(state) {
 
       destroy() {
         cancelAnimationFrame(this.frame);
+        this.stopLevel();
       }
 
       /** Run the fade: `--fm-p` from 0 to 1 over FADE_MS on the editor,
@@ -301,9 +345,11 @@ export function createFocusModePlugin(state) {
     {
       decorations: (v) => v.decorations,
       // Re-read on every view update, which is also what re-dims on toggle.
-      provide: () => EditorView.editorAttributes.of(
-        () => (state.focusMode ? { class: "cm-focus-mode" } : null)
+      // Held through the exit fade, with the marks.
+      provide: (self) => EditorView.editorAttributes.of(
+        (view) => (state.focusMode || view.plugin(self)?.exiting ? { class: "cm-focus-mode" } : null)
       ),
     }
-  ))];
+  );
+  return [headingClass, Prec.lowest(plugin)];
 }

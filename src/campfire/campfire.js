@@ -7,11 +7,29 @@
  * reads them) and `body.campfire-on` switches the mask on. If the caret
  * stops being one Hush draws — a style with the system caret — the
  * campfire goes out, since there is no glow left to see by.
+ *
+ * Lighting it and putting it out fade over 300 ms (`--cf-in` on the
+ * root, stepped from script — ui/fade-step.js; styles/campfire.css lays
+ * a layer of 1 − --cf-in over the mask). The options modal's preview
+ * stays a cut, so a slider moves the light at once.
  */
 import { readCampfireOptions, readDeskCampfireOptions, saveCampfireOptions, isCampfireOn, campfireAvailable } from "./campfire-store.js";
 import { setCampfire } from "../editor/plugins/campfire.js";
+import { stepFade } from "../ui/fade-step.js";
 
 let watching = false;
+let level = 0;          // --cf-in: 0 no dark … 1 the campfire's own
+let stopFade = () => {};
+
+/** Fade `--cf-in` to `to` from where it is; `done` at the end. */
+function fadeTo(to, done) {
+  stopFade();
+  const root = document.documentElement.style;
+  stopFade = stepFade(level, to, (v) => {
+    level = v;
+    root.setProperty("--cf-in", v.toFixed(4));
+  }, done);
+}
 
 async function toast(message, kind = "info") {
   const { showImportToast } = await import("../editor/import-toast.js");
@@ -20,7 +38,10 @@ async function toast(message, kind = "info") {
 
 /** Draw `options` (resolved), or nothing for null. */
 function apply(options) {
+  stopFade();
+  level = options ? 1 : 0;
   const root = document.documentElement.style;
+  root.removeProperty("--cf-in");
   document.body.classList.toggle("campfire-on", !!options);
   if (!options) {
     for (const p of ["--cf-base", "--cf-peak", "--cf-plateau", "--cf-mid", "--cf-range"]) root.removeProperty(p);
@@ -69,16 +90,22 @@ export function cancelCampfirePreview(state) {
  *  lit. Without options it lights with this desk's last. */
 export function beginCampfire(state, options = readDeskCampfireOptions(state.settings, state.settings?.activeDeskId)) {
   if (!campfireAvailable(state.settings)) { void toast(UNAVAILABLE); return false; }
+  // Lit from wherever a fade out had got to, or from no dark at all.
+  const from = state.runtime.campfire ? 1 : document.body.classList.contains("campfire-on") ? level : 0;
   state.runtime.campfire = true;
   void saveCampfireOptions(state, options, state.settings?.activeDeskId || null);
   apply(readCampfireOptions({ campfire: options }));
+  level = from;
+  fadeTo(1);
   watch(state);
   return true;
 }
 
+/** Put it out: the dark lifts, then the mask and its options go. Lit
+ *  again before the end, `beginCampfire`'s fade takes over from here. */
 export function endCampfire(state) {
   state.runtime.campfire = false;
-  apply(null);
+  fadeTo(0, () => { if (!state.runtime.campfire) apply(null); });
 }
 
 /** On with this desk's last settings, or off — the palette's toggle and
