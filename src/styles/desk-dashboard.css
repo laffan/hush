@@ -253,9 +253,6 @@
   transition: opacity 0.15s;
 }
 .desk-dash-card:hover .desk-dash-current { opacity: 0; }
-@media (hover: none) {
-  .desk-dash-current { display: none; }
-}
 
 /* ---- Toolbar (hover) ---- */
 .desk-dash-tools {
@@ -279,10 +276,9 @@
    cards' rects, not from what is under the pointer). */
 .desk-dash-grid.reordering .desk-dash-tools { opacity: 0; visibility: hidden; }
 .desk-dash-grid.reordering .desk-dash-card > * { pointer-events: none; }
-/* No hover on touch: the toolbar stays up. */
-@media (hover: none) {
-  .desk-dash-tools { opacity: 1; visibility: visible; }
-}
+/* No touch exception: a WebKit view can report (hover: none) with a
+   mouse attached, which kept every toolbar up. iPadOS gives a tapped
+   card :hover, so a tap shows its toolbar there. */
 .desk-dash-tools button,
 .desk-dash-grip {
   display: inline-flex;
@@ -384,9 +380,6 @@
   cursor: pointer;
 }
 .desk-dash-card:hover .desk-dash-recent { opacity: 1; }
-@media (hover: none) {
-  .desk-dash-recent { opacity: 1; }
-}
 .desk-dash-file:hover { background: rgba(128, 128, 128, 0.1); }
 .desk-dash-file .tree-type-icon,
 .desk-dash-file .custom-icon { flex: 0 0 auto; opacity: 0.6; }
