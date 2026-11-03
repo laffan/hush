@@ -79,6 +79,12 @@ pub(crate) fn has_duplicate_rows(desk: &TreeNode) -> bool {
 /// else the first outside the Trash, else the first. Returns how many
 /// rows were removed.
 pub(crate) fn dedupe_rows_by_file_id(desk: &mut TreeNode, current: &HashMap<String, String>) -> usize {
+    // The same row twice — one node, one id, inserted at two places (Split
+    // Headings to Files did it inside a project). The pass below picks a
+    // row to keep *by node id* and drops the others, so it could never
+    // tell these apart and both survived every save. Keep the first
+    // occurrence of each file row's id first.
+    let repeats = remove_repeated_rows(&mut desk.children, &mut HashSet::new());
     let mut rows = Vec::new();
     collect_rows(&desk.children, &mut Vec::new(), false, &mut rows);
     let mut by_file: HashMap<&str, Vec<&Row>> = HashMap::new();
@@ -105,9 +111,21 @@ pub(crate) fn dedupe_rows_by_file_id(desk: &mut TreeNode, current: &HashMap<Stri
         }
     }
     if doomed.is_empty() {
-        return 0;
+        return repeats;
     }
-    remove_nodes(&mut desk.children, &doomed)
+    repeats + remove_nodes(&mut desk.children, &doomed)
+}
+
+/// Drop every file row whose node id an earlier file row (in walk order)
+/// already carries. Returns how many went.
+fn remove_repeated_rows(nodes: &mut Vec<TreeNode>, seen: &mut HashSet<String>) -> usize {
+    let before = nodes.len();
+    nodes.retain(|n| !(owns_file(n) && n.file_id.is_some()) || seen.insert(n.id.clone()));
+    let mut removed = before - nodes.len();
+    for n in nodes.iter_mut() {
+        removed += remove_repeated_rows(&mut n.children, seen);
+    }
+    removed
 }
 
 /// Does this row's container chain + name spell `rel` (ignoring the

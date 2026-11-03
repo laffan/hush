@@ -245,8 +245,12 @@ export async function splitDocAtHeadings(state, nodeId, opts = {}) {
 
   // Build the child docs. `uniqueChildName` keeps sibling names distinct
   // (two sections sharing a heading get (2), (3)) within whichever
-  // container they're about to join.
-  const nameScope = parentIsProject ? parent : { children: [] };
+  // container they're about to join. The scope is a *copy* of the
+  // project's children: names are reserved in it as each section is
+  // named, and reserving in the project itself put every section into
+  // it once here and again at the splice below — two rows per file,
+  // the same node twice, so selecting or deleting one took both.
+  const nameScope = { children: parentIsProject ? [...parent.children] : [] };
   const childNodes = [];
   const childContents = [];
   for (const section of sections) {
@@ -264,7 +268,7 @@ export async function splitDocAtHeadings(state, nodeId, opts = {}) {
     childNodes.push(childNode);
     childContents.push(section.content);
     // Reserve the name within the scope so the next section doesn't reuse it.
-    if (parentIsProject) nameScope.children.push(childNode);
+    nameScope.children.push(childNode);
   }
 
   let projectNode = null;

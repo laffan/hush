@@ -253,3 +253,29 @@ fn a_parked_file_stays_parked_while_the_name_is_still_taken() {
     assert!(!folder.join("Foo (3).md").exists());
     assert_eq!(fs::read_to_string(folder.join("Foo.md")).unwrap(), "someone else's");
 }
+
+/// The same row twice — one node, one id, at two places in a project.
+/// Split Headings to Files inserted each section that way when the doc
+/// it split lived in a project; selecting one row lit the other and
+/// deleting one deleted both. Row dedupe chose what to keep by node id,
+/// so it never removed either copy. A save now keeps the first.
+#[test]
+fn a_row_inserted_twice_under_one_id_is_saved_once() {
+    let dir = tmp();
+    let store = DeskStore::new(dir.path());
+    for id in ["f1", "f2"] {
+        store.stage_new(id).unwrap();
+        store.write_by_id(id, id).unwrap();
+    }
+    let a = node("n1", "document", "Alpha", Some("f1"), Vec::new());
+    let b = node("n2", "document", "Beta", Some("f2"), Vec::new());
+    let project = node("p1", "project", "Book", None, vec![a.clone(), b.clone(), a, b]);
+    let repaired = store.save_forest(&[desk_with(vec![project])]).unwrap();
+    let repaired = repaired.expect("the doubled rows are repaired, and the repair handed back");
+    let book = repaired[0].children.iter().find(|n| n.id == "p1").unwrap();
+    let ids: Vec<&str> = book.children.iter().map(|n| n.id.as_str()).collect();
+    assert_eq!(ids, ["n1", "n2"]);
+    let loaded = store.load_forest().unwrap();
+    let book = loaded[0].children.iter().find(|n| n.id == "p1").unwrap();
+    assert_eq!(book.children.len(), 2);
+}
