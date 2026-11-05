@@ -20,30 +20,7 @@ async function tauriInvoke(cmd, args) {
   return invoke(cmd, args);
 }
 
-// Settings keys that belong to whichever window the user is currently
-// looking at, not to the shared app config. Disk holds the MAIN window's
-// session, so secondary windows keep these in memory and never write
-// them — otherwise opening a file in a child window would clobber the
-// session the main window restores from.
-const _PER_WINDOW_SETTINGS_KEYS = new Set([
-  "lastFileId",
-  "lastNotebookId",
-  "lastProjectId",
-  "lastStackId",
-  "lastLocalSync",
-  "scrollPosition",
-  "typewriterMode",
-  "dryMode",
-  // Each window operates its own desk: switching desks in a secondary
-  // window must not drag the main window (or any sibling) along with it,
-  // and only the main window's choice persists as the app's "last desk".
-  "activeDeskId",
-  // Sidebar panel state — which panel was open and whether it was pinned
-  // when the session ended. Per-window so each window remembers its own
-  // chrome layout.
-  "sidebarOpenPanel",
-  "sidebarPinned",
-]);
+import { PER_WINDOW_SETTINGS_KEYS, sessionSettings, restoreStartupSurface } from "./session-state.js";
 
 export class AppState {
   constructor() {
@@ -177,6 +154,7 @@ export class AppState {
     if (IS_TAURI) {
       try {
         Object.assign(this.settings, await phase("get_settings", () => tauriInvoke("get_settings")));
+        Object.assign(this.settings, opts.windowSession || {});
         // In-memory only: activeDeskId is a per-window key, so a
         // secondary window never writes it back to disk.
         if (initialDesk) this.settings.activeDeskId = initialDesk;
@@ -214,64 +192,9 @@ export class AppState {
         this.spellcheckMode = !!this.settings.spellcheckMode;
         this.runtime.pendingScrollPosition = this.settings.scrollPosition || null;
 
-        if (initialFile && initialFile.fileId && initialFile.fileType) {
-          // New-window startup path — main.js will mount the notebook /
-          // project surface based on the seeded fields below; we don't
-          // touch persisted lastFileId so the main window's session is
-          // unaffected when this window closes.
-          // Notebooks, stacks and PDFs are surfaces main.js mounts off
-          // these seed fields — the same three the "restore last file"
-          // branch below sets. Only docs go through `openFile`; routing
-          // a stack or a PDF there opened its raw bytes as markdown.
-          if (initialFile.fileType === "notebook"
-              && this.files.some(f => f.id === initialFile.fileId)) {
-            this.currentNotebookFileId = initialFile.fileId;
-          } else if (initialFile.fileType === "stack"
-              && findNodeByFileId(this.fileTree, initialFile.fileId)) {
-            this.currentStackFileId = initialFile.fileId;
-          } else if (initialFile.fileType === "pdf"
-              && findNodeByFileId(this.fileTree, initialFile.fileId)) {
-            this.currentPdfFileId = initialFile.fileId;
-          } else if (initialFile.fileType === "project"
-              && findNode(this.fileTree, initialFile.fileId)) {
-            await phase("open project (new window)", () => this.openProject(initialFile.fileId));
-          } else if (this.files.some(f => f.id === initialFile.fileId)) {
-            await phase("open file (new window)", () => this.openFile(initialFile.fileId));
-          } else if (this.files.length > 0) {
-            await phase("open first file (fallback)", () => this.openFile(this.files[0].id));
-          } else {
-            await phase("create first file", () => this.newFile());
-          }
-        } else if (initialDesk) {
-          // A desk opened in its own window with nothing to land on (openDeskInNewWindow): the global last file is another desk's — no file selected.
-        } else {
-          // Restore last open file/project/notebook
-          const lastProjectId = this.settings.lastProjectId;
-          const lastFileId = this.settings.lastFileId;
-          const lastNotebookId = this.settings.lastNotebookId;
-          const lastPdfId = this.settings.lastPdfId;
-          const lastStackId = this.settings.lastStackId;
-          if (lastStackId && findNodeByFileId(this.fileTree, lastStackId)) {
-            this.currentStackFileId = lastStackId;
-          } else if (lastPdfId && findNodeByFileId(this.fileTree, lastPdfId)) {
-            this.currentPdfFileId = lastPdfId;
-          } else if (lastNotebookId && this.files.some(f => f.id === lastNotebookId)) {
-            this.currentNotebookFileId = lastNotebookId;
-          } else if (lastProjectId && findNode(this.fileTree, lastProjectId)) {
-            await phase("restore last project", () => this.openProject(lastProjectId));
-          } else if (lastFileId && this.files.some(f => f.id === lastFileId)) {
-            await phase("restore last file", () => this.openFile(lastFileId));
-          } else if (this.settings.lastLocalSync?.folderId) {
-            // A Local Folder file was the last thing open. Defer the
-            // actual open to main-modes (it needs a live editor); just
-            // stash the descriptor here.
-            this.runtime.pendingLocalSync = { ...this.settings.lastLocalSync };
-          } else {
-            // Nothing to restore — leave every current* pointer null so
-            // main-modes drops to the "no file selected" pane rather than
-            // opening an unrelated DB file or spawning an Untitled doc.
-          }
-        }
+        // Resolve one desk-scoped surface without reading its body. The
+        // editor / canvas is created later; main-modes loads it once.
+        phaseSync("resolve startup surface", () => restoreStartupSurface(this, { initialFile, initialDesk, windowSession: opts.windowSession }));
       } catch (e) {
         console.error("Failed to init from Tauri:", e);
         this._initLocal();
@@ -627,7 +550,7 @@ export class AppState {
     if (this.isSecondaryWindow) {
       toWrite = {};
       for (const [k, v] of Object.entries(partial || {})) {
-        if (!_PER_WINDOW_SETTINGS_KEYS.has(k)) toWrite[k] = v;
+        if (!PER_WINDOW_SETTINGS_KEYS.has(k)) toWrite[k] = v;
       }
       // Nothing shared to write — this window's session stays in memory.
       if (Object.keys(toWrite).length === 0) {
@@ -658,15 +581,8 @@ export class AppState {
     const scrollTop = this.editor
       ? this.editor.view.scrollDOM.scrollTop
       : null;
-    // A Local Sync notebook rides on an `ls:` sentinel id; it isn't a VC
-    // file, so don't persist it as the cross-session last notebook (the
-    // restore path would call load_file on a non-existent id).
-    const nbId = typeof this.currentNotebookFileId === "string"
-      && this.currentNotebookFileId.startsWith("ls:") ? null : (this.currentNotebookFileId || null);
     await this.updateSettings({
-      lastFileId: this.currentFileId || null,
-      lastProjectId: this.currentProjectId || null,
-      lastNotebookId: nbId,
+      ...sessionSettings(this),
       typewriterMode: this.typewriterMode,
       dryMode: this.dryMode,
       spellcheckMode: this.spellcheckMode,

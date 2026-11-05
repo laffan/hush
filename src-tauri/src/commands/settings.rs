@@ -91,6 +91,16 @@ mod tests {
     }
 
     #[test]
+    fn pdf_session_slot_survives_serialization_and_can_be_cleared() {
+        let current = AppSettings::default();
+        let next = merge(&current, serde_json::json!({ "lastPdfId": "paper" }));
+        assert_eq!(next.last_pdf_id.as_deref(), Some("paper"));
+        assert_eq!(serde_json::to_value(&next).unwrap()["lastPdfId"], "paper");
+        let cleared = merge(&next, serde_json::json!({ "lastPdfId": null }));
+        assert_eq!(cleared.last_pdf_id, None);
+    }
+
+    #[test]
     fn a_patch_changes_only_its_own_keys() {
         let mut current = AppSettings::default();
         current.font_size = 21;

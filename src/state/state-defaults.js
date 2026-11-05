@@ -216,6 +216,7 @@ export function createDefaultSettings() {
     // can't ride the normal lastFileId slot — `{ folderId, relPath, name }`
     // or null. Kept mutually exclusive with lastFileId/lastNotebookId/etc.
     lastLocalSync: null,
+    lastPdfId: null,
     // Per-desk last-opened Local Folder file (local, per-device), keyed by
     // desk id: `{ [deskId]: { folderId, relPath, name } }`. Mutually
     // exclusive with the synced desksMeta tree last-file so the most

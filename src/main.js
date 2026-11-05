@@ -1,3 +1,4 @@
+import { preserveWindowSettings } from "./state/session-state.js";
 import { createEditor } from "./editor/editor.js";
 import { createSidebar } from "./sidebar/sidebar.js";
 import { findNodeByFileId } from "./state/tree-helpers.js";
@@ -497,18 +498,8 @@ async function init() {
       // Preserve this window's per-window session keys — the settings
       // window's saved payload carries whichever lastFileId it picked
       // up at open time (typically main's), and merging it blindly
-      // would yank a secondary window's view back to main's file.
-      const keepPerWindow = state.isSecondaryWindow ? {
-        lastFileId: state.settings.lastFileId,
-        lastNotebookId: state.settings.lastNotebookId,
-        lastProjectId: state.settings.lastProjectId,
-        scrollPosition: state.settings.scrollPosition,
-        typewriterMode: state.settings.typewriterMode,
-        dryMode: state.settings.dryMode,
-        // Desks are per-window — the settings window's payload carries
-        // whichever desk it captured (typically main's).
-        activeDeskId: state.settings.activeDeskId,
-      } : {};
+      // would restore stale session slots, even in the main window.
+      const keepPerWindow = preserveWindowSettings(state.settings);
       Object.assign(state.settings, newSettings, keepPerWindow);
 
       // Unconditional — applyActiveStyle's Default-style branch already

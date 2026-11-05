@@ -331,6 +331,9 @@ body.bookmark-stamping-nb .nb-bookmark {
    notebook-bridge.js; the short fade-in keeps small notebooks from
    flashing it on instant loads. */
 .notebook-loading-overlay {
+  /* The incoming canvas stays hidden until mount finishes; its loading
+     message must still paint while a large notebook is decoded. */
+  visibility: visible;
   position: absolute;
   inset: 0;
   display: flex;

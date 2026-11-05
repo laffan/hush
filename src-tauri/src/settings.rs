@@ -758,6 +758,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub last_stack_id: Option<String>,
     #[serde(default)]
+    pub last_pdf_id: Option<String>,
+    #[serde(default)]
     pub typewriter_mode: bool,
     #[serde(default)]
     pub dry_mode: bool,
@@ -982,7 +984,7 @@ impl Default for AppSettings {
             you_are_here: serde_json::json!({}),
             panes_hidden_by_context: serde_json::json!({}),
             window_width: None, window_height: None, window_x: None, window_y: None,
-            last_file_id: None, last_project_id: None, last_stack_id: None,
+            last_file_id: None, last_project_id: None, last_stack_id: None, last_pdf_id: None,
             typewriter_mode: false,
             dry_mode: false,
             scroll_position: None,

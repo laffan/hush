@@ -65,6 +65,7 @@ export async function openProject(state, projectId) {
     state.emit("stack-unmount");
     state.currentStackFileId = null;
   }
+  state.currentLocalSync = null;
   state.currentProjectId = projectId;
   state.currentFileId = null;
   state.projectDocIds = collectDocumentIds(node.children || []);
@@ -80,7 +81,7 @@ export async function openProject(state, projectId) {
   // Clear lastNotebookId so a notebook the user had open before
   // switching to this project doesn't reopen on next launch (init
   // checks lastNotebookId before lastProjectId).
-  state.updateSettings({ lastProjectId: projectId, lastFileId: null, lastNotebookId: null });
+  state.updateSettings({ lastProjectId: projectId, lastFileId: null, lastNotebookId: null, lastPdfId: null, lastStackId: null, lastLocalSync: null });
 }
 
 /** Pair `notebookFileId` as the gutter for the document `docFileId`. A gutter

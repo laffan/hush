@@ -13,6 +13,7 @@
  * during init and seeds that window's `currentFileId` from it.
  */
 
+import { preserveWindowSettings, currentSurface } from "./state/session-state.js";
 import { isIOSTauri } from "./command-palette-helpers.js";
 import { applyExternalDocContent } from "./sync/apply-external.js";
 import { findNode, findNodeByFileId } from "./state/tree-helpers.js";
@@ -280,10 +281,8 @@ export async function subscribeCrossWindow({
  *  currently active in the given AppState. Notebooks win over projects
  *  win over docs (mirroring how state.openX functions clear the others). */
 function currentFileFromState(state) {
-  if (state.currentNotebookFileId) return { fileId: state.currentNotebookFileId, fileType: "notebook" };
-  if (state.currentProjectId) return { fileId: state.currentProjectId, fileType: "project" };
-  if (state.currentFileId) return { fileId: state.currentFileId, fileType: "document" };
-  return { fileId: null, fileType: null };
+  const surface = currentSurface(state);
+  return { fileId: surface?.fileId || null, fileType: surface?.fileType || null };
 }
 
 /** "[Desk Name]-[File Name]" for the native window title. The in-window
@@ -351,18 +350,7 @@ export async function setupMultiWindow(state) {
           // Preserve this window's per-window keys — the sender stripped
           // them on its way out, but we re-pin them here defensively so
           // a buggy sender can't blow away our session state in memory.
-          const keep = {
-            lastFileId: state.settings.lastFileId,
-            lastNotebookId: state.settings.lastNotebookId,
-            lastProjectId: state.settings.lastProjectId,
-            scrollPosition: state.settings.scrollPosition,
-            typewriterMode: state.settings.typewriterMode,
-            dryMode: state.settings.dryMode,
-            // Desks are per-window: a sibling switching desks (or saving
-            // settings while on another desk) must not flip this window's
-            // sidebar / style / shortcut-target desk out from under it.
-            activeDeskId: state.settings.activeDeskId,
-          };
+          const keep = preserveWindowSettings(state.settings);
           Object.assign(state.settings, fresh, keep);
           state.emit("settings-changed");
           state.emit("theme-changed");
@@ -415,8 +403,9 @@ export async function setupMultiWindow(state) {
     const { fileId, fileType } = currentFileFromState(state);
     pushCurrentFile(fileId, fileType);
   };
-  state.on("file-opened", syncWindowFile);
-  state.on("notebook-open", syncWindowFile);
+  for (const event of ["file-opened", "notebook-open", "pdf-open", "stack-open", "no-file-state"]) {
+    state.on(event, syncWindowFile);
+  }
 
   // Native window title — "[Desk Name]-[File Name]". Recomputed on
   // anything that can change either half: opening any surface,
@@ -424,7 +413,7 @@ export async function setupMultiWindow(state) {
   const syncTitle = () => { void updateWindowTitle(state); };
   for (const ev of [
     "file-opened", "notebook-open", "pdf-open", "stack-open",
-    "active-desk-changed", "files-changed", "desks-changed",
+    "active-desk-changed", "files-changed", "desks-changed", "no-file-state",
   ]) state.on(ev, syncTitle);
   syncTitle();
 

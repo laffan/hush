@@ -15,6 +15,7 @@
  * is unconditional.
  */
 
+import { readWindowSession, installWindowSession } from "./state/window-session.js";
 import { AppState } from "./state/state.js";
 import { applyAppearance, isIOS, isPhone } from "./settings/settings-ui.js";
 import { applyFontFamily, updatePrivateBoxColor, installIOSChromeRepaint } from "./theme-colors.js";
@@ -86,9 +87,12 @@ export async function bootAppState(IS_TAURI) {
       .catch((e) => logActivity("desks", "warn", "Could not re-open desk backup folders", { error: String(e) }));
   }
 
-  const initialFile = state.isSecondaryWindow ? getInitialFileFromHash() : null;
-  const initialDesk = state.isSecondaryWindow ? getInitialDeskFromHash() : null;
-  await phase("AppState.init", () => state.init({ initialFile, initialDesk }));
+  const label = await getCurrentWindowLabel();
+  const windowSession = state.isSecondaryWindow ? readWindowSession(label) : null;
+  const initialFile = state.isSecondaryWindow && !windowSession ? getInitialFileFromHash() : null;
+  const initialDesk = state.isSecondaryWindow && !windowSession ? getInitialDeskFromHash() : null;
+  await phase("AppState.init", () => state.init({ initialFile, initialDesk, windowSession }));
+  installWindowSession(state, label);
   if (typeof window !== "undefined") window.__hushState__ = state;
   logActivity("boot", "info", "Window initialised", {
     desks: (state.fileTree || []).filter((n) => n.type === "desk").map((n) => n.name),

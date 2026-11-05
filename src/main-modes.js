@@ -56,18 +56,36 @@ export async function setupModeSwitching(state) {
   // swallowed typing. Every real open clears the latch.
   let emptyPaneActive = false;
 
+  // An old canvas can still be saving while its replacement queues in
+  // the bridge. Never expose that canvas under the incoming file's id.
+  // Also prevent a late async mount from changing the visible mode.
+  let surfaceRevision = 0;
+  async function mountSurface(mode, container, mount) {
+    const revision = ++surfaceRevision;
+    container.style.visibility = "hidden";
+    activateMode(mode);
+    await mount();
+    if (revision === surfaceRevision) container.style.visibility = "";
+  }
+  function syncMode() {
+    if (emptyPaneActive) showEmpty();
+    else if (state.currentNotebookFileId) showNotebook();
+    else if (state.currentPdfFileId) showPdf();
+    else if (state.currentStackFileId) showStack();
+    else showEditor();
+  }
+
   // Editor was cleared (last file deleted, desk has nothing to restore,
   // or no files at all) — surface the create-a-file pane instead of
   // silently leaving a stale buffer or jumping to an unrelated file.
-  state.on("no-file-state", () => { emptyPaneActive = true; showEmpty(); });
+  state.on("no-file-state", () => { ++surfaceRevision; emptyPaneActive = true; showEmpty(); });
 
   state.on("notebook-open", async (fileId) => {
     emptyPaneActive = false;
     // Switch to notebook mode *before* the (async) mount so a large
     // notebook shows its own loading overlay instead of leaving the doc
     // editor's "Start writing…" placeholder visible while shapes decode.
-    showNotebook();
-    await mountNotebook(notebookContainer, fileId, state);
+    await mountSurface("notebook-mode", notebookContainer, () => mountNotebook(notebookContainer, fileId, state));
   });
   state.on("notebook-unmount", async () => {
     const result = await unmountNotebook();
@@ -78,13 +96,14 @@ export async function setupModeSwitching(state) {
     // freshly opened notebook back to the editor. Every non-notebook
     // open path nulls the id before this handler resumes, so the
     // editor still comes back for docs / stacks / PDFs / deletes.
-    if (!state.currentNotebookFileId && !emptyPaneActive) showEditor();
+    syncMode();
   });
   state.on("pdf-open", async (fileId) => {
     emptyPaneActive = false;
-    const { mountPdf } = await import("./pdf/pdf-bridge.js");
-    await mountPdf(pdfContainer, fileId, state);
-    showPdf();
+    await mountSurface("pdf-mode", pdfContainer, async () => {
+      const { mountPdf } = await import("./pdf/pdf-bridge.js");
+      await mountPdf(pdfContainer, fileId, state);
+    });
   });
   state.on("pdf-toggle-shelf", () => {
     import("./pdf/pdf-bridge.js").then(({ getPdfInstance }) => {
@@ -95,19 +114,20 @@ export async function setupModeSwitching(state) {
   state.on("pdf-unmount", async () => {
     const { unmountPdf } = await import("./pdf/pdf-bridge.js");
     await unmountPdf();
-    if (!emptyPaneActive) showEditor();
+    syncMode();
   });
   state.on("stack-open", async (fileId) => {
     emptyPaneActive = false;
-    const { mountStack } = await import("./stack/stack-bridge.js");
-    await mountStack(stackContainer, fileId, state);
-    showStack();
+    await mountSurface("stack-mode", stackContainer, async () => {
+      const { mountStack } = await import("./stack/stack-bridge.js");
+      await mountStack(stackContainer, fileId, state);
+    });
   });
   state.on("stack-unmount", async () => {
     const { unmountStack } = await import("./stack/stack-bridge.js");
     const result = await unmountStack();
     if (result) state.syncFileToExternal(result.fileId, result.content);
-    if (!emptyPaneActive) showEditor();
+    syncMode();
   });
   // A far device's edit to the open stack, arriving through a synced
   // desk folder. The bridge owns the guards (own-echo, unsaved-local,
@@ -166,7 +186,7 @@ export async function setupModeSwitching(state) {
   });
   state.on("file-opened", () => {
     emptyPaneActive = false;
-    if (!state.currentNotebookFileId && !state.currentPdfFileId && !state.currentStackFileId) showEditor();
+    if (!state.currentNotebookFileId && !state.currentPdfFileId && !state.currentStackFileId) { ++surfaceRevision; showEditor(); }
   });
 
   // Notebook commands from the command palette
@@ -204,18 +224,19 @@ export async function setupModeSwitching(state) {
   applyActiveStyle(state);
 
   // Load current file content into the newly created editor
-  // (init() already opened the last file/project — re-open only if editor wasn't set yet)
+  // init() seeded the identity only; read the selected body once here.
   if (state.currentNotebookFileId) {
-    showNotebook();
-    await mountNotebook(notebookContainer, state.currentNotebookFileId, state);
+    await mountSurface("notebook-mode", notebookContainer, () => mountNotebook(notebookContainer, state.currentNotebookFileId, state));
   } else if (state.currentPdfFileId) {
-    const { mountPdf } = await import("./pdf/pdf-bridge.js");
-    await mountPdf(pdfContainer, state.currentPdfFileId, state);
-    showPdf();
+    await mountSurface("pdf-mode", pdfContainer, async () => {
+      const { mountPdf } = await import("./pdf/pdf-bridge.js");
+      await mountPdf(pdfContainer, state.currentPdfFileId, state);
+    });
   } else if (state.currentStackFileId) {
-    const { mountStack } = await import("./stack/stack-bridge.js");
-    await mountStack(stackContainer, state.currentStackFileId, state);
-    showStack();
+    await mountSurface("stack-mode", stackContainer, async () => {
+      const { mountStack } = await import("./stack/stack-bridge.js");
+      await mountStack(stackContainer, state.currentStackFileId, state);
+    });
   } else if (state.currentProjectId) {
     await state.openProject(state.currentProjectId);
   } else if (state.currentFileId) {
