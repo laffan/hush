@@ -88,10 +88,10 @@ export function patchInPlace(state, id, patch) {
 
 /** Add a to-do on `deskId`, after `afterId` when given (else at the end
  *  of that desk's open items). Returns the new to-do. */
-export function addTodo(state, deskId, { afterId = null, title = "" } = {}) {
+export function addTodo(state, deskId, { afterId = null, title = "", fileId = null, fileType = null } = {}) {
   const todo = {
     id: uid(), deskId, title, notes: "", done: false, doneAt: null,
-    fileId: null, fileType: null, createdAt: Date.now(),
+    fileId, fileType: fileId ? fileType || "document" : null, createdAt: Date.now(),
   };
   const list = [...readTodos(state)];
   let at = afterId ? list.findIndex((t) => t.id === afterId) + 1 : 0;

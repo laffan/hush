@@ -12,6 +12,11 @@
  * is typed into. Completed items fade and sink to the bottom of their
  * desk.
  *
+ * In place of a heading, the head is a search across every file on
+ * every desk (todo-search.js#mountFileSearch): picking a file adds an
+ * empty to-do on that file's desk, linked to it, with the caret in its
+ * title. The panel opens with the keyboard in that field.
+ *
  * On hover an item offers the magnifying glass (find a desk or a file —
  * todo-search.js — to move or link it), the "+" when it has no file
  * (make one in its desk's Inbox and link it), and delete. A linked file
@@ -30,7 +35,7 @@ import {
   readTodos, linkedNode, patchInPlace, commitSoon, flushTodos, addTodo, removeTodo, toggleDone,
   setTodoDesk, linkTodoFile, unlinkTodoFile, createTodoFile,
 } from "./todo-store.js";
-import { openTodoSearch } from "./todo-search.js";
+import { openTodoSearch, mountFileSearch } from "./todo-search.js";
 
 const SEARCH = `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.25"/><path d="M10.25 10.25 13.5 13.5"/></svg>`;
 const PLUS = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>`;
@@ -131,13 +136,18 @@ function mountPanel(state) {
   el.setAttribute("role", "dialog");
   el.setAttribute("aria-label", "To-do list");
   el.innerHTML = `<header class="todo-head">
-      <span class="todo-heading">To-do</span>
+      <span class="todo-find">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.25"/><path d="M10.25 10.25 13.5 13.5"/></svg>
+        <input class="todo-find-input" type="search" placeholder="New To-Do for a file…" spellcheck="false" autocomplete="off" aria-label="Find a file to make a to-do for" />
+      </span>
       <button type="button" class="todo-head-btn" data-act="add" data-tooltip="New To-Do" aria-label="New To-Do">${PLUS}</button>
       <button type="button" class="todo-head-btn" data-act="close" data-tooltip="Close" aria-label="Close">${CROSS}</button>
+      <div class="todo-find-results" role="listbox" hidden></div>
     </header>
     <div class="todo-body"></div>`;
   document.body.appendChild(el);
   const body = el.querySelector(".todo-body");
+  const find = el.querySelector(".todo-find-input");
 
   let openId = null;     // the item showing its note
   let pending = false;   // a render held off while a field had focus
@@ -182,6 +192,14 @@ function mountPanel(state) {
     openId = t.id;
     render({ id: t.id, field: "title" });
   }
+
+  // The header's search: a file picked there gets an empty to-do, on its
+  // desk, linked to it — caret in the title.
+  mountFileSearch(state, find, el.querySelector(".todo-find-results"), (leaf) => {
+    const t = addTodo(state, leaf.deskId, { fileId: leaf.fileId, fileType: leaf.type });
+    openId = t.id;
+    render({ id: t.id, field: "title" });
+  });
 
   // ── Clicks ──
   el.addEventListener("click", async (e) => {
@@ -358,9 +376,10 @@ function mountPanel(state) {
   render();
   // Fly in: one frame at the parked position, then the shown one.
   requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add("shown")));
-  // Take the keyboard, so typing stops going into the document and
-  // Escape reaches the panel.
-  el.focus({ preventScroll: true });
+  // Take the keyboard — into the search, so typing after ⌘ ⌘ finds a
+  // file — so it stops going into the document and Escape reaches the
+  // panel.
+  find.focus({ preventScroll: true });
 
   return { el, close, render, focusFirst };
 }
