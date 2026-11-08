@@ -12,7 +12,8 @@
   align-items: flex-start;
   justify-content: center;
   padding: calc(8vh + var(--top-chrome-inset, 0px)) 16px 16px;
-  background: rgba(0, 0, 0, 0.3);
+  /* The style's own background, nearly opaque, rather than a dark scrim. */
+  background: color-mix(in srgb, var(--theme-bg, var(--bg)) 90%, transparent);
   font-family: var(--ui-font-family);
 }
 
@@ -35,13 +36,7 @@
 .desk-dash-head {
   display: flex;
   align-items: center;
-}
-.desk-dash-title {
-  flex: 1;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  opacity: 0.55;
+  justify-content: flex-end;
 }
 /* ---- Search all Desks (desk-dashboard-search.js) ---- */
 .desk-dash-search {
@@ -305,6 +300,8 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+/* The filetype glyphs (New Doc / New Notebook) at the tree's weight. */
+.desk-dash-tools .tree-type-icon { width: 13px; height: 13px; stroke-width: 1.5; }
 .desk-dash-grip { cursor: grab; touch-action: none; }
 .desk-dash-grip svg { width: 12px; height: 12px; fill: currentColor; stroke: none; }
 
@@ -400,3 +397,70 @@
   font-size: 13px;
   opacity: 0.45;
 }
+
+/* ---- Sections (state/desk-sections.js) ---- */
+/* A full-width label bar across the grid, between the cards it heads. */
+.desk-dash-section {
+  grid-column: 1 / -1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 4px 4px;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 15%, transparent);
+}
+.desk-dash-section.dragging { opacity: 0.4; }
+.desk-dash-section-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: inherit;
+  opacity: 0.6;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  outline: none;
+  text-overflow: ellipsis;
+}
+.desk-dash-section-name:focus { opacity: 1; }
+.desk-dash-section-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s, visibility 0s linear 0.15s;
+}
+.desk-dash-section:hover .desk-dash-section-tools { opacity: 1; visibility: visible; transition: opacity 0.15s, visibility 0s; }
+.desk-dash-grid.reordering .desk-dash-section-tools { opacity: 0; visibility: hidden; }
+.desk-dash-grid.reordering .desk-dash-section > * { pointer-events: none; }
+.desk-dash-section-tools button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: inherit;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.desk-dash-section-tools button:hover { opacity: 1; background: rgba(128, 128, 128, 0.12); }
+.desk-dash-section-tools svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.desk-dash-section-tools .desk-dash-grip svg { width: 12px; height: 12px; fill: currentColor; stroke: none; }

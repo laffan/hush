@@ -282,10 +282,13 @@ export function buildEditorCommands() {
     // Shuffle Editor (sentences, list-current). Returns false when there's
     // no selection to shuffle so the key falls through.
     shortcutShuffleSentences: (state) => openShuffleEditor(state, "list-current"),
+    // Stored under its old name (it opened the desk switcher), so a
+    // binding the user recorded keeps working — it now opens the Desk
+    // Dashboard. The switcher stays in the palette and the sidebar header.
     shortcutSwitchDesks: (state) => {
       const desks = state.settings?.desks || [];
       if (desks.length < 2) return false;
-      import("../command-palette.js").then((m) => m.openDeskPalette(state));
+      import("../sidebar/desk-dashboard.js").then((m) => m.openDeskDashboard(state));
       return true;
     },
 

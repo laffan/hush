@@ -44,9 +44,10 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
       label: "Disable Desk Ratchet mode", keywords: "ratchet forward only stop end turn off",
       hiddenIf: (s) => !getDeskRatchet(s),
       action: (s) => toggleDeskRatchet(s) },
-    // The desk switcher — what the Switch desks shortcut (⌃⇧D) opens. Its
-    // old name stays searchable, and "open desk" / "go to desk" find it.
-    { id: "desk-switch", section: "Desks", label: "Open Desk Switcher", icon: icons.desk, shortcutKey: "shortcutSwitchDesks", ctx: "shared",
+    // The desk switcher. Its old name stays searchable, and "open desk" /
+    // "go to desk" find it. (The shortcut that used to open it opens the
+    // Desk Dashboard now.)
+    { id: "desk-switch", section: "Desks", label: "Open Desk Switcher", icon: icons.desk, shortcutKey: null, ctx: "shared",
       keywords: "switch desks change go to open desk picker choose select jump",
       hiddenIf: (s) => !multiDesk(s),
       keepOpen: true,
@@ -54,7 +55,7 @@ export function buildDeskCommands({ state, icons, typeIcons, desktop, ipad, ente
     // Every desk as a card: icon and name, YOU ARE HERE, recent edits
     // (sidebar/desk-dashboard.js). Also the sidebar footer's grid button
     // and "Dashboard" in the desk switcher.
-    { id: "desk-dashboard", section: "Desks", label: "View Desk Dashboard", icon: dashboardIcon, shortcutKey: null, ctx: "shared",
+    { id: "desk-dashboard", section: "Desks", label: "View Desk Dashboard", icon: dashboardIcon, shortcutKey: "shortcutSwitchDesks", ctx: "shared",
       keywords: "desks overview grid all desks summary home",
       hiddenIf: (s) => !multiDesk(s),
       action: async (s) => (await import("./sidebar/desk-dashboard.js")).openDeskDashboard(s) },

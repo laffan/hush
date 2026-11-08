@@ -26,6 +26,10 @@ export const TRIPLE_TAP_ACTIONS = [
   { id: "writeNow", label: "Write Now" },
   { id: "campfire", label: "Campfire Cursor" },
   { id: "edgeLights", label: "Edge Lights" },
+  // Write Now without the desk switch: the new document lands on the
+  // desk in front. Last, so a gesture an older install already gave
+  // another action stays with it.
+  { id: "writeNowHere", label: "Write Now (this desk)" },
 ];
 
 export const DEFAULT_TRIPLE_TAPS = Object.freeze({
@@ -33,6 +37,7 @@ export const DEFAULT_TRIPLE_TAPS = Object.freeze({
   writeNow: "Alt",
   campfire: "Meta",
   edgeLights: "Shift+Meta",
+  writeNowHere: "Shift+Alt",
 });
 
 const KNOWN = new Set(TRIPLE_TAP_GESTURES.map((g) => g.id));

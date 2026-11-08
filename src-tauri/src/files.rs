@@ -52,6 +52,23 @@ impl FileManager {
         self.store.reconcile_desk_from_disk(desk_id)
     }
 
+    /// A desk's `.hushdesk` meta, read under this manager's mutex — see
+    /// `commands::desks::desk_meta_get`.
+    pub fn load_desk_meta(&self, desk_id: &str) -> serde_json::Value {
+        self.store.load_desk_meta(desk_id)
+    }
+
+    /// Field-merge into a desk's `.hushdesk` meta under this manager's
+    /// mutex, so it can't interleave with `save_forest`'s rewrite of the
+    /// same file.
+    pub fn merge_desk_meta(
+        &self,
+        desk_id: &str,
+        patch: &serde_json::Value,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.store.merge_desk_meta(desk_id, patch)
+    }
+
     pub fn create_folder(
         &self,
         name: &str,

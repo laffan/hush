@@ -352,16 +352,34 @@ pub fn desk_reconcile(state: State<AppState>, desk_id: String) -> Result<ScanRep
 
 /// The desk's portable `meta` object from `.hushdesk` — style choice,
 /// last-open file, desk stickies.
+///
+/// Both meta commands run under the file manager's mutex, like the
+/// reconcile above: `save_file_tree` rewrites every desk's `.hushdesk`
+/// (read, patch name/id, write back), so a meta write that landed
+/// between its read and its write was silently undone — a desk's new
+/// style lost on disk, and pulled back over the app's by the next
+/// reconcile ("the desk forgot its style"). Async so a sync command
+/// never waits on that lock from the main thread.
 #[tauri::command]
-pub fn desk_meta_get(desk_id: String) -> serde_json::Value {
-    store().load_desk_meta(&desk_id)
+pub async fn desk_meta_get(
+    state: State<'_, AppState>,
+    desk_id: String,
+) -> Result<serde_json::Value, String> {
+    Ok(state.file_manager.lock().unwrap().load_desk_meta(&desk_id))
 }
 
 /// Field-merge `patch` into the desk's `.hushdesk` meta (values stored
 /// verbatim, null included).
 #[tauri::command]
-pub fn desk_meta_set(desk_id: String, patch: serde_json::Value) -> Result<(), String> {
-    store()
+pub async fn desk_meta_set(
+    state: State<'_, AppState>,
+    desk_id: String,
+    patch: serde_json::Value,
+) -> Result<(), String> {
+    state
+        .file_manager
+        .lock()
+        .unwrap()
         .merge_desk_meta(&desk_id, &patch)
         .map_err(|e| e.to_string())
 }

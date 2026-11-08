@@ -20,6 +20,12 @@ export function buildSessionCommands() {
     { id: "write-now", section: "Create", label: "Write Now", icon: writeNowIcon, shortcutKey: null, ctx: "shared",
       keywords: "new document idea start begin quick triple option",
       action: async (s) => (await import("./write-now/write-now.js")).writeNow(s) },
+    // The same without the desk switch — shown only while Write Now is
+    // set to a desk of its own (Settings → General), when the two differ.
+    { id: "write-now-here", section: "Create", label: "Write Now on This Desk", icon: writeNowIcon, shortcutKey: null, ctx: "shared",
+      keywords: "new document idea start begin quick triple option shift current desk",
+      hiddenIf: (s) => !s.settings?.writeNowDeskId || s.settings.writeNowDeskId === s.settings.activeDeskId,
+      action: async (s) => (await import("./write-now/write-now.js")).writeNow(s, { here: true }) },
     { id: "edge-lights", section: "Styles", icon: lightsIcon, shortcutKey: null, ctx: "shared",
       label: "Edge Lights",
       keywords: "northern lights aurora borealis glow edges ambient background magic presets",

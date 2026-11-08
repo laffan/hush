@@ -56,11 +56,14 @@ function buildDecorations(view) {
     const bracket = m[4];
     const checked = bracket[1] !== " ";
     const bracketStart = line.from + indent + markerLen + space1;
-    const bracketEnd = bracketStart + 4; // "[?]" is always 3 chars + the space after
+    const bracketEnd = bracketStart + 3; // "[?]" is always 3 chars
 
     // If a cursor is inside the bracket area, leave the raw `[ ]`
     // visible so the user can edit it directly. Mirrors the way
-    // link-decorator and heading markers behave.
+    // link-decorator and heading markers behave. The space after the
+    // `]` is not part of it: a caret there is where a new item's text
+    // starts (Enter in a list, or `- [ ] ` just typed), and counting it
+    // kept the brackets raw until a second space moved the caret on.
     const cursorInside = cursors.some(c =>
       (c.from >= bracketStart && c.from <= bracketEnd) ||
       (c.to >= bracketStart && c.to <= bracketEnd)

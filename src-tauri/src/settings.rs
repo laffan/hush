@@ -572,6 +572,11 @@ pub struct AppSettings {
     /// the JS side (active style, last opened file, persisted panes).
     #[serde(default)]
     pub desks_meta: serde_json::Value,
+    /// Named dividers between desks in the switcher and the Desk
+    /// Dashboard. Opaque JSON owned by the JS side
+    /// (`state/desk-sections.js`): `[{ id, name, beforeDeskId }]`.
+    #[serde(default)]
+    pub desk_sections: serde_json::Value,
     /// Active desk id for this device. Null when desks are off.
     #[serde(default)]
     pub active_desk_id: Option<String>,
@@ -1017,6 +1022,7 @@ impl Default for AppSettings {
             use_desks: true,
             desks: Vec::new(),
             desks_meta: serde_json::json!({}),
+            desk_sections: serde_json::json!([]),
             active_desk_id: None,
             desk_display_mode: default_desk_display_mode(),
             last_local_sync: serde_json::Value::Null,

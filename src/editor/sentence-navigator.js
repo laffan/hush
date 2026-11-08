@@ -520,13 +520,25 @@ export function selectToParagraphBelow(view) {
  */
 export function insertBreakAfter(view) {
   const line = view.state.doc.lineAt(view.state.selection.main.head);
-  const indent = line.text.match(/^[ \t]*/)[0];
+  const lead = openedLinePrefix(line.text);
   view.dispatch({
-    changes: { from: line.to, to: line.to, insert: "\n" + indent },
-    selection: EditorSelection.cursor(line.to + 1 + indent.length),
+    changes: { from: line.to, to: line.to, insert: "\n" + lead },
+    selection: EditorSelection.cursor(line.to + 1 + lead.length),
     scrollIntoView: true,
   });
   return true;
+}
+
+/** What a line opened beside `text` starts with: its leading whitespace,
+ *  and — on a checklist item — a fresh unchecked item at the same depth.
+ *  A blank line in a run of checklist items ends the run, so opening one
+ *  inside an outline split it (the lines past it dropped out of the
+ *  outline), and the pinned outline's panel, which refuses any line that
+ *  isn't an item, refused the keystroke altogether. */
+function openedLinePrefix(text) {
+  const task = /^([ \t]*)([-*+])[ \t]+\[[ xX]\]/.exec(text);
+  if (task) return `${task[1]}${task[2]} [ ] `;
+  return text.match(/^[ \t]*/)[0];
 }
 
 /**
@@ -539,10 +551,10 @@ export function insertBreakAfter(view) {
  */
 export function insertBreakBefore(view) {
   const line = view.state.doc.lineAt(view.state.selection.main.head);
-  const indent = line.text.match(/^[ \t]*/)[0];
+  const lead = openedLinePrefix(line.text);
   view.dispatch({
-    changes: { from: line.from, to: line.from, insert: indent + "\n" },
-    selection: EditorSelection.cursor(line.from + indent.length),
+    changes: { from: line.from, to: line.from, insert: lead + "\n" },
+    selection: EditorSelection.cursor(line.from + lead.length),
     scrollIntoView: true,
   });
   return true;

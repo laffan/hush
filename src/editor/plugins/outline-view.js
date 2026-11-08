@@ -5,8 +5,10 @@
  * document becomes an outline: a bordered block set a couple of pixels
  * smaller than the prose, in the app's UI font rather than the style's,
  * with completed items struck through and the first unfinished item bold
- * in the style's header colour. A footer under the block carries the two
- * toggles — hide completed, pin to bottom.
+ * in the style's header colour. One outline per document is always pinned
+ * to the bottom of its frame — the point of an outline is to keep it in
+ * view while writing — and the rest sit in the text. A footer carries
+ * the text size and the hide-completed toggle.
  *
  * The lines stay real document lines, so an outline is typed into like
  * any other list and the existing checkbox widget (`checkbox-list.js`)
@@ -31,7 +33,7 @@ import { Decoration, EditorView, ViewPlugin, WidgetType, keymap } from "@codemir
 import { Facet, Prec, RangeSet, StateField } from "@codemirror/state";
 import { firstOpenIndex, parseOutlineLine, toggleChecklistLine } from "../../outline/outline-model.ts";
 import {
-  HIDE_DONE_KEY, PIN_KEY, outlineFlagsOf, frontmatterPatchChanges,
+  HIDE_DONE_KEY, outlineFlagsOf, frontmatterPatchChanges,
 } from "../outline-frontmatter.js";
 import { propertiesEdit } from "./properties.js";
 import {
@@ -168,9 +170,7 @@ class OutlineFooterWidget extends WidgetType {
     host.className = "cm-outline-footer-host" + (this.capped ? " cm-outline-footer-capped" : "");
     host.appendChild(buildOutlineFooter({
       hideDone: this.flags.hideDone,
-      pinned: false,
       onToggleHideDone: () => patchFlags(view, { [HIDE_DONE_KEY]: this.flags.hideDone ? null : "true" }),
-      onTogglePin: () => patchFlags(view, { [PIN_KEY]: String(this.blockIndex + 1) }),
       onFontStep: (d) => stepOutlineFont(this.appState, [view], d),
     }));
     return host;
@@ -244,12 +244,15 @@ function buildOutlineState(edState, appState) {
   // The pinned panel's editor is all outline, with no frontmatter of its
   // own: its host says so, and lends it the document's hide switch.
   const host = edState.facet(outlineHost);
-  const flags = host ? { on: true, hideDone: !!host.hideDone, pin: 0 } : outlineFlagsOf(edState);
+  const flags = host ? { on: true, hideDone: !!host.hideDone, pin: 0 } : { ...outlineFlagsOf(edState) };
   const empty = { deco: Decoration.none, atomic: RangeSet.empty, hideDone: false, pin: 0, pinnedBlock: null, blocks: [] };
   if (!flags.on) return empty;
   const doc = edState.doc;
   const blocks = scanBlocks(doc);
   if (!blocks.length) return { ...empty, hideDone: flags.hideDone, pin: flags.pin };
+  // `outlinePin` naming an outline the document no longer has (it was
+  // deleted, or converted back to a list) pins the first instead.
+  if (flags.pin > blocks.length) flags.pin = 1;
 
   const zen = edState.facet(outlineZenSurface);
   const ranges = [];
@@ -389,6 +392,9 @@ function makePinnedPanel(field, appState) {
 
     update(update) {
       if (update.docChanged || update.selectionSet) this.render();
+      // Not on a focus change alone: a click back into the text focuses
+      // the editor while its caret is still where the hand-off left it.
+      if (update.docChanged || update.selectionSet) this.handOff();
       // Whatever changed the document, the panel's editor reconciles
       // after this update — it may not be dispatched to from inside it.
       if (update.docChanged && this.sub) queueMicrotask(() => this.sub?.sync());
@@ -406,6 +412,29 @@ function makePinnedPanel(field, appState) {
       this.el = null;
       this.sig = "";
       this.footerSig = "";
+    }
+
+    /** A caret in the text that is inside the pinned block — the block
+     *  just became an outline under it (Convert to Outline, Outline mode,
+     *  the first `- [ ] ` typed), or a move landed there — is inside
+     *  lines nothing draws. Every outline is pinned, so that is every new
+     *  outline: carry the caret, and the typing, into the panel, at the
+     *  same place in the same line. */
+    handOff() {
+      const r = this.blockRange();
+      if (!r || !this.sub || !this.view.hasFocus) return;
+      const head = this.view.state.selection.main.head;
+      if (head < r.from || head > r.to) return;
+      // After this update: the panel takes the block's text on a
+      // microtask too, and may not be dispatched to from inside ours.
+      queueMicrotask(() => {
+        if (!this.sub) return;
+        this.sub.sync();
+        const sv = this.sub.view;
+        const pos = Math.max(0, Math.min(sv.state.doc.length, head - r.from));
+        sv.focus();
+        sv.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
+      });
     }
 
     /** The pinned block's span in this document, as it stands now. */
@@ -562,9 +591,7 @@ function makePinnedPanel(field, appState) {
         this.el.querySelector(":scope > .outline-footer")?.remove();
         this.el.appendChild(buildOutlineFooter({
           hideDone: flags.hideDone,
-          pinned: true,
           onToggleHideDone: () => patchFlags(this.view, { [HIDE_DONE_KEY]: flags.hideDone ? null : "true" }),
-          onTogglePin: () => patchFlags(this.view, { [PIN_KEY]: null }),
           onFontStep: (d) => stepOutlineFont(appState, [this.view, this.sub?.view], d),
         }));
         if (had) this.sub?.setHideDone(flags.hideDone);

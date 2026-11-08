@@ -81,16 +81,16 @@ function makeButton(icon, label, onClick) {
 }
 
 /**
- * The footer strip: the type size's − / + on the left, the two toggles
- * on the right. It deliberately carries no tally — an outline already
+ * The footer strip: the type size's − / + on the left, the toggles on
+ * the right (hide completed; pin to bottom on a canvas only). It deliberately carries no tally — an outline already
  * says how much is left by how much of it isn't struck through, and a
  * second reading of the same fact is noise on a surface this small.
  *
  * @param {object} o
  * @param {boolean} o.hideDone
- * @param {boolean} o.pinned
+ * @param {boolean} [o.pinned]
  * @param {() => void} o.onToggleHideDone
- * @param {() => void} o.onTogglePin
+ * @param {() => void} [o.onTogglePin]
  * @param {(delta: number) => void} [o.onFontStep]
  */
 export function buildOutlineFooter(o) {
@@ -114,11 +114,15 @@ export function buildOutlineFooter(o) {
     o.hideDone ? "Show completed items" : "Hide completed items",
     o.hideDone, o.onToggleHideDone,
   ));
-  footer.appendChild(makeToggle(
-    ICON_PIN_BOTTOM,
-    o.pinned ? "Unpin from bottom" : "Pin to bottom",
-    o.pinned, o.onTogglePin,
-  ));
+  // A Doc's outline is always pinned, so only a canvas outline — which
+  // passes `onTogglePin` — offers the switch.
+  if (o.onTogglePin) {
+    footer.appendChild(makeToggle(
+      ICON_PIN_BOTTOM,
+      o.pinned ? "Unpin from bottom" : "Pin to bottom",
+      o.pinned, o.onTogglePin,
+    ));
+  }
   return footer;
 }
 

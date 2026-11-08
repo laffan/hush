@@ -9,6 +9,9 @@
  * run behind a fade to black (write-now-veil.js) that lifts once the
  * caret is waiting under the timestamp. Reached by tapping
  * Option three times (triple-tap-triggers.js) or from the command palette.
+ * With `{ here: true }` — ⇧ held while Option is tapped three times, or
+ * "Write Now on This Desk" — the desk step is skipped and the document
+ * is made on the desk in front.
  *
  * Full screen on iPad is Hush's own: iPadOS gives an app no way to make
  * its window fill the screen (that is the system's window controls), so
@@ -27,7 +30,7 @@ import { switchDeskAndLand } from "../state/cross-desk.js";
 
 let running = false;
 
-export async function writeNow(state) {
+export async function writeNow(state, { here = false } = {}) {
   if (running) return;
   running = true;
   let veil = null;
@@ -40,7 +43,7 @@ export async function writeNow(state) {
     const resizing = !state.isFullscreen;
     if (resizing) state.toggleFullscreen();
     if (!isMidnightActive(state.settings)) await setMidnightMode(state, true);
-    await switchToWriteNowDesk(state);
+    if (!here) await switchToWriteNowDesk(state);
     if (!blankDocumentOpen(state)) await state.newFile();
     if (!document.getElementById("panel-overlay")?.classList.contains("hidden")) state.emit("hide-panel");
 

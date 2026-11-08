@@ -17,6 +17,7 @@ import { escHtml, DRAG_HANDLE_SVG, deskRatchetGlyph, deskRatchetBadge } from "./
 import { isDesktopTauri } from "../command-palette-helpers.js";
 import { chevronSvg } from "../ui/chevron.js";
 import { customIconSvg, deskIconName, deskShowsName } from "../ui/custom-icons.js";
+import { deskLayout, commitDeskLayout, addDeskSection, renameDeskSection, deleteDeskSection } from "../state/desk-sections.js";
 
 let _state = null;
 let _container = null;
@@ -28,6 +29,9 @@ const PLUS = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke
 const GRID = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="4" width="6.5" height="6.5" rx="1.25"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.25"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.25"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.25"/></svg>`;
 const CHECK = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 const PENCIL = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+// A heading bar (two short rules beside a long one) for Add section.
+const SECTION = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="17" x2="14" y2="17"/></svg>`;
+const TRASH = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
 // Archive box, not a trash can — a desk is put away here, not destroyed.
 const ARCHIVE_BOX = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="4" rx="1"/><path d="M4 8v11a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8"/><line x1="10" y1="13" x2="14" y2="13"/></svg>`;
 
@@ -205,9 +209,13 @@ function buildPopoverBody(state) {
   // Same rule for the local-desk pin: once any desk is local, every row
   // keeps its slot.
   const pinSlots = desks.some((d) => !!roots[d.id]);
-  // The Desk Dashboard, under Add desk — offered with two desks or more.
-  wrap.innerHTML = desks.map((d) => deskRowHtml(d, activeId, canArchive, !!roots[d.id], iconSlots, pinSlots)).join("")
+  // Sections sit between the desks as full-width heading bars. Under
+  // Add desk: Add section, then the Desk Dashboard (two desks or more).
+  wrap.innerHTML = deskLayout(state, desks).map((it) => (it.kind === "section"
+    ? sectionRowHtml(it.section)
+    : deskRowHtml(it.desk, activeId, canArchive, !!roots[it.desk.id], iconSlots, pinSlots))).join("")
     + addRowHtml(iconSlots, pinSlots)
+    + addSectionRowHtml(iconSlots, pinSlots)
     + (desks.length > 1 ? dashboardRowHtml(iconSlots, pinSlots) : "");
   return wrap;
 }
@@ -257,6 +265,26 @@ function addRowHtml(iconSlot = false, pinSlot = false) {
   </button>`;
 }
 
+/** A section heading: a full-width label bar with rename, delete and a
+ *  drag handle on hover (state/desk-sections.js). */
+function sectionRowHtml(section) {
+  return `<div class="desk-switcher-row desk-switcher-section" data-section-id="${escHtml(section.id)}">
+    <span class="desk-switcher-row-name desk-switcher-section-name">${escHtml(section.name || "Section")}</span>
+    <span class="desk-switcher-row-actions">
+      <button class="desk-switcher-action" type="button" data-action="rename-section" data-tooltip="Rename">${PENCIL}</button>
+      <button class="desk-switcher-action" type="button" data-action="delete-section" data-tooltip="Delete section">${TRASH}</button>
+      <span class="desk-switcher-drag-handle" data-action="drag" data-tooltip="Drag to reorder">${DRAG_HANDLE_SVG}</span>
+    </span>
+  </div>`;
+}
+
+function addSectionRowHtml(iconSlot = false, pinSlot = false) {
+  return `<button class="desk-switcher-row desk-switcher-add desk-switcher-add-section" type="button" data-action="add-section">
+    <span class="desk-switcher-row-mark">${SECTION}</span>
+    ${pinSlot ? `<span class="desk-switcher-row-pin"></span>` : ""}${iconSlot ? `<span class="desk-switcher-row-icon"></span>` : ""}<span class="desk-switcher-row-name">Add section</span>
+  </button>`;
+}
+
 function dashboardRowHtml(iconSlot = false, pinSlot = false) {
   return `<button class="desk-switcher-row desk-switcher-add desk-switcher-dashboard" type="button" data-action="dashboard">
     <span class="desk-switcher-row-mark">${GRID}</span>
@@ -296,6 +324,23 @@ async function onPopoverClick(ev, popover) {
     (await import("./desk-dashboard.js")).openDeskDashboard(_state);
     return;
   }
+  if (action === "add-section") {
+    // A new heading lands at the end of the list, already being named.
+    const id = await addDeskSection(_state);
+    beginInlineRename(`.desk-switcher-section[data-section-id="${id}"]`,
+      (name) => renameDeskSection(_state, id, name));
+    return;
+  }
+  const sectionId = actionEl.closest(".desk-switcher-section")?.dataset.sectionId;
+  if (sectionId) {
+    if (action === "rename-section") {
+      beginInlineRename(`.desk-switcher-section[data-section-id="${sectionId}"]`,
+        (name) => renameDeskSection(_state, sectionId, name));
+    } else if (action === "delete-section") {
+      await deleteDeskSection(_state, sectionId);
+    }
+    return;
+  }
   const row = actionEl.closest(".desk-switcher-row");
   const deskId = row?.dataset.deskId;
   if (!deskId) return;
@@ -303,22 +348,24 @@ async function onPopoverClick(ev, popover) {
     await _state.setActiveDesk(deskId);
     closePopover();
   } else if (action === "rename") {
-    beginInlineRename(deskId);
+    beginInlineRename(`.desk-switcher-row[data-desk-id="${deskId}"]`,
+      (name) => _state.renameDesk(deskId, name));
   } else if (action === "archive") {
     closePopover();
     import("./desk-archive.js").then((m) => m.confirmArchiveDesk(_state, deskId));
   }
 }
 
-/** Wire pointer-drag reordering off the per-row drag handles. Reorders
- *  the rows in place during the drag, then commits the new order via
- *  `state.reorderDesks` on pointer-up (which fires desks-changed and
+/** Wire pointer-drag reordering off the per-row drag handles — desks
+ *  and section headings alike. Reorders the rows in place during the
+ *  drag, then commits the new order through `commitDeskLayout` on
+ *  pointer-up (desk order plus each heading's place; its desks-changed
  *  rebuilds the popover body in the committed order). */
 function attachReorder(popover) {
   popover.addEventListener("pointerdown", (e) => {
     const handle = e.target.closest(".desk-switcher-drag-handle");
     if (!handle) return;
-    const row = handle.closest(".desk-switcher-row[data-desk-id]");
+    const row = handle.closest(".desk-switcher-row[data-desk-id], .desk-switcher-section");
     if (!row) return;
     // While a rename input is open we leave reordering alone.
     if (popover.querySelector(".desk-switcher-rename-input")) return;
@@ -332,7 +379,7 @@ function startRowDrag(popover, row) {
   const body = row.parentElement;
   if (!body) return;
   row.classList.add("dragging");
-  const dataRows = () => [...body.querySelectorAll(".desk-switcher-row[data-desk-id]")];
+  const dataRows = () => [...body.querySelectorAll(".desk-switcher-row[data-desk-id], .desk-switcher-section")];
   const onMove = (e) => {
     const target = dataRows().find((r) => {
       if (r === row) return false;
@@ -347,16 +394,20 @@ function startRowDrag(popover, row) {
     row.classList.remove("dragging");
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
-    const ids = dataRows().map((r) => r.dataset.deskId);
-    _state?.reorderDesks(ids);
+    const items = dataRows().map((r) => (r.dataset.sectionId
+      ? { kind: "section", id: r.dataset.sectionId }
+      : { kind: "desk", id: r.dataset.deskId }));
+    if (_state) void commitDeskLayout(_state, items);
   };
   window.addEventListener("pointermove", onMove);
   window.addEventListener("pointerup", onUp);
 }
 
-function beginInlineRename(deskId) {
+/** Put a name field over the row `selector` finds; `rename(name)`
+ *  commits a changed name (a desk's or a section's). */
+function beginInlineRename(selector, rename) {
   if (!_container) return;
-  const row = _container.querySelector(`.desk-switcher-row[data-desk-id="${deskId}"]`);
+  const row = _container.querySelector(selector);
   if (!row) return;
   const nameEl = row.querySelector(".desk-switcher-row-name");
   const current = nameEl?.textContent || "";
@@ -388,9 +439,9 @@ function beginInlineRename(deskId) {
       // A local desk's rename goes out to the filesystem, so it can
       // fail in ways the user has to hear about (a name already taken,
       // a folder the provider hasn't delivered) — not just a console line.
-      try { await _state.renameDesk(deskId, next); }
+      try { await rename(next); }
       catch (e) {
-        console.warn("rename desk failed:", e);
+        console.warn("rename failed:", e);
         window.alert(String(e?.message || e));
       }
     }

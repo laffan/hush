@@ -5,11 +5,13 @@
  * A Doc has no per-block metadata channel the way a notebook shape does,
  * so an outline says so in the document itself: `outline: true` in the
  * frontmatter turns every nested checklist in that doc into an outline.
- * The two footer toggles ride the same channel (`outlineHideDone`, and
- * `outlinePin` naming which outline is pinned), which is what makes them
- * survive a reload, travel with the file into a synced desk folder, and
- * mean the same thing on another device — none of which a per-session
- * flag would do.
+ * The footer's hide-completed toggle rides the same channel
+ * (`outlineHideDone`), which is what makes it survive a reload, travel
+ * with the file into a synced desk folder, and mean the same thing on
+ * another device — none of which a per-session flag would do. A Doc's
+ * outline is always pinned to the bottom of its frame (the point of one
+ * is to have it in view while writing); `outlinePin` only says *which*
+ * outline that is when a document holds more than one.
  *
  * Every write here is a **line-level splice inside the block**, never a
  * parse-and-reserialize. Re-serializing would be the shorter code and
@@ -61,20 +63,18 @@ function isTrue(raw) {
 
 /**
  * The outline settings a document carries.
- * `pin` is the 1-based index of the pinned outline block (0 = none):
- * only one outline can hold the bottom of the frame at a time, and an
- * index is the smallest thing that can say which — `true` is accepted
- * as "the first one" so a hand-written doc does the obvious thing.
+ * `pin` is the 1-based index of the pinned outline block. One is always
+ * pinned — the first, unless `outlinePin` names another: only one
+ * outline can hold the bottom of the frame at a time, and an index is
+ * the smallest thing that can say which. (An index past the document's
+ * outlines falls back to the first, in the outline plugin.)
  */
 export function readOutlineFlags(head) {
   const on = isTrue(readKey(head, OUTLINE_KEY));
   if (!on) return { on: false, hideDone: false, pin: 0 };
   const rawPin = readKey(head, PIN_KEY);
-  let pin = 0;
-  if (rawPin != null) {
-    if (isTrue(rawPin)) pin = 1;
-    else if (/^\d+$/.test(rawPin)) pin = parseInt(rawPin, 10);
-  }
+  let pin = 1;
+  if (rawPin != null && /^\d+$/.test(rawPin)) pin = Math.max(1, parseInt(rawPin, 10));
   return { on: true, hideDone: isTrue(readKey(head, HIDE_DONE_KEY)), pin };
 }
 

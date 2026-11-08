@@ -18,6 +18,14 @@
  * Pushes are gated until the first pull completes: the sticky module
  * re-persists on boot, and letting that reach disk before the pull
  * would clobber another device's newer meta with ours.
+ *
+ * Pushes and pulls for one desk run one at a time, and a pull never
+ * overwrites a local change that hasn't reached disk yet. Before that,
+ * a reconcile's pull could read `.hushdesk` while a style pick was
+ * still on its way there: the pull put the old style back into
+ * `desksMeta` and recorded it as synced, so the push that followed
+ * found nothing to write — and the desk showed its old style the next
+ * time it was switched to.
  */
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
@@ -55,18 +63,44 @@ function payloadFor(state, deskId) {
   };
 }
 
-/** Write one desk's meta through to its `.hushdesk`. */
-export async function pushDeskMeta(state, deskId) {
-  if (!IS_TAURI || !deskId || !pulledOnce) return;
+// deskId → tail of that desk's push/pull chain.
+const queues = new Map();
+
+/** Run `task` after every push / pull already queued for this desk. */
+function enqueue(deskId, task) {
+  const run = (queues.get(deskId) || Promise.resolve()).then(task, task);
+  queues.set(deskId, run.catch(() => {}));
+  return run;
+}
+
+/** True when this desk's meta in memory differs from what was last
+ *  written to (or read from) its `.hushdesk` — a local change on its way
+ *  to disk. Unknown before the desk's first sync. */
+function hasUnpushedChange(state, deskId) {
+  if (!pulledOnce || !lastSynced.has(deskId)) return false;
+  return lastSynced.get(deskId) !== JSON.stringify(payloadFor(state, deskId));
+}
+
+/** The push itself, unqueued. Resolves true when disk now holds the
+ *  in-memory payload. */
+async function pushNow(state, deskId) {
   const payload = payloadFor(state, deskId);
   const serialized = JSON.stringify(payload);
-  if (lastSynced.get(deskId) === serialized) return;
+  if (lastSynced.get(deskId) === serialized) return true;
   try {
     await invoke("desk_meta_set", { deskId, patch: payload });
     lastSynced.set(deskId, serialized);
+    return true;
   } catch (e) {
     console.warn("desk_meta_set failed:", e);
+    return false;
   }
+}
+
+/** Write one desk's meta through to its `.hushdesk`. */
+export async function pushDeskMeta(state, deskId) {
+  if (!IS_TAURI || !deskId || !pulledOnce) return;
+  await enqueue(deskId, () => pushNow(state, deskId));
 }
 
 /** Push every desk whose stickies (or other meta) changed — the sticky
@@ -80,6 +114,14 @@ export async function pushAllDeskMeta(state) {
  *  sticky layer can rebuild that desk's notes. */
 export async function pullDeskMeta(state, deskId) {
   if (!IS_TAURI || !deskId) return;
+  await enqueue(deskId, () => pullNow(state, deskId));
+}
+
+async function pullNow(state, deskId) {
+  // A local change not yet on disk is newer than anything the disk can
+  // hold: write it rather than read the older value back over it.
+  if (hasUnpushedChange(state, deskId) && await pushNow(state, deskId)) return;
+  const before = JSON.stringify(payloadFor(state, deskId));
   let meta = null;
   try {
     meta = await invoke("desk_meta_get", { deskId });
@@ -88,6 +130,9 @@ export async function pullDeskMeta(state, deskId) {
     return;
   }
   if (!meta || typeof meta !== "object") return;
+  // Changed here while the read was in flight — the push queued behind
+  // this pull carries it; the disk's copy is already stale.
+  if (JSON.stringify(payloadFor(state, deskId)) !== before) return;
 
   const patch = {};
 

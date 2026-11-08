@@ -8,6 +8,7 @@
  *   ⌥ ×3        Write Now
  *   ⌘ ×3        Campfire Cursor, on with this desk's last settings, or off
  *   ⇧ + ⌘ ×3    Edge Lights, on with this desk's last settings, or off
+ *   ⇧ + ⌥ ×3    Write Now on the desk in front (no desk switch)
  *
  * Each action's module is imported only when its gesture lands.
  */
@@ -17,6 +18,7 @@ import { readTripleTaps } from "./ui/triple-tap-gestures.js";
 const ACTIONS = {
   courier: async (state) => (await import("./courier/courier-sheet.js")).toggleCourier(state),
   writeNow: async (state) => (await import("./write-now/write-now.js")).writeNow(state),
+  writeNowHere: async (state) => (await import("./write-now/write-now.js")).writeNow(state, { here: true }),
   campfire: async (state) => (await import("./campfire/campfire.js")).toggleCampfire(state),
   edgeLights: async (state) => (await import("./edge-lights/edge-lights.js")).toggleEdgeLights(state),
 };

@@ -1161,7 +1161,9 @@ button.desk-switcher-row.desk-switcher-add {
   margin-top: 2px;
   padding-top: 8px;
 }
-/* Dashboard follows Add desk under the same rule, not a second one. */
+/* Add section and Dashboard follow Add desk under the same rule, not a
+   second one. */
+button.desk-switcher-row.desk-switcher-add-section,
 button.desk-switcher-row.desk-switcher-dashboard {
   border-top: none;
   margin-top: 0;
@@ -1255,6 +1257,26 @@ button.desk-switcher-row.desk-switcher-dashboard {
 .desk-switcher-drag-handle:hover { opacity: 0.9 !important; }
 .desk-switcher-row.dragging { opacity: 0.6; background: rgba(128, 128, 128, 0.18); }
 .drag-handle-icon { fill: currentColor; stroke: none; }
+
+/* A desk section (state/desk-sections.js): a full-width label bar
+   between the desk rows, its rename / delete / drag on hover. */
+.desk-switcher-section {
+  justify-content: space-between;
+  padding: 4px 0 2px 8px;
+  margin-top: 4px;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 15%, transparent);
+  border-radius: 0;
+}
+.desk-switcher-section:first-child { margin-top: 0; }
+.desk-switcher-section:hover { background: none; }
+.desk-switcher-section-name {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+.desk-switcher-section .desk-switcher-action { padding: 2px 4px; }
 
 /* ===== All-desks file-panel rows ===== */
 /* Desks rendered as top-level rows (deskDisplayMode === "all"). */

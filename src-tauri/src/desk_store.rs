@@ -407,10 +407,10 @@ impl DeskStore {
                 // Start from the existing file so createdAt and any fields
                 // other writers own (the per-desk "meta" object — style,
                 // last file, stickies) survive the rewrite.
-                let mut meta: serde_json::Value = fs::read_to_string(&meta_path)
+                let existing: Option<serde_json::Value> = fs::read_to_string(&meta_path)
                     .ok()
-                    .and_then(|s| serde_json::from_str(&s).ok())
-                    .unwrap_or_else(|| serde_json::json!({}));
+                    .and_then(|s| serde_json::from_str(&s).ok());
+                let mut meta = existing.clone().unwrap_or_else(|| serde_json::json!({}));
                 meta["format"] = "hush-desk".into();
                 meta["version"] = 1.into();
                 meta["id"] = desk.id.clone().into();
@@ -418,7 +418,13 @@ impl DeskStore {
                 if meta.get("createdAt").is_none() {
                     meta["createdAt"] = now_secs().into();
                 }
-                write_atomic_str(&meta_path, &serde_json::to_string_pretty(&meta)?)?;
+                // Only when something changed: an unconditional rewrite
+                // touched every local desk's folder on every tree save,
+                // which its watcher reported as an external change — a
+                // reconcile, and a disk-wins meta pull, per save.
+                if existing.as_ref() != Some(&meta) {
+                    write_atomic_str(&meta_path, &serde_json::to_string_pretty(&meta)?)?;
+                }
                 Ok(())
             })();
             if let Err(e) = res {

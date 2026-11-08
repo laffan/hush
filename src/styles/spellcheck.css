@@ -1,11 +1,11 @@
-/* ===== Spellcheck: wavy red underline + click-to-fix popover ===== */
+/* ===== Spellcheck: red underline + click-to-fix popover ===== */
 
-/* Browser-style wavy red underline on misspelled words. `text-decoration:
-   wavy` is supported everywhere we care about and renders crisper than
-   a background SVG. The marker also bumps `cursor: pointer` so the
-   click affordance is visible — the underline is the click target. */
+/* A straight red underline on misspelled words — quieter on the page
+   than the browser's wavy one. The marker also bumps `cursor: pointer`
+   so the click affordance is visible — the underline is the click
+   target. */
 .hush-spellcheck-error {
-  text-decoration: underline wavy #dc2626;
+  text-decoration: underline solid #dc2626;
   text-decoration-thickness: 1px;
   text-decoration-skip-ink: none;
   text-underline-offset: 3px;

@@ -37,7 +37,7 @@ export const shortcutCategories = [
       { key: "shortcutFindPrev", label: "Find previous match" },
       { key: "shortcutZotero", label: "Zotero search" },
       { key: "shortcutShuffleSentences", label: "Shuffle Editor (sentences)" },
-      { key: "shortcutSwitchDesks", label: "Switch desks" },
+      { key: "shortcutSwitchDesks", label: "Open Desk Dashboard" },
     ],
   },
   {

@@ -5,19 +5,20 @@
    work on it left off. (The class names still say "inbox": the Inbox
    was the first, and is the default, expanded view.) */
 
-/* The whole item framed in a very light border — everything about the
-   file inside it, top to bottom: its title, the preview, its docked
-   panes, its cards, and its last-edited time. The <li> is the frame (the
-   cards are its child list), laid out as a column so the time, which
-   files-panel.js puts on the <li> itself, can close it. The hover tint
-   is the <li>'s own, so it stays inside the frame. */
+/* The whole item as one block — everything about the file inside it,
+   top to bottom: its title, the preview, its docked panes, its cards,
+   and its last-edited time. The <li> holds it all (the cards are its
+   child list), laid out as a column so the time, which files-panel.js
+   puts on the <li> itself, can close it. No border: the items are told
+   apart by their spacing, and the hover tint is the <li>'s own. */
 .sl-item.inbox-preview-item {
   display: flex;
   flex-direction: column;
   position: relative;
   margin: 2px 0 4px;
   padding: 4px 6px 5px !important;
-  border: 1px solid color-mix(in srgb, var(--sidebar-fg, var(--fg)) 10%, transparent);
+  /* Transparent rather than none, so the item keeps its measure. */
+  border: 1px solid transparent;
   border-radius: 6px;
 }
 .sl-item.inbox-preview-item > .sl-item-content { order: 0; }
@@ -33,13 +34,6 @@
   position: static !important;
   inset: auto !important;
   margin: 3px 0 0 !important;
-}
-
-/* Hovered, open or selected: the frame takes the title's own colour. */
-.sl-item.inbox-preview-item:hover,
-.sl-item.inbox-preview-item.selected,
-.sl-item.inbox-preview-item:has(> .sl-item-content .tree-item-row.active) {
-  border-color: currentColor;
 }
 
 .inbox-preview {

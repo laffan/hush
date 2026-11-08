@@ -7,7 +7,10 @@
  * Each card shows the desk's icon and name, its YOU ARE HERE marker (if
  * it has one) and the files most recently edited in it. On hover a small
  * toolbar offers a new Doc or Notebook in that desk's Inbox, opening the
- * desk itself, and a grip to drag the card into a new place.
+ * desk itself, and a grip to drag the card into a new place. Desk
+ * sections (`state/desk-sections.js`) run across the grid as full-width
+ * label bars, with rename, delete and a grip on hover; cards and bars
+ * drag among each other, and a drop commits through `commitDeskLayout`.
  *
  * Everything a card edits goes through the same calls the desk switcher
  * uses: the name is an input committed through `state.renameDesk` (with
@@ -27,6 +30,7 @@ import { customIconSvg, deskIconName } from "../ui/custom-icons.js";
 import { youAreHereEntriesFor, jumpToYouAreHere, markerNote } from "../you-are-here.js";
 import { switchDeskAndLand, openLeafOnItsDesk } from "../state/cross-desk.js";
 import { mountDashboardSearch } from "./desk-dashboard-search.js";
+import { deskLayout, commitDeskLayout, renameDeskSection, deleteDeskSection } from "../state/desk-sections.js";
 
 /** How many recently edited files a card lists. */
 const RECENT_COUNT = 5;
@@ -34,8 +38,12 @@ const RECENT_COUNT = 5;
 /** Kinds that are edited (a PDF's `modified` is when it was added). */
 const EDITABLE = new Set(["document", "notebook", "stack"]);
 
-const NEW_DOC = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2H4.5A1.5 1.5 0 0 0 3 3.5v9A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5V5.5z"/><path d="M9.5 2v3.5H13"/><path d="M8 7.5v4M6 9.5h4"/></svg>`;
-const NEW_NOTEBOOK = `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="4" r="1"/><circle cx="8" cy="4" r="1"/><circle cx="12" cy="4" r="1"/><circle cx="4" cy="8" r="1"/><circle cx="4" cy="12" r="1"/><path d="M10.5 8.5v5M8 11h5"/></svg>`;
+// The plain filetype glyphs, as the Add popup and a folder's menu wear
+// them for New Doc / New Notebook.
+const NEW_DOC = typeIcons.document;
+const NEW_NOTEBOOK = typeIcons.notebook;
+const PENCIL = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.5 3H3.5A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8a1.5 1.5 0 0 0 1.5-1.5V8.5"/><path d="M12.25 1.75a1.06 1.06 0 0 1 1.5 1.5L8 9l-2 .5.5-2z"/></svg>`;
+const TRASH = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11"/><path d="M5.5 4V2.75a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75V4"/><path d="M12.5 4l-.6 9.1a1 1 0 0 1-1 .9H5.1a1 1 0 0 1-1-.9L3.5 4"/></svg>`;
 const OPEN_DESK = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3H3.5A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8a1.5 1.5 0 0 0 1.5-1.5V10"/><path d="M9 2h5v5M14 2 7.5 8.5"/></svg>`;
 
 /** The 2 × 2 grid glyph the sidebar footer's button wears. */
@@ -61,7 +69,6 @@ export function openDeskDashboard(state) {
   root.innerHTML = `
     <div class="desk-dash" role="dialog" aria-modal="true" aria-label="Desk dashboard">
       <div class="desk-dash-head">
-        <span class="desk-dash-title">Desks</span>
         <span class="desk-dash-search-slot"></span>
         <button type="button" class="desk-dash-close" aria-label="Close">×</button>
       </div>
@@ -73,7 +80,7 @@ export function openDeskDashboard(state) {
   let dragging = false;
   let pending = false;
   let lastHtml = "";
-  const busy = () => dragging || !!grid.querySelector(".desk-dash-name:focus");
+  const busy = () => dragging || !!grid.querySelector(".desk-dash-name:focus, .desk-dash-section-name:focus");
 
   function render() {
     if (!deskDashboardAvailable(state)) { close(); return; }
@@ -81,7 +88,8 @@ export function openDeskDashboard(state) {
     pending = false;
     // Saves elsewhere fire files-changed constantly; only rebuild the
     // cards when what they show has actually changed.
-    const html = deskList(state).map((d) => cardHtml(state, d)).join("");
+    const html = deskLayout(state, deskList(state))
+      .map((it) => (it.kind === "section" ? sectionHtml(it.section) : cardHtml(state, it.desk))).join("");
     if (html === lastHtml) return;
     lastHtml = html;
     grid.innerHTML = html;
@@ -100,7 +108,7 @@ export function openDeskDashboard(state) {
     if (e.key !== "Escape") return;
     // Escape in a name field abandons the edit, not the dashboard.
     // The search field takes its own Escape (clear, then close).
-    if (e.target instanceof Element && e.target.closest(".desk-dash-name, .desk-dash-search-input")) return;
+    if (e.target instanceof Element && e.target.closest(".desk-dash-name, .desk-dash-section-name, .desk-dash-search-input")) return;
     // A modal opened over the dashboard (the icon picker, a name prompt)
     // takes its own Escape.
     if (document.querySelector(".tree-delete-modal-backdrop")) return;
@@ -219,10 +227,34 @@ function cardHtml(state, d) {
   </section>`;
 }
 
+/** A section: a full-width label bar across the grid. Its name is a
+ *  field like a card's (the pencil puts the caret in it). */
+function sectionHtml(section) {
+  return `<div class="desk-dash-section" data-section-id="${escHtml(section.id)}">
+    <input class="desk-dash-section-name" type="text" value="${escHtml(section.name)}" spellcheck="false" autocomplete="off" aria-label="Section name" />
+    <div class="desk-dash-section-tools">
+      <button type="button" data-action="rename-section" data-tooltip="Rename" aria-label="Rename section">${PENCIL}</button>
+      <button type="button" data-action="delete-section" data-tooltip="Delete section" aria-label="Delete section">${TRASH}</button>
+      <span class="desk-dash-grip" data-tooltip="Drag to reorder" aria-hidden="true">${DRAG_HANDLE_SVG}</span>
+    </div>
+  </div>`;
+}
+
 // ── Actions ───────────────────────────────────────────────────────────
 
 async function onGridClick(state, e, close) {
   const el = e.target instanceof Element ? e.target.closest("[data-action]") : null;
+  const sectionId = el?.closest(".desk-dash-section")?.dataset.sectionId;
+  if (sectionId) {
+    if (el.dataset.action === "rename-section") {
+      const input = el.closest(".desk-dash-section").querySelector(".desk-dash-section-name");
+      input?.focus();
+      input?.select();
+    } else if (el.dataset.action === "delete-section") {
+      await deleteDeskSection(state, sectionId);
+    }
+    return;
+  }
   const card = el?.closest(".desk-dash-card");
   const deskId = card?.dataset.deskId;
   if (!el || !deskId) return;
@@ -253,17 +285,26 @@ async function onGridClick(state, e, close) {
   }
 }
 
-/** The name fields: Enter or leaving the field renames the desk, Escape
- *  puts the old name back. `settle` runs the render held off while the
- *  field had focus. */
+/** The name fields: Enter or leaving the field renames the desk (or the
+ *  section), Escape puts the old name back. `settle` runs the render
+ *  held off while the field had focus. */
 function wireNames(state, grid, settle) {
   grid.addEventListener("keydown", (e) => {
-    const input = e.target instanceof HTMLInputElement && e.target.closest(".desk-dash-name");
+    const input = e.target instanceof HTMLInputElement && e.target.closest(".desk-dash-name, .desk-dash-section-name");
     if (!input) return;
     if (e.key === "Enter") { e.preventDefault(); input.blur(); }
     else if (e.key === "Escape") { e.preventDefault(); input.value = input.defaultValue; input.blur(); }
   });
   grid.addEventListener("focusout", async (e) => {
+    const sectionInput = e.target instanceof HTMLInputElement && e.target.closest(".desk-dash-section-name");
+    if (sectionInput) {
+      const id = sectionInput.closest(".desk-dash-section")?.dataset.sectionId;
+      const next = sectionInput.value.trim();
+      if (id && next && next !== sectionInput.defaultValue) await renameDeskSection(state, id, next);
+      else sectionInput.value = sectionInput.defaultValue;
+      settle();
+      return;
+    }
     const input = e.target instanceof HTMLInputElement && e.target.closest(".desk-dash-name");
     if (!input) return;
     const deskId = input.closest(".desk-dash-card")?.dataset.deskId;
@@ -285,21 +326,22 @@ function wireNames(state, grid, settle) {
   });
 }
 
-/** Drag a card by its grip into a new place in the grid. The cards stay
- *  put while it moves; a rule in the gap before or after the card under
- *  the pointer shows where it will land (none while the drop would leave
- *  it where it is). The drop moves the card and commits the order
- *  through `state.reorderDesks`, whose `desks-changed` re-renders. */
+/** Drag a card — or a section bar — by its grip into a new place in the
+ *  grid. Everything stays put while it moves; a rule in the gap before
+ *  or after the card or bar under the pointer shows where it will land
+ *  (none while the drop would leave it where it is). The drop moves the
+ *  element and commits the whole order through `commitDeskLayout`,
+ *  whose `desks-changed` re-renders. */
 function wireReorder(state, grid, setDragging) {
   grid.addEventListener("pointerdown", (e) => {
     const grip = e.target instanceof Element ? e.target.closest(".desk-dash-grip") : null;
-    const card = grip?.closest(".desk-dash-card");
+    const card = grip?.closest(".desk-dash-card, .desk-dash-section");
     if (!card) return;
     e.preventDefault();
     setDragging(true);
     card.classList.add("dragging");
     grid.classList.add("reordering");
-    const startOrder = cardIds(grid);
+    const startOrder = itemKeys(grid);
     const marker = document.createElement("div");
     marker.className = "desk-dash-drop";
     marker.hidden = true;
@@ -307,7 +349,7 @@ function wireReorder(state, grid, setDragging) {
     let target = null; // { card, before }
 
     const onMove = (me) => {
-      const cards = [...grid.querySelectorAll(".desk-dash-card")];
+      const cards = [...grid.querySelectorAll(ITEMS)];
       const over = cards.find((c) => {
         const r = c.getBoundingClientRect();
         return me.clientX >= r.left && me.clientX <= r.right && me.clientY >= r.top && me.clientY <= r.bottom;
@@ -317,8 +359,10 @@ function wireReorder(state, grid, setDragging) {
       if (over === card) { target = null; marker.hidden = true; return; }
       const r = over.getBoundingClientRect();
       // One column (a narrow window) stacks the cards, so it is the upper
-      // or lower half that decides, and the rule lies across the gap.
-      const stacked = getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/).length < 2;
+      // or lower half that decides, and the rule lies across the gap. A
+      // section bar spans the grid, so it always reads that way.
+      const stacked = over.classList.contains("desk-dash-section")
+        || getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/).length < 2;
       const before = stacked ? me.clientY < r.top + r.height / 2 : me.clientX < r.left + r.width / 2;
       // A drop beside the card's own place moves nothing: no rule there.
       const i = cards.indexOf(over);
@@ -335,10 +379,10 @@ function wireReorder(state, grid, setDragging) {
       card.classList.remove("dragging");
       grid.classList.remove("reordering");
       if (target) grid.insertBefore(card, target.before ? target.card : target.card.nextSibling);
-      const ids = cardIds(grid);
+      const keys = itemKeys(grid);
       // Still "dragging" while the order commits, so the render its
       // desks-changed asks for waits and then runs once, in the new order.
-      try { if (ids.join() !== startOrder.join()) await state.reorderDesks(ids); }
+      try { if (keys.join() !== startOrder.join()) await commitDeskLayout(state, layoutItems(grid)); }
       finally { setDragging(false); }
     };
     window.addEventListener("pointermove", onMove);
@@ -374,4 +418,10 @@ function placeMarker(grid, marker, r, before, stacked) {
   marker.hidden = false;
 }
 
-const cardIds = (grid) => [...grid.querySelectorAll(".desk-dash-card")].map((c) => c.dataset.deskId);
+const ITEMS = ".desk-dash-card, .desk-dash-section";
+
+/** The grid's cards and bars, top to bottom, as `commitDeskLayout` takes them. */
+const layoutItems = (grid) => [...grid.querySelectorAll(ITEMS)].map((el) => (el.dataset.sectionId
+  ? { kind: "section", id: el.dataset.sectionId }
+  : { kind: "desk", id: el.dataset.deskId }));
+const itemKeys = (grid) => layoutItems(grid).map((it) => `${it.kind}:${it.id}`);

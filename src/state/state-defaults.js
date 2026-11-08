@@ -199,6 +199,8 @@ export function createDefaultSettings() {
     // Local-only fields like lastFileId / scrollPosition stay on the
     // top-level `settings` so they per-device-per-window restore.
     desksMeta: {},
+    // Named dividers between desks (state/desk-sections.js).
+    deskSections: [],
     // Per-desk sidebar toggle state (local, per-device), keyed by desk id:
     // `{ left, leftPinned, right }`. Switching desks restores that desk's
     // saved left files-panel and right outline-panel open/closed state.
