@@ -249,33 +249,47 @@
 .todo-item.open .todo-notes { display: block; max-height: none; opacity: 0.75; margin-top: 3px; }
 .todo-item.done .todo-notes { opacity: 0.3; }
 
-/* ---- Linked file ---- */
+/* ---- Linked file ----
+   Every to-do with a file shows it under the title as a subtle link:
+   small, faint, its name underlined by a hairline that firms up on
+   hover. Ticked to-dos fade it with the rest of the item. */
 .todo-file {
   display: inline-flex;
   align-items: center;
   align-self: flex-start;
   max-width: 100%;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 .todo-file-open {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
-  padding: 1px 4px 1px 0;
+  padding: 0 4px 0 0;
   font: inherit;
-  font-size: 12px;
+  font-size: 11.5px;
+  line-height: 16px;
   color: inherit;
   background: none;
   border: none;
-  border-radius: 4px;
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: pointer;
+  transition: opacity 0.12s;
 }
-.todo-file-open:hover { opacity: 1; text-decoration: underline; text-underline-offset: 2px; }
+.todo-file-open:hover { opacity: 0.9; }
 .todo-file-open .tree-type-icon,
-.todo-file-open .custom-icon { flex: 0 0 auto; width: 11px; height: 11px; }
-.todo-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-file-open .custom-icon { flex: 0 0 auto; width: 10px; height: 10px; }
+.todo-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+}
+.todo-file-open:hover .todo-file-name { text-decoration-color: currentColor; }
+.todo-item.done .todo-file-open { opacity: 0.3; }
 .todo-file-unlink { width: 16px; height: 16px; opacity: 0; }
 .todo-file:hover .todo-file-unlink { opacity: 0.45; }
 .todo-file-unlink svg { width: 10px; height: 10px; }
