@@ -117,10 +117,12 @@ function selectNextInstance(view) {
     return from === nextIdx;
   });
   if (nextIdx !== -1 && !alreadySelected) {
-    const ranges = allRanges.map((r) => EditorSelection.range(r.anchor, r.head));
-    ranges.push(EditorSelection.range(nextIdx, nextIdx + selected.length));
+    // Steps to the instance rather than adding it: the selection was
+    // always collapsed to that one range while the editor allowed only
+    // one, and ⌥-click multi-cursor (multi-cursor.js) must not change
+    // what ⌘D does.
     view.dispatch({
-      selection: EditorSelection.create(ranges, ranges.length - 1),
+      selection: EditorSelection.single(nextIdx, nextIdx + selected.length),
       effects: setInstanceHighlightsEffect.of(findAllOccurrences(docText, selected)),
     });
   }
@@ -143,10 +145,9 @@ function selectPreviousInstance(view) {
     return from === prevIdx;
   });
   if (prevIdx !== -1 && !alreadySelected) {
-    const ranges = allRanges.map((r) => EditorSelection.range(r.anchor, r.head));
-    ranges.unshift(EditorSelection.range(prevIdx, prevIdx + selected.length));
+    // Steps, as selectNextInstance does.
     view.dispatch({
-      selection: EditorSelection.create(ranges, 0),
+      selection: EditorSelection.single(prevIdx, prevIdx + selected.length),
       effects: setInstanceHighlightsEffect.of(findAllOccurrences(docText, selected)),
     });
   }

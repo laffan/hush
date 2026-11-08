@@ -80,5 +80,9 @@ export function installTripleTap(onGesture) {
     onGesture(fired);
   }, true);
 
+  // A pointer press while the key is down makes it a modifier-click
+  // (⌥-click adds a cursor, ⇧-click extends a selection), not a tap —
+  // three quick ⌥-clicks would otherwise run Write Now.
+  window.addEventListener("pointerdown", reset, true);
   window.addEventListener("blur", reset);
 }

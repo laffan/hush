@@ -1,4 +1,5 @@
 import { EditorView, keymap, drawSelection, placeholder, ViewPlugin } from "@codemirror/view";
+import { multiCursorExtension } from "./multi-cursor.js";
 import { EditorState, Compartment, Prec } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting } from "@codemirror/language";
@@ -262,6 +263,8 @@ export function createEditor(container, state) {
       markdown({ extensions: [Strikethrough, Table, CommentExtension, HighlightExtension, CardFenceExtension] }),
       history(),
       drawSelection(),
+      // ⌥-click adds a cursor (multi-cursor.js) — in the shared list too.
+      multiCursorExtension(),
       wrapOnSelection,
       updateListener,
       blurListener,

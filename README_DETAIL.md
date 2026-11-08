@@ -38,7 +38,9 @@ A style also carries two stacks of layers, both built the same way — add, reor
 
 **Ratchet Mode** is forward-only writing: pick a duration and the editor locks out deletion and navigation until the timer runs out. **Untimed**, above the durations, has no timer: the countdown's place holds an **End Ratchet Mode** button, and the session lasts until you press it. **Desk Ratchet** applies the same idea to a whole desk with no clock — committed text can be *rearranged* but never rewritten. Under a desk ratchet the caret can still be put anywhere with a click and you can type there — only deleting and the arrow keys are locked out — and the desk's icon (in the switcher and the sidebar header) carries a small ratchet badge on its lower right. A refused delete doesn't put up a message: the ring round the ratchet mark — the badge on the desk's icon, or the glyph after its name — glows red for a moment. With **Encourage typing** on, the text fading behind you fades under Private Mode's bars too.
 
-**Proofread** (grammar, via Harper) and **Spellcheck** modes underline issues inline with click-to-fix suggestions — a misspelled word gets a straight red line under it. Both run entirely on-device.
+**Proofread** (grammar, via Harper) and **Spellcheck** modes underline issues inline with click-to-fix suggestions — a misspelled word gets a straight red line under it.
+
+**Multiple cursors**: ⌥-click in the text adds a cursor (⌥-drag adds a selection); typing, deleting and pasting then happen at every one of them. ⌥-click an extra cursor to remove it, and Escape goes back to one. ⌘D / ⌘⇧D still step to the next / previous instance of the selected word rather than adding one. Both run entirely on-device.
 
 ## Notebooks
 
