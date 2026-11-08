@@ -11,6 +11,9 @@
  *   ⇧ + ⌥ ×3    Write Now on the desk in front (no desk switch)
  *
  * Each action's module is imported only when its gesture lands.
+ *
+ * And one double tap: ⌘ ×2 toggles the To-do list (todo/). It waits out
+ * the gap a third ⌘ would need, so ⌘ ×3 still reaches its own action.
  */
 import { installTripleTap } from "./ui/triple-tap.js";
 import { readTripleTaps } from "./ui/triple-tap-gestures.js";
@@ -33,5 +36,12 @@ export function installTripleTapTriggers(state) {
     const action = Object.keys(taps).find((a) => taps[a] === gesture);
     if (!action) return;
     ACTIONS[action](state).catch((err) => console.error(`Triple tap (${action}) failed:`, err));
+  }, {
+    doubles: () => ["Meta"],
+    onDouble: () => {
+      import("./todo/todo-panel.js")
+        .then((m) => m.toggleTodoPanel(state))
+        .catch((err) => console.error("Double tap (To-do) failed:", err));
+    },
   });
 }

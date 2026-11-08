@@ -84,6 +84,10 @@
    *   --z-edge-lights    the Edge Lights overlay — click-through,
    *                      over every piece of the app Zen included, under
    *                      the palette and the modals (its own among them)
+   *   --z-todo           the To-do list (todo/) — over everything that is
+   *                      not a popover or a modal: Zen, Edge Lights,
+   *                      stickies, the sidebar. The palette that opens
+   *                      it, and the modals, still come up over it.
    *   --z-popover        detached popovers (footnote, command palette, image preview)
    *   --z-modal          full-screen modal backdrops + standard modals
    *   --z-modal-content  modal content layer above its own backdrop
@@ -110,6 +114,7 @@
   --z-zen: 390;
   --z-over-zen: 392;
   --z-edge-lights: 395;
+  --z-todo: 398;
   --z-popover: 400;
   --z-modal: 500;
   --z-modal-content: 510;

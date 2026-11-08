@@ -201,6 +201,8 @@ export function createDefaultSettings() {
     desksMeta: {},
     // Named dividers between desks (state/desk-sections.js).
     deskSections: [],
+    // The To-do list (todo/todo-store.js).
+    todos: [],
     // Per-desk sidebar toggle state (local, per-device), keyed by desk id:
     // `{ left, leftPinned, right }`. Switching desks restores that desk's
     // saved left files-panel and right outline-panel open/closed state.

@@ -577,6 +577,11 @@ pub struct AppSettings {
     /// (`state/desk-sections.js`): `[{ id, name, beforeDeskId }]`.
     #[serde(default)]
     pub desk_sections: serde_json::Value,
+    /// The To-do list (`todo/todo-store.js`): `[{ id, deskId, title,
+    /// notes, done, doneAt, fileId, fileType, createdAt }]`, opaque JSON.
+    /// Each desk's share is also mirrored into its `.hushdesk` meta.
+    #[serde(default)]
+    pub todos: serde_json::Value,
     /// Active desk id for this device. Null when desks are off.
     #[serde(default)]
     pub active_desk_id: Option<String>,
@@ -1023,6 +1028,7 @@ impl Default for AppSettings {
             desks: Vec::new(),
             desks_meta: serde_json::json!({}),
             desk_sections: serde_json::json!([]),
+            todos: serde_json::json!([]),
             active_desk_id: None,
             desk_display_mode: default_desk_display_mode(),
             last_local_sync: serde_json::Value::Null,

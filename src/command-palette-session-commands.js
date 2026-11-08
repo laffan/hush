@@ -10,6 +10,8 @@ import { isCampfireOn } from "./campfire/campfire-store.js";
 
 // A pen nib over a spark — begin writing, now.
 const writeNowIcon = `<svg viewBox="0 0 24 24"><path d="M4 20 L8.5 19 L19 8.5 L15.5 5 L5 15.5 Z M13.5 7 L17 10.5"/><path d="M19 15 V19 M17 17 H21"/></svg>`;
+// A ticked box beside two lines — the To-do list.
+const todoIcon = `<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="6" height="6" rx="1.5"/><path d="M5 8 L6.3 9.3 L8.4 6.8"/><path d="M13 8 H20.5 M5 16 H20.5"/></svg>`;
 // A flame over two crossed logs.
 const campfireIcon = `<svg viewBox="0 0 24 24"><path d="M12 3 C14.5 6.5 16 8.5 16 11.5 A4 4 0 0 1 8 11.5 C8 9.5 9.5 8.5 10 6.5 C11 8 11.5 8.5 12 3 Z"/><path d="M5 20 L19 16 M5 16 L19 20"/></svg>`;
 // Three curtains of light over a horizon.
@@ -26,6 +28,12 @@ export function buildSessionCommands() {
       keywords: "new document idea start begin quick triple option shift current desk",
       hiddenIf: (s) => !s.settings?.writeNowDeskId || s.settings.writeNowDeskId === s.settings.activeDeskId,
       action: async (s) => (await import("./write-now/write-now.js")).writeNow(s, { here: true }) },
+    // The To-do list (todo/) — also ⌘ tapped twice. One row that reads
+    // the panel's state, like the other toggles here.
+    { id: "todo-list", section: "Create", icon: todoIcon, shortcutKey: null, ctx: "shared",
+      label: "To-do List",
+      keywords: "todo to-do to do tasks task list checklist things reminders",
+      action: async (s) => (await import("./todo/todo-panel.js")).toggleTodoPanel(s) },
     { id: "edge-lights", section: "Styles", icon: lightsIcon, shortcutKey: null, ctx: "shared",
       label: "Edge Lights",
       keywords: "northern lights aurora borealis glow edges ambient background magic presets",

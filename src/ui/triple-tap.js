@@ -20,6 +20,13 @@
  * what is held, any other key (Option-↑ included), the window losing
  * focus — starts the count over. The left and right keys both count, and
  * may be mixed; both at once is a chord, not a tap.
+ *
+ * **Double taps** ride the same detector, for the gestures the caller
+ * names (`doubles`: ⌘ ×2 opens the To-do list). Two taps can't fire on
+ * the second release — that release is also the middle of a triple — so
+ * a double waits out the GAP_MAX_MS a third tap would have to start in,
+ * and the third tap's press cancels it. The cost is that wait, once, on
+ * a double; a triple is never delayed and never also fires its double.
  */
 
 const TAP_MAX_MS = 350;
@@ -42,17 +49,22 @@ function gestureOf(key, e) {
   return [...held, key].join("+");
 }
 
-/** Call `onGesture(gesture)` on the third quick tap of a modifier. */
-export function installTripleTap(onGesture) {
+/** Call `onGesture(gesture)` on the third quick tap of a modifier, and
+ *  `onDouble(gesture)` on a second tap no third one follows, for the
+ *  gestures `doubles()` returns. */
+export function installTripleTap(onGesture, { doubles = () => [], onDouble = null } = {}) {
   let gesture = "";
   let key = "";
   let taps = 0;
   let lastUp = 0;
   let downAt = 0;
   let down = false;
-  const reset = () => { taps = 0; down = false; gesture = ""; key = ""; };
+  let doubleTimer = 0;
+  const cancelDouble = () => { clearTimeout(doubleTimer); doubleTimer = 0; };
+  const reset = () => { cancelDouble(); taps = 0; down = false; gesture = ""; key = ""; };
 
   window.addEventListener("keydown", (e) => {
+    cancelDouble();
     if (!FLAG[e.key]) { reset(); return; }
     // Pressing the key that is to be held starts nothing yet; the taps
     // that follow carry it in their own flags.
@@ -74,6 +86,15 @@ export function installTripleTap(onGesture) {
     if (now - downAt > TAP_MAX_MS) { taps = 0; return; }
     taps += 1;
     lastUp = now;
+    if (taps === 2 && onDouble && doubles().includes(gesture)) {
+      const g = gesture;
+      doubleTimer = setTimeout(() => {
+        doubleTimer = 0;
+        if (taps !== 2 || gesture !== g || down) return;
+        taps = 0;
+        onDouble(g);
+      }, GAP_MAX_MS);
+    }
     if (taps < TAPS) return;
     const fired = gesture;
     taps = 0;

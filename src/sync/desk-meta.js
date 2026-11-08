@@ -1,7 +1,8 @@
 /**
  * Portable per-desk metadata — style choice, Ratchet mode, last-open
  * file, custom icon (and whether its name shows beside it), desk
- * stickies — mirrored into each desk's `.hushdesk` "meta"
+ * stickies, the desk's to-dos (todo/todo-store.js) — mirrored into each
+ * desk's `.hushdesk` "meta"
  * object so the preferences ride along when a desk is handed off to
  * another install or synced through a shared folder.
  *
@@ -49,6 +50,11 @@ function deskStickies(state, deskId) {
     .filter((s) => s && s.kind === "desk" && s.target === deskId);
 }
 
+function deskTodos(state, deskId) {
+  const all = Array.isArray(state.settings?.todos) ? state.settings.todos : [];
+  return all.filter((t) => t && t.deskId === deskId);
+}
+
 /** The `.hushdesk` meta payload for one desk, from current app state. */
 function payloadFor(state, deskId) {
   const meta = state.settings?.desksMeta?.[deskId] || {};
@@ -60,6 +66,7 @@ function payloadFor(state, deskId) {
     icon: meta.icon ?? null,
     showName: !!meta.showName,
     stickies: deskStickies(state, deskId),
+    todos: deskTodos(state, deskId),
   };
 }
 
@@ -162,6 +169,24 @@ async function pullNow(state, deskId) {
     }
   }
 
+  // To-dos — the same rule as stickies: the desk's share is replaced
+  // wholesale, and the rest of the list keeps its order. An absent key
+  // is a desk written before to-dos existed, not "none".
+  let todosChanged = false;
+  if (Array.isArray(meta.todos)) {
+    const mine = deskTodos(state, deskId);
+    if (JSON.stringify(meta.todos) !== JSON.stringify(mine)) {
+      const all = Array.isArray(state.settings?.todos) ? state.settings.todos : [];
+      const incoming = meta.todos.filter((t) => t && typeof t.id === "string").map((t) => ({ ...t, deskId }));
+      // Keep the desk's place in the list: its first item's slot.
+      const at = all.findIndex((t) => t && t.deskId === deskId);
+      const others = all.filter((t) => !(t && t.deskId === deskId));
+      const slot = at < 0 ? others.length : all.slice(0, at).filter((t) => !(t && t.deskId === deskId)).length;
+      patch.todos = [...others.slice(0, slot), ...incoming, ...others.slice(slot)];
+      todosChanged = true;
+    }
+  }
+
   const ratchetChanged = "ratchet" in meta && !!meta.ratchet !== !!current.ratchet;
 
   if (Object.keys(patch).length > 0) {
@@ -169,6 +194,7 @@ async function pullNow(state, deskId) {
   }
   lastSynced.set(deskId, JSON.stringify(payloadFor(state, deskId)));
   if (stickiesChanged) state.emit("desk-meta-pulled", { deskId });
+  if (todosChanged) state.emit("todos-changed", { deskId });
   // A desk arriving in (or out of) Ratchet mode is a mode flip for the
   // open editor, not just a settings write — it has to re-lock the
   // buffer it's already showing.
