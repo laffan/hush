@@ -106,8 +106,8 @@ function groups(state) {
 
 /** Draw a to-do's status onto its row (and its toggle). */
 function paintStatus(li, status) {
-  for (const s of ["inactive", "primed", "active", "complete"]) li.classList.toggle(`is-${s}`, s === status);
-  li.classList.toggle("done", status === "complete");
+  for (const s of ["inactive", "primed", "active", "complete", "archived"]) li.classList.toggle(`is-${s}`, s === status);
+  li.classList.toggle("done", status === "complete" || status === "archived");
   const btn = li.querySelector(".todo-status");
   if (!btn) return;
   btn.innerHTML = statusIcon(status);
@@ -120,7 +120,7 @@ function itemHtml(state, t, openId, { showDesk = false } = {}) {
   const notes = t.notes || "";
   const status = statusOf(t);
   const cls = ["todo-item", `is-${status}`];
-  if (status === "complete") cls.push("done");
+  if (status === "complete" || status === "archived") cls.push("done");
   if (t.id === openId) cls.push("open");
   if (notes) cls.push("has-notes");
   const file = node
@@ -163,6 +163,24 @@ function groupHtml(state, g, openId) {
   </section>`;
 }
 
+/** Archived to-dos, the most recently archived first. */
+function archivedItems(state) {
+  return readTodos(state).filter((t) => statusOf(t) === "archived")
+    .sort((a, b) => (b.archivedAt || 0) - (a.archivedAt || 0));
+}
+
+/** The foot of the list: "Archived · n", and — while open — the
+ *  archived to-dos, each tagged with its desk. Nothing when there are
+ *  none. */
+function archiveHtml(state, openId, shown) {
+  const items = archivedItems(state);
+  if (!items.length) return "";
+  return `<section class="todo-archive${shown ? " shown" : ""}">
+    <button type="button" class="todo-archive-toggle" data-act="toggle-archive" aria-expanded="${shown}">Archived · ${items.length}</button>
+    ${shown ? `<ul class="todo-items">${items.map((t) => itemHtml(state, t, openId, { showDesk: true })).join("")}</ul>` : ""}
+  </section>`;
+}
+
 /** Fit a textarea to its text. */
 function fit(el) {
   el.style.height = "auto";
@@ -195,6 +213,7 @@ function mountPanel(state) {
   let search = null;
   let closing = false;
   let moveTimer = 0;
+  let showArchived = false; // the Archived section, shut on every open
 
   const editing = () => !!el.querySelector(".todo-title:focus, .todo-notes:focus") || !!search;
 
@@ -206,7 +225,8 @@ function mountPanel(state) {
     const now = nowItems(state);
     body.innerHTML = (now.length
       ? `<ul class="todo-items todo-now">${now.map((t) => itemHtml(state, t, openId, { showDesk: true })).join("")}</ul>`
-      : "") + groups(state).map((g) => groupHtml(state, g, openId)).join("");
+      : "") + groups(state).map((g) => groupHtml(state, g, openId)).join("")
+      + archiveHtml(state, openId, showArchived);
     body.querySelectorAll("textarea").forEach(fit);
     body.scrollTop = scroll;
     if (focus) {
@@ -261,6 +281,7 @@ function mountPanel(state) {
     const act = btn.dataset.act;
     const todo = todoOf(item);
     if (act === "close") { close(); return; }
+    if (act === "toggle-archive") { showArchived = !showArchived; render(); return; }
     if (act === "add") { add(state.settings?.activeDeskId || groups(state)[0]?.deskId); return; }
     if (act === "add-here") { add(btn.closest(".todo-group")?.dataset.deskId); return; }
     if (!todo) return;

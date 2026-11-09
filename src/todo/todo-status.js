@@ -1,7 +1,10 @@
 /**
  * A to-do's status — four states the toggle at its left steps through:
  *
- *   inactive → primed → active → complete → inactive …
+ *   inactive → primed → active → complete → archived → inactive …
+ *
+ * Archived to-dos leave the list for the panel's Archived section (shut
+ * until asked for); a click there restores one to inactive.
  *
  * (⌘-click — or ⇧-click — steps back.) Primed and active to-dos are pulled out of their
  * desks to the top of the list; the active one is drawn inverted. Only
@@ -17,7 +20,10 @@
  * and left alone if the user has started another since.
  */
 
-export const STATES = ["inactive", "primed", "active", "complete"];
+export const STATES = ["inactive", "primed", "active", "complete", "archived"];
+
+/** Finished: complete or archived. `done` mirrors it for older readers. */
+export const isFinished = (s) => s === "complete" || s === "archived";
 
 /** A stored to-do's status. Older items carried only `done`. */
 export function statusOf(todo) {
@@ -35,18 +41,21 @@ const LABEL = {
   inactive: "Not started — click to prime",
   primed: "Primed — click to start",
   active: "Active — click to complete",
-  complete: "Complete — click to reset",
+  complete: "Complete — click to archive",
+  archived: "Archived — click to restore",
 };
 export const statusLabel = (s) => LABEL[s];
 
 /** One icon per state, all on the same rounded square. Complete fills
- *  the square; its tick is punched out in the paper's colour (CSS). */
+ *  the square; its tick is punched out in the paper's colour (CSS).
+ *  Archived is the square as a box with its lid on. */
 const BOX = `<rect x="2.5" y="2.5" width="11" height="11" rx="3"/>`;
 const ICONS = {
   inactive: `<svg viewBox="0 0 16 16" aria-hidden="true">${BOX}</svg>`,
   primed: `<svg viewBox="0 0 16 16" aria-hidden="true">${BOX}<circle class="todo-status-fill" cx="8" cy="8" r="1.9"/></svg>`,
   active: `<svg viewBox="0 0 16 16" aria-hidden="true">${BOX}<path class="todo-status-fill" d="M6.6 5.4v5.2L10.9 8z"/></svg>`,
   complete: `<svg viewBox="0 0 16 16" aria-hidden="true"><rect class="todo-status-fill" x="2.5" y="2.5" width="11" height="11" rx="3"/><path class="todo-status-tick" d="M5.3 8.2l1.8 1.8 3.6-3.9"/></svg>`,
+  archived: `<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="3.5" rx="1"/><path d="M3.25 6.5v5.5a1.5 1.5 0 0 0 1.5 1.5h6.5a1.5 1.5 0 0 0 1.5-1.5V6.5M6.5 9h3"/></svg>`,
 };
 export const statusIcon = (s) => ICONS[s] || ICONS.inactive;
 

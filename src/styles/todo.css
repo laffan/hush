@@ -411,3 +411,30 @@
 }
 .todo-timer:hover:not(:disabled) { opacity: 1; border-color: currentColor; }
 .todo-timer:disabled { cursor: default; opacity: 0.5; border-style: dashed; }
+
+/* ---- Archived (the fifth state) ---- */
+/* The foot of the list: a quiet "Archived · n" that opens the archived
+   to-dos below it, faint, most recently archived first. */
+.todo-archive {
+  margin-top: 14px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+}
+.todo-archive-toggle {
+  display: block;
+  margin: 0 0 2px 8px;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: inherit;
+  background: none;
+  border: none;
+  opacity: 0.4;
+  cursor: pointer;
+}
+.todo-archive-toggle:hover,
+.todo-archive.shown .todo-archive-toggle { opacity: 0.7; }
+.todo-item.is-archived .todo-title { text-decoration: none; opacity: 0.4; }
+.todo-item.is-archived .todo-status { opacity: 0.6; }

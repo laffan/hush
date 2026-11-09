@@ -3,11 +3,11 @@
  *
  * Every to-do belongs to a desk, and may be linked to one file on it:
  *
- *   { id, deskId, title, notes, status, done, doneAt, timerStartedAt,
+ *   { id, deskId, title, notes, status, done, doneAt, archivedAt, timerStartedAt,
  *     fileId, fileType, createdAt }
  *
  * `status` is inactive / primed / active / complete (todo-status.js);
- * `done` mirrors "complete" for anything that reads the older field.
+ * `done` mirrors "complete or archived" for anything that reads the older field.
  *
  * `settings.todos` (`todos` on the Rust side, opaque JSON) is the runtime
  * store, in the user's order. Like desk stickies, each desk's own
@@ -29,7 +29,7 @@
  */
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { deskIdOfFile } from "../state/cross-desk.js";
-import { statusOf, nextStatus, applyTimer, startTodoTimer } from "./todo-status.js";
+import { statusOf, nextStatus, applyTimer, startTodoTimer, isFinished } from "./todo-status.js";
 
 const TEXT_SAVE_MS = 400;
 let textTimer = 0;
@@ -102,7 +102,7 @@ export function addTodo(state, deskId, { afterId = null, title = "", fileId = nu
   let at = afterId ? list.findIndex((t) => t.id === afterId) + 1 : 0;
   if (!afterId) {
     // After the last open item on the desk — completed ones sit below.
-    list.forEach((t, i) => { if (t.deskId === deskId && statusOf(t) !== "complete") at = i + 1; });
+    list.forEach((t, i) => { if (t.deskId === deskId && !isFinished(statusOf(t))) at = i + 1; });
     if (at === 0) {
       const firstOfDesk = list.findIndex((t) => t.deskId === deskId);
       at = firstOfDesk >= 0 ? firstOfDesk : list.length;
@@ -132,7 +132,14 @@ export async function setTodoStatus(state, id, status) {
   const from = statusOf(t);
   if (from === status) return;
   const at = Date.now();
-  const as = (x, s) => ({ ...x, status: s, done: s === "complete", doneAt: s === "complete" ? at : null });
+  // `doneAt` is when it was finished — kept through archiving, so the
+  // Archived section orders by when the work was done; `archivedAt`
+  // only while archived.
+  const as = (x, s) => ({
+    ...x, status: s, done: isFinished(s),
+    doneAt: isFinished(s) ? (isFinished(statusOf(x)) && x.doneAt ? x.doneAt : at) : null,
+    archivedAt: s === "archived" ? at : null,
+  });
   const demoted = status === "active" ? list.filter((x) => x.id !== id && statusOf(x) === "active") : [];
   void commit(state, list.map((x) => (x.id === id ? as(x, status) : demoted.includes(x) ? as(x, "primed") : x)));
   // Demoted first, so its timer is gone before this one's starts.
