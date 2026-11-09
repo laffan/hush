@@ -63,6 +63,8 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
       zIndex: "86", // toolbar band — under floating panes (90)
     },
   });
+  // phone.css hides the row while the shelf is open over the canvas.
+  wrap.classList.add("notebook-corner-controls");
 
   const cornerBtnStyle: Partial<CSSStyleDeclaration> = {
     width: "40px",

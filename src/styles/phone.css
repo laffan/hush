@@ -7,13 +7,21 @@
    One measurement runs through the file: the edge toggles are
    `--phone-toggle-size` circles whose outer edge sits `--phone-toggle-inset`
    in from the screen edge, and the touch pills stack in a column on the
-   same centre line, so everything you tap on the right-hand side lines up. */
+   same centre line, so everything you tap on the right-hand side lines up.
+
+   The sidebars — files, Overview, notebook shelf — open to
+   `--phone-sidebar-width` (three quarters of the screen). Each one's
+   close circle hangs the same `--phone-toggle-inset` outside its inner
+   edge, over the quarter of the page left showing, and the toggle for
+   the other side is put away while it is open, so only one circle is
+   ever offered. */
 
 html.phone {
-  /* The files panel takes the whole screen; its grip strip is its own
-     right-hand 20 px, so the close toggle lands where the Overview
-     toggle sits when the panel is shut. */
-  --panel-width: 100vw !important;
+  --phone-sidebar-width: 75vw;
+  /* `!important` over the widths the desktop resize strips store and
+     write inline on <html> — a phone has no strip to drag. */
+  --panel-width: var(--phone-sidebar-width) !important;
+  --right-panel-width: var(--phone-sidebar-width) !important;
   --phone-toggle-size: 36px;
   --phone-toggle-inset: 8px;
   /* Very faint ring — enough to say "this is a button" without drawing
@@ -30,20 +38,28 @@ html.phone .panel-overlay-header {
 }
 
 html.phone .sidebar-panel-resizer,
-html.phone .sidebar-grip-resize {
-  display: none;
+html.phone .sidebar-grip-resize,
+html.phone .side-panel-resize {
+  display: none !important;
 }
 
-/* The grip strip stays 20 px (the panel width is computed from it), but
-   its chevron becomes a ringed circle that hangs inboard of the strip:
-   rightward off the window edge while the panel is closed, leftward off
-   the panel's edge while it is open. The circle is a child of the toggle
-   button, so a tap on any part of it is a tap on the button. */
+/* The open panel's close circle hangs outside it, so the panel can't
+   clip its children; its lists scroll in their own boxes. */
+html.phone #panel-overlay:not(.hidden) {
+  overflow: visible;
+}
+
+/* The grip strip stays 20 px, but its chevron becomes a ringed circle
+   that hangs off it: closed, rightward off the strip to sit 8 px in from
+   the window edge; open, rightward off the panel's edge by the same 8 px,
+   over the page. The circle is a child of the toggle button, so a tap on
+   any part of it is a tap on the button — and, being inside the panel,
+   doesn't count as the outside tap that closes it. */
 html.phone #panel-overlay.hidden {
   --grip-glyph-shift: calc(var(--phone-toggle-centre) - var(--sidebar-grip-width) / 2 + env(safe-area-inset-left, 0px));
 }
 html.phone #panel-overlay:not(.hidden) {
-  --grip-glyph-shift: calc(var(--sidebar-grip-width) / 2 - var(--phone-toggle-centre) - env(safe-area-inset-right, 0px));
+  --grip-glyph-shift: calc(var(--phone-toggle-centre) + var(--sidebar-grip-width) / 2);
 }
 
 /* Out of flow, centred on the strip: a 36 px child in flow would widen
@@ -87,10 +103,24 @@ html.phone .right-panel-trigger:hover {
   background: var(--theme-bg, var(--bg));
 }
 
-/* The files panel fills the screen on a phone; the Overview toggle would
-   otherwise sit on top of it, next to the panel's own close toggle. */
-html.phone #app:has(#panel-overlay:not(.hidden)) .right-panel-trigger {
-  display: none;
+/* Open, the Overview keeps its trigger as its close circle (it flips to
+   point right — right-panel-setup.js), hung outside the panel's left
+   edge. Above the panel, which sits in the under-pane band. */
+html.phone .right-panel-trigger.is-hidden {
+  display: flex;
+}
+html.phone #app:has(#right-panel-overlay:not(.hidden)) .right-panel-trigger {
+  right: calc(var(--right-panel-width) + var(--phone-toggle-inset) + env(safe-area-inset-right, 0px));
+  opacity: 0.75;
+}
+
+/* One circle at a time: with the files panel open the Overview toggle
+   is put away, and with the Overview or the notebook shelf open the
+   files toggle is. */
+html.phone #app:has(#panel-overlay:not(.hidden)) .right-panel-trigger,
+html.phone #app:has(#right-panel-overlay:not(.hidden)) #panel-overlay.hidden .sidebar-grip-chevron,
+html.phone #app:has(#notebook-container .notebook-shelf.is-open) #panel-overlay.hidden .sidebar-grip-chevron {
+  display: none !important;
 }
 
 /* ----- Notebook shelf (the canvas's right-hand panel) -----
@@ -122,21 +152,22 @@ html.phone #notebook-container .notebook-shelf:not(.is-open) > .notebook-shelf-g
   font-size: 16px !important;
   opacity: 0.75;
 }
-/* Open, the shelf is a full-screen sheet over the canvas — at 280 px it
-   left a strip of canvas too narrow to use, and the corner controls,
-   which park against the shelf's edge, were pushed onto the toolbar.
-   Its close circle hangs on the left, mirroring the files sidebar's
-   (whose open circle it covers). Above the toolbar band, so the canvas
-   chrome stays underneath. */
+/* Open, the shelf runs full height at the sidebars' width, its close
+   circle hanging outside its left edge like the Overview's. The canvas
+   chrome on the left — the toolbar, its drag tab, and the corner controls,
+   which park against the shelf's edge and were pushed onto the toolbar —
+   stands down while it is open, so the circle has the strip to itself. */
 html.phone #notebook-container .notebook-shelf.is-open {
-  left: 0 !important;
-  right: 0 !important;
+  left: auto !important;
+  right: env(safe-area-inset-right, 0px) !important;
   top: 0 !important;
   bottom: 0 !important;
-  width: auto !important;
+  width: var(--phone-sidebar-width) !important;
   min-width: 0 !important;
   border: none !important;
+  border-left: 1px solid var(--panel-border, rgba(128, 128, 128, 0.25)) !important;
   border-radius: 0 !important;
+  overflow: visible !important;
   z-index: 89 !important;
   /* The notebook's UI background is translucent; over the toolbar that
      read as the toolbar showing through the sheet. */
@@ -145,7 +176,7 @@ html.phone #notebook-container .notebook-shelf.is-open {
 html.phone #notebook-container .notebook-shelf.is-open > .notebook-shelf-grip {
   width: var(--phone-toggle-size) !important;
   height: var(--phone-toggle-size) !important;
-  left: calc(var(--phone-toggle-inset) + env(safe-area-inset-left, 0px)) !important;
+  left: calc(-1 * (var(--phone-toggle-inset) + var(--phone-toggle-size))) !important;
   top: 50% !important;
   transform: translateY(-50%);
   border: var(--phone-toggle-border) !important;
@@ -155,11 +186,14 @@ html.phone #notebook-container .notebook-shelf.is-open > .notebook-shelf-grip {
   opacity: 0.75;
 }
 html.phone #notebook-container .notebook-shelf.is-open > .notebook-shelf-grip + div {
-  margin-left: calc(var(--phone-toggle-inset) * 2 + var(--phone-toggle-size) + env(safe-area-inset-left, 0px)) !important;
+  margin-left: 20px !important;
   padding-top: calc(20px + env(safe-area-inset-top, 0px)) !important;
   padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)) !important;
 }
-/* Nothing to resize on a full-screen sheet. */
+html.phone #notebook-container:has(.notebook-shelf.is-open) :is(.notebook-toolbar, .notebook-tool-panel-drag-tab, .notebook-corner-controls) {
+  visibility: hidden;
+}
+/* The width is the phone's, not a dragged one. */
 html.phone .notebook-shelf-resizer {
   display: none !important;
 }
@@ -207,12 +241,6 @@ html.phone .empty-state-actions button {
 html.phone .empty-state-actions button:hover {
   background: transparent;
   border-color: color-mix(in srgb, var(--fg) 22%, transparent);
-}
-
-/* Full-screen panel: a border on its right edge is a line down the
-   bezel, and it nudges the grip 1 px off the right-hand toggles' line. */
-html.phone #panel-overlay {
-  border-right: none;
 }
 
 /* ----- Stacks -----

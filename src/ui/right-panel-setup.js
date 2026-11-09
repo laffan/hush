@@ -58,6 +58,7 @@ export function setupRightPanel(state) {
     if (state.currentNotebookFileId) return;
     rightPanelOverlay.classList.remove("hidden");
     rightTrigger.classList.add("is-hidden");
+    setTriggerOpen(true);
     if (!overviewInstance) {
       overviewInstance = createOverview(rightPanelOverlay, state);
     }
@@ -69,6 +70,7 @@ export function setupRightPanel(state) {
   state.on("hide-overview", () => {
     rightPanelOverlay.classList.add("hidden");
     rightTrigger.classList.remove("is-hidden");
+    setTriggerOpen(false);
     if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
     saveDeskOverview(false);
   });
@@ -88,8 +90,12 @@ export function setupRightPanel(state) {
   // via keyboard shortcut or button.
   document.addEventListener("mousedown", (e) => {
     if (rightPanelOverlay.classList.contains("panel-inset")) return;
+    // The trigger is exempt: on a phone it stays up while the panel is
+    // open and closes it itself — counted as "outside", its mousedown
+    // closed the panel and its click then opened it again.
     if (!rightPanelOverlay.classList.contains("hidden") &&
-        !rightPanelOverlay.contains(e.target)) {
+        !rightPanelOverlay.contains(e.target) &&
+        !rightTrigger.contains(e.target)) {
       state.emit("hide-overview");
     }
   });
@@ -107,8 +113,17 @@ export function setupRightPanel(state) {
   rightTrigger.addEventListener("click", () => {
     if (rightPanelOverlay.classList.contains("hidden")) {
       state.emit("show-overview");
+    } else {
+      // Only reachable on a phone, where phone.css keeps the trigger up
+      // beside the open panel as its close button; elsewhere it is
+      // `is-hidden` while the panel is open.
+      state.emit("hide-overview");
     }
   });
+  function setTriggerOpen(open) {
+    rightTrigger.innerHTML = chevronSvg(open ? "right" : "left");
+    rightTrigger.setAttribute("aria-label", open ? "Close Overview" : "Open Overview");
+  }
 
   // Refresh the Overview on file open
   state.on("file-opened", () => {
