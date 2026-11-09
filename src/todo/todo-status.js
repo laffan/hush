@@ -1,0 +1,94 @@
+/**
+ * A to-do's status — four states the toggle at its left steps through:
+ *
+ *   inactive → primed → active → complete → inactive …
+ *
+ * (⇧-click steps back.) Primed and active to-dos are pulled out of their
+ * desks to the top of the list; the active one is drawn inverted. Only
+ * one to-do is active at a time: making another active sends the one
+ * that was back to primed.
+ *
+ * A title that ends in a length — `30m`, `1h`, `1h33m`, `1h 30m`,
+ * `1.5h` — starts the focus timer (timer/timer-store.js) for that long
+ * when the to-do becomes active, named after the rest of the title. The
+ * to-do remembers the timer it started (`timerStartedAt`); when it stops
+ * being active, that timer is cancelled if it is still the one running,
+ * and left alone if the user has started another since.
+ */
+
+export const STATES = ["inactive", "primed", "active", "complete"];
+
+/** A stored to-do's status. Older items carried only `done`. */
+export function statusOf(todo) {
+  if (STATES.includes(todo?.status)) return todo.status;
+  return todo?.done ? "complete" : "inactive";
+}
+
+/** The status after one click (`dir` 1) or ⇧-click (`dir` -1). */
+export function nextStatus(status, dir = 1) {
+  const i = STATES.indexOf(status);
+  return STATES[(i + (dir < 0 ? STATES.length - 1 : 1)) % STATES.length];
+}
+
+const LABEL = {
+  inactive: "Not started — click to prime",
+  primed: "Primed — click to start",
+  active: "Active — click to complete",
+  complete: "Complete — click to reset",
+};
+export const statusLabel = (s) => LABEL[s];
+
+/** One icon per state, all on the same rounded square. Complete fills
+ *  the square; its tick is punched out in the paper's colour (CSS). */
+const BOX = `<rect x="2.5" y="2.5" width="11" height="11" rx="3"/>`;
+const ICONS = {
+  inactive: `<svg viewBox="0 0 16 16" aria-hidden="true">${BOX}</svg>`,
+  primed: `<svg viewBox="0 0 16 16" aria-hidden="true">${BOX}<circle class="todo-status-fill" cx="8" cy="8" r="1.9"/></svg>`,
+  active: `<svg viewBox="0 0 16 16" aria-hidden="true">${BOX}<path class="todo-status-fill" d="M6.6 5.4v5.2L10.9 8z"/></svg>`,
+  complete: `<svg viewBox="0 0 16 16" aria-hidden="true"><rect class="todo-status-fill" x="2.5" y="2.5" width="11" height="11" rx="3"/><path class="todo-status-tick" d="M5.3 8.2l1.8 1.8 3.6-3.9"/></svg>`,
+};
+export const statusIcon = (s) => ICONS[s] || ICONS.inactive;
+
+/** The longest a title can ask for — the Start timer sheet's own cap. */
+const MAX_MS = (23 * 60 + 59) * 60 * 1000;
+
+/**
+ * A length at the end of a title, as `{ ms, task }` — `task` the title
+ * without it — or null. Hours may be decimal; minutes are whole; either
+ * part may be left out, not both. The length has to stand apart from the
+ * words before it, so "Room 4m" asks for four minutes but "item4m"
+ * asks for nothing.
+ */
+export function parseDuration(title) {
+  const m = /(^|\s)(?:(\d+(?:\.\d+)?)h)?\s?(?:(\d+)m)?\s*$/i.exec(title || "");
+  if (!m || (!m[2] && !m[3])) return null;
+  const ms = Math.round((Number(m[2] || 0) * 60 + Number(m[3] || 0)) * 60 * 1000);
+  if (!(ms > 0) || ms > MAX_MS) return null;
+  return { ms, task: (title.slice(0, m.index) + m[1]).trim() };
+}
+
+/**
+ * What a status change does to the timer. Returns the patch for the
+ * to-do's `timerStartedAt`.
+ */
+export async function applyTimer(state, todo, from, to) {
+  const timer = await import("../timer/timer-store.js");
+  // Leaving active: the timer it started goes with it, if it is still
+  // the one running.
+  if (from === "active" && to !== "active") {
+    const t = timer.getTimer(state);
+    if (t && todo.timerStartedAt && t.startedAt === todo.timerStartedAt) await timer.deleteTimer(state);
+    return { timerStartedAt: null };
+  }
+  if (to !== "active") return {};
+  const d = parseDuration(todo.title);
+  if (!d) return { timerStartedAt: null };
+  const now = Date.now();
+  await timer.startTimer(state, {
+    task: d.task || "To-do",
+    durationMs: d.ms,
+    breakEvery: 0,
+    last: {},
+  }, now);
+  return { timerStartedAt: now };
+}

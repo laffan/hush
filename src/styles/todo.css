@@ -179,36 +179,68 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 4px 14px rgba(0, 0, 0, 0.08);
 }
 
-.todo-check {
+/* The status toggle (todo-status.js): one icon per state on the same
+   rounded square — empty, a dot (primed), a play mark (active), filled
+   with a tick punched out (complete). */
+.todo-status {
   flex: 0 0 auto;
-  position: relative;
-  width: 14px;
-  height: 14px;
-  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin: 0 -2px 0 -2px;
   padding: 0;
+  color: inherit;
   background: none;
-  border: 1.25px solid color-mix(in srgb, var(--fg) 40%, transparent);
-  border-radius: 4px;
+  border: none;
+  border-radius: 5px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  opacity: 0.55;
+  transition: opacity 0.12s;
 }
-.todo-check:hover { border-color: color-mix(in srgb, var(--fg) 70%, transparent); }
-.todo-item.done .todo-check {
+.todo-status:hover { opacity: 1; }
+.todo-panel .todo-status svg { width: 16px; height: 16px; stroke-width: 1.25; }
+.todo-status .todo-status-fill { fill: currentColor; stroke: none; }
+.todo-status .todo-status-tick { stroke: var(--theme-bg, var(--bg)); stroke-width: 1.6; }
+.todo-item.is-primed .todo-status,
+.todo-item.is-active .todo-status,
+.todo-item.is-complete .todo-status { opacity: 0.9; }
+
+/* ---- Primed and active: the block at the top ---- */
+.todo-now {
+  margin: 8px 0 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+}
+/* The active to-do, inverted: ink for paper. */
+.todo-item.is-active,
+.todo-item.is-active:hover,
+.todo-item.is-active.open {
   background: var(--fg);
-  border-color: var(--fg);
+  color: var(--theme-bg, var(--bg));
 }
-/* The tick, drawn in the paper's colour on the filled box. */
-.todo-item.done .todo-check::after {
-  content: "";
-  position: absolute;
-  left: 3.5px;
-  top: 0.5px;
-  width: 3.5px;
-  height: 7.5px;
-  border: solid var(--theme-bg, var(--bg));
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg);
+.todo-item.is-active .todo-status .todo-status-tick { stroke: var(--fg); }
+.todo-item.is-active .todo-tools button:hover,
+.todo-item.is-active .todo-file-unlink:hover { background: color-mix(in srgb, var(--theme-bg, var(--bg)) 18%, transparent); }
+.todo-desk-tag {
+  flex: 0 0 auto;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 16px;
+  opacity: 0.45;
 }
+.todo-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 1px;
+}
+.todo-meta .todo-file { margin-top: 0; min-width: 0; }
 
 .todo-main {
   flex: 1;

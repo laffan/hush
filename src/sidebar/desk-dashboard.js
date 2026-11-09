@@ -44,7 +44,9 @@ const NEW_DOC = typeIcons.document;
 const NEW_NOTEBOOK = typeIcons.notebook;
 const PENCIL = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.5 3H3.5A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8a1.5 1.5 0 0 0 1.5-1.5V8.5"/><path d="M12.25 1.75a1.06 1.06 0 0 1 1.5 1.5L8 9l-2 .5.5-2z"/></svg>`;
 const TRASH = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11"/><path d="M5.5 4V2.75a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75V4"/><path d="M12.5 4l-.6 9.1a1 1 0 0 1-1 .9H5.1a1 1 0 0 1-1-.9L3.5 4"/></svg>`;
-const OPEN_DESK = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3H3.5A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8a1.5 1.5 0 0 0 1.5-1.5V10"/><path d="M9 2h5v5M14 2 7.5 8.5"/></svg>`;
+// A plain forward arrow: go to the desk, here — not the box-and-arrow
+// that reads as "opens in a new window".
+const OPEN_DESK = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg>`;
 
 /** The 2 × 2 grid glyph the sidebar footer's button wears. */
 export const DASHBOARD_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.25"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.25"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.25"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.25"/></svg>`;

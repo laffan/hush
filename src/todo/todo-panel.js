@@ -7,10 +7,16 @@
  *
  * Modelled on Things: a list grouped under headings — here, desks; the
  * desk in front first, then the others that have something on them — a
- * round box and a title per item, and a note under the title for when
- * there is more to say. Clicking an item opens it: the note appears and
- * is typed into. Completed items fade and sink to the bottom of their
- * desk.
+ * status toggle and a title per item, and a note under the title for
+ * when there is more to say. Clicking an item opens it: the note appears
+ * and is typed into.
+ *
+ * The toggle steps through inactive → primed → active → complete
+ * (todo-status.js; ⇧-click steps back). Primed and active to-dos leave
+ * their desks for a block at the top of the list — the active one first,
+ * inverted — each tagged with its desk; completed ones fade and sink to
+ * the bottom of theirs. A title ending in a length (`30m`, `1h33m`)
+ * starts the focus timer when its to-do becomes active.
  *
  * In place of a heading, the head is a search across every file on
  * every desk (todo-search.js#mountFileSearch): picking a file adds an
@@ -32,16 +38,18 @@
  */
 import { escHtml, leafIcon } from "../sidebar/files-panel-shared.js";
 import {
-  readTodos, linkedNode, patchInPlace, commitSoon, flushTodos, addTodo, removeTodo, toggleDone,
+  readTodos, linkedNode, patchInPlace, commitSoon, flushTodos, addTodo, removeTodo, cycleTodo,
   setTodoDesk, linkTodoFile, unlinkTodoFile, createTodoFile,
 } from "./todo-store.js";
 import { openTodoSearch, mountFileSearch } from "./todo-search.js";
+import { statusOf, nextStatus, statusIcon, statusLabel } from "./todo-status.js";
 
 const SEARCH = `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.25"/><path d="M10.25 10.25 13.5 13.5"/></svg>`;
 const PLUS = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>`;
 const CROSS = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>`;
 
-/** How long a just-checked item stays where it is before sinking. */
+/** How long a just-toggled item stays where it is before it moves (to
+ *  the top block, or down its desk). */
 const SINK_MS = 650;
 
 let panel = null; // the live handle
@@ -66,11 +74,19 @@ function deskName(state, deskId) {
     || "Untitled desk";
 }
 
+/** The block at the top: the active to-do, then the primed ones, from
+ *  every desk, in list order. */
+function nowItems(state) {
+  const todos = readTodos(state);
+  return [...todos.filter((t) => statusOf(t) === "active"), ...todos.filter((t) => statusOf(t) === "primed")];
+}
+
 /** The groups to show, in order: the desk in front (always, so there is
  *  somewhere to add), then every other desk with a to-do, in the user's
- *  desk order, then to-dos whose desk is gone. */
+ *  desk order, then to-dos whose desk is gone. Primed and active to-dos
+ *  are in the top block instead. */
 function groups(state) {
-  const todos = readTodos(state);
+  const todos = readTodos(state).filter((t) => statusOf(t) === "inactive" || statusOf(t) === "complete");
   const active = state.settings?.activeDeskId;
   const desks = (state.settings?.desks || []).map((d) => d.id)
     .filter((id) => (state.fileTree || []).some((n) => n.type === "desk" && n.id === id));
@@ -81,27 +97,45 @@ function groups(state) {
     .filter((g) => g.deskId === active || g.items.length);
   const orphans = todos.filter((t) => !known.has(t.deskId));
   if (orphans.length) out.push({ deskId: "", name: "No desk", items: orphans });
-  // Open items first, completed below, each in list order.
-  for (const g of out) g.items = [...g.items.filter((t) => !t.done), ...g.items.filter((t) => t.done)];
+  // Not started first, completed below, each in list order.
+  for (const g of out) {
+    g.items = [...g.items.filter((t) => statusOf(t) !== "complete"), ...g.items.filter((t) => statusOf(t) === "complete")];
+  }
   return out;
 }
 
-function itemHtml(state, t, openId) {
+/** Draw a to-do's status onto its row (and its toggle). */
+function paintStatus(li, status) {
+  for (const s of ["inactive", "primed", "active", "complete"]) li.classList.toggle(`is-${s}`, s === status);
+  li.classList.toggle("done", status === "complete");
+  const btn = li.querySelector(".todo-status");
+  if (!btn) return;
+  btn.innerHTML = statusIcon(status);
+  btn.dataset.tooltip = statusLabel(status);
+  btn.setAttribute("aria-label", statusLabel(status));
+}
+
+function itemHtml(state, t, openId, { showDesk = false } = {}) {
   const node = linkedNode(state, t);
   const notes = t.notes || "";
-  const cls = ["todo-item"];
-  if (t.done) cls.push("done");
+  const status = statusOf(t);
+  const cls = ["todo-item", `is-${status}`];
+  if (status === "complete") cls.push("done");
   if (t.id === openId) cls.push("open");
   if (notes) cls.push("has-notes");
   const file = node
     ? `<span class="todo-file"><button type="button" class="todo-file-open" data-act="open-file" data-tooltip="Open">${leafIcon({ ...node, type: node.type })}<span class="todo-file-name">${escHtml(node.name)}</span></button><button type="button" class="todo-file-unlink" data-act="unlink" data-tooltip="Unlink" aria-label="Unlink file">${CROSS}</button></span>`
     : "";
+  // In the top block an item is away from its desk's heading, so it
+  // says which desk it belongs to.
+  const desk = showDesk ? `<span class="todo-desk-tag">${escHtml(deskName(state, t.deskId))}</span>` : "";
+  const meta = file || desk ? `<span class="todo-meta">${desk}${file}</span>` : "";
   return `<li class="${cls.join(" ")}" data-id="${escHtml(t.id)}">
-    <button type="button" class="todo-check" data-act="toggle" role="checkbox" aria-checked="${t.done ? "true" : "false"}" aria-label="Done"></button>
+    <button type="button" class="todo-status" data-act="cycle" data-tooltip="${statusLabel(status)}" aria-label="${statusLabel(status)}">${statusIcon(status)}</button>
     <div class="todo-main">
       <textarea class="todo-title" rows="1" placeholder="New To-Do" spellcheck="false" aria-label="To-do">${escHtml(t.title || "")}</textarea>
       <textarea class="todo-notes" rows="1" placeholder="Notes" aria-label="Notes">${escHtml(notes)}</textarea>
-      ${file}
+      ${meta}
     </div>
     <span class="todo-tools">
       <button type="button" data-act="search" data-tooltip="Find a desk or file" aria-label="Find a desk or file">${SEARCH}</button>
@@ -153,6 +187,7 @@ function mountPanel(state) {
   let pending = false;   // a render held off while a field had focus
   let search = null;
   let closing = false;
+  let moveTimer = 0;
 
   const editing = () => !!el.querySelector(".todo-title:focus, .todo-notes:focus") || !!search;
 
@@ -161,7 +196,10 @@ function mountPanel(state) {
   function render(focus = null) {
     pending = false;
     const scroll = body.scrollTop;
-    body.innerHTML = groups(state).map((g) => groupHtml(state, g, openId)).join("");
+    const now = nowItems(state);
+    body.innerHTML = (now.length
+      ? `<ul class="todo-items todo-now">${now.map((t) => itemHtml(state, t, openId, { showDesk: true })).join("")}</ul>`
+      : "") + groups(state).map((g) => groupHtml(state, g, openId)).join("");
     body.querySelectorAll("textarea").forEach(fit);
     body.scrollTop = scroll;
     if (focus) {
@@ -219,11 +257,14 @@ function mountPanel(state) {
     if (act === "add") { add(state.settings?.activeDeskId || groups(state)[0]?.deskId); return; }
     if (act === "add-here") { add(btn.closest(".todo-group")?.dataset.deskId); return; }
     if (!todo) return;
-    if (act === "toggle") {
-      item.classList.toggle("done");
-      btn.setAttribute("aria-checked", item.classList.contains("done") ? "true" : "false");
-      void toggleDone(state, todo.id);
-      setTimeout(renderSoon, SINK_MS);
+    if (act === "cycle") {
+      // Shown at once where it is; it moves (up to the top block, or
+      // down its desk) a moment later.
+      const dir = e.shiftKey ? -1 : 1;
+      paintStatus(item, nextStatus(statusOf(todo), dir));
+      void cycleTodo(state, todo.id, dir);
+      clearTimeout(moveTimer);
+      moveTimer = setTimeout(renderSoon, SINK_MS);
     } else if (act === "delete") {
       void removeTodo(state, todo.id);
       render();

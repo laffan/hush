@@ -377,6 +377,23 @@
   cursor: pointer;
 }
 .desk-dash-card:hover .desk-dash-recent { opacity: 1; }
+/* A file's type icon and edit time show only on the card the pointer is
+   over; elsewhere the names stand alone. Hidden, not removed, so the
+   names don't shift when they appear. */
+.desk-dash-file .tree-type-icon,
+.desk-dash-file .custom-icon,
+.desk-dash-file-time {
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.15s, visibility 0s linear 0.15s;
+}
+.desk-dash-card:hover .desk-dash-file .tree-type-icon,
+.desk-dash-card:hover .desk-dash-file .custom-icon,
+.desk-dash-card:hover .desk-dash-file-time {
+  visibility: visible;
+  transition: opacity 0.15s, visibility 0s;
+}
+.desk-dash-card:hover .desk-dash-file-time { opacity: 0.45; }
 .desk-dash-file:hover { background: rgba(128, 128, 128, 0.1); }
 .desk-dash-file .tree-type-icon,
 .desk-dash-file .custom-icon { flex: 0 0 auto; opacity: 0.6; }

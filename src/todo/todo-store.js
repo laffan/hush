@@ -3,7 +3,11 @@
  *
  * Every to-do belongs to a desk, and may be linked to one file on it:
  *
- *   { id, deskId, title, notes, done, doneAt, fileId, fileType, createdAt }
+ *   { id, deskId, title, notes, status, done, doneAt, timerStartedAt,
+ *     fileId, fileType, createdAt }
+ *
+ * `status` is inactive / primed / active / complete (todo-status.js);
+ * `done` mirrors "complete" for anything that reads the older field.
  *
  * `settings.todos` (`todos` on the Rust side, opaque JSON) is the runtime
  * store, in the user's order. Like desk stickies, each desk's own
@@ -25,6 +29,7 @@
  */
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { deskIdOfFile } from "../state/cross-desk.js";
+import { statusOf, nextStatus, applyTimer } from "./todo-status.js";
 
 const TEXT_SAVE_MS = 400;
 let textTimer = 0;
@@ -90,14 +95,14 @@ export function patchInPlace(state, id, patch) {
  *  of that desk's open items). Returns the new to-do. */
 export function addTodo(state, deskId, { afterId = null, title = "", fileId = null, fileType = null } = {}) {
   const todo = {
-    id: uid(), deskId, title, notes: "", done: false, doneAt: null,
+    id: uid(), deskId, title, notes: "", status: "inactive", done: false, doneAt: null,
     fileId, fileType: fileId ? fileType || "document" : null, createdAt: Date.now(),
   };
   const list = [...readTodos(state)];
   let at = afterId ? list.findIndex((t) => t.id === afterId) + 1 : 0;
   if (!afterId) {
     // After the last open item on the desk — completed ones sit below.
-    list.forEach((t, i) => { if (t.deskId === deskId && !t.done) at = i + 1; });
+    list.forEach((t, i) => { if (t.deskId === deskId && statusOf(t) !== "complete") at = i + 1; });
     if (at === 0) {
       const firstOfDesk = list.findIndex((t) => t.deskId === deskId);
       at = firstOfDesk >= 0 ? firstOfDesk : list.length;
@@ -117,10 +122,33 @@ export function removeTodo(state, id) {
   return commit(state, readTodos(state).filter((t) => t.id !== id));
 }
 
-export function toggleDone(state, id) {
+/** Set a to-do's status. The list changes in memory at once (the panel
+ *  re-renders on it); the timer follows behind. Making a to-do active
+ *  sends any other active one back to primed. */
+export async function setTodoStatus(state, id, status) {
+  const list = readTodos(state);
+  const t = list.find((x) => x.id === id);
+  if (!t) return;
+  const from = statusOf(t);
+  if (from === status) return;
+  const at = Date.now();
+  const as = (x, s) => ({ ...x, status: s, done: s === "complete", doneAt: s === "complete" ? at : null });
+  const demoted = status === "active" ? list.filter((x) => x.id !== id && statusOf(x) === "active") : [];
+  void commit(state, list.map((x) => (x.id === id ? as(x, status) : demoted.includes(x) ? as(x, "primed") : x)));
+  // Demoted first, so its timer is gone before this one's starts.
+  for (const d of demoted) {
+    const patch = await applyTimer(state, d, "active", "primed");
+    if ("timerStartedAt" in patch) await updateTodo(state, d.id, patch);
+  }
+  const patch = await applyTimer(state, t, from, status);
+  if ("timerStartedAt" in patch) await updateTodo(state, id, patch);
+}
+
+/** One step through the states (⇧-click: one step back). */
+export function cycleTodo(state, id, dir = 1) {
   const t = readTodos(state).find((x) => x.id === id);
   if (!t) return Promise.resolve();
-  return updateTodo(state, id, { done: !t.done, doneAt: t.done ? null : Date.now() });
+  return setTodoStatus(state, id, nextStatus(statusOf(t), dir));
 }
 
 /** Point a to-do at a desk. A linked file on another desk is dropped:
