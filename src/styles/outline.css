@@ -245,6 +245,15 @@
 
 .outline-pinned-panel .outline-footer { flex: none; padding: 2px 8px 6px; }
 
+/* Flush to the bottom of the window, the main editor's panel reaches
+   into the iPad's home-indicator band, where a tap is the system's: its
+   footer buttons sat there and could not be pressed. The panel still
+   runs to the edge; only the footer is lifted clear of the band
+   (`--ipad-safe-bottom` is 30 px on iPad, 0 elsewhere). */
+#editor-container .outline-pinned-panel .outline-footer {
+  padding-bottom: calc(6px + max(var(--ipad-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)));
+}
+
 /* The top edge is the grab handle: drag it to set how much of the frame
    the outline takes. Rendered as a short centred bar so it reads as
    something to pull rather than as the panel's own border. */

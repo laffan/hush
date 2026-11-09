@@ -393,3 +393,21 @@
 .todo-search-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .todo-search-desk { flex: 0 0 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; opacity: 0.45; }
 .todo-search-empty { padding: 6px; opacity: 0.45; }
+
+/* ---- "Start timer" (an active to-do whose title ends in a length) ---- */
+.todo-timer {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 8px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  color: inherit;
+  background: none;
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0.85;
+}
+.todo-timer:hover:not(:disabled) { opacity: 1; border-color: currentColor; }
+.todo-timer:disabled { cursor: default; opacity: 0.5; border-style: dashed; }

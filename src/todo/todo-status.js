@@ -9,8 +9,9 @@
  * that was back to primed.
  *
  * A title that ends in a length — `30m`, `1h`, `1h33m`, `1h 30m`,
- * `1.5h` — starts the focus timer (timer/timer-store.js) for that long
- * when the to-do becomes active, named after the rest of the title. The
+ * `1.5h` — gives the to-do a "Start timer" button while it is active,
+ * which starts the focus timer (timer/timer-store.js) for that long,
+ * named after the rest of the title. Nothing starts by itself. The
  * to-do remembers the timer it started (`timerStartedAt`); when it stops
  * being active, that timer is cancelled if it is still the one running,
  * and left alone if the user has started another since.
@@ -68,27 +69,33 @@ export function parseDuration(title) {
 }
 
 /**
- * What a status change does to the timer. Returns the patch for the
- * to-do's `timerStartedAt`.
+ * What a status change does to the timer: leaving active takes the timer
+ * the to-do started with it, if it is still the one running. Returns the
+ * patch for the to-do's `timerStartedAt`.
  */
 export async function applyTimer(state, todo, from, to) {
+  if (!(from === "active" && to !== "active")) return {};
   const timer = await import("../timer/timer-store.js");
-  // Leaving active: the timer it started goes with it, if it is still
-  // the one running.
-  if (from === "active" && to !== "active") {
-    const t = timer.getTimer(state);
-    if (t && todo.timerStartedAt && t.startedAt === todo.timerStartedAt) await timer.deleteTimer(state);
-    return { timerStartedAt: null };
-  }
-  if (to !== "active") return {};
+  const t = timer.getTimer(state);
+  if (t && todo.timerStartedAt && t.startedAt === todo.timerStartedAt) await timer.deleteTimer(state);
+  return { timerStartedAt: null };
+}
+
+/** The "Start timer" button: a timer for the title's length, no breaks,
+ *  leaving the Start timer sheet's remembered values as they were.
+ *  Resolves to its `startedAt`, or null when the title has no length. */
+export async function startTodoTimer(state, todo) {
   const d = parseDuration(todo.title);
-  if (!d) return { timerStartedAt: null };
+  if (!d) return null;
+  const timer = await import("../timer/timer-store.js");
   const now = Date.now();
-  await timer.startTimer(state, {
-    task: d.task || "To-do",
-    durationMs: d.ms,
-    breakEvery: 0,
-    last: {},
-  }, now);
-  return { timerStartedAt: now };
+  await timer.startTimer(state, { task: d.task || "To-do", durationMs: d.ms, breakEvery: 0, last: {} }, now);
+  return now;
+}
+
+/** The to-do's own timer is the one running now. */
+export function todoTimerRunning(state, todo) {
+  const t = state.settings?.timer?.active;
+  return !!t && !!todo.timerStartedAt && t.startedAt === todo.timerStartedAt
+    && Date.now() < t.startedAt + t.durationMs;
 }

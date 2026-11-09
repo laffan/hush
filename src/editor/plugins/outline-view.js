@@ -601,6 +601,36 @@ function makePinnedPanel(field, appState) {
   );
 }
 
+/**
+ * Backspace on an empty outline item removes the item — the whole line,
+ * caret to the end of the line above (or to the start of the one below,
+ * at the head of the document). Left to the default, Backspace ate the
+ * item's markup a character at a time — and in the pinned panel, which
+ * refuses any line that stops being an item, the first stroke past the
+ * box did nothing at all. Only an empty caret on an empty item; anything
+ * else is the default's. The panel still keeps its last item: removing
+ * it would leave a line that isn't one, which `keepChecklist` refuses.
+ */
+function removeEmptyItem(view, blocks) {
+  const sel = view.state.selection;
+  if (sel.ranges.length !== 1 || !sel.main.empty) return false;
+  const doc = view.state.doc;
+  const line = doc.lineAt(sel.main.head);
+  const item = (blocks || []).flatMap((b) => b.items).find((i) => i.line === line.number);
+  if (!item || item.text.trim()) return false;
+  const change = line.number > 1
+    ? { from: doc.line(line.number - 1).to, to: line.to }
+    : line.number < doc.lines ? { from: line.from, to: doc.line(2).from } : null;
+  if (!change) return false;
+  view.dispatch({
+    changes: change,
+    selection: { anchor: change.from },
+    scrollIntoView: true,
+    userEvent: "delete.backward",
+  });
+  return true;
+}
+
 /** Alt-Arrow moves an item among its siblings with its children — see
  *  `outline-move.js#moveOutlineUnit`. Outside an outline nothing is
  *  claimed and CodeMirror's own line move / indent runs. */
@@ -613,6 +643,7 @@ function makeOutlineKeymap(field) {
     // the parent's branch — `outline-move.js#indentOutlineUnit`.
     { key: "Mod-]", run: (view) => indentOutlineUnit(view, blocks(view), 1) },
     { key: "Mod-[", run: (view) => indentOutlineUnit(view, blocks(view), -1) },
+    { key: "Backspace", run: (view) => removeEmptyItem(view, blocks(view)) },
   ]));
 }
 

@@ -38,11 +38,11 @@
  */
 import { escHtml, leafIcon } from "../sidebar/files-panel-shared.js";
 import {
-  readTodos, linkedNode, patchInPlace, commitSoon, flushTodos, addTodo, removeTodo, cycleTodo,
+  readTodos, linkedNode, patchInPlace, commitSoon, flushTodos, addTodo, removeTodo, cycleTodo, startTimerFor,
   setTodoDesk, linkTodoFile, unlinkTodoFile, createTodoFile,
 } from "./todo-store.js";
 import { openTodoSearch, mountFileSearch } from "./todo-search.js";
-import { statusOf, nextStatus, statusIcon, statusLabel } from "./todo-status.js";
+import { statusOf, nextStatus, statusIcon, statusLabel, parseDuration, todoTimerRunning } from "./todo-status.js";
 
 const SEARCH = `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.25"/><path d="M10.25 10.25 13.5 13.5"/></svg>`;
 const PLUS = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>`;
@@ -129,7 +129,14 @@ function itemHtml(state, t, openId, { showDesk = false } = {}) {
   // In the top block an item is away from its desk's heading, so it
   // says which desk it belongs to.
   const desk = showDesk ? `<span class="todo-desk-tag">${escHtml(deskName(state, t.deskId))}</span>` : "";
-  const meta = file || desk ? `<span class="todo-meta">${desk}${file}</span>` : "";
+  // An active to-do whose title ends in a length offers its timer, at
+  // the right of the line under the title.
+  const length = status === "active" ? parseDuration(t.title) : null;
+  const running = length && todoTimerRunning(state, t);
+  const timerBtn = length
+    ? `<button type="button" class="todo-timer" data-act="start-timer"${running ? " disabled" : ""}>${running ? "Timer running" : "Start timer"}</button>`
+    : "";
+  const meta = file || desk || timerBtn ? `<span class="todo-meta">${desk}${file}${timerBtn}</span>` : "";
   return `<li class="${cls.join(" ")}" data-id="${escHtml(t.id)}">
     <button type="button" class="todo-status" data-act="cycle" data-tooltip="${statusLabel(status)}" aria-label="${statusLabel(status)}">${statusIcon(status)}</button>
     <div class="todo-main">
@@ -265,6 +272,10 @@ function mountPanel(state) {
       void cycleTodo(state, todo.id, dir);
       clearTimeout(moveTimer);
       moveTimer = setTimeout(renderSoon, SINK_MS);
+    } else if (act === "start-timer") {
+      btn.disabled = true;
+      btn.textContent = "Timer running";
+      await startTimerFor(state, todo.id);
     } else if (act === "delete") {
       void removeTodo(state, todo.id);
       render();

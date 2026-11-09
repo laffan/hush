@@ -29,7 +29,7 @@
  */
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { deskIdOfFile } from "../state/cross-desk.js";
-import { statusOf, nextStatus, applyTimer } from "./todo-status.js";
+import { statusOf, nextStatus, applyTimer, startTodoTimer } from "./todo-status.js";
 
 const TEXT_SAVE_MS = 400;
 let textTimer = 0;
@@ -123,8 +123,8 @@ export function removeTodo(state, id) {
 }
 
 /** Set a to-do's status. The list changes in memory at once (the panel
- *  re-renders on it); the timer follows behind. Making a to-do active
- *  sends any other active one back to primed. */
+ *  re-renders on it); cancelling a timer it started follows behind.
+ *  Making a to-do active sends any other active one back to primed. */
 export async function setTodoStatus(state, id, status) {
   const list = readTodos(state);
   const t = list.find((x) => x.id === id);
@@ -142,6 +142,15 @@ export async function setTodoStatus(state, id, status) {
   }
   const patch = await applyTimer(state, t, from, status);
   if ("timerStartedAt" in patch) await updateTodo(state, id, patch);
+}
+
+/** Start the focus timer for an active to-do's length, and remember it
+ *  as this to-do's (so leaving active cancels it). */
+export async function startTimerFor(state, id) {
+  const t = readTodos(state).find((x) => x.id === id);
+  if (!t || statusOf(t) !== "active") return;
+  const startedAt = await startTodoTimer(state, t);
+  if (startedAt) await updateTodo(state, id, { timerStartedAt: startedAt });
 }
 
 /** One step through the states (⇧-click: one step back). */
