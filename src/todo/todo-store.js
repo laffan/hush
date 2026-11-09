@@ -153,7 +153,7 @@ export async function startTimerFor(state, id) {
   if (startedAt) await updateTodo(state, id, { timerStartedAt: startedAt });
 }
 
-/** One step through the states (⇧-click: one step back). */
+/** One step through the states (⌘-click: one step back). */
 export function cycleTodo(state, id, dir = 1) {
   const t = readTodos(state).find((x) => x.id === id);
   if (!t) return Promise.resolve();

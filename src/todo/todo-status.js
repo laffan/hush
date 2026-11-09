@@ -3,7 +3,7 @@
  *
  *   inactive → primed → active → complete → inactive …
  *
- * (⇧-click steps back.) Primed and active to-dos are pulled out of their
+ * (⌘-click — or ⇧-click — steps back.) Primed and active to-dos are pulled out of their
  * desks to the top of the list; the active one is drawn inverted. Only
  * one to-do is active at a time: making another active sends the one
  * that was back to primed.
@@ -25,7 +25,7 @@ export function statusOf(todo) {
   return todo?.done ? "complete" : "inactive";
 }
 
-/** The status after one click (`dir` 1) or ⇧-click (`dir` -1). */
+/** The status after one click (`dir` 1) or ⌘-click (`dir` -1). */
 export function nextStatus(status, dir = 1) {
   const i = STATES.indexOf(status);
   return STATES[(i + (dir < 0 ? STATES.length - 1 : 1)) % STATES.length];

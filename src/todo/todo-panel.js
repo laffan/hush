@@ -12,7 +12,7 @@
  * and is typed into.
  *
  * The toggle steps through inactive → primed → active → complete
- * (todo-status.js; ⇧-click steps back). Primed and active to-dos leave
+ * (todo-status.js; ⌘-click steps back). Primed and active to-dos leave
  * their desks for a block at the top of the list — the active one first,
  * inverted — each tagged with its desk; completed ones fade and sink to
  * the bottom of theirs. A title ending in a length (`30m`, `1h33m`)
@@ -267,7 +267,10 @@ function mountPanel(state) {
     if (act === "cycle") {
       // Shown at once where it is; it moves (up to the top block, or
       // down its desk) a moment later.
-      const dir = e.shiftKey ? -1 : 1;
+      // ⌘-click steps back (⇧-click too). A ⌘-click can't count toward
+      // the double-⌘ that toggles this panel: ui/triple-tap.js resets
+      // on any pointer press.
+      const dir = e.metaKey || e.shiftKey ? -1 : 1;
       paintStatus(item, nextStatus(statusOf(todo), dir));
       void cycleTodo(state, todo.id, dir);
       clearTimeout(moveTimer);
