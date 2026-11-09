@@ -45,6 +45,7 @@ import { createImagePasteExtension } from "./image-paste.js";
 import { caretFollowPlugin } from "./caret-follow.js";
 import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js";
 import { createGrammarCheckPlugin, createGrammarHoverTooltip } from "./plugins/grammar-check.js";
+import { phoneTextInputAttributes } from "./phone-text-input.js";
 import { createSpellcheckPlugin, spellcheckClickHandler } from "./plugins/spellcheck.js";
 import { getMarkdownHighlight, resolveHeaderColorOverride, headingSizeOf } from "./markdown-highlight.js";
 import {
@@ -340,6 +341,7 @@ export function createEditor(container, state) {
       keymap.of([...hushDefaultKeymap, ...historyKeymap]),
       placeholder("Start writing..."),
       EditorView.lineWrapping,
+      phoneTextInputAttributes(), // also in createBaseExtensions
   ];
 
   const startState = EditorState.create({

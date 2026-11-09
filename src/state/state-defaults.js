@@ -8,6 +8,10 @@ export function createDefaultSettings() {
     visibility: "both",
     appearance: "auto",
     touchMode: false,
+    // Set once an iPhone has had Touch mode switched on for it
+    // (state-migrations.js#migratePhoneDefaults), so the user can turn
+    // it off again and have that stick.
+    phoneTouchModeDefaulted: false,
     hideSystemChrome: true,
     lightTheme: "smoothy",
     darkTheme: "dracula",

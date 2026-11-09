@@ -1,0 +1,244 @@
+/* ===== Phone (iPhone) =====
+   Everything here is gated on `html.phone`, which `main-boot.js` sets
+   once from the user agent (see `isPhone` in settings-ui.js — never the
+   viewport, so a narrow iPad window keeps the iPad chrome). Imported
+   last so it wins on equal specificity.
+
+   One measurement runs through the file: the edge toggles are
+   `--phone-toggle-size` circles whose outer edge sits `--phone-toggle-inset`
+   in from the screen edge, and the touch pills stack in a column on the
+   same centre line, so everything you tap on the right-hand side lines up. */
+
+html.phone {
+  /* The files panel takes the whole screen; its grip strip is its own
+     right-hand 20 px, so the close toggle lands where the Overview
+     toggle sits when the panel is shut. */
+  --panel-width: 100vw !important;
+  --phone-toggle-size: 36px;
+  --phone-toggle-inset: 8px;
+  /* Very faint ring — enough to say "this is a button" without drawing
+     a frame round the page. */
+  --phone-toggle-border: 1px solid color-mix(in srgb, var(--fg, #888) 16%, transparent);
+  /* How far a toggle's centre sits from the screen edge. */
+  --phone-toggle-centre: calc(var(--phone-toggle-inset) + var(--phone-toggle-size) / 2);
+}
+
+/* ----- Files sidebar ----- */
+
+html.phone .panel-overlay-header {
+  padding-top: calc(20px + env(safe-area-inset-top, 0px));
+}
+
+html.phone .sidebar-panel-resizer,
+html.phone .sidebar-grip-resize {
+  display: none;
+}
+
+/* The grip strip stays 20 px (the panel width is computed from it), but
+   its chevron becomes a ringed circle that hangs inboard of the strip:
+   rightward off the window edge while the panel is closed, leftward off
+   the panel's edge while it is open. The circle is a child of the toggle
+   button, so a tap on any part of it is a tap on the button. */
+html.phone #panel-overlay.hidden {
+  --grip-glyph-shift: calc(var(--phone-toggle-centre) - var(--sidebar-grip-width) / 2 + env(safe-area-inset-left, 0px));
+}
+html.phone #panel-overlay:not(.hidden) {
+  --grip-glyph-shift: calc(var(--sidebar-grip-width) / 2 - var(--phone-toggle-centre) - env(safe-area-inset-right, 0px));
+}
+
+/* Out of flow, centred on the strip: a 36 px child in flow would widen
+   the 20 px toggle that holds it. */
+html.phone .sidebar-grip-chevron {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(calc(-50% + var(--grip-glyph-shift)), -50%);
+  width: var(--phone-toggle-size);
+  height: var(--phone-toggle-size);
+  flex: 0 0 var(--phone-toggle-size);
+  align-items: center;
+  justify-content: center;
+  border: var(--phone-toggle-border);
+  border-radius: 50%;
+  background: var(--theme-bg, var(--bg));
+  box-sizing: border-box;
+  opacity: 0.75;
+}
+
+/* The 100 px hover pill is a pointer affordance; on a touch screen
+   `:hover` sticks after a tap and leaves it painted. */
+html.phone .sidebar-grip-toggle::before {
+  display: none;
+}
+
+/* ----- Overview (right) toggle ----- */
+
+html.phone .right-panel-trigger {
+  width: var(--phone-toggle-size);
+  height: var(--phone-toggle-size);
+  right: calc(var(--phone-toggle-inset) + env(safe-area-inset-right, 0px));
+  border: var(--phone-toggle-border);
+  border-radius: 50%;
+  background: var(--theme-bg, var(--bg));
+  box-sizing: border-box;
+  opacity: 0.75;
+}
+html.phone .right-panel-trigger:hover {
+  background: var(--theme-bg, var(--bg));
+}
+
+/* The files panel fills the screen on a phone; the Overview toggle would
+   otherwise sit on top of it, next to the panel's own close toggle. */
+html.phone #app:has(#panel-overlay:not(.hidden)) .right-panel-trigger {
+  display: none;
+}
+
+/* ----- Notebook shelf (the canvas's right-hand panel) -----
+   Closed, the shelf is a full-height 24 px strip on iPad and the Mac. On
+   a phone that strip is a tenth of the canvas, so closed it becomes a
+   clear column holding the same ringed circle as the other toggles; the
+   canvas still measures the column as the shelf (`rightInset`), so the
+   corner controls and the page rail stay clear of the circle. Inline
+   sizes are written by shelf-panel.ts, hence `!important`. */
+html.phone #notebook-container .notebook-shelf:not(.is-open) {
+  width: calc(var(--phone-toggle-inset) * 2 + var(--phone-toggle-size)) !important;
+  min-width: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  overflow: visible !important;
+  pointer-events: none;
+}
+html.phone #notebook-container .notebook-shelf:not(.is-open) > .notebook-shelf-grip {
+  pointer-events: auto;
+  width: var(--phone-toggle-size) !important;
+  height: var(--phone-toggle-size) !important;
+  left: auto !important;
+  right: calc(var(--phone-toggle-inset) + env(safe-area-inset-right, 0px));
+  top: 50% !important;
+  transform: translateY(-50%);
+  border: var(--phone-toggle-border) !important;
+  border-radius: 50% !important;
+  background: var(--theme-bg, var(--bg)) !important;
+  font-size: 16px !important;
+  opacity: 0.75;
+}
+/* Open, the shelf is a full-screen sheet over the canvas — at 280 px it
+   left a strip of canvas too narrow to use, and the corner controls,
+   which park against the shelf's edge, were pushed onto the toolbar.
+   Its close circle hangs on the left, mirroring the files sidebar's
+   (whose open circle it covers). Above the toolbar band, so the canvas
+   chrome stays underneath. */
+html.phone #notebook-container .notebook-shelf.is-open {
+  left: 0 !important;
+  right: 0 !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  z-index: 89 !important;
+  /* The notebook's UI background is translucent; over the toolbar that
+     read as the toolbar showing through the sheet. */
+  background: var(--theme-bg, var(--bg)) !important;
+}
+html.phone #notebook-container .notebook-shelf.is-open > .notebook-shelf-grip {
+  width: var(--phone-toggle-size) !important;
+  height: var(--phone-toggle-size) !important;
+  left: calc(var(--phone-toggle-inset) + env(safe-area-inset-left, 0px)) !important;
+  top: 50% !important;
+  transform: translateY(-50%);
+  border: var(--phone-toggle-border) !important;
+  border-radius: 50% !important;
+  background: var(--theme-bg, var(--bg)) !important;
+  font-size: 16px !important;
+  opacity: 0.75;
+}
+html.phone #notebook-container .notebook-shelf.is-open > .notebook-shelf-grip + div {
+  margin-left: calc(var(--phone-toggle-inset) * 2 + var(--phone-toggle-size) + env(safe-area-inset-left, 0px)) !important;
+  padding-top: calc(20px + env(safe-area-inset-top, 0px)) !important;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)) !important;
+}
+/* Nothing to resize on a full-screen sheet. */
+html.phone .notebook-shelf-resizer {
+  display: none !important;
+}
+
+/* ----- Touch pills -----
+   A column at the bottom-right, centred under the right-hand toggles:
+   palette at the foot, paste above it. Sitting side by side, the paste
+   pill landed on the notebook's corner controls. */
+html.phone .cmd-floating-button {
+  left: auto;
+  right: calc(var(--phone-toggle-inset) + env(safe-area-inset-right, 0px));
+}
+
+html.phone .cmd-floating-button.cmd-palette-button {
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+html.phone .cmd-floating-button.cmd-paste-button {
+  bottom: calc(12px + (36px + 12px) + env(safe-area-inset-bottom, 0px));
+}
+
+html.phone .cmd-floating-button.panel-open {
+  display: none;
+}
+
+/* ----- "No file selected" -----
+   Three buttons in a row are wider than a phone once the toggles on
+   either side are cleared, so they stack, icon beside label. */
+html.phone .empty-state-actions {
+  flex-direction: column;
+  gap: 10px;
+  width: min(240px, calc(100vw - 4 * var(--phone-toggle-centre)));
+}
+
+html.phone .empty-state-actions button {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+  padding: 14px 18px;
+  font-size: 14px;
+}
+
+html.phone .empty-state-actions button:hover {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--fg) 22%, transparent);
+}
+
+/* Full-screen panel: a border on its right edge is a line down the
+   bezel, and it nudges the grip 1 px off the right-hand toggles' line. */
+html.phone #panel-overlay {
+  border-right: none;
+}
+
+/* ----- Stacks -----
+   The stack starts at the window's left edge, so on a phone its first
+   spine sat half under the files sidebar's strip and the toggle circle
+   on top of the spine's label. A gutter the width of the toggle area
+   clears both; stack-column-width.js caps each column to what is left,
+   so one column is one screen. */
+html.phone #stack-container {
+  /* `!important` over main.js#syncStackInset's inline `left`, which only
+     ever moves the stack for an inset sidebar or a left-docked pane —
+     neither of which a phone has (overlay sidebar, panes hidden). */
+  left: calc(var(--phone-toggle-inset) * 2 + var(--phone-toggle-size) + env(safe-area-inset-left, 0px)) !important;
+}
+
+/* The stack's list / add buttons sat side by side in the bottom-right
+   corner, on top of the palette pill. Stack them in the pill column,
+   above the pills. */
+html.phone .stack-btn-group {
+  flex-direction: column;
+  right: calc(var(--phone-toggle-inset) - 2px + env(safe-area-inset-right, 0px));
+  bottom: calc(12px + (36px + 12px) * 2 + env(safe-area-inset-bottom, 0px));
+}
+
+/* 50 px either side of the text is a third of a phone-width column. */
+html.phone .stack-doc-wrapper .cm-content {
+  padding-left: 20px;
+  padding-right: 20px;
+}

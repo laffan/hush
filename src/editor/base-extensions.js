@@ -1,5 +1,6 @@
 import { EditorView, keymap, drawSelection, placeholder } from "@codemirror/view";
 import { multiCursorExtension } from "./multi-cursor.js";
+import { phoneTextInputAttributes } from "./phone-text-input.js";
 import { Prec, Compartment, Annotation, Transaction } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting } from "@codemirror/language";
@@ -309,6 +310,7 @@ export function createBaseExtensions(state, onChange, opts) {
     Prec.highest(keymap.of(buildFixedKeymap(state))),
     placeholder("Start writing..."),
     EditorView.lineWrapping,
+    phoneTextInputAttributes(), // also in editor.js
     _editableComp.of(EditorView.editable.of(true)),
   ];
 

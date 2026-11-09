@@ -1,3 +1,4 @@
+import { columnDisplayWidth } from "./stack-column-width.js";
 import { resolveItemName } from "./stack-spine.js";
 import { typeIcons } from "../sidebar/files-panel-shared.js";
 
@@ -138,7 +139,7 @@ export function updateScrollbarPills(stack) {
   for (const item of stack._items) {
     const spineSize = isVert ? SPINE_HEIGHT : SPINE_WIDTH;
     const contentSize = item.open
-      ? (isVert ? (item.height || DEFAULT_COLUMN_HEIGHT) : (item.width || DEFAULT_COLUMN_WIDTH))
+      ? (isVert ? (item.height || DEFAULT_COLUMN_HEIGHT) : columnDisplayWidth(item))
       : 0;
     const colSize = spineSize + contentSize;
 

@@ -78,6 +78,7 @@ export function createShelfPanel(
     style: { width: "24px", height: "100%", position: "absolute", left: "0", top: "0", border: "none", borderRight: "none", borderRadius: "12px 0 0 12px", cursor: "pointer", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", zIndex: "10" },
     onClick: () => { isOpen = !isOpen; rebuild(); },
   });
+  grip.classList.add("notebook-shelf-grip");
   panel.appendChild(grip);
 
   const content = h("div", {
@@ -317,6 +318,8 @@ export function createShelfPanel(
     panel.style.width = isOpen ? `${openWidth}px` : "24px";
     panel.style.minWidth = isOpen ? `${openWidth}px` : "24px";
     grip.textContent = isOpen ? "\u203a" : "\u2039";
+    // phone.css restyles the closed shelf as a ringed toggle.
+    panel.classList.toggle("is-open", isOpen);
     content.style.display = isOpen ? "flex" : "none";
     if (!isOpen) {
       // Detach header/body so a closed shelf doesn't leave them in the DOM.

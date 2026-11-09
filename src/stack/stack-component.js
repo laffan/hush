@@ -14,6 +14,7 @@
 import { createSpine, resolveItemName } from "./stack-spine.js";
 import { mountItemContent, unmountItemContent, snapshotItemContent, pinUnscrollable } from "./stack-item-mount.js";
 import { startReorder } from "./stack-reorder.js";
+import { SPINE_WIDTH, DEFAULT_COLUMN_WIDTH, columnDisplayWidth } from "./stack-column-width.js";
 import { updateScrollbarPills, setupScrollThumb, updateScrollThumb } from "./stack-scrollbar-pills.js";
 
 // iPad (not iPhone): the reserved scrollbar band gets a custom draggable
@@ -23,9 +24,7 @@ const IPAD_STACK = typeof document !== "undefined"
   && document.documentElement.classList.contains("ios")
   && !document.documentElement.classList.contains("phone");
 
-const SPINE_WIDTH = 50;
 const SPINE_HEIGHT = 40;
-const DEFAULT_COLUMN_WIDTH = 800;
 const DEFAULT_COLUMN_HEIGHT = 600;
 const BUFFER_COLUMNS = 1;
 const MIN_COLUMN_WIDTH = 200;
@@ -175,7 +174,7 @@ export class StackComponent {
       col.style.height = (SPINE_HEIGHT + height) + "px";
       col.style.minHeight = SPINE_HEIGHT + "px";
     } else {
-      const width = item.open ? (item.width || DEFAULT_COLUMN_WIDTH) : 0;
+      const width = item.open ? columnDisplayWidth(item) : 0;
       col.style.width = (SPINE_WIDTH + width) + "px";
       col.style.minWidth = SPINE_WIDTH + "px";
     }
@@ -223,7 +222,7 @@ export class StackComponent {
       if (total !== trackedShelfW) {
         trackedShelfW = total;
         item.width = userBaseW + total;
-        col.style.width = (SPINE_WIDTH + item.width) + "px";
+        col.style.width = (SPINE_WIDTH + columnDisplayWidth(item)) + "px";
       }
     }
     const mo = new MutationObserver(() => {
@@ -248,7 +247,7 @@ export class StackComponent {
       if (this._isVertical) {
         col.style.height = (SPINE_HEIGHT + (item.height || DEFAULT_COLUMN_HEIGHT)) + "px";
       } else {
-        col.style.width = (SPINE_WIDTH + (item.width || DEFAULT_COLUMN_WIDTH)) + "px";
+        col.style.width = (SPINE_WIDTH + columnDisplayWidth(item)) + "px";
       }
       const contentEl = col.querySelector(".stack-column-content");
       if (contentEl) contentEl.style.display = "block";
@@ -324,7 +323,7 @@ export class StackComponent {
       document.addEventListener("pointerup", onUp);
     } else {
       const startX = e.clientX;
-      const startWidth = item.width || DEFAULT_COLUMN_WIDTH;
+      const startWidth = columnDisplayWidth(item);
       const onMove = (ev) => {
         const dx = ev.clientX - startX;
         const newWidth = Math.min(maxItemWidth(), Math.max(MIN_COLUMN_WIDTH, startWidth + dx));
@@ -395,7 +394,7 @@ export class StackComponent {
       const viewRight = scrollLeft + viewWidth;
       let accX = 0;
       for (const item of this._items) {
-        const colWidth = item.open ? SPINE_WIDTH + (item.width || DEFAULT_COLUMN_WIDTH) : SPINE_WIDTH;
+        const colWidth = item.open ? SPINE_WIDTH + columnDisplayWidth(item) : SPINE_WIDTH;
         const colLeft = accX;
         const colRight = accX + colWidth;
         accX = colRight;
@@ -575,7 +574,7 @@ export class StackComponent {
         col.style.height = (SPINE_HEIGHT + h) + "px";
         col.style.minHeight = SPINE_HEIGHT + "px";
       } else {
-        const w = item.open ? (item.width || DEFAULT_COLUMN_WIDTH) : 0;
+        const w = item.open ? columnDisplayWidth(item) : 0;
         col.style.width = (SPINE_WIDTH + w) + "px";
         col.style.minWidth = SPINE_WIDTH + "px";
       }

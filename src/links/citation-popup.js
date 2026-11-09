@@ -7,6 +7,7 @@
  * commits, Esc or a click outside dismisses.
  */
 
+import { placePopupAgainst } from "../ui/visible-viewport.js";
 import { fuzzySearch } from "../zotero.js";
 
 const MAX_ROWS = 12;
@@ -107,17 +108,10 @@ export function openCitationPopup(opts) {
   }
 
   function position(rect) {
-    const margin = 4;
-    const vh = window.innerHeight;
-    const vw = window.innerWidth;
-    el.style.left = `${Math.max(8, Math.min(rect.left, vw - 420))}px`;
-    el.style.top = `${rect.bottom + margin}px`;
+    // Visible viewport, not `innerHeight` — see ui/visible-viewport.js.
     el.style.visibility = "hidden";
     requestAnimationFrame(() => {
-      const h = el.getBoundingClientRect().height;
-      if (rect.bottom + margin + h > vh - 8 && rect.top - margin - h > 8) {
-        el.style.top = `${rect.top - margin - h}px`;
-      }
+      placePopupAgainst(el, rect, { maxWidth: 420 });
       el.style.visibility = "visible";
       // Focus only lands once the popup is actually rendered: the
       // flip-above measurement above parks it at `visibility: hidden`

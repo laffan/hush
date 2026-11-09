@@ -46,6 +46,9 @@ export function renderGeneralTab(settings) {
   return `
     <div class="settings-section">
       <h2>Visibility</h2>
+      <!-- Menu bar / dock visibility and always-on-top are Mac window
+           management; iOS has neither, so the rows aren't offered there. -->
+      ${isIOSSettings() ? "" : `
       <div class="settings-row">
         <label>App visibility</label>
         <select id="setting-visibility">
@@ -58,6 +61,7 @@ export function renderGeneralTab(settings) {
         <label>Show app above all other windows</label>
         <input type="checkbox" id="setting-always-on-top" ${s.alwaysOnTop ? "checked" : ""} />
       </div>
+      `}
       <div class="settings-row">
         <label>Show tooltips</label>
         <input type="checkbox" id="setting-show-tooltips" ${s.showTooltips ? "checked" : ""} />

@@ -13,6 +13,7 @@
 
 import { filterNotes } from "./wikilink-index.js";
 import { typeIcons } from "../sidebar/files-panel-shared.js";
+import { placePopupAgainst } from "../ui/visible-viewport.js";
 
 // Map link types to the existing sidebar typeIcons. Projects, PDFs, and
 // stacks all live in the same registry; falling back to the document
@@ -109,18 +110,12 @@ export function openWikilinkPopup(opts) {
   }
 
   function position(rect) {
-    const margin = 4;
-    const vh = window.innerHeight;
-    const vw = window.innerWidth;
-    el.style.left = `${Math.max(8, Math.min(rect.left, vw - 360))}px`;
-    // Render first so we can measure height; reposition above if needed.
-    el.style.top = `${rect.bottom + margin}px`;
+    // Measured against the visible viewport, not `innerHeight`: on a
+    // phone the keyboard covers the bottom of the window without
+    // shrinking it, and a popup placed by `innerHeight` opened under it.
     el.style.visibility = "hidden";
     requestAnimationFrame(() => {
-      const h = el.getBoundingClientRect().height;
-      if (rect.bottom + margin + h > vh - 8 && rect.top - margin - h > 8) {
-        el.style.top = `${rect.top - margin - h}px`;
-      }
+      placePopupAgainst(el, rect, { maxWidth: 360 });
       el.style.visibility = "visible";
     });
   }

@@ -1,3 +1,4 @@
+import { columnDisplayWidth } from "./stack-column-width.js";
 const SPINE_WIDTH = 50;
 const SPINE_HEIGHT = 40;
 const DEFAULT_COLUMN_WIDTH = 800;
@@ -132,7 +133,7 @@ export function startReorder(stack, itemId, e) {
         if (isVert) {
           col.style.height = (SPINE_HEIGHT + (it.height || DEFAULT_COLUMN_HEIGHT)) + "px";
         } else {
-          col.style.width = (SPINE_WIDTH + (it.width || DEFAULT_COLUMN_WIDTH)) + "px";
+          col.style.width = (SPINE_WIDTH + columnDisplayWidth(it)) + "px";
         }
         const contentEl = col.querySelector(".stack-column-content");
         if (contentEl) contentEl.style.display = "block";

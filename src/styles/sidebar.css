@@ -595,34 +595,7 @@ body.notebook-mode #panel-overlay.panel-inset {
   stroke-width: 1.5;
 }
 
-/* ===== Phone — fill-width sidebar (minus grip strip) ===== */
-html.phone {
-  --panel-width: calc(100vw - var(--sidebar-grip-width)) !important;
-}
-
-html.phone .panel-overlay-header {
-  padding-top: calc(20px + env(safe-area-inset-top, 0px));
-}
-
-html.phone .sidebar-panel-resizer {
-  display: none;
-}
-
-html.phone .cmd-floating-button.cmd-palette-button {
-  left: auto;
-  right: calc(20px + env(safe-area-inset-right, 0px));
-  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-}
-
-html.phone .cmd-floating-button.cmd-paste-button {
-  left: auto;
-  right: calc(20px + (36px + 12px) + env(safe-area-inset-right, 0px));
-  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-}
-
-html.phone .cmd-floating-button.panel-open {
-  display: none;
-}
+/* Phone overrides for the sidebar and the touch pills live in phone.css. */
 
 /* Recent Files panel — sits above the footer when enabled. The top
    border is the resize handle (drag to grow). Filled by JS row builder

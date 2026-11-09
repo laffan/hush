@@ -318,9 +318,10 @@ export function createTextEditor(state: DrawingState): HTMLElement {
   };
 
   function update() {
+    let opened = false;
     if (!!state.editingText !== wasEditing) {
       wasEditing = !!state.editingText;
-      if (wasEditing) session++;
+      if (wasEditing) { session++; opened = true; }
     }
     if (!state.editingText) {
       textarea.style.display = "none";
@@ -403,8 +404,21 @@ export function createTextEditor(state: DrawingState): HTMLElement {
     }
     textarea.style.height = measureDiv.scrollHeight + "px";
 
-    // Focus with delay
+    // Focus now *and* after a beat. The immediate call is for iOS: a
+    // focus() only raises the on-screen keyboard while the tap that asked
+    // for it is still being handled, and `notify` dispatches in a
+    // microtask of that same pointer event — a timer is already outside
+    // it. With only the delayed call, a tap with the Text tool opened the
+    // box with no keyboard and a second tap on it was needed to type. The
+    // delayed call stays because on a mouse the press's own default
+    // action (mousedown on the canvas) takes the focus straight back.
     if (document.activeElement !== textarea) {
+      if (opened) {
+        try {
+          textarea.focus();
+          textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        } catch { /* detached mid-update */ }
+      }
       setTimeout(() => {
         textarea.focus();
         textarea.setSelectionRange(textarea.value.length, textarea.value.length);

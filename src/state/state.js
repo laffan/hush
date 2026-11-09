@@ -5,7 +5,7 @@
 import { findNode, findNodeByFileId } from "./tree-helpers.js";
 import { openProject as _openProject, saveProjectContent as _saveProjectContent, markGutterForDoc as _markGutterForDoc, unmarkGutterForDoc as _unmarkGutterForDoc } from "./state-project.js";
 import { createDefaultSettings } from "./state-defaults.js";
-import { migrateShortcutDefaults } from "./state-migrations.js";
+import { migrateShortcutDefaults, migratePhoneDefaults } from "./state-migrations.js";
 import * as _modes from "./state-modes.js";
 import * as _snapshots from "./state-snapshots.js";
 import * as _naming from "./state-naming.js";
@@ -158,7 +158,7 @@ export class AppState {
         // In-memory only: activeDeskId is a per-window key, so a
         // secondary window never writes it back to disk.
         if (initialDesk) this.settings.activeDeskId = initialDesk;
-        const migrated = migrateShortcutDefaults(this.settings);
+        const migrated = { ...migrateShortcutDefaults(this.settings), ...migratePhoneDefaults(this.settings) };
         if (Object.keys(migrated).length) {
           try { await tauriInvoke("patch_settings", { patch: migrated }); } catch (_) {}
         }
@@ -232,7 +232,7 @@ export class AppState {
     }
     const savedSettings = localStorage.getItem("hush_settings");
     if (savedSettings) Object.assign(this.settings, JSON.parse(savedSettings));
-    if (Object.keys(migrateShortcutDefaults(this.settings)).length) {
+    if (Object.keys({ ...migrateShortcutDefaults(this.settings), ...migratePhoneDefaults(this.settings) }).length) {
       localStorage.setItem("hush_settings", JSON.stringify(this.settings));
     }
     _desks.migrateLegacyTreeIfNeeded(this).catch(() => {});

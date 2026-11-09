@@ -23,6 +23,10 @@ pub struct AppSettings {
     // iOS-only on-screen touch buttons (Cmd + command-palette)
     #[serde(default)]
     pub touch_mode: bool,
+    // Set once an iPhone has had touch mode switched on by default, so
+    // the user can turn it off again and have that stick.
+    #[serde(default)]
+    pub phone_touch_mode_defaulted: bool,
 
     // iPad-only — hide the system top status bar (time/battery/wifi) and
     // the Stage-Manager corner resize handle. Defaults to true. The
@@ -795,6 +799,7 @@ impl Default for AppSettings {
             visibility: default_visibility(),
             appearance: default_appearance(),
             touch_mode: false,
+            phone_touch_mode_defaulted: false,
             hide_system_chrome: true,
             light_theme: default_light_theme(),
             dark_theme: default_dark_theme(),

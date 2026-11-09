@@ -53,3 +53,29 @@ export function migrateShortcutDefaults(settings) {
   }
   return changed;
 }
+
+/** Touch mode is on by default on an iPhone. The setting itself defaults
+ *  to off (an iPad with Touch mode off is one with a keyboard), and a
+ *  phone has no keyboard, so a phone that has never been through this
+ *  gets it switched on — once. `phoneTouchModeDefaulted` records that it
+ *  happened, so turning Touch mode off in Settings on the phone sticks:
+ *  the test is "has this phone been defaulted yet", not "is it off".
+ *  iPad and the Mac are untouched. Returns the keys it rewrote. */
+export function migratePhoneDefaults(settings, phone = isPhoneUserAgent()) {
+  const changed = {};
+  if (!phone || settings.phoneTouchModeDefaulted) return changed;
+  settings.phoneTouchModeDefaulted = true;
+  changed.phoneTouchModeDefaulted = true;
+  if (!settings.touchMode) {
+    settings.touchMode = true;
+    changed.touchMode = true;
+  }
+  return changed;
+}
+
+/** Same test as `settings-ui.js#isPhone` (the user agent, never the
+ *  viewport), inlined so this module stays importable without the
+ *  settings UI. */
+function isPhoneUserAgent() {
+  return /iPhone|iPod/.test((typeof navigator !== "undefined" && navigator.userAgent) || "");
+}

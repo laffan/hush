@@ -958,9 +958,12 @@ html.phone .settings-tabs-dropdown {
   color: var(--fg);
   font-family: inherit;
   font-size: 14px;
-  /* Right padding clears both the native chevron and the modal's
-     absolute-positioned close button (28×28 px at right:12). */
-  padding-right: 52px;
+  /* The modal's close button is absolute at right:12 (28 px wide), on
+     this same line — select.css's chevron at right:8 sat under it and
+     read as "×⌄". Move the chevron clear of the button, and pad the
+     text clear of both. */
+  background-position: right 48px center;
+  padding-right: 66px;
   appearance: none;
   -webkit-appearance: none;
   border-radius: 0;

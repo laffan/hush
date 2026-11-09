@@ -189,7 +189,10 @@ export function createToolbar(state: DrawingState): HTMLElement {
         container.style.flexDirection = "column";
         container.style.top = (topInset + usableH / 2) + "px";
         container.style.transform = "translateY(-50%)";
-        container.style.left = safe("left", leftInset + 16);
+        // On a phone the files sidebar's toggle is a 36 px circle hanging
+        // inboard of its strip (phone.css) — clear it rather than sit on it.
+        const gap = !state.paneHosted && document.documentElement.classList.contains("phone") ? 32 : 16;
+        container.style.left = safe("left", leftInset + gap);
         break;
       }
       case "bottom": {
