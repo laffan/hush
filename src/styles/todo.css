@@ -445,3 +445,27 @@
 .todo-status.previewing { opacity: 1; }
 .todo-status.will-delete { color: #e5484d; }
 .todo-status.no-action { opacity: 0.3; cursor: default; }
+
+/* ---- Reordering (todo-drag.js) ----
+   The grip sits in the hover tools between "+" and ×: an inactive to-do
+   moves within its desk, a primed one within the primed. */
+.todo-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+  opacity: 0.45;
+  cursor: grab;
+  touch-action: none;
+}
+.todo-grip:hover { opacity: 0.9; }
+.todo-panel .todo-grip svg { width: 10px; height: 10px; fill: currentColor; stroke: none; }
+.todo-item.dragging {
+  background: rgba(128, 128, 128, 0.1);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+.todo-body.reordering,
+.todo-body.reordering * { cursor: grabbing !important; user-select: none; }
+/* Mid-drag only the moving row keeps its tools. */
+.todo-body.reordering .todo-item:not(.dragging) .todo-tools { opacity: 0; visibility: hidden; }

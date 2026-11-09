@@ -23,6 +23,10 @@
  * empty to-do on that file's desk, linked to it, with the caret in its
  * title. The panel opens with the keyboard in that field.
  *
+ * An inactive or primed to-do also has a grip in its hover tools,
+ * between "+" and ×: an inactive one drags within its desk, a primed one
+ * within the primed (todo-drag.js). The active one stays first.
+ *
  * On hover an item offers the magnifying glass (find a desk or a file —
  * todo-search.js — to move or link it), the "+" when it has no file
  * (make one in its desk's Inbox and link it), and delete. A linked file
@@ -36,7 +40,8 @@
  * without re-rendering (it would take the field out from under the
  * caret); every structural change renders and puts the focus back.
  */
-import { escHtml, leafIcon } from "../sidebar/files-panel-shared.js";
+import { escHtml, leafIcon, DRAG_HANDLE_SVG } from "../sidebar/files-panel-shared.js";
+import { wireTodoDrag } from "./todo-drag.js";
 import {
   readTodos, linkedNode, patchInPlace, commitSoon, flushTodos, addTodo, removeTodo, clickTodo, startTimerFor,
   setTodoDesk, linkTodoFile, unlinkTodoFile, createTodoFile,
@@ -159,6 +164,8 @@ function itemHtml(state, t, openId, { showDesk = false } = {}) {
     <span class="todo-tools">
       <button type="button" data-act="search" data-tooltip="Find a desk or file" aria-label="Find a desk or file">${SEARCH}</button>
       ${node ? "" : `<button type="button" data-act="new-file" data-tooltip="New document in the desk's Inbox" aria-label="New document in the desk's Inbox">${PLUS}</button>`}
+      ${status === "inactive" || status === "primed"
+        ? `<span class="todo-grip" data-act="drag" data-tooltip="Drag to reorder" aria-hidden="true">${DRAG_HANDLE_SVG}</span>` : ""}
       <button type="button" data-act="delete" data-tooltip="Delete" aria-label="Delete">${CROSS}</button>
     </span>
   </li>`;
@@ -227,7 +234,8 @@ function mountPanel(state) {
   let moveTimer = 0;
   let showCompleted = false; // the Completed section, shut on every open
 
-  const editing = () => !!el.querySelector(".todo-title:focus, .todo-notes:focus") || !!search;
+  let dragging = false;
+  const editing = () => dragging || !!el.querySelector(".todo-title:focus, .todo-notes:focus") || !!search;
 
   /** Re-render, then put the focus back: `focus` is `{ id, field, at }`,
    *  `at` a caret offset ("end" for the end). */
@@ -292,6 +300,7 @@ function mountPanel(state) {
     }
     const act = btn.dataset.act;
     const todo = todoOf(item);
+    if (act === "drag") return; // the grip's press is the drag's (todo-drag.js)
     if (act === "close") { close(); return; }
     if (act === "toggle-completed") { showCompleted = !showCompleted; render(); return; }
     if (act === "add") { add(state.settings?.activeDeskId || groups(state)[0]?.deskId); return; }
@@ -349,6 +358,12 @@ function mountPanel(state) {
         if (pending && !editing()) render();
       });
     }
+  });
+
+  // ── Reordering ──
+  wireTodoDrag(state, body, (on) => {
+    dragging = on;
+    if (!on && pending) render();
   });
 
   // ── The toggle's hover preview ──

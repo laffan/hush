@@ -118,6 +118,25 @@ export function updateTodo(state, id, patch) {
   return commit(state, list);
 }
 
+/**
+ * Reorder a set of to-dos — one desk's inactive ones, or the primed
+ * ones — to `orderedIds`. The set keeps the places it holds in the list
+ * and is laid back into them in the new order, so nothing outside it
+ * moves (a desk's completed to-dos, another desk's, the active one).
+ */
+export function reorderTodos(state, orderedIds) {
+  const list = readTodos(state);
+  const ids = new Set(orderedIds);
+  const slots = [];
+  list.forEach((t, i) => { if (ids.has(t.id)) slots.push(i); });
+  if (slots.length !== orderedIds.length) return Promise.resolve();
+  const byId = new Map(list.map((t) => [t.id, t]));
+  const next = [...list];
+  slots.forEach((slot, k) => { next[slot] = byId.get(orderedIds[k]); });
+  if (next.every((t, i) => t === list[i])) return Promise.resolve();
+  return commit(state, next);
+}
+
 export function removeTodo(state, id) {
   return commit(state, readTodos(state).filter((t) => t.id !== id));
 }
