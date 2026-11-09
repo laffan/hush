@@ -412,15 +412,15 @@
 .todo-timer:hover:not(:disabled) { opacity: 1; border-color: currentColor; }
 .todo-timer:disabled { cursor: default; opacity: 0.5; border-style: dashed; }
 
-/* ---- Archived (the fifth state) ---- */
-/* The foot of the list: a quiet "Archived · n" that opens the archived
-   to-dos below it, faint, most recently archived first. */
-.todo-archive {
+/* ---- Completed ---- */
+/* The foot of the list: a quiet "Completed · n" that opens the completed
+   to-dos below it, faint, most recently completed first. */
+.todo-completed {
   margin-top: 14px;
   padding-top: 6px;
   border-top: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
 }
-.todo-archive-toggle {
+.todo-completed-toggle {
   display: block;
   margin: 0 0 2px 8px;
   padding: 2px 0;
@@ -434,7 +434,14 @@
   opacity: 0.4;
   cursor: pointer;
 }
-.todo-archive-toggle:hover,
-.todo-archive.shown .todo-archive-toggle { opacity: 0.7; }
-.todo-item.is-archived .todo-title { text-decoration: none; opacity: 0.4; }
-.todo-item.is-archived .todo-status { opacity: 0.6; }
+.todo-completed-toggle:hover,
+.todo-completed.shown .todo-completed-toggle { opacity: 0.7; }
+
+/* ---- The toggle's hover preview (todo-panel.js#previewStatus) ----
+   While the pointer is on a toggle it shows what a click will do: the
+   next state, the previous one with ⌘ / ⇧ held, a red trash can on a
+   completed to-do (a click deletes it for good), dimmed where a click
+   does nothing. */
+.todo-status.previewing { opacity: 1; }
+.todo-status.will-delete { color: #e5484d; }
+.todo-status.no-action { opacity: 0.3; cursor: default; }

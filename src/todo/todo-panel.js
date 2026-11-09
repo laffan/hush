@@ -38,11 +38,11 @@
  */
 import { escHtml, leafIcon } from "../sidebar/files-panel-shared.js";
 import {
-  readTodos, linkedNode, patchInPlace, commitSoon, flushTodos, addTodo, removeTodo, cycleTodo, startTimerFor,
+  readTodos, linkedNode, patchInPlace, commitSoon, flushTodos, addTodo, removeTodo, clickTodo, startTimerFor,
   setTodoDesk, linkTodoFile, unlinkTodoFile, createTodoFile,
 } from "./todo-store.js";
 import { openTodoSearch, mountFileSearch } from "./todo-search.js";
-import { statusOf, nextStatus, statusIcon, statusLabel, parseDuration, todoTimerRunning } from "./todo-status.js";
+import { statusOf, clickAction, statusIcon, statusLabel, parseDuration, todoTimerRunning } from "./todo-status.js";
 
 const SEARCH = `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.25"/><path d="M10.25 10.25 13.5 13.5"/></svg>`;
 const PLUS = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>`;
@@ -83,10 +83,11 @@ function nowItems(state) {
 
 /** The groups to show, in order: the desk in front (always, so there is
  *  somewhere to add), then every other desk with a to-do, in the user's
- *  desk order, then to-dos whose desk is gone. Primed and active to-dos
- *  are in the top block instead. */
+ *  desk order, then to-dos whose desk is gone. Only to-dos not yet
+ *  started: primed and active ones are in the top block, completed ones
+ *  in the Completed section at the foot. */
 function groups(state) {
-  const todos = readTodos(state).filter((t) => statusOf(t) === "inactive" || statusOf(t) === "complete");
+  const todos = readTodos(state).filter((t) => statusOf(t) === "inactive");
   const active = state.settings?.activeDeskId;
   const desks = (state.settings?.desks || []).map((d) => d.id)
     .filter((id) => (state.fileTree || []).some((n) => n.type === "desk" && n.id === id));
@@ -97,22 +98,33 @@ function groups(state) {
     .filter((g) => g.deskId === active || g.items.length);
   const orphans = todos.filter((t) => !known.has(t.deskId));
   if (orphans.length) out.push({ deskId: "", name: "No desk", items: orphans });
-  // Not started first, completed below, each in list order.
-  for (const g of out) {
-    g.items = [...g.items.filter((t) => statusOf(t) !== "complete"), ...g.items.filter((t) => statusOf(t) === "complete")];
-  }
   return out;
 }
 
 /** Draw a to-do's status onto its row (and its toggle). */
 function paintStatus(li, status) {
-  for (const s of ["inactive", "primed", "active", "complete", "archived"]) li.classList.toggle(`is-${s}`, s === status);
-  li.classList.toggle("done", status === "complete" || status === "archived");
+  for (const s of ["inactive", "primed", "active", "complete"]) li.classList.toggle(`is-${s}`, s === status);
+  li.classList.toggle("done", status === "complete");
   const btn = li.querySelector(".todo-status");
   if (!btn) return;
   btn.innerHTML = statusIcon(status);
+  btn.classList.remove("previewing", "will-delete", "no-action");
   btn.dataset.tooltip = statusLabel(status);
   btn.setAttribute("aria-label", statusLabel(status));
+}
+
+/** Hovering a toggle shows what a click will do — the state it would
+ *  move to, as ⌘ / ⇧ say (back) or don't (forward); the red trash can
+ *  on a completed to-do; the icon dimmed where a click does nothing
+ *  (back from inactive). */
+function previewStatus(btn, status, back) {
+  const action = clickAction(status, back);
+  btn.innerHTML = statusIcon(action || status);
+  btn.classList.add("previewing");
+  btn.classList.toggle("will-delete", action === "delete");
+  btn.classList.toggle("no-action", !action);
+  btn.dataset.tooltip = statusLabel(status, back);
+  btn.setAttribute("aria-label", statusLabel(status, back));
 }
 
 function itemHtml(state, t, openId, { showDesk = false } = {}) {
@@ -120,7 +132,7 @@ function itemHtml(state, t, openId, { showDesk = false } = {}) {
   const notes = t.notes || "";
   const status = statusOf(t);
   const cls = ["todo-item", `is-${status}`];
-  if (status === "complete" || status === "archived") cls.push("done");
+  if (status === "complete") cls.push("done");
   if (t.id === openId) cls.push("open");
   if (notes) cls.push("has-notes");
   const file = node
@@ -163,20 +175,20 @@ function groupHtml(state, g, openId) {
   </section>`;
 }
 
-/** Archived to-dos, the most recently archived first. */
-function archivedItems(state) {
-  return readTodos(state).filter((t) => statusOf(t) === "archived")
-    .sort((a, b) => (b.archivedAt || 0) - (a.archivedAt || 0));
+/** Completed to-dos, the most recently completed first. */
+function completedItems(state) {
+  return readTodos(state).filter((t) => statusOf(t) === "complete")
+    .sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
 }
 
-/** The foot of the list: "Archived · n", and — while open — the
- *  archived to-dos, each tagged with its desk. Nothing when there are
+/** The foot of the list: "Completed · n", and — while open — the
+ *  completed to-dos, each tagged with its desk. Nothing when there are
  *  none. */
-function archiveHtml(state, openId, shown) {
-  const items = archivedItems(state);
+function completedHtml(state, openId, shown) {
+  const items = completedItems(state);
   if (!items.length) return "";
-  return `<section class="todo-archive${shown ? " shown" : ""}">
-    <button type="button" class="todo-archive-toggle" data-act="toggle-archive" aria-expanded="${shown}">Archived · ${items.length}</button>
+  return `<section class="todo-completed${shown ? " shown" : ""}">
+    <button type="button" class="todo-completed-toggle" data-act="toggle-completed" aria-expanded="${shown}">Completed · ${items.length}</button>
     ${shown ? `<ul class="todo-items">${items.map((t) => itemHtml(state, t, openId, { showDesk: true })).join("")}</ul>` : ""}
   </section>`;
 }
@@ -213,7 +225,7 @@ function mountPanel(state) {
   let search = null;
   let closing = false;
   let moveTimer = 0;
-  let showArchived = false; // the Archived section, shut on every open
+  let showCompleted = false; // the Completed section, shut on every open
 
   const editing = () => !!el.querySelector(".todo-title:focus, .todo-notes:focus") || !!search;
 
@@ -226,7 +238,7 @@ function mountPanel(state) {
     body.innerHTML = (now.length
       ? `<ul class="todo-items todo-now">${now.map((t) => itemHtml(state, t, openId, { showDesk: true })).join("")}</ul>`
       : "") + groups(state).map((g) => groupHtml(state, g, openId)).join("")
-      + archiveHtml(state, openId, showArchived);
+      + completedHtml(state, openId, showCompleted);
     body.querySelectorAll("textarea").forEach(fit);
     body.scrollTop = scroll;
     if (focus) {
@@ -281,19 +293,29 @@ function mountPanel(state) {
     const act = btn.dataset.act;
     const todo = todoOf(item);
     if (act === "close") { close(); return; }
-    if (act === "toggle-archive") { showArchived = !showArchived; render(); return; }
+    if (act === "toggle-completed") { showCompleted = !showCompleted; render(); return; }
     if (act === "add") { add(state.settings?.activeDeskId || groups(state)[0]?.deskId); return; }
     if (act === "add-here") { add(btn.closest(".todo-group")?.dataset.deskId); return; }
     if (!todo) return;
     if (act === "cycle") {
-      // Shown at once where it is; it moves (up to the top block, or
-      // down its desk) a moment later.
       // ⌘-click steps back (⇧-click too). A ⌘-click can't count toward
       // the double-⌘ that toggles this panel: ui/triple-tap.js resets
       // on any pointer press.
-      const dir = e.metaKey || e.shiftKey ? -1 : 1;
-      paintStatus(item, nextStatus(statusOf(todo), dir));
-      void cycleTodo(state, todo.id, dir);
+      const back = e.metaKey || e.shiftKey;
+      const action = clickAction(statusOf(todo), back);
+      if (!action) return;
+      if (action === "delete") {
+        // For good — and gone at once: there is nothing left to watch.
+        void clickTodo(state, todo.id, back);
+        render();
+        return;
+      }
+      // Shown at once where it is (the real state, not the next click's
+      // preview, until the pointer leaves); it moves — to the top block,
+      // back to its desk, or down into Completed — a moment later.
+      paintStatus(item, action);
+      hover.settled = btn;
+      void clickTodo(state, todo.id, back);
       clearTimeout(moveTimer);
       moveTimer = setTimeout(renderSoon, SINK_MS);
     } else if (act === "start-timer") {
@@ -328,6 +350,45 @@ function mountPanel(state) {
       });
     }
   });
+
+  // ── The toggle's hover preview ──
+  // `btn` the toggle under the pointer, `back` whether ⌘ / ⇧ is held,
+  // `settled` a toggle just clicked, which shows its new state rather
+  // than the next click's until the pointer leaves it.
+  const hover = { btn: null, back: false, settled: null };
+  const showHover = () => {
+    const b = hover.btn;
+    const todo = todoOf(itemOf(b));
+    if (!b || !todo) return;
+    if (hover.settled === b) paintStatus(itemOf(b), statusOf(todo));
+    else previewStatus(b, statusOf(todo), hover.back);
+  };
+  el.addEventListener("pointerover", (e) => {
+    const b = e.target instanceof Element ? e.target.closest(".todo-status") : null;
+    if (!b || b === hover.btn) return;
+    hover.btn = b;
+    hover.back = e.metaKey || e.shiftKey;
+    showHover();
+  });
+  el.addEventListener("pointerout", (e) => {
+    const b = hover.btn;
+    if (!b || (e.relatedTarget instanceof Node && b.contains(e.relatedTarget))) return;
+    hover.btn = null;
+    if (hover.settled === b) hover.settled = null;
+    const todo = todoOf(itemOf(b));
+    if (todo && b.isConnected) paintStatus(itemOf(b), statusOf(todo));
+  });
+  // Pressing or letting go of ⌘ / ⇧ while over a toggle flips its preview.
+  const onModifier = (e) => {
+    if (e.key !== "Meta" && e.key !== "Shift") return;
+    const back = e.metaKey || e.shiftKey;
+    if (back === hover.back) return;
+    hover.back = back;
+    if (hover.settled === hover.btn) hover.settled = null;
+    if (hover.btn?.isConnected) showHover();
+  };
+  window.addEventListener("keydown", onModifier, true);
+  window.addEventListener("keyup", onModifier, true);
 
   // ── Typing ──
   el.addEventListener("input", (e) => {
@@ -426,6 +487,8 @@ function mountPanel(state) {
     if (closing) return;
     closing = true;
     search?.close();
+    window.removeEventListener("keydown", onModifier, true);
+    window.removeEventListener("keyup", onModifier, true);
     state.off("todos-changed", onTodos);
     for (const ev of EVENTS) state.off(ev, renderSoon);
     void flushTodos(state);

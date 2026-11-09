@@ -1,15 +1,19 @@
 /**
  * A to-do's status — four states the toggle at its left steps through:
  *
- *   inactive → primed → active → complete → archived → inactive …
+ *   inactive → primed → active → complete
  *
- * Archived to-dos leave the list for the panel's Archived section (shut
- * until asked for); a click there restores one to inactive.
+ * A click moves forward; ⌘-click (or ⇧-click) moves back, stopping at
+ * inactive. Complete is where a finished to-do goes: it leaves the list
+ * for the panel's Completed section. A click on a completed to-do's
+ * toggle deletes it for good — its hover shows a red trash can to say
+ * so. Hovering any toggle previews what a click will do, held modifier
+ * included (`clickAction`, todo-panel.js).
  *
- * (⌘-click — or ⇧-click — steps back.) Primed and active to-dos are pulled out of their
- * desks to the top of the list; the active one is drawn inverted. Only
- * one to-do is active at a time: making another active sends the one
- * that was back to primed.
+ * Primed and active to-dos are pulled out of their desks to the top of
+ * the list; the active one is drawn inverted. Only one to-do is active
+ * at a time: making another active sends the one that was back to
+ * primed.
  *
  * A title that ends in a length — `30m`, `1h`, `1h33m`, `1h 30m`,
  * `1.5h` — gives the to-do a "Start timer" button while it is active,
@@ -20,42 +24,57 @@
  * and left alone if the user has started another since.
  */
 
-export const STATES = ["inactive", "primed", "active", "complete", "archived"];
+export const STATES = ["inactive", "primed", "active", "complete"];
 
-/** Finished: complete or archived. `done` mirrors it for older readers. */
-export const isFinished = (s) => s === "complete" || s === "archived";
-
-/** A stored to-do's status. Older items carried only `done`. */
+/** A stored to-do's status. Older items carried only `done`; for a while
+ *  there was an "archived" state, which complete has taken over. */
 export function statusOf(todo) {
+  if (todo?.status === "archived") return "complete";
   if (STATES.includes(todo?.status)) return todo.status;
   return todo?.done ? "complete" : "inactive";
 }
 
-/** The status after one click (`dir` 1) or ⌘-click (`dir` -1). */
-export function nextStatus(status, dir = 1) {
+/**
+ * What a click on the toggle does from `status`: a status to move to,
+ * "delete" (a plain click on a completed to-do), or null (stepping back
+ * from inactive — there is nothing before it).
+ */
+export function clickAction(status, back = false) {
   const i = STATES.indexOf(status);
-  return STATES[(i + (dir < 0 ? STATES.length - 1 : 1)) % STATES.length];
+  if (back) return i > 0 ? STATES[i - 1] : null;
+  return i < STATES.length - 1 ? STATES[i + 1] : "delete";
 }
 
 const LABEL = {
-  inactive: "Not started — click to prime",
-  primed: "Primed — click to start",
-  active: "Active — click to complete",
-  complete: "Complete — click to archive",
-  archived: "Archived — click to restore",
+  inactive: "Not started",
+  primed: "Primed",
+  active: "Active",
+  complete: "Complete",
 };
-export const statusLabel = (s) => LABEL[s];
+const ACTION = {
+  inactive: "click to reset",
+  primed: "click to prime",
+  active: "click to start",
+  complete: "click to complete",
+  delete: "click to delete for good",
+};
+/** The toggle's tooltip: where it is, and what a click would do. */
+export function statusLabel(status, back = false) {
+  const action = clickAction(status, back);
+  return action ? `${LABEL[status]} — ${ACTION[action]}` : LABEL[status];
+}
 
 /** One icon per state, all on the same rounded square. Complete fills
- *  the square; its tick is punched out in the paper's colour (CSS).
- *  Archived is the square as a box with its lid on. */
+ *  the square; its tick is punched out in the paper's colour (CSS). The
+ *  trash can is the delete a click on a completed to-do performs, shown
+ *  (red) only as that hover's preview. */
 const BOX = `<rect x="2.5" y="2.5" width="11" height="11" rx="3"/>`;
 const ICONS = {
   inactive: `<svg viewBox="0 0 16 16" aria-hidden="true">${BOX}</svg>`,
   primed: `<svg viewBox="0 0 16 16" aria-hidden="true">${BOX}<circle class="todo-status-fill" cx="8" cy="8" r="1.9"/></svg>`,
   active: `<svg viewBox="0 0 16 16" aria-hidden="true">${BOX}<path class="todo-status-fill" d="M6.6 5.4v5.2L10.9 8z"/></svg>`,
   complete: `<svg viewBox="0 0 16 16" aria-hidden="true"><rect class="todo-status-fill" x="2.5" y="2.5" width="11" height="11" rx="3"/><path class="todo-status-tick" d="M5.3 8.2l1.8 1.8 3.6-3.9"/></svg>`,
-  archived: `<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="3.5" rx="1"/><path d="M3.25 6.5v5.5a1.5 1.5 0 0 0 1.5 1.5h6.5a1.5 1.5 0 0 0 1.5-1.5V6.5M6.5 9h3"/></svg>`,
+  delete: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.75 4.25h10.5M6.25 4.25V3a.75.75 0 0 1 .75-.75h2a.75.75 0 0 1 .75.75v1.25M4 4.25l.6 8.4a1 1 0 0 0 1 .93h4.8a1 1 0 0 0 1-.93l.6-8.4M6.75 6.75v4.25M9.25 6.75v4.25"/></svg>`,
 };
 export const statusIcon = (s) => ICONS[s] || ICONS.inactive;
 
