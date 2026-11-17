@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nickelpack/npe/main/tauri.conf.json",
   "productName": "Hush",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "identifier": "com.hushwriter.app",
   "build": {
     "frontendDist": "../dist",
