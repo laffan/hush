@@ -275,6 +275,8 @@ async function init() {
   import("./clock/wall-clock.js").then(({ initWallClock }) => initWallClock(state));
   // Midnight mode — its 8am end, and sibling windows' toggles.
   import("./midnight/midnight-controller.js").then(({ installMidnightMode }) => installMidnightMode(state));
+  // Night Vision — its layers, its 8am end, and sibling windows' toggles.
+  import("./night-vision/night-vision-controller.js").then(({ installNightVision }) => installNightVision(state));
   // Home screen widgets — keeps their snapshot of recent desks and files current.
   import("./widgets/widget-publish.js").then(({ installWidgetPublisher }) => installWidgetPublisher(state));
   // YOU ARE HERE — one marker per desk; save-pipeline detection +

@@ -128,6 +128,10 @@ export function createDefaultSettings() {
     // 8am after it was turned on), or null when off. Cleared by Rust at
     // launch, so it never outlives the app (see src/midnight/).
     midnightUntil: null,
+    // Night Vision: epoch ms at which it switches itself off (the next
+    // 8am, as for Midnight mode); cleared by Rust at launch (see
+    // src/night-vision/).
+    nightVisionUntil: null,
     // Edge Lights' last options (see src/edge-lights/); whether
     // they are on is per-window and never stored.
     edgeLights: null,

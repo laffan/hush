@@ -5,6 +5,7 @@
  */
 import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 import { isMidnightActive, effectiveAppearanceSetting, MIDNIGHT_COLORS } from "./midnight/midnight-mode.js";
+import { isNightVisionActive, nightVisionHex } from "./night-vision/night-vision-mode.js";
 
 // Chrome surfaces painted from the JS-only `--theme-bg` custom property.
 // On iOS WKWebView these do not repaint reliably when the app regains
@@ -189,8 +190,12 @@ export function updatePrivateBoxColor(state, overrideBg, overrideFg) {
       }
       const panel = document.getElementById("panel-overlay");
       if (panel) panel.style.color = uiFg;
-      pushNativeBackground(bg);
-      pushNativeSelectionTint();
+      // Night Vision's layers cover the page but not what UIKit paints
+      // under it or its own selection handles and caret — those take the
+      // colours as Night Vision shows them.
+      const nightVision = isNightVisionActive(state.settings);
+      pushNativeBackground(nightVision ? nightVisionHex(bg) : bg);
+      pushNativeSelectionTint(nightVision);
     }
   }
 }
@@ -264,11 +269,12 @@ function toHex6(value) {
  *  it, so it always matches what the CSS actually resolved. When no style
  *  sets one, `editor.css` falls back to a neutral grey and so do we — the
  *  point is that the two layers agree, not which colour wins. */
-function pushNativeSelectionTint() {
+function pushNativeSelectionTint(nightVision = false) {
   if (typeof window === "undefined" || !window.__TAURI_INTERNALS__) return;
   const raw = getComputedStyle(document.documentElement)
     .getPropertyValue("--selection").trim();
-  const color = toHex6(raw) || "#808080";
+  const base = toHex6(raw) || "#808080";
+  const color = nightVision ? nightVisionHex(base) : base;
   if (color === _lastNativeTint) return;
   _lastNativeTint = color;
   void (async () => {

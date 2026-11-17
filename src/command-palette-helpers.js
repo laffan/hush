@@ -5,6 +5,7 @@
 import { findNodeByFileId, findParentOfNode, nearestAncestorProjectId } from "./state/tree-helpers.js";
 import { chooseAppearance, currentAppearanceChoice } from "./midnight/midnight-controller.js";
 import { MIDNIGHT_ICON } from "./midnight/midnight-icon.js";
+import { buildNightVisionCommands } from "./night-vision/night-vision-commands.js";
 import appearanceDarkRaw from "./sidebar/sidebar_icons/appearance-dark.svg?raw";
 import appearanceLightRaw from "./sidebar/sidebar_icons/appearance-light.svg?raw";
 import appearanceAutoRaw from "./sidebar/sidebar_icons/appearance-auto.svg?raw";
@@ -19,7 +20,8 @@ const _appearanceIcons = {
 /** Appearance switcher rows — mirrors the toggle on Edit Styles. Four
  *  appearances: Midnight mode is the fourth (dark, plus black and grey
  *  over every style), so exactly one row carries the ✓, and choosing any
- *  of the other three ends it (`chooseAppearance`). */
+ *  of the other three ends it (`chooseAppearance`). Night Vision's rows
+ *  follow: it lies over any of the four rather than being a fifth. */
 export function buildAppearanceCommands(state) {
   const current = currentAppearanceChoice(state.settings);
   const modes = [
@@ -28,13 +30,14 @@ export function buildAppearanceCommands(state) {
     ["auto", "System Appearance"],
     ["midnight", "Midnight mode"],
   ];
-  return modes.map(([id, label]) => ({
+  const appearances = modes.map(([id, label]) => ({
     id: id === "midnight" ? "midnight-mode" : `appearance-${id}`,
     section: "Styles", label: `${label}${current === id ? " ✓" : ""}`,
     keywords: id === "midnight" ? "appearance dark black night grey gray dim" : undefined,
     icon: id === "midnight" ? MIDNIGHT_ICON : _appearanceIcons[id], shortcutKey: null, ctx: "shared",
     action: (s) => { void chooseAppearance(s, id); },
   }));
+  return [...appearances, ...buildNightVisionCommands(state)];
 }
 
 /** Walk the file tree and return real document/notebook leaves plus

@@ -100,6 +100,11 @@ export async function initSettingsInto(rootEl, saveCallback) {
     ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
     : appearance;
   document.documentElement.setAttribute("data-theme", theme);
+  // Night Vision covers this window too when it is a window of its own;
+  // the iPad's modal is inside the main window, which already covers it.
+  if (rootEl?.id === "settings-root") {
+    import("../night-vision/night-vision-window.js").then((m) => m.installNightVisionWindow(settings));
+  }
 
   // Ensure defaults
   if (!settings.styles) settings.styles = [];

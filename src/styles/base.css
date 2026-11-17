@@ -103,6 +103,10 @@
    *                      everything those steps open, Zen included
    *   --z-drag-ghost     drag preview that must escape every stacking
    *                      context (text drag chip from sidebar to editor)
+   *   --z-night-vision   Night Vision's two click-through layers (grey,
+   *   --z-night-vision-red  then red over it) — over everything, the drag
+   *                      ghost included, so nothing on screen escapes them
+   *                      (src/night-vision/)
    */
   --z-under-pane: 85;
   --z-pane: 90;
@@ -122,7 +126,9 @@
   --z-modal-topmost: 10001;
   --z-courier: 10010;
   --z-write-now: 10020;
-  --z-drag-ghost: 2147483647;
+  --z-drag-ghost: 2147483645;
+  --z-night-vision: 2147483646;
+  --z-night-vision-red: 2147483647;
 }
 
 /* Light theme */

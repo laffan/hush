@@ -134,10 +134,11 @@ pub fn run() {
     let mut settings = startup_trace::record("load settings", || {
         AppSettings::load(&data_dir).unwrap_or_default()
     });
-    // Midnight mode lasts until the app closes (or 8am): a fresh launch
-    // never inherits it. Cleared in memory only; the next settings write
-    // takes it off disk too.
+    // Midnight mode and Night Vision last until the app closes (or 8am):
+    // a fresh launch never inherits them. Cleared in memory only; the next
+    // settings write takes them off disk too.
     settings.midnight_until = None;
+    settings.night_vision_until = None;
 
     // One-shot migration from the flat store (files/*.json +
     // file_tree.json) into per-desk folders. Runs before any manager

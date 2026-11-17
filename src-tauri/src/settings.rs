@@ -689,6 +689,12 @@ pub struct AppSettings {
     #[serde(default)]
     pub midnight_until: Option<f64>,
 
+    // Night Vision — the moment (epoch ms) it switches itself off (the
+    // next 8am), cleared at launch like `midnight_until`. See
+    // src/night-vision/night-vision-mode.js.
+    #[serde(default)]
+    pub night_vision_until: Option<f64>,
+
     // Edge Lights' last options — `{ kind, palette, customColors,
     // saturation, opacity, depth, speed }`. Whether they are on is
     // per-window and never stored. Opaque; see src/edge-lights/edge-lights-store.js.
@@ -985,6 +991,7 @@ impl Default for AppSettings {
             timer: serde_json::Value::Null,
             clock: serde_json::Value::Null,
             midnight_until: None,
+            night_vision_until: None,
             edge_lights: serde_json::Value::Null,
             edge_lights_presets: serde_json::json!([]),
             edge_lights_by_desk: serde_json::json!({}),

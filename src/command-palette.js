@@ -15,6 +15,7 @@ import { buildActiveModeTurnoffs } from "./command-palette-turnoffs.js";
 import { groupBySection, buildRecentCommands, recordRecentCommand } from "./command-palette-sections.js";
 import { getActiveModeContext } from "./state/mode-context.js";
 import { buildPinnedCommands } from "./midnight/midnight-commands.js";
+import { buildNightVisionPinned } from "./night-vision/night-vision-commands.js";
 import { attachRowPreview, hidePalettePreview } from "./command-palette-preview.js";
 import { openLeafOnItsDesk } from "./state/cross-desk.js";
 
@@ -158,9 +159,13 @@ function open(state) {
   recentEligibleIds = new Set(sectioned.map((c) => c.id).filter(Boolean));
   // Recent rows are copies of the live commands, so an entry that no
   // longer applies here simply doesn't resolve (see the sections module).
-  // Pinned rows (Deactivate Midnight mode) are sectionless, so they lead
-  // the list, and are left out of the Recent bookkeeping.
-  allCommands = [...buildPinnedCommands(state), ...buildRecentCommands(state, sectioned), ...sectioned];
+  // Pinned rows (Deactivate Midnight mode, Deactivate Night Vision) are
+  // sectionless, so they lead the list, and are left out of the Recent
+  // bookkeeping.
+  allCommands = [
+    ...buildPinnedCommands(state), ...buildNightVisionPinned(state),
+    ...buildRecentCommands(state, sectioned), ...sectioned,
+  ];
   filteredCommands = [...allCommands];
   activeIndex = 0;
   keyboardNav = false;
