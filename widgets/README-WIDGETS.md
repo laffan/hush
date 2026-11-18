@@ -23,9 +23,13 @@ widgets/Sources (the extension) ◄──── reads <group>/widgets.json
 ```
 
 - **Recency.** The per-desk MRU (`settings.recentFileIdsByDesk`) is an order without times, which is all the sidebar's desk-scoped list needs. "Recent desks" and "recent files across desks" need *when*, so `src/widgets/widget-activity.js` stamps `settings.recentActivity` — `{ desks: { id: ms }, files: { id: ms } }`, per device, capped at 200 a map — from `recordActiveDeskLastFile` (every open) and from desk switches. It is written in one key-scoped patch 1.5 s after the stamp, so an open costs no extra IPC on its own path. Files in the MRU from before stamping sort after the stamped ones, in MRU order.
-- **The snapshot** (`buildWidgetSnapshot`, pure) — `{ version, desks: [{ id, name, openedAt, recent: [file…] }], recentFiles: [file…] }`, a file being `{ id, name, type, deskId, deskName, openedAt }`. Trash and project PDF aliases are left out. It carries no "generated at", so two windows describing the same state produce the same bytes.
+- **The snapshot** (`buildWidgetSnapshot`, pure) — `{ version, desks: [{ id, name, openedAt, recent: [file…] }], recentFiles: [file…], nightVisionUntil }`, a file being `{ id, name, type, deskId, deskName, openedAt }`, and `nightVisionUntil` Night Vision's end (epoch ms) while the app is in it, else null. Trash and project PDF aliases are left out. It carries no "generated at", so two windows describing the same state produce the same bytes.
 - **Publishing** (`widget-publish.js`), debounced 1.2 s, on activity stamps, tree and desk-list changes, desk switches and sibling-window settings merges. Every window publishes; three layers skip a repeat (the window's last JSON, Rust's last string, the Swift side's compare against the file), because WidgetKit rations reloads.
 - **Swift side.** `WidgetCenter.shared.reloadAllTimelines()` after each write. Timelines also refresh every 30 minutes, only so the "… ago" labels stay roughly right.
+
+## Night Vision
+
+While the app is in Night Vision the widgets are too: drawn in red alone, as the app is (its brightness kept, its hue dropped), background included. The snapshot carries the mode's end (`nightVisionUntil`, the next 8am); each widget's view and its container background go through `nightVision(_:)` (`HushWidgetViews.swift`: `grayscale(1)` then `colorMultiply` by the display's own red, P3 `1, 0, 0`), and each timeline holds a second entry at that moment (`WidgetSnapshot.entryDates`), so a widget turns back at 8am even if the app isn't running to republish. Turning it on or off publishes at once (`night-vision-changed`). It also ends when the app quits: on `RunEvent::Exit` Rust hands the last snapshot over again without it (`widgets::end_night_vision`). iOS seldom lets an app see its own end, so there a widget can stay red after the app is swiped away, until the next launch's first snapshot or 8am.
 
 ## Taps
 

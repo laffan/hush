@@ -36,6 +36,8 @@ function paint(state) {
   else unmountNightVision();
   try { updatePrivateBoxColor(state); } catch (_) { /* boot not finished */ }
   scheduleEnd(state);
+  // The home screen widgets follow it (widgets/widget-publish.js).
+  state.emit("night-vision-changed");
 }
 
 function scheduleEnd(state) {

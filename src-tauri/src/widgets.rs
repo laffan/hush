@@ -50,6 +50,29 @@ pub async fn publish_widget_snapshot<R: Runtime>(
     written
 }
 
+/// Night Vision ends when the app quits (`lib.rs` clears it at the next
+/// launch), but the widgets keep the last snapshot: on the way out, the
+/// last one is handed over again without it, so they don't stay red
+/// until 8am. (iOS rarely lets an app see its own end; there the next
+/// launch's first snapshot, or the widgets' own 8am entry, does it.)
+pub fn end_night_vision<R: Runtime>(app: &AppHandle<R>) {
+    let Some(last) = LAST_PUBLISHED.lock().ok().and_then(|l| l.clone()) else { return };
+    let Some(cleared) = without_night_vision(&last) else { return };
+    let _ = publish_platform(app, &cleared);
+}
+
+/// `snapshot` with `nightVisionUntil` set to null, or None when it has
+/// no Night Vision to take off (or isn't JSON).
+fn without_night_vision(snapshot: &str) -> Option<String> {
+    let mut v: serde_json::Value = serde_json::from_str(snapshot).ok()?;
+    let field = v.get_mut("nightVisionUntil")?;
+    if field.is_null() {
+        return None;
+    }
+    *field = serde_json::Value::Null;
+    serde_json::to_string(&v).ok()
+}
+
 #[cfg(target_os = "ios")]
 fn publish_platform<R: Runtime>(app: &AppHandle<R>, snapshot: &str) -> Result<bool, String> {
     let widgets = app.state::<tauri_plugin_hush_widgets::HushWidgets<R>>();
@@ -162,6 +185,17 @@ pub fn claim_widget_link(url: String, cold: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quitting_takes_night_vision_off_the_widgets() {
+        let on = r#"{"version":1,"desks":[],"recentFiles":[],"nightVisionUntil":1800000000000}"#;
+        let off = without_night_vision(on).expect("cleared");
+        let v: serde_json::Value = serde_json::from_str(&off).unwrap();
+        assert!(v["nightVisionUntil"].is_null());
+        assert_eq!(v["version"], 1);
+        assert!(without_night_vision(&off).is_none(), "already off: nothing to write");
+        assert!(without_night_vision(r#"{"version":1}"#).is_none(), "an older snapshot");
+    }
 
     fn reset() {
         *CLAIMS.lock().unwrap() = None;

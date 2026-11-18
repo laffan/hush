@@ -36,6 +36,26 @@ struct WidgetSnapshot: Codable {
   let desks: [WidgetDesk]
   /// Across every desk, newest first.
   let recentFiles: [WidgetFile]
+  /// While the app is in Night Vision: when it ends (epoch ms, the next
+  /// 8am). The widgets draw in red alone until then. Absent in a
+  /// snapshot from before Night Vision.
+  var nightVisionUntil: Double? = nil
+
+  var nightVisionEnd: Date? { nightVisionUntil.map { Date(timeIntervalSince1970: $0 / 1000) } }
+
+  /// Is Night Vision on at `date`?
+  func nightVision(at date: Date) -> Bool {
+    guard let end = nightVisionEnd else { return false }
+    return end > date
+  }
+
+  /// The moments a timeline starting `now` needs entries for: now, and
+  /// Night Vision's end when it is still to come, so the widgets turn
+  /// back at 8am without waiting for the app.
+  func entryDates(from now: Date) -> [Date] {
+    guard let end = nightVisionEnd, end > now else { return [now] }
+    return [now, end]
+  }
 }
 
 enum HushWidgetStore {

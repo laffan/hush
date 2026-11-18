@@ -597,6 +597,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running Hush")
         .run(move |_app, _event| {
+            // Night Vision ends with the app; so does the widgets' copy.
+            if matches!(_event, tauri::RunEvent::Exit) {
+                widgets::end_night_vision(_app);
+            }
             // iPad multi-window: the system requests a scene when the user
             // long-presses the app icon and picks "New Window". Build a
             // full default window for it (it restores the last file like a

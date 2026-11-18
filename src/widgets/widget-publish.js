@@ -8,8 +8,9 @@
  * Republished, debounced, whenever something the widgets show could have
  * changed: a file opened (activity stamped), the tree edited (a rename, a
  * delete, a move to Trash), the desk list changed, a sibling window's
- * settings merged in. A snapshot identical to the last one sent is not
- * sent again, and Rust skips a write whose bytes match the file's.
+ * settings merged in, Night Vision turned on or off. A snapshot identical
+ * to the last one sent is not sent again, and Rust skips a write whose
+ * bytes match the file's.
  */
 import { buildWidgetSnapshot } from "./widget-snapshot.js";
 import { noteRecentActivity, WIDGET_ACTIVITY_EVENT } from "./widget-activity.js";
@@ -71,7 +72,7 @@ export function installWidgetPublisher(state) {
   const onChange = () => schedule(state);
   for (const ev of [
     WIDGET_ACTIVITY_EVENT, "files-changed", "desks-changed",
-    "active-desk-changed", "remote-settings-merged",
+    "active-desk-changed", "remote-settings-merged", "night-vision-changed",
   ]) state.on(ev, onChange);
   // The desk this window opened on counts as visited, and the first
   // snapshot of the session goes out once the tree has loaded.

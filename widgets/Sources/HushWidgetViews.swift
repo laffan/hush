@@ -167,10 +167,32 @@ struct EmptyNote: View {
   }
 }
 
+/// Night Vision's red: the display's own red (P3), so no green or blue
+/// is lit.
+let nightVisionRed = Color(.displayP3, red: 1, green: 0, blue: 0)
+
 extension View {
   /// The system's own widget background, in whichever appearance the
-  /// home screen or desktop is in.
-  func hushWidgetBackground() -> some View {
-    containerBackground(.background, for: .widget)
+  /// home screen or desktop is in — in Night Vision, as the app draws it.
+  @ViewBuilder
+  func hushWidgetBackground(nightVision: Bool = false) -> some View {
+    if nightVision {
+      containerBackground(for: .widget) { Rectangle().fill(.background).nightVision(true) }
+    } else {
+      containerBackground(.background, for: .widget)
+    }
+  }
+
+  /// Night Vision, as the app does it (src/night-vision/): everything
+  /// reduced to its brightness, then multiplied by pure red, so only red
+  /// is lit. The widget's background takes it through
+  /// `hushWidgetBackground(nightVision:)`.
+  @ViewBuilder
+  func nightVision(_ on: Bool) -> some View {
+    if on {
+      grayscale(1).colorMultiply(nightVisionRed)
+    } else {
+      self
+    }
   }
 }

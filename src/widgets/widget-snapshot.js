@@ -9,6 +9,8 @@
  *     version: 1,
  *     desks: [ { id, name, openedAt, recent: [file…] } … ]   most recent first
  *     recentFiles: [ file… ]                                 across desks, newest first
+ *     nightVisionUntil: ms | null   Night Vision's end while it is on (the
+ *                                   widgets draw in red alone until then)
  *   }
  *   file = { id, name, type, deskId, deskName, openedAt }
  *
@@ -24,6 +26,7 @@
  */
 import { getDeskRecentFileIds } from "../state/recent-files.js";
 import { getRecentActivity } from "./widget-activity.js";
+import { isNightVisionActive } from "../night-vision/night-vision-mode.js";
 
 export const WIDGET_SNAPSHOT_VERSION = 1;
 /** Files per desk, and across desks. The widgets show as many rows as
@@ -100,5 +103,7 @@ export function buildWidgetSnapshot(state) {
       id, name, openedAt, recent: recent.slice(0, DESK_FILES),
     })),
     recentFiles: pool.slice(0, RECENT_FILES).map((p) => p.f),
+    // The widgets go red with the app, until the same 8am.
+    nightVisionUntil: isNightVisionActive(state.settings) ? state.settings.nightVisionUntil : null,
   };
 }

@@ -10,6 +10,10 @@ struct SnapshotEntry: TimelineEntry {
   let date: Date
   /// nil until the app has published a snapshot.
   let snapshot: WidgetSnapshot?
+
+  /// Drawn in Night Vision: the app was in it, and it hasn't ended by
+  /// this entry's moment.
+  var nightVision: Bool { snapshot?.nightVision(at: date) ?? false }
 }
 
 struct SnapshotProvider: TimelineProvider {
@@ -24,8 +28,12 @@ struct SnapshotProvider: TimelineProvider {
   }
 
   func getTimeline(in context: Context, completion: @escaping (Timeline<SnapshotEntry>) -> Void) {
-    let entry = SnapshotEntry(date: Date(), snapshot: HushWidgetStore.load())
-    completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(30 * 60))))
+    let now = Date()
+    let snapshot = HushWidgetStore.load()
+    // A second entry at Night Vision's end, so the widget turns back at
+    // 8am on its own.
+    let entries = (snapshot?.entryDates(from: now) ?? [now]).map { SnapshotEntry(date: $0, snapshot: snapshot) }
+    completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(30 * 60))))
   }
 }
 
@@ -59,7 +67,8 @@ struct RecentDesksView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .widgetURL(desks.first.map { HushLink.openDesk($0.id) })
-    .hushWidgetBackground()
+    .nightVision(entry.nightVision)
+    .hushWidgetBackground(nightVision: entry.nightVision)
   }
 }
 
@@ -100,7 +109,8 @@ struct RecentFilesView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .widgetURL(files.first.map { HushLink.openFile($0) })
-    .hushWidgetBackground()
+    .nightVision(entry.nightVision)
+    .hushWidgetBackground(nightVision: entry.nightVision)
   }
 }
 

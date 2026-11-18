@@ -53,6 +53,9 @@ struct DeskFilesEntry: TimelineEntry {
   /// nil when the app hasn't published yet, or the chosen desk is gone.
   let desk: WidgetDesk?
   let hasSnapshot: Bool
+  /// Drawn in Night Vision (the app was in it, and it hasn't ended by
+  /// this entry's moment).
+  var nightVision = false
 }
 
 struct DeskFilesProvider: AppIntentTimelineProvider {
@@ -69,12 +72,21 @@ struct DeskFilesProvider: AppIntentTimelineProvider {
   }
 
   func timeline(for configuration: SelectDeskIntent, in context: Context) async -> Timeline<DeskFilesEntry> {
-    Timeline(entries: [makeEntry(for: configuration)], policy: .after(Date().addingTimeInterval(30 * 60)))
+    let now = Date()
+    let snapshot = HushWidgetStore.load()
+    // A second entry at Night Vision's end, so the widget turns back at
+    // 8am on its own.
+    let entries = (snapshot?.entryDates(from: now) ?? [now]).map { makeEntry(for: configuration, at: $0, snapshot: snapshot) }
+    return Timeline(entries: entries, policy: .after(now.addingTimeInterval(30 * 60)))
   }
 
   private func makeEntry(for configuration: SelectDeskIntent) -> DeskFilesEntry {
-    guard let snapshot = HushWidgetStore.load() else {
-      return DeskFilesEntry(date: Date(), desk: nil, hasSnapshot: false)
+    makeEntry(for: configuration, at: Date(), snapshot: HushWidgetStore.load())
+  }
+
+  private func makeEntry(for configuration: SelectDeskIntent, at date: Date, snapshot: WidgetSnapshot?) -> DeskFilesEntry {
+    guard let snapshot else {
+      return DeskFilesEntry(date: date, desk: nil, hasSnapshot: false)
     }
     let desk: WidgetDesk?
     if let chosen = configuration.desk {
@@ -82,7 +94,7 @@ struct DeskFilesProvider: AppIntentTimelineProvider {
     } else {
       desk = snapshot.desks.first
     }
-    return DeskFilesEntry(date: Date(), desk: desk, hasSnapshot: true)
+    return DeskFilesEntry(date: date, desk: desk, hasSnapshot: true, nightVision: snapshot.nightVision(at: date))
   }
 }
 
@@ -112,7 +124,8 @@ struct DeskFilesView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .widgetURL(entry.desk.map { HushLink.openDesk($0.id) })
-    .hushWidgetBackground()
+    .nightVision(entry.nightVision)
+    .hushWidgetBackground(nightVision: entry.nightVision)
   }
 
   /// The desk's name (which opens it) and the two create buttons — New
