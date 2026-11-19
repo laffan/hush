@@ -167,6 +167,11 @@ let _lastEraserSubTool: "erase" | "slice" = "erase";
  *  `draw` restores everything the user had set up. Routed in via
  *  `pencil-bridge.js` listening to the iOS plugin's `double-tap` event.
  *
+ *  While the pen isn't the tool in use (Select, Text, …) a double-tap
+ *  doesn't toggle: it picks the pen up with the first brush, the way
+ *  reopening a minimized drawing toolbar does (and, with the toolbar
+ *  minimized, by reopening it). The next double-tap toggles as above.
+ *
  *  Routes to the most-recently interacted-with notebook (matches the
  *  copy/paste routing convention) and falls back to the first live
  *  canvas if no pointer interaction has happened yet. No-op if no
@@ -178,9 +183,16 @@ export function toggleNotebookEraser(): void {
   if (!target) return;
   const s = target.state;
   if (s.tool !== "pen") {
+    if (s.drawingToolbarMinimized) {
+      s.setDrawingToolbarMinimized(false);
+      return;
+    }
+    s.setActiveBrushSlot(0);
+    s.setDrawingSubTool("draw");
     s.tool = "pen";
     s.notify("tool");
     s.notify("drawingMode");
+    return;
   }
   const sub = s.drawingSubTool;
   if (sub === "erase" || sub === "slice") {

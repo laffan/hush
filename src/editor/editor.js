@@ -69,6 +69,7 @@ import { createFoldArrowPlugin } from "./fold-arrow.js";
 import { createPropertiesPlugin } from "./plugins/properties.js";
 import { createMainEditorRunway } from "./plugins/bottom-runway.js";
 import { createMainEditorBlurListener } from "./editor-blur.js";
+import { caretRestPlugin } from "./caret-rest.js";
 
 // Re-export for callers that imported these from editor.js historically.
 export { headingIndentPlugin, createMultiLineCommentPlugin, createCommentAfterPlugin };
@@ -263,7 +264,7 @@ export function createEditor(container, state) {
       })())),
       markdown({ extensions: [Strikethrough, Table, CommentExtension, HighlightExtension, CardFenceExtension] }),
       history(),
-      drawSelection(),
+      drawSelection(), caretRestPlugin, // an unfocused caret greys (caret-rest.js) — in the shared list too
       // ⌥-click adds a cursor (multi-cursor.js) — in the shared list too.
       multiCursorExtension(),
       wrapOnSelection,

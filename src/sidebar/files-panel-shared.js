@@ -124,6 +124,12 @@ export function leafIcon(item) {
   return typeIcons[item.type] || typeIcons.document;
 }
 
+/** A Doc with no title yet: still the name a new Doc starts with (the
+ *  "Untitled" of `state-naming.js#deriveName`), or a sibling's
+ *  de-duplicated copy of it ("Untitled (2)", `tree-helpers.js#uniqueChildName`).
+ *  The files panel draws its row at half strength. */
+export const isUntitledName = (name) => /^Untitled(?: \(\d+\))?$/.test(name || "");
+
 // Six-dot drag-handle glyph, shared by the desk-switcher popover rows and
 // the all-desks file-panel rows so desks can be grabbed for reordering.
 /** Open in New Window — a window with an arrow leaving its corner. The

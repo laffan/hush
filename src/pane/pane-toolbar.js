@@ -27,6 +27,7 @@ import {
 import { isDocked, applyDockGeometry, reflowAllDockedPanes } from "./pane-dock.js";
 import { toggleStretchPaneHeight } from "./pane-layout.js";
 import { schedulePersist } from "./pane-persistence.js";
+import { savePaneContent } from "./pane-content.js";
 
 // ── SVG icons ─────────────────────────────────────────────────────────
 const ICON_CLOSE = `<svg viewBox="0 0 10 10"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg>`;
@@ -78,9 +79,15 @@ export function buildPaneDOM(pane, deps) {
   const titleLink = document.createElement("span");
   titleLink.className = "fp-title-link";
   titleLink.textContent = pane.fileName;
-  titleLink.addEventListener("click", (e) => {
+  titleLink.addEventListener("click", async (e) => {
     if (pane.fileType === "zotero-highlights") return;
     e.stopPropagation();
+    // The main surface opens the file from disk, so whatever was typed
+    // or drawn in the pane since its last autosave goes there first.
+    // Without it a new Doc made as a pane (⌘⇧N) opened empty — nothing
+    // in it had been saved yet — and the pane, hidden by the switch,
+    // later wrote its words under a main editor that was showing none.
+    await savePaneContent(pane);
     if (pane.fileType === "notebook") appState.openNotebook(pane.fileId);
     else if (pane.fileType === "pdf") appState.openPdf(pane.fileId);
     else if (pane.fileType === "stack") appState.openStack(pane.fileId);

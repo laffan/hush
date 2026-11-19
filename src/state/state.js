@@ -244,7 +244,11 @@ export class AppState {
     else this._createLocalFile();
   }
 
-  _createLocalFile() {
+  /** Browser build: a new library entry. It becomes the open file only
+   *  when asked — `newFile(…, { openImmediately: false })` (a new Doc
+   *  made as a pane) must leave the main editor's file alone, or the
+   *  editor's next save lands its text in the new file. */
+  _createLocalFile({ open = true } = {}) {
     const id = crypto.randomUUID();
     const file = {
       id,
@@ -253,7 +257,7 @@ export class AppState {
       modified: Math.floor(Date.now() / 1000),
     };
     this.files.unshift(file);
-    this.currentFileId = id;
+    if (open) this.currentFileId = id;
     this._saveFilesLocal();
     return file;
   }

@@ -5,32 +5,34 @@
  * "View Desk Dashboard".
  *
  * Each card shows the desk's icon and name, its YOU ARE HERE marker (if
- * it has one) and the files most recently edited in it. On hover a small
- * toolbar offers a new Doc or Notebook in that desk's Inbox, opening the
- * desk itself, and a grip to drag the card into a new place. Desk
+ * it has one) and the files most recently edited in it. The name is a
+ * link: a click goes to the desk. On hover a small toolbar offers a new
+ * Doc or Notebook in that desk's Inbox, opening the desk in a window of
+ * its own, and a grip to drag the card into a new place. Desk
  * sections (`state/desk-sections.js`) run across the grid as full-width
  * label bars, with rename, delete and a grip on hover; cards and bars
  * drag among each other, and a drop commits through `commitDeskLayout`.
  *
  * Everything a card edits goes through the same calls the desk switcher
- * uses: the name is an input committed through `state.renameDesk` (with
- * the switcher's rule that a local desk can't be renamed on iOS), the
- * icon opens `change-icon.js#changeDeskIcon`, and a drop commits through
- * `state.reorderDesks`. Each fires `desks-changed`, which re-renders the
- * grid — except while a name is being typed or a card dragged, when the
- * render waits until that is done.
+ * uses: the icon opens `change-icon.js#changeDeskIcon`, and a drop
+ * commits through `state.reorderDesks`. (A desk is renamed from the desk
+ * switcher; the dashboard's name is a link, not a field.) Each fires
+ * `desks-changed`, which re-renders the grid — except while a section's
+ * name is being typed or a card dragged, when the render waits until
+ * that is done.
  *
  * Anything that leaves the dashboard for a file goes to that file's desk
  * first (`state/cross-desk.js`), as the ⌘O picker's all-desks mode does.
  */
 
 import { escHtml, leafIcon, typeIcons, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
-import { isDesktopTauri, collectFileLeaves } from "../command-palette-helpers.js";
+import { collectFileLeaves } from "../command-palette-helpers.js";
 import { customIconSvg, deskIconName } from "../ui/custom-icons.js";
 import { youAreHereEntriesFor, jumpToYouAreHere, markerNote } from "../you-are-here.js";
 import { switchDeskAndLand, openLeafOnItsDesk } from "../state/cross-desk.js";
 import { mountDashboardSearch } from "./desk-dashboard-search.js";
 import { deskLayout, commitDeskLayout, renameDeskSection, deleteDeskSection } from "../state/desk-sections.js";
+import { multiWindowAvailable, openDeskInNewWindow } from "../multi-window.js";
 
 /** How many recently edited files a card lists. */
 const RECENT_COUNT = 5;
@@ -44,9 +46,9 @@ const NEW_DOC = typeIcons.document;
 const NEW_NOTEBOOK = typeIcons.notebook;
 const PENCIL = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.5 3H3.5A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8a1.5 1.5 0 0 0 1.5-1.5V8.5"/><path d="M12.25 1.75a1.06 1.06 0 0 1 1.5 1.5L8 9l-2 .5.5-2z"/></svg>`;
 const TRASH = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11"/><path d="M5.5 4V2.75a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75V4"/><path d="M12.5 4l-.6 9.1a1 1 0 0 1-1 .9H5.1a1 1 0 0 1-1-.9L3.5 4"/></svg>`;
-// A plain forward arrow: go to the desk, here — not the box-and-arrow
-// that reads as "opens in a new window".
-const OPEN_DESK = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg>`;
+// The forward arrow turned 45° up, pointing out of the card: open the
+// desk in a window of its own. (Going to the desk here is the name.)
+const OPEN_IN_WINDOW = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" transform="rotate(-45 8 8)"/></svg>`;
 
 /** The 2 × 2 grid glyph the sidebar footer's button wears. */
 export const DASHBOARD_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.25"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.25"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.25"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.25"/></svg>`;
@@ -82,7 +84,7 @@ export function openDeskDashboard(state) {
   let dragging = false;
   let pending = false;
   let lastHtml = "";
-  const busy = () => dragging || !!grid.querySelector(".desk-dash-name:focus, .desk-dash-section-name:focus");
+  const busy = () => dragging || !!grid.querySelector(".desk-dash-section-name:focus");
 
   function render() {
     if (!deskDashboardAvailable(state)) { close(); return; }
@@ -108,9 +110,9 @@ export function openDeskDashboard(state) {
   }
   function onKey(e) {
     if (e.key !== "Escape") return;
-    // Escape in a name field abandons the edit, not the dashboard.
-    // The search field takes its own Escape (clear, then close).
-    if (e.target instanceof Element && e.target.closest(".desk-dash-name, .desk-dash-section-name, .desk-dash-search-input")) return;
+    // Escape in a section's name field abandons the edit, not the
+    // dashboard. The search field takes its own Escape (clear, then close).
+    if (e.target instanceof Element && e.target.closest(".desk-dash-section-name, .desk-dash-search-input")) return;
     // A modal opened over the dashboard (the icon picker, a name prompt)
     // takes its own Escape.
     if (document.querySelector(".tree-delete-modal-backdrop")) return;
@@ -188,11 +190,6 @@ function cardHtml(state, d) {
   const active = d.id === state.settings?.activeDeskId;
   const icon = deskIconName(state, d.id);
   const glyph = icon ? customIconSvg(icon) : typeIcons.desk;
-  // A local desk is named by its folder, and iOS won't let Hush rename
-  // that folder (see desk-switcher.js) — the name stays read-only there.
-  const isLocal = !!state.deskRoots?.[d.id];
-  const lockName = isLocal && !isDesktopTauri();
-  const nameTip = isLocal ? (lockName ? "" : "Rename (renames the folder too)") : "Rename";
 
   const yah = youAreHereEntriesFor(state, [d.id])[0];
   const note = yah ? yahNote(state, yah) : "";
@@ -214,14 +211,13 @@ function cardHtml(state, d) {
   return `<section class="desk-dash-card${active ? " active" : ""}" data-desk-id="${escHtml(d.id)}">
     <div class="desk-dash-card-head">
       <button type="button" class="desk-dash-icon${icon ? " has-icon" : ""}" data-action="icon" data-tooltip="Change icon" aria-label="Change icon">${glyph}</button>
-      <input class="desk-dash-name" type="text" value="${escHtml(d.name)}" spellcheck="false" autocomplete="off"
-        aria-label="Desk name"${nameTip ? ` data-tooltip="${nameTip}"` : ""}${lockName ? " readonly" : ""} />
+      <button type="button" class="desk-dash-name" data-action="open">${escHtml(d.name)}</button>
       ${active ? `<span class="desk-dash-current">Current</span>` : ""}
     </div>
     <div class="desk-dash-tools">
       <button type="button" data-action="new-doc" data-tooltip="New Doc in Inbox" aria-label="New Doc in Inbox">${NEW_DOC}</button>
       <button type="button" data-action="new-notebook" data-tooltip="New Notebook in Inbox" aria-label="New Notebook in Inbox">${NEW_NOTEBOOK}</button>
-      <button type="button" data-action="open" data-tooltip="Open desk" aria-label="Open desk">${OPEN_DESK}</button>
+      ${multiWindowAvailable() ? `<button type="button" data-action="new-window" data-tooltip="Open Desk in New Window" aria-label="Open Desk in New Window">${OPEN_IN_WINDOW}</button>` : ""}
       <span class="desk-dash-grip" data-tooltip="Drag to reorder" aria-hidden="true">${DRAG_HANDLE_SVG}</span>
     </div>
     ${yahHtml}
@@ -230,7 +226,7 @@ function cardHtml(state, d) {
 }
 
 /** A section: a full-width label bar across the grid. Its name is a
- *  field like a card's (the pencil puts the caret in it). */
+ *  field (the pencil puts the caret in it). */
 function sectionHtml(section) {
   return `<div class="desk-dash-section" data-section-id="${escHtml(section.id)}">
     <input class="desk-dash-section-name" type="text" value="${escHtml(section.name)}" spellcheck="false" autocomplete="off" aria-label="Section name" />
@@ -266,6 +262,11 @@ async function onGridClick(state, e, close) {
     changeDeskIcon(state, deskId);
     return;
   }
+  // The desk in a window of its own: this window and the dashboard stay.
+  if (action === "new-window") {
+    await openDeskInNewWindow(state, deskId);
+    return;
+  }
   // Everything else leaves the dashboard for the desk.
   close();
   if (action === "file") {
@@ -287,43 +288,23 @@ async function onGridClick(state, e, close) {
   }
 }
 
-/** The name fields: Enter or leaving the field renames the desk (or the
- *  section), Escape puts the old name back. `settle` runs the render
- *  held off while the field had focus. */
+/** The section name fields: Enter or leaving the field renames the
+ *  section, Escape puts the old name back. `settle` runs the render held
+ *  off while the field had focus. */
 function wireNames(state, grid, settle) {
   grid.addEventListener("keydown", (e) => {
-    const input = e.target instanceof HTMLInputElement && e.target.closest(".desk-dash-name, .desk-dash-section-name");
+    const input = e.target instanceof HTMLInputElement && e.target.closest(".desk-dash-section-name");
     if (!input) return;
     if (e.key === "Enter") { e.preventDefault(); input.blur(); }
     else if (e.key === "Escape") { e.preventDefault(); input.value = input.defaultValue; input.blur(); }
   });
   grid.addEventListener("focusout", async (e) => {
-    const sectionInput = e.target instanceof HTMLInputElement && e.target.closest(".desk-dash-section-name");
-    if (sectionInput) {
-      const id = sectionInput.closest(".desk-dash-section")?.dataset.sectionId;
-      const next = sectionInput.value.trim();
-      if (id && next && next !== sectionInput.defaultValue) await renameDeskSection(state, id, next);
-      else sectionInput.value = sectionInput.defaultValue;
-      settle();
-      return;
-    }
-    const input = e.target instanceof HTMLInputElement && e.target.closest(".desk-dash-name");
+    const input = e.target instanceof HTMLInputElement && e.target.closest(".desk-dash-section-name");
     if (!input) return;
-    const deskId = input.closest(".desk-dash-card")?.dataset.deskId;
+    const id = input.closest(".desk-dash-section")?.dataset.sectionId;
     const next = input.value.trim();
-    const prev = input.defaultValue;
-    if (deskId && next && next !== prev) {
-      // A local desk's rename goes out to the filesystem and can fail in
-      // ways the user has to hear about (a name already taken).
-      try { await state.renameDesk(deskId, next); }
-      catch (err) {
-        console.warn("rename desk failed:", err);
-        input.value = prev;
-        window.alert(String(err?.message || err));
-      }
-    } else {
-      input.value = prev;
-    }
+    if (id && next && next !== input.defaultValue) await renameDeskSection(state, id, next);
+    else input.value = input.defaultValue;
     settle();
   });
 }

@@ -279,6 +279,16 @@
   min-width: 0;
 }
 
+/* A Doc with no title yet ("Untitled", "Untitled (2)") — its icon and
+   name at half strength until its first line names it
+   (files-panel-shared.js#isUntitledName). In the Inbox only the name
+   dims; the last-edit line under it keeps its own strength. */
+.tree-item-row.untitled > .tree-type-icon,
+.tree-item-row.untitled > .tree-item-name:not(.tree-item-inbox),
+.tree-item-row.untitled .tree-item-inbox-name {
+  opacity: 0.5;
+}
+
 
 /* Outline number prefix on project child rows (Show numbers). */
 .tree-item-number {

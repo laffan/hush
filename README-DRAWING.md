@@ -131,7 +131,7 @@ Every modification to `engine/` is tagged at the call site (`grep -rn "Hush delt
 
 ### Apple Pencil (iOS)
 
-Finger touches never draw — `setPencilOnly(true)` is flipped at startup by `pencil-bridge.js` (`PointerEvent.pointerType` is reliable on this WKWebView). Fingers still pan (one finger, delta #41), pinch and tap-undo, and a held finger selects. The Pencil squeeze/double-tap has no PointerEvent equivalent, so `src-tauri/tauri-plugin-pencil/` attaches a `UIPencilInteraction` to the WKWebView and emits a `double-tap` plugin event → `toggleNotebookEraser()`. An earlier version of the plugin also attached a gesture recognizer to the scrollView for finger-vs-pencil detection — it broke touch delivery entirely and was removed; the plugin's sole job is the double-tap event.
+Finger touches never draw — `setPencilOnly(true)` is flipped at startup by `pencil-bridge.js` (`PointerEvent.pointerType` is reliable on this WKWebView). Fingers still pan (one finger, delta #41), pinch and tap-undo, and a held finger selects. The Pencil squeeze/double-tap has no PointerEvent equivalent, so `src-tauri/tauri-plugin-pencil/` attaches a `UIPencilInteraction` to the WKWebView and emits a `double-tap` plugin event → `toggleNotebookEraser()`, which swaps draw ↔ the last eraser type while the pen is the tool, and otherwise only picks the pen up on brush slot 0 (through `setDrawingToolbarMinimized(false)` when the toolbar is minimized, which does the same). An earlier version of the plugin also attached a gesture recognizer to the scrollView for finger-vs-pencil detection — it broke touch delivery entirely and was removed; the plugin's sole job is the double-tap event.
 
 ### Tools, toolbar, brushes
 

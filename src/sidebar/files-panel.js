@@ -9,7 +9,7 @@ import { createPane } from "../pane/pane-manager.js";
 import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
 import { inboxPreviewFor } from "./inbox-preview.js";
 import { canExpandView, isExpandedView, inExpandedView, expandViewButton, toggleExpandedView } from "./expanded-view.js";
-import { escHtml, showPromptModal, googleLinkBadgeHtml, computeNumberLabels, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
+import { escHtml, showPromptModal, googleLinkBadgeHtml, computeNumberLabels, DRAG_HANDLE_SVG, isUntitledName } from "./files-panel-shared.js";
 import {
   isInboxId, isImagesId, isPdfsId, isTrashId, isAnySpecialId,
   isInboxItem, isArchiveItem, inboxNameHtml, sortInboxByEdited,
@@ -211,7 +211,8 @@ export function createFilesPanel(container, state, hidePanel) {
       const isActiveDesk = isDesk && item.id === state.settings?.activeDeskId;
       const row = document.createElement("span");
       row.className = "tree-item-row" + (isActive ? " active" : "")
-        + (isDesk ? " desk-row" : "") + (isActiveDesk ? " active-desk" : "");
+        + (isDesk ? " desk-row" : "") + (isActiveDesk ? " active-desk" : "")
+        + (item.type === "document" && isUntitledName(item.name) ? " untitled" : ""); // half strength (files-panel.css)
 
       if (item.type === "pdf" && item.fileId && !isPdfsId(item.id)) {
         const pdfHtml = buildPdfRowHtml(item, icon, inTrash, inProject);

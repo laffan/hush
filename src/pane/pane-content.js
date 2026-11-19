@@ -513,6 +513,17 @@ export async function savePaneContent(pane) {
         try { await tauriInvoke("create_snapshot", { documentId: snapDocId, content }); }
         catch (_) {}
       }
+    } else if (pane.fileType === "document" && pane.editor && !pane.localSync && appState) {
+      // Browser build: the library is `state.files` in localStorage, as
+      // the main editor's save writes it. Without this a pane's words
+      // never left the pane.
+      const file = appState.files.find((f) => f.id === pane.fileId);
+      if (file) {
+        file.content = pane.editor.getContent();
+        file.modified = Math.floor(Date.now() / 1000);
+        appState._saveFilesLocal();
+        if (pane.fileId !== appState.currentFileId) await appState.maybeRenameFileFromContent(pane.fileId, file.content);
+      }
     }
   } catch (e) {
     console.error("Failed to save pane content:", e);

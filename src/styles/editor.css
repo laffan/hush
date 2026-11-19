@@ -317,6 +317,28 @@ body.file-in-trash #notebook-container .notes-canvas + * {
   50% { opacity: 0.2; }
 }
 
+/* The caret at rest — the editor isn't the one taking keys (focus is in
+   another pane, the sidebar, the palette) or the app is in the
+   background. caret-rest.js marks the editor `data-caret="rest"`; the
+   caret stays where it was instead of vanishing, its colour drained and
+   faded, and still. On the layer, so it reaches every caret shape at
+   once (each keeps its own opacity under it) and the glow greys with
+   the caret. Only on the surfaces block-cursor.js paints: the main
+   editor, the overlays, panes and stack columns — a card or a pinned
+   outline still hides an unfocused caret (cards.css, outline.css). The
+   `#editor-container` row outranks that surface's pulse rule, which a
+   stale `cm-focused` could otherwise keep running. */
+.cursor-mode-surface .cm-editor[data-caret="rest"] > .cm-scroller > .cm-cursorLayer,
+#editor-container .cm-editor[data-caret="rest"] > .cm-scroller > .cm-cursorLayer {
+  animation: none !important;
+  opacity: 0.35;
+  filter: grayscale(1);
+  transition: opacity 0.25s ease, filter 0.25s ease;
+}
+.cursor-mode-surface .cm-editor[data-caret="rest"] > .cm-scroller > .cm-cursorLayer .cm-cursor {
+  display: block;
+}
+
 
 
 /* ===== Line Indicator (per-style "highlight current line" affordance) =====

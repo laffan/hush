@@ -34,9 +34,10 @@
  * while it was closed stay quiet. A finished timer's "Done" is a button
  * that deletes it.
  *
- * In the final minute the ring counts the seconds down, 60 to 0, without
- * a hover. The ring's line runs red through the last five minutes; at the finish
- * it blinks five times (when the finish is seen happening) and stays a
+ * In the final minute a thinner ring inside the first fills with that
+ * minute's seconds, closing at the finish as the outer one does; the
+ * middle shows no figure. The ring's line runs red through the last
+ * five minutes; at the finish it blinks five times (when the finish is seen happening) and stays a
  * red ring with a ✓ in the middle, which is its Done: a click on it
  * deletes the timer rather than opening the sidebar.
  */
@@ -48,7 +49,7 @@ import { installRingDrag } from "./timer-ring-drag.js";
 
 /** The ring's line turns red for a session's last five minutes. */
 const FINAL_MINUTES_MS = 5 * 60 * 1000;
-/** …and its figure counts seconds through the last one. */
+/** …and an inner ring fills with the seconds of the last one. */
 const FINAL_MINUTE_MS = 60 * 1000;
 /** The finish blink — keep in step with `.timer-ring.finish-blink` in
  *  styles/timer.css. */
@@ -61,6 +62,10 @@ const RING_SIZE = 30;
 const RING_STROKE = 3;
 const RING_R = (RING_SIZE - RING_STROKE) / 2;
 const C = RING_SIZE / 2;
+/** The final minute's inner ring: a 2 px stroke 2 px inside the outer
+ *  one's (its centre line at radius 9, the outer's inner edge at 12). */
+const INNER_STROKE = 2;
+const INNER_R = RING_R - RING_STROKE / 2 - 2 - INNER_STROKE / 2;
 
 /** A hash mark across the ring's stroke at `frac` of the way round. The
  *  svg is turned -90°, so angle 0 is twelve o'clock. */
@@ -145,6 +150,8 @@ export function mountTimerBox(slot, state, panelOverlay) {
         <circle class="timer-ring-track" cx="${RING_SIZE / 2}" cy="${RING_SIZE / 2}" r="${RING_R}" />
         <circle class="timer-ring-fill" cx="${RING_SIZE / 2}" cy="${RING_SIZE / 2}" r="${RING_R}" pathLength="100" />
         <g class="timer-ring-marks"></g>
+        <circle class="timer-ring-inner-track" cx="${C}" cy="${C}" r="${INNER_R}" />
+        <circle class="timer-ring-inner" cx="${C}" cy="${C}" r="${INNER_R}" pathLength="100" />
       </svg>
       <span class="timer-ring-label"></span>`;
     // A press that travels is a drag; one that doesn't opens the sidebar.
@@ -158,6 +165,7 @@ export function mountTimerBox(slot, state, panelOverlay) {
     els.ringFill = ring.querySelector(".timer-ring-fill");
     els.ringLabel = ring.querySelector(".timer-ring-label");
     els.ringMarks = ring.querySelector(".timer-ring-marks");
+    els.ringInner = ring.querySelector(".timer-ring-inner");
     marksKey = null;
     syncRing();
   }
@@ -248,6 +256,11 @@ export function mountTimerBox(slot, state, panelOverlay) {
     els.breakBar.firstElementChild.style.width = `${(sub ? sub.progress : 0) * 100}%`;
     const finalMinute = !st.finished && st.remaining <= FINAL_MINUTE_MS;
     ring.classList.toggle("final-minute", finalMinute);
+    // The inner ring fills with the minute's elapsed seconds, from twelve
+    // o'clock as the outer one does, so the two close together. Empty
+    // outside the final minute, so it starts from nothing when it shows.
+    const minuteGone = finalMinute ? 1 - Math.max(0, st.remaining) / FINAL_MINUTE_MS : 0;
+    els.ringInner.style.strokeDashoffset = String(100 - minuteGone * 100);
 
     // An alarm's last ten minutes: the minutes to go in red, and the ring
     // shows them without being hovered.
@@ -274,10 +287,12 @@ export function mountTimerBox(slot, state, panelOverlay) {
       // Minutes to the next break, or to the finish once none are left.
       // On a break, the seconds left of it — the break is what's happening
       // now, even in an alarm's last ten minutes.
-      // The final minute counts down in seconds, over everything else.
+      // The final minute is the inner ring, over everything else: no
+      // figure in the middle (the seconds stay in the aria-label, for
+      // the tooltip and screen readers).
       if (finalMinute) {
         const secs = Math.max(0, Math.ceil(st.remaining / 1000));
-        els.ringLabel.textContent = String(secs);
+        els.ringLabel.textContent = "";
         ring.setAttribute("aria-label", `${secs} s to go`);
       } else if (brk) {
         const secs = Math.max(0, Math.ceil(brk.remaining / 1000));

@@ -709,14 +709,27 @@ body.zen-focus-active .timer-ring { display: flex; z-index: var(--z-over-zen); }
   color: var(--timer-lead-blue);
 }
 
-/* The final minute: the seconds count down in the middle, 60 to 0,
-   without a hover (white on a break's red disc, red otherwise). */
+/* The final minute: a thinner ring inside the first fills with the
+   minute's seconds, red over a faint red track (white on a break's red
+   disc), and the middle stays empty. Laid out only in the final minute;
+   timer-box.js empties it outside it, so it always starts from nothing. */
 .timer-ring.final-minute { opacity: 1; }
-.timer-ring.final-minute .timer-ring-label {
-  opacity: 1;
-  font-weight: 600;
+.timer-ring .timer-ring-inner,
+.timer-ring .timer-ring-inner-track {
+  display: none;
+  stroke-width: 2;
 }
-.timer-ring.final-minute:not(.on-break) .timer-ring-label { color: var(--timer-alarm-red); }
+.timer-ring.final-minute .timer-ring-inner,
+.timer-ring.final-minute .timer-ring-inner-track { display: inline; }
+.timer-ring-inner-track { stroke: color-mix(in srgb, var(--timer-alarm-red) 18%, transparent); }
+.timer-ring-inner {
+  stroke: var(--timer-alarm-red);
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  transition: stroke-dashoffset 1s linear;
+}
+.timer-ring.on-break .timer-ring-inner-track { stroke: rgba(255, 255, 255, 0.35); }
+.timer-ring.on-break .timer-ring-inner { stroke: #fff; }
 
 /* The last five minutes: the ring's line runs red to the finish. At the
    finish it stays red — the whole circle now — with the ✓ showing in the

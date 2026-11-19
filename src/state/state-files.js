@@ -146,7 +146,7 @@ export async function newFile(state, parentId = null, opts = {}) {
   if (IS_TAURI) {
     try { createdEntry = await tauriInvoke("create_file"); fileId = createdEntry.id; }
     catch (e) { console.error("Create file failed:", e); return; }
-  } else { createdEntry = state._createLocalFile(); fileId = createdEntry.id; }
+  } else { createdEntry = state._createLocalFile({ open: openImmediately }); fileId = createdEntry.id; }
   // Imported docs ship with their original basename via `opts.initialName`;
   // brand-new docs fall back to "Untitled" and get uniquified.
   const baseName = (typeof opts.initialName === "string" && opts.initialName.trim()) ? opts.initialName.trim() : "Untitled";

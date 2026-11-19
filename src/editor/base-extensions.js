@@ -48,6 +48,7 @@ import { createRatchetExtensions } from "./ratchet.js";
 import { createWordLimitExtensions } from "./word-limit.js";
 import { createCardPlugin } from "../cards/card-doc-plugin.js";
 import { createCampfirePlugin } from "./plugins/campfire.js";
+import { caretRestPlugin } from "./caret-rest.js";
 
 /**
  * Marks a transaction as app-driven rather than user-typed: file loads,
@@ -236,6 +237,9 @@ export function createBaseExtensions(state, onChange, opts) {
     markdown({ extensions: [Strikethrough, Table, CommentExtension, HighlightExtension, CardFenceExtension] }),
     history(),
     drawSelection(),
+    // An unfocused caret stays put, greyed and faded (caret-rest.js) —
+    // in editor.js's list too.
+    caretRestPlugin,
     // ⌥-click adds a cursor (multi-cursor.js) — in editor.js's list too.
     multiCursorExtension(),
     wrapOnSelection,

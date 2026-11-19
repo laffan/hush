@@ -219,29 +219,38 @@
 /* The stock desk glyph stands in, quieter, for a desk with no icon. */
 .desk-dash-icon:not(.has-icon) svg { width: 18px; height: 18px; opacity: 0.45; }
 
+/* The name is a link to the desk: a click goes there. It sizes to its
+   text, so only the words themselves answer the pointer. */
 .desk-dash-name {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: left;
   font: inherit;
   font-size: 16px;
   font-weight: 600;
   color: inherit;
   background: none;
   border: none;
-  border-bottom: 1px solid transparent;
   border-radius: 0;
   padding: 2px 0;
   outline: none;
-  text-overflow: ellipsis;
-  cursor: text;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  transition: text-decoration-color 0.15s;
+  cursor: pointer;
 }
-.desk-dash-name:hover:not([readonly]) { border-bottom-color: color-mix(in srgb, var(--fg) 15%, transparent); }
-.desk-dash-name:focus { border-bottom-color: color-mix(in srgb, var(--fg) 40%, transparent); }
-.desk-dash-name[readonly] { cursor: default; }
+.desk-dash-name:hover,
+.desk-dash-name:focus-visible { text-decoration-color: color-mix(in srgb, var(--fg) 45%, transparent); }
 
 /* Gives its place to the toolbar while the card is hovered. */
 .desk-dash-current {
   flex: 0 0 auto;
+  margin-left: auto;
   margin-right: -104px;
   font-size: 11px;
   opacity: 0.45;
