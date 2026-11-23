@@ -1,8 +1,9 @@
 /* ===== Desk Dashboard (src/sidebar/desk-dashboard.js) =====
    Every desk as a card in a grid: icon and name, the YOU ARE HERE
    marker, the files edited most recently, and a toolbar on hover.
-   The shell matches the Progress modal; the cards are only rules and
-   space — no fills — so the grid reads as one quiet surface. */
+   Down the left, a sidebar: the To-do list over the recent files of
+   every desk. The shell matches the Progress modal; the cards are only
+   rules and space — no fills — so the grid reads as one quiet surface. */
 
 .desk-dash-overlay {
   position: fixed;
@@ -17,13 +18,11 @@
   font-family: var(--ui-font-family);
 }
 
+/* A set height, not the grid's: the sidebar's two halves share it. */
 .desk-dash {
-  width: min(1080px, 100%);
-  max-height: calc(92vh - 16px - var(--top-chrome-inset, 0px));
+  width: min(1340px, 100%);
+  height: min(880px, calc(92vh - 16px - var(--top-chrome-inset, 0px)));
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 16px 18px 18px;
   box-sizing: border-box;
   background: var(--theme-bg, var(--bg));
   color: var(--fg);
@@ -31,6 +30,121 @@
   border-radius: 8px;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
   overflow: hidden;
+}
+
+.desk-dash-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px 18px;
+}
+
+/* ---- Sidebar: To-do list over Recent ---- */
+/* The floating To-do panel's width, so the list lays out as it does there. */
+.desk-dash-side {
+  flex: 0 0 auto;
+  width: 340px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+}
+/* The list itself is todo-list.js, styled by todo.css; here only its
+   place. Over Recent, so the searches that hang from it are not hidden
+   behind the files below. */
+.desk-dash-todo {
+  flex: 1 1 0;
+  min-height: 140px;
+  z-index: 1;
+}
+/* The head's search on the same line as Search all Desks across the way. */
+.desk-dash-todo .todo-head { padding: 15px 10px 4px 14px; }
+.desk-dash-recents {
+  flex: 0 1 auto;
+  max-height: 40%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 10px 12px;
+  border-top: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+}
+/* Worn like the To-do list's desk headings above it. */
+.desk-dash-side-head { margin: 0 6px 4px 8px; }
+.desk-dash-side-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+}
+.desk-dash-recents-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+.desk-dash-recent-file {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.desk-dash-recent-file:hover { background: rgba(128, 128, 128, 0.1); }
+.desk-dash-recent-file .tree-type-icon,
+.desk-dash-recent-file .custom-icon { flex: 0 0 auto; opacity: 0.6; }
+.desk-dash-recent-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.desk-dash-recent-desk {
+  flex: 0 1 auto;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  opacity: 0.45;
+}
+.desk-dash-recents .desk-dash-empty { padding: 4px 8px; }
+
+/* A narrow window has no room beside the grid: the dashboard becomes one
+   scrolling column — the desks, then the To-do list, then Recent — at
+   its content's height. */
+@media (max-width: 720px) {
+  .desk-dash {
+    flex-direction: column;
+    height: auto;
+    max-height: calc(92vh - 16px - var(--top-chrome-inset, 0px));
+    overflow-y: auto;
+  }
+  .desk-dash-main { flex: none; order: -1; }
+  .desk-dash-grid { overflow: visible; }
+  .desk-dash-side {
+    width: auto;
+    border-right: none;
+    border-top: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+  }
+  .desk-dash-todo { flex: none; min-height: 0; }
+  .desk-dash-todo .todo-head { padding-top: 12px; }
+  .desk-dash-todo .todo-body { overflow: visible; }
+  .desk-dash-recents { max-height: none; }
+  .desk-dash-recents-list { overflow: visible; }
 }
 
 .desk-dash-head {

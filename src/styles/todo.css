@@ -1,8 +1,22 @@
-/* ===== To-do list (src/todo/todo-panel.js) =====
-   A panel that flies in from the right and floats 20 px inside the
-   window's edges, every corner showing. Hyper minimal, after Things:
-   desk headings, a round-cornered box and a title per item, a note
-   under the title when the item is open. */
+/* ===== To-do list (src/todo/todo-list.js) =====
+   Hyper minimal, after Things: desk headings, a round-cornered box and
+   a title per item, a note under the title when the item is open.
+   `.todo-list` is the list wherever it is mounted; `.todo-panel` the
+   floating shell (todo-panel.js) that flies in from the right and floats
+   20 px inside the window's edges, every corner showing. The Desk
+   Dashboard's sidebar mounts the same list (desk-dashboard.css). */
+
+.todo-list {
+  /* The item search (todo-search.js) hangs inside it, placed from its top. */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  color: var(--fg);
+  font-family: var(--ui-font-family);
+  font-size: 13px;
+  outline: none;
+}
 
 .todo-panel {
   position: fixed;
@@ -11,17 +25,10 @@
   bottom: 20px;
   width: min(340px, calc(100vw - 40px));
   z-index: var(--z-todo);
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
   background: var(--theme-bg, var(--bg));
-  color: var(--fg);
   border: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
   border-radius: 12px;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.06);
-  font-family: var(--ui-font-family);
-  font-size: 13px;
-  outline: none;
   /* Parked past the right edge — its own width plus the 20 px inset. */
   transform: translateX(calc(100% + 24px));
   transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -58,7 +65,7 @@
   background: none;
   border-color: color-mix(in srgb, var(--fg) 22%, transparent);
 }
-.todo-panel .todo-find svg { flex: 0 0 auto; width: 13px; height: 13px; opacity: 0.45; }
+.todo-list .todo-find svg { flex: 0 0 auto; width: 13px; height: 13px; opacity: 0.45; }
 .todo-find-input {
   flex: 1;
   min-width: 0;
@@ -111,7 +118,7 @@
 .todo-group-add:hover,
 .todo-tools button:hover,
 .todo-file-unlink:hover { opacity: 0.9; background: rgba(128, 128, 128, 0.12); }
-.todo-panel svg {
+.todo-list svg {
   width: 14px;
   height: 14px;
   fill: none;
@@ -200,7 +207,7 @@
   transition: opacity 0.12s;
 }
 .todo-status:hover { opacity: 1; }
-.todo-panel .todo-status svg { width: 16px; height: 16px; stroke-width: 1.25; }
+.todo-list .todo-status svg { width: 16px; height: 16px; stroke-width: 1.25; }
 .todo-status .todo-status-fill { fill: currentColor; stroke: none; }
 .todo-status .todo-status-tick { stroke: var(--theme-bg, var(--bg)); stroke-width: 1.6; }
 .todo-item.is-primed .todo-status,
@@ -437,7 +444,7 @@
 .todo-completed-toggle:hover,
 .todo-completed.shown .todo-completed-toggle { opacity: 0.7; }
 
-/* ---- The toggle's hover preview (todo-panel.js#previewStatus) ----
+/* ---- The toggle's hover preview (todo-list.js#previewStatus) ----
    While the pointer is on a toggle it shows what a click will do: the
    next state, the previous one with ⌘ / ⇧ held, a red trash can on a
    completed to-do (a click deletes it for good), dimmed where a click
@@ -460,7 +467,7 @@
   touch-action: none;
 }
 .todo-grip:hover { opacity: 0.9; }
-.todo-panel .todo-grip svg { width: 10px; height: 10px; fill: currentColor; stroke: none; }
+.todo-list .todo-grip svg { width: 10px; height: 10px; fill: currentColor; stroke: none; }
 .todo-item.dragging {
   background: rgba(128, 128, 128, 0.1);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);

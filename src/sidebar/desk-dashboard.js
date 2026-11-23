@@ -21,6 +21,14 @@
  * name is being typed or a card dragged, when the render waits until
  * that is done.
  *
+ * Along the left runs a sidebar: the To-do list at the top — the same
+ * list the double-⌘ panel shows (todo/todo-list.js), mounted here while
+ * the dashboard is open, and the floating panel put away so only one is
+ * live — and at the foot the recent files of every desk
+ * (desk-dashboard-recents.js). The to-do modules are imported when a
+ * dashboard opens, not at launch: the files sidebar (sidebar.js) imports
+ * this module for its footer button.
+ *
  * Anything that leaves the dashboard for a file goes to that file's desk
  * first (`state/cross-desk.js`), as the ⌘O picker's all-desks mode does.
  */
@@ -33,6 +41,7 @@ import { switchDeskAndLand, openLeafOnItsDesk } from "../state/cross-desk.js";
 import { mountDashboardSearch } from "./desk-dashboard-search.js";
 import { deskLayout, commitDeskLayout, renameDeskSection, deleteDeskSection } from "../state/desk-sections.js";
 import { multiWindowAvailable, openDeskInNewWindow } from "../multi-window.js";
+import { mountDashboardRecents } from "./desk-dashboard-recents.js";
 
 /** How many recently edited files a card lists. */
 const RECENT_COUNT = 5;
@@ -72,11 +81,17 @@ export function openDeskDashboard(state) {
   root.className = "desk-dash-overlay";
   root.innerHTML = `
     <div class="desk-dash" role="dialog" aria-modal="true" aria-label="Desk dashboard">
-      <div class="desk-dash-head">
-        <span class="desk-dash-search-slot"></span>
-        <button type="button" class="desk-dash-close" aria-label="Close">×</button>
+      <aside class="desk-dash-side">
+        <div class="desk-dash-todo" aria-label="To-do list"></div>
+        <section class="desk-dash-recents" aria-label="Recent files"></section>
+      </aside>
+      <div class="desk-dash-main">
+        <div class="desk-dash-head">
+          <span class="desk-dash-search-slot"></span>
+          <button type="button" class="desk-dash-close" aria-label="Close">×</button>
+        </div>
+        <div class="desk-dash-grid"></div>
       </div>
-      <div class="desk-dash-grid"></div>
     </div>`;
   document.body.appendChild(root);
   const grid = root.querySelector(".desk-dash-grid");
@@ -106,6 +121,8 @@ export function openDeskDashboard(state) {
     window.removeEventListener("keydown", onKey, true);
     for (const ev of EVENTS) state.off(ev, render);
     search.destroy();
+    recents.destroy();
+    todo?.destroy();
     root.remove();
   }
   function onKey(e) {
@@ -113,6 +130,9 @@ export function openDeskDashboard(state) {
     // Escape in a section's name field abandons the edit, not the
     // dashboard. The search field takes its own Escape (clear, then close).
     if (e.target instanceof Element && e.target.closest(".desk-dash-section-name, .desk-dash-search-input")) return;
+    // So does the To-do list: a field's Escape leaves the field (or clears
+    // its search), and any other Escape in it comes back as `onEscape`.
+    if (e.target instanceof Element && e.target.closest(".desk-dash-todo")) return;
     // A modal opened over the dashboard (the icon picker, a name prompt)
     // takes its own Escape.
     if (document.querySelector(".tree-delete-modal-backdrop")) return;
@@ -131,12 +151,36 @@ export function openDeskDashboard(state) {
   root.addEventListener("keydown", (e) => e.stopPropagation());
 
   const search = mountDashboardSearch(state, root.querySelector(".desk-dash-search-slot"), root, close);
+  const recents = mountDashboardRecents(state, root.querySelector(".desk-dash-recents"), close);
+  let todo = null;
   grid.addEventListener("click", (e) => onGridClick(state, e, close));
   wireNames(state, grid, settle);
   wireReorder(state, grid, (on) => { dragging = on; if (!on) settle(); });
 
-  open = { close, render };
+  const handle = { close, render };
+  open = handle;
   render();
+  void mountTodo(state, root.querySelector(".desk-dash-todo"), handle, close).then((t) => {
+    if (open === handle) todo = t;
+    else t?.destroy();
+  });
+}
+
+/** The To-do list in the sidebar's top, once its modules have loaded —
+ *  unless the dashboard has closed meanwhile. The floating panel goes
+ *  away first: a second live list under the dashboard would not see this
+ *  one's edits (todo-list.js). */
+async function mountTodo(state, el, handle, close) {
+  try {
+    const [{ mountTodoList }, { closeTodoPanel }] = await Promise.all([
+      import("../todo/todo-list.js"), import("../todo/todo-panel.js")]);
+    if (open !== handle) return null;
+    closeTodoPanel();
+    return mountTodoList(state, el, { embedded: true, onEscape: close, onOpenFile: close });
+  } catch (err) {
+    console.error("Desk Dashboard: To-do list failed to load:", err);
+    return null;
+  }
 }
 
 // ── Rendering ─────────────────────────────────────────────────────────
