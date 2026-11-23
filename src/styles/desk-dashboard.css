@@ -1,8 +1,8 @@
 /* ===== Desk Dashboard (src/sidebar/desk-dashboard.js) =====
    Every desk as a card in a grid: icon and name, the YOU ARE HERE
    marker, the files edited most recently, and a toolbar on hover.
-   Down the left, a sidebar: the To-do list over the recent files of
-   every desk. The shell matches the Progress modal; the cards are only
+   Down the left, a sidebar: the recent files of every desk over the
+   To-do list. The shell matches the Progress modal; the cards are only
    rules and space — no fills — so the grid reads as one quiet surface. */
 
 .desk-dash-overlay {
@@ -42,7 +42,7 @@
   padding: 16px 18px 18px;
 }
 
-/* ---- Sidebar: To-do list over Recent ---- */
+/* ---- Sidebar: Recent over the To-do list ---- */
 /* The floating To-do panel's width, so the list lays out as it does there. */
 .desk-dash-side {
   flex: 0 0 auto;
@@ -52,27 +52,22 @@
   flex-direction: column;
   border-right: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
 }
-/* The list itself is todo-list.js, styled by todo.css; here only its
-   place. Over Recent, so the searches that hang from it are not hidden
-   behind the files below. */
-.desk-dash-todo {
-  flex: 1 1 0;
-  min-height: 140px;
-  z-index: 1;
-}
-/* The head's search on the same line as Search all Desks across the way. */
-.desk-dash-todo .todo-head { padding: 15px 10px 4px 14px; }
 .desk-dash-recents {
   flex: 0 1 auto;
   max-height: 40%;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 10px 10px 12px;
-  border-top: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+  padding: 16px 10px 10px;
 }
-/* Worn like the To-do list's desk headings above it. */
-.desk-dash-side-head { margin: 0 6px 4px 8px; }
+/* Worn like the To-do list's desk headings below it, on the line of
+   Search all Desks across the way (the field's height). */
+.desk-dash-side-head {
+  display: flex;
+  align-items: center;
+  min-height: 27px;
+  margin: 0 6px 2px 8px;
+}
 .desk-dash-side-title {
   font-size: 11px;
   font-weight: 600;
@@ -122,10 +117,18 @@
   opacity: 0.45;
 }
 .desk-dash-recents .desk-dash-empty { padding: 4px 8px; }
+/* The list itself is todo-list.js, styled by todo.css; here only its
+   place: what Recent leaves of the column. */
+.desk-dash-todo {
+  flex: 1 1 0;
+  min-height: 140px;
+  border-top: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+}
 
 /* A narrow window has no room beside the grid: the dashboard becomes one
-   scrolling column — the desks, then the To-do list, then Recent — at
-   its content's height. */
+   scrolling column — the desks, then Recent, then the To-do list — at
+   its content's height. Recent shows only its newest few there, so the
+   to-dos aren't pushed out of reach. */
 @media (max-width: 720px) {
   .desk-dash {
     flex-direction: column;
@@ -141,10 +144,10 @@
     border-top: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
   }
   .desk-dash-todo { flex: none; min-height: 0; }
-  .desk-dash-todo .todo-head { padding-top: 12px; }
   .desk-dash-todo .todo-body { overflow: visible; }
-  .desk-dash-recents { max-height: none; }
+  .desk-dash-recents { max-height: none; padding-top: 12px; }
   .desk-dash-recents-list { overflow: visible; }
+  .desk-dash-recents-list > li:nth-child(n + 9) { display: none; }
 }
 
 .desk-dash-head {

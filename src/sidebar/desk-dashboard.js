@@ -21,11 +21,11 @@
  * name is being typed or a card dragged, when the render waits until
  * that is done.
  *
- * Along the left runs a sidebar: the To-do list at the top — the same
- * list the double-⌘ panel shows (todo/todo-list.js), mounted here while
- * the dashboard is open, and the floating panel put away so only one is
- * live — and at the foot the recent files of every desk
- * (desk-dashboard-recents.js). The to-do modules are imported when a
+ * Along the left runs a sidebar: at the top the recent files of every
+ * desk (desk-dashboard-recents.js), and under them the To-do list — the
+ * same list the double-⌘ panel shows (todo/todo-list.js), mounted here
+ * while the dashboard is open, and the floating panel put away so only
+ * one is live. The to-do modules are imported when a
  * dashboard opens, not at launch: the files sidebar (sidebar.js) imports
  * this module for its footer button.
  *
@@ -82,8 +82,8 @@ export function openDeskDashboard(state) {
   root.innerHTML = `
     <div class="desk-dash" role="dialog" aria-modal="true" aria-label="Desk dashboard">
       <aside class="desk-dash-side">
-        <div class="desk-dash-todo" aria-label="To-do list"></div>
         <section class="desk-dash-recents" aria-label="Recent files"></section>
+        <div class="desk-dash-todo" aria-label="To-do list"></div>
       </aside>
       <div class="desk-dash-main">
         <div class="desk-dash-head">
@@ -166,7 +166,7 @@ export function openDeskDashboard(state) {
   });
 }
 
-/** The To-do list in the sidebar's top, once its modules have loaded —
+/** The To-do list in the sidebar, under Recent, once its modules have loaded —
  *  unless the dashboard has closed meanwhile. The floating panel goes
  *  away first: a second live list under the dashboard would not see this
  *  one's edits (todo-list.js). */

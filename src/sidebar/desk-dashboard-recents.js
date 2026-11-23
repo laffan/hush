@@ -1,5 +1,5 @@
 /**
- * The Desk Dashboard sidebar's foot: recent files across every desk, as
+ * The top of the Desk Dashboard's sidebar: recent files across every desk, as
  * one list, newest first. The same list Recent Files shows with its desk
  * toggle pressed (state/cross-desk.js#recentAcrossDesks — each desk's
  * open-order MRU interleaved by when its files were opened), whatever
