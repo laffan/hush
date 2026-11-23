@@ -25,7 +25,8 @@
  * desk (desk-dashboard-recents.js), and under them the To-do list — the
  * same list the double-⌘ panel shows (todo/todo-list.js), mounted here
  * while the dashboard is open, and the floating panel put away so only
- * one is live. The to-do modules are imported when a
+ * one is live. Both its borders drag (desk-dashboard-resize.js), and
+ * the sizes are kept in settings. The to-do modules are imported when a
  * dashboard opens, not at launch: the files sidebar (sidebar.js) imports
  * this module for its footer button.
  *
@@ -42,6 +43,7 @@ import { mountDashboardSearch } from "./desk-dashboard-search.js";
 import { deskLayout, commitDeskLayout, renameDeskSection, deleteDeskSection } from "../state/desk-sections.js";
 import { multiWindowAvailable, openDeskInNewWindow } from "../multi-window.js";
 import { mountDashboardRecents } from "./desk-dashboard-recents.js";
+import { wireDashboardResize } from "./desk-dashboard-resize.js";
 
 /** How many recently edited files a card lists. */
 const RECENT_COUNT = 5;
@@ -83,8 +85,10 @@ export function openDeskDashboard(state) {
     <div class="desk-dash" role="dialog" aria-modal="true" aria-label="Desk dashboard">
       <aside class="desk-dash-side">
         <section class="desk-dash-recents" aria-label="Recent files"></section>
+        <div class="desk-dash-resizer desk-dash-row-resizer" role="separator" aria-orientation="horizontal" aria-label="Resize Recent"></div>
         <div class="desk-dash-todo" aria-label="To-do list"></div>
       </aside>
+      <div class="desk-dash-resizer desk-dash-col-resizer" role="separator" aria-orientation="vertical" aria-label="Resize sidebar"></div>
       <div class="desk-dash-main">
         <div class="desk-dash-head">
           <span class="desk-dash-search-slot"></span>
@@ -122,6 +126,7 @@ export function openDeskDashboard(state) {
     for (const ev of EVENTS) state.off(ev, render);
     search.destroy();
     recents.destroy();
+    resize.destroy();
     todo?.destroy();
     root.remove();
   }
@@ -152,6 +157,7 @@ export function openDeskDashboard(state) {
 
   const search = mountDashboardSearch(state, root.querySelector(".desk-dash-search-slot"), root, close);
   const recents = mountDashboardRecents(state, root.querySelector(".desk-dash-recents"), close);
+  const resize = wireDashboardResize(state, root);
   let todo = null;
   grid.addEventListener("click", (e) => onGridClick(state, e, close));
   wireNames(state, grid, settle);

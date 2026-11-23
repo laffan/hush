@@ -586,6 +586,15 @@ pub struct AppSettings {
     /// Each desk's share is also mirrored into its `.hushdesk` meta.
     #[serde(default)]
     pub todos: serde_json::Value,
+    /// The Desk Dashboard's sidebar (`sidebar/desk-dashboard-resize.js`):
+    /// its width, and the height of its Recent list over the To-do list,
+    /// in px. `None` is the default — 340 px wide, Recent sized to its
+    /// rows (capped by CSS); a drag on either border pins a number here,
+    /// and a double-click on it puts `None` back.
+    #[serde(default)]
+    pub desk_dash_side_width: Option<u32>,
+    #[serde(default)]
+    pub desk_dash_recents_height: Option<u32>,
     /// Active desk id for this device. Null when desks are off.
     #[serde(default)]
     pub active_desk_id: Option<String>,
@@ -1041,6 +1050,8 @@ impl Default for AppSettings {
             desks_meta: serde_json::json!({}),
             desk_sections: serde_json::json!([]),
             todos: serde_json::json!([]),
+            desk_dash_side_width: None,
+            desk_dash_recents_height: None,
             active_desk_id: None,
             desk_display_mode: default_desk_display_mode(),
             last_local_sync: serde_json::Value::Null,

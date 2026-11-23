@@ -43,14 +43,18 @@
 }
 
 /* ---- Sidebar: Recent over the To-do list ---- */
-/* The floating To-do panel's width, so the list lays out as it does there. */
+/* By default the floating To-do panel's width, so the list lays out as
+   it does there; a drag on its border sets another (inline, from
+   settings — desk-dashboard-resize.js). However wide that was, the desks
+   keep room for one column of cards. */
 .desk-dash-side {
   flex: 0 0 auto;
   width: 340px;
+  min-width: 240px;
+  max-width: calc(100% - 300px);
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
 }
 .desk-dash-recents {
   flex: 0 1 auto;
@@ -116,14 +120,45 @@
   font-size: 11px;
   opacity: 0.45;
 }
+/* A height dragged to (desk-dashboard-resize.js) holds whatever the rows
+   need, but always leaves the To-do list its search and a few rows. */
+.desk-dash-recents.sized { max-height: calc(100% - 160px); }
 .desk-dash-recents .desk-dash-empty { padding: 4px 8px; }
 /* The list itself is todo-list.js, styled by todo.css; here only its
    place: what Recent leaves of the column. */
 .desk-dash-todo {
   flex: 1 1 0;
   min-height: 140px;
-  border-top: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
 }
+
+/* ---- The borders, which drag (desk-dashboard-resize.js) ----
+   Each is the hairline itself, drawn in the middle of a 7 px strip whose
+   negative margins take back all but that pixel. Pointed at or dragged,
+   the line deepens, as the files sidebar's edge does. */
+.desk-dash-resizer {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  touch-action: none;
+}
+.desk-dash-resizer::before {
+  content: "";
+  position: absolute;
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  transition: background 0.15s;
+}
+.desk-dash-resizer:hover::before,
+.desk-dash-resizer.dragging::before { background: color-mix(in srgb, var(--fg) 40%, transparent); }
+.desk-dash-col-resizer { width: 7px; margin: 0 -3px; cursor: col-resize; }
+.desk-dash-col-resizer::before { top: 0; bottom: 0; left: 3px; width: 1px; }
+.desk-dash-row-resizer { height: 7px; margin: -3px 0; cursor: ns-resize; }
+.desk-dash-row-resizer::before { left: 0; right: 0; top: 3px; height: 1px; }
+/* Mid-drag the pointer runs over cards and rows: their cursors and text
+   selection stay out of it. */
+.desk-dash.resizing-col,
+.desk-dash.resizing-col * { cursor: col-resize !important; user-select: none; }
+.desk-dash.resizing-row,
+.desk-dash.resizing-row * { cursor: ns-resize !important; user-select: none; }
 
 /* A narrow window has no room beside the grid: the dashboard becomes one
    scrolling column — the desks, then Recent, then the To-do list — at
@@ -138,14 +173,22 @@
   }
   .desk-dash-main { flex: none; order: -1; }
   .desk-dash-grid { overflow: visible; }
+  /* The sizes dragged to don't apply here: a full-width column, Recent
+     at its rows' height. The border between the halves is only a rule. */
   .desk-dash-side {
-    width: auto;
-    border-right: none;
+    width: auto !important;
+    min-width: 0;
+    max-width: none;
     border-top: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
   }
+  .desk-dash-col-resizer { display: none; }
+  .desk-dash-row-resizer { pointer-events: none; cursor: default; }
+  .desk-dash-recents,
+  .desk-dash-recents.sized { height: auto !important; }
   .desk-dash-todo { flex: none; min-height: 0; }
   .desk-dash-todo .todo-body { overflow: visible; }
-  .desk-dash-recents { max-height: none; padding-top: 12px; }
+  .desk-dash-recents,
+  .desk-dash-recents.sized { max-height: none; padding-top: 12px; }
   .desk-dash-recents-list { overflow: visible; }
   .desk-dash-recents-list > li:nth-child(n + 9) { display: none; }
 }

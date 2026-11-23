@@ -211,6 +211,10 @@ export function createDefaultSettings() {
     deskSections: [],
     // The To-do list (todo/todo-store.js).
     todos: [],
+    // The Desk Dashboard's sidebar width and its Recent list's height, in
+    // px (sidebar/desk-dashboard-resize.js). Null is the default size.
+    deskDashSideWidth: null,
+    deskDashRecentsHeight: null,
     // Per-desk sidebar toggle state (local, per-device), keyed by desk id:
     // `{ left, leftPinned, right }`. Switching desks restores that desk's
     // saved left files-panel and right outline-panel open/closed state.
