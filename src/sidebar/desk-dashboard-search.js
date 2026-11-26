@@ -36,9 +36,10 @@ const SEARCH_GLYPH = `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7"
 /**
  * Put the field in `slot` and the popup in `layer` (the dashboard's
  * overlay, so the popup isn't clipped by the modal). `close` shuts the
- * dashboard before a result is opened. Returns `{ destroy }`.
+ * dashboard before a result is opened. `onLeave` takes the keyboard back
+ * to the desks: Tab, or ↓ with no results showing. Returns `{ destroy }`.
  */
-export function mountDashboardSearch(state, slot, layer, close) {
+export function mountDashboardSearch(state, slot, layer, close, { onLeave = null } = {}) {
   slot.innerHTML = `<label class="desk-dash-search">${SEARCH_GLYPH}<input class="desk-dash-search-input" type="search"
     placeholder="Search all Desks" aria-label="Search all Desks" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" /></label>`;
   const input = slot.querySelector("input");
@@ -134,8 +135,11 @@ export function mountDashboardSearch(state, slot, layer, close) {
   input.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      if (popup.hidden) return;
+      if (popup.hidden) { if (e.key === "ArrowDown") onLeave?.(); return; }
       pick(picked + (e.key === "ArrowDown" ? 1 : -1));
+    } else if (e.key === "Tab" && !e.shiftKey && onLeave) {
+      e.preventDefault();
+      onLeave();
     } else if (e.key === "Enter") {
       e.preventDefault();
       if (rows[picked]) void open(state, rows[picked], close);

@@ -20,7 +20,7 @@ import { installAppListeners } from "./main-listeners.js";
 import { initPaneManager } from "./pane/pane-manager.js";
 import { initCmdButton } from "./cmd-button.js";
 import { initCmdHeldSliders } from "./cmd-held-sliders.js";
-import { applyActiveStyle, applyFocusModeOpacity, applyDeskGlobalStyle, handleOAuthCode } from "./style-application.js";
+import { applyActiveStyle, applyFocusModeOpacity, syncWindowStyle, handleOAuthCode } from "./style-application.js";
 import { installWindowShortcuts, installActivationFocus } from "./window-shortcuts.js";
 import { installTripleTapTriggers } from "./triple-tap-triggers.js";
 import { setTooltipsEnabled } from "./tooltips.js";
@@ -560,30 +560,11 @@ async function init() {
     });
   }
 
-  // Auto-apply locked style when opening a document, or revert to global style
+  // Opening a document applies its locked style, or reverts to the
+  // desk's own (per-desk via desksMeta in `.hush/desks.json`).
   state.on("file-opened", () => {
     if (!state.currentFileId || !state.fileTree) return;
-    const lockedId = findNodeByFileId(state.fileTree, state.currentFileId)?.lockedStyleId || null;
-    if (lockedId) {
-      // This document has a locked style — apply it
-      if (lockedId === "__default__") {
-        // Locked to "Default" (no style)
-        if (state.settings.activeStyleId) {
-          state.updateSettings({ activeStyleId: null });
-          state.emit("style-changed");
-        }
-      } else {
-        const styleExists = (state.settings.styles || []).some(s => s.id === lockedId);
-        if (styleExists && state.settings.activeStyleId !== lockedId) {
-          state.updateSettings({ activeStyleId: lockedId });
-          state.emit("style-changed");
-        }
-      }
-    } else {
-      // No lock — revert to the active desk's saved style (per-desk via
-      // desksMeta in `.hush/desks.json`).
-      applyDeskGlobalStyle(state);
-    }
+    syncWindowStyle(state);
   });
 
   // Switching desks repaints the editor with the new desk's saved
@@ -591,8 +572,7 @@ async function init() {
   // without the file-open the editor would keep showing the previous
   // desk's file, which reads as a glitch ("did the switch even happen?").
   state.on("active-desk-changed", async (deskId) => {
-    const node = state.currentFileId ? findNodeByFileId(state.fileTree, state.currentFileId) : null;
-    if (!node?.lockedStyleId) applyDeskGlobalStyle(state);
+    syncWindowStyle(state);
     const targetDeskId = deskId || state.settings.activeDeskId;
     await (await import("./state/state-desks-ops.js")).openLastFileForDesk(state, targetDeskId);
     // Desks own the Overview toggle state — restore it now that the desk's

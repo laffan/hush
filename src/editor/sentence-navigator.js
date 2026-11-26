@@ -407,18 +407,41 @@ export function jumpToPrevParagraph(view) {
   return true;
 }
 
-/** Jump cursor to the first word of the next paragraph. */
+/** The first line after line `ln` with any text on it, or null when
+ *  only blank lines follow. */
+function nextTextLine(doc, ln) {
+  for (let n = ln + 1; n <= doc.lines; n++) if (doc.line(n).text.trim().length > 0) return n;
+  return null;
+}
+
+/** Where the document's text ends: the end of its last line with text on
+ *  it, before any blank lines (or trailing spaces) after it. */
+function textEnd(doc) {
+  let ln = doc.lines;
+  while (ln > 1 && doc.line(ln).text.trim().length === 0) ln--;
+  const line = doc.line(ln);
+  return line.from + line.text.replace(/\s+$/u, "").length;
+}
+
+/** Jump cursor to the first word of the next paragraph — or, from the
+ *  last one, to the end of the text. Not through the blank lines after
+ *  it: typewriter mode appends a screenful (plugins/typewriter.js), and
+ *  landing at their foot left a screen with nothing on it. */
 export function jumpToNextParagraph(view) {
   const doc = view.state.doc;
-  const curLine = doc.lineAt(view.state.selection.main.head);
-  let ln = curLine.number;
-  while (ln < doc.lines && doc.line(ln).text.trim().length > 0) ln++;
-  while (ln < doc.lines && doc.line(ln).text.trim().length === 0) ln++;
-  if (ln <= doc.lines) {
-    const line = doc.line(ln);
+  const head = view.state.selection.main.head;
+  let ln = doc.lineAt(head).number;
+  while (ln <= doc.lines && doc.line(ln).text.trim().length > 0) ln++;
+  const next = ln <= doc.lines ? (doc.line(ln).text.trim().length > 0 ? ln : nextTextLine(doc, ln)) : null;
+  let target;
+  if (next) {
+    const line = doc.line(next);
     const fw = line.text.search(/\S/);
-    view.dispatch({ selection: EditorSelection.cursor(line.from + (fw >= 0 ? fw : 0)) });
+    target = line.from + (fw >= 0 ? fw : 0);
+  } else {
+    target = textEnd(doc);
   }
+  if (target !== head) view.dispatch({ selection: EditorSelection.cursor(target) });
   return true;
 }
 
@@ -486,20 +509,22 @@ export function selectToParagraphBelow(view) {
   const sel = view.state.selection.main;
   const headLine = doc.lineAt(sel.head);
   let target = headLine.to;
-  if (sel.head === target) {
-    let ln = headLine.number;
-    while (ln < doc.lines && doc.line(ln + 1).text.trim().length === 0) ln++;
+  // The end of the paragraph after line `from`, or null when only blank
+  // lines follow — the selection then stays where it is rather than
+  // running into them (see jumpToNextParagraph: typewriter's runway).
+  const endOfNextParagraph = (from) => {
+    let ln = nextTextLine(doc, from);
+    if (!ln) return null;
     while (ln < doc.lines && doc.line(ln + 1).text.trim().length > 0) ln++;
-    target = doc.line(ln).to;
+    return doc.line(ln).to;
+  };
+  if (sel.head === target) {
+    target = endOfNextParagraph(headLine.number) ?? sel.head;
   } else {
     let ln = headLine.number;
     while (ln < doc.lines && doc.line(ln + 1).text.trim().length > 0) ln++;
     target = doc.line(ln).to;
-    if (target === sel.head && ln < doc.lines) {
-      while (ln < doc.lines && doc.line(ln + 1).text.trim().length === 0) ln++;
-      while (ln < doc.lines && doc.line(ln + 1).text.trim().length > 0) ln++;
-      target = doc.line(ln).to;
-    }
+    if (target === sel.head && ln < doc.lines) target = endOfNextParagraph(ln) ?? sel.head;
   }
   view.dispatch({ selection: EditorSelection.range(sel.anchor, target), scrollIntoView: true });
   return true;

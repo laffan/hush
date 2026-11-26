@@ -18,6 +18,7 @@ import { isIOSTauri } from "./command-palette-helpers.js";
 import { applyExternalDocContent } from "./sync/apply-external.js";
 import { findNode, findNodeByFileId } from "./state/tree-helpers.js";
 import { updatePrivateBoxColor } from "./theme-colors.js";
+import { syncWindowStyle } from "./style-application.js";
 import { logActivity } from "./activity-log.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
@@ -359,6 +360,10 @@ export async function setupMultiWindow(state) {
           // style/appearance change left this window's sidebar on the
           // old colours.
           updatePrivateBoxColor(state);
+          // This window's style is its own (activeStyleId is per-window),
+          // but what it derives from is shared: a sibling on the same desk
+          // picking a new style for it, or deleting the one shown here.
+          syncWindowStyle(state);
           // A sibling planting/clearing a YOUAREHERE marker must repaint
           // this window's sidebar row too — scoped to actual registry
           // changes so ordinary settings echoes don't rebuild the panel.
@@ -377,6 +382,8 @@ export async function setupMultiWindow(state) {
           state.fileTree = await invoke("get_file_tree");
           state.files = await invoke("list_files");
           state.emit("files-changed");
+          // A sibling locking (or unlocking) a style on the doc open here.
+          syncWindowStyle(state);
         }
       } catch (e) {
         console.warn("Failed to apply cross-window state change:", e);

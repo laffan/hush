@@ -44,6 +44,7 @@ import { deskLayout, commitDeskLayout, renameDeskSection, deleteDeskSection } fr
 import { multiWindowAvailable, openDeskInNewWindow } from "../multi-window.js";
 import { mountDashboardRecents } from "./desk-dashboard-recents.js";
 import { wireDashboardResize } from "./desk-dashboard-resize.js";
+import { wireDashboardKeys } from "./desk-dashboard-keys.js";
 
 /** How many recently edited files a card lists. */
 const RECENT_COUNT = 5;
@@ -99,6 +100,10 @@ export function openDeskDashboard(state) {
     </div>`;
   document.body.appendChild(root);
   const grid = root.querySelector(".desk-dash-grid");
+  // Before anything takes it: where the focus goes back to on close.
+  const returnFocus = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+    ? document.activeElement : null;
+  const keys = wireDashboardKeys(root, { activeDeskId: state.settings?.activeDeskId || null });
 
   let dragging = false;
   let pending = false;
@@ -115,7 +120,10 @@ export function openDeskDashboard(state) {
       .map((it) => (it.kind === "section" ? sectionHtml(it.section) : cardHtml(state, it.desk))).join("");
     if (html === lastHtml) return;
     lastHtml = html;
+    // Rebuilding the cards drops the focus; the keyboard's place comes back.
+    const restoreFocus = keys.remember();
     grid.innerHTML = html;
+    restoreFocus();
   }
   const settle = () => { if (pending) render(); };
 
@@ -127,8 +135,13 @@ export function openDeskDashboard(state) {
     search.destroy();
     recents.destroy();
     resize.destroy();
+    keys.destroy();
     todo?.destroy();
+    const hadFocus = root.contains(document.activeElement);
     root.remove();
+    // The focus came in with the dashboard; it goes back where it was
+    // (the editor, usually) unless something has claimed it since.
+    if (hadFocus && returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
   }
   function onKey(e) {
     if (e.key !== "Escape") return;
@@ -138,6 +151,9 @@ export function openDeskDashboard(state) {
     // So does the To-do list: a field's Escape leaves the field (or clears
     // its search), and any other Escape in it comes back as `onEscape`.
     if (e.target instanceof Element && e.target.closest(".desk-dash-todo")) return;
+    // Inside a card's files or the Recent list, Escape steps back out to
+    // the desks (desk-dashboard-keys.js); on a desk, it closes.
+    if (e.target instanceof Element && e.target.closest(".desk-dash-yah, .desk-dash-file, .desk-dash-recent-file")) return;
     // A modal opened over the dashboard (the icon picker, a name prompt)
     // takes its own Escape.
     if (document.querySelector(".tree-delete-modal-backdrop")) return;
@@ -155,7 +171,8 @@ export function openDeskDashboard(state) {
   // hear them.
   root.addEventListener("keydown", (e) => e.stopPropagation());
 
-  const search = mountDashboardSearch(state, root.querySelector(".desk-dash-search-slot"), root, close);
+  const search = mountDashboardSearch(state, root.querySelector(".desk-dash-search-slot"), root, close,
+    { onLeave: () => keys.focusStart() });
   const recents = mountDashboardRecents(state, root.querySelector(".desk-dash-recents"), close);
   const resize = wireDashboardResize(state, root);
   let todo = null;
@@ -166,6 +183,9 @@ export function openDeskDashboard(state) {
   const handle = { close, render };
   open = handle;
   render();
+  // The keyboard starts on the desk you are on, and keys stop reaching the
+  // editor behind the dashboard.
+  keys.focusStart();
   void mountTodo(state, root.querySelector(".desk-dash-todo"), handle, close).then((t) => {
     if (open === handle) todo = t;
     else t?.destroy();

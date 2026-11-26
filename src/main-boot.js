@@ -19,7 +19,7 @@ import { readWindowSession, installWindowSession } from "./state/window-session.
 import { AppState } from "./state/state.js";
 import { applyAppearance, isIOS, isPhone } from "./settings/settings-ui.js";
 import { applyFontFamily, updatePrivateBoxColor, installIOSChromeRepaint } from "./theme-colors.js";
-import { applyFocusModeOpacity } from "./style-application.js";
+import { applyFocusModeOpacity, resolveWindowStyleId } from "./style-application.js";
 import { installActivityCapture, configureActivityLog, logActivity } from "./activity-log.js";
 import { installWindowDiagnostics, logWindowSnapshot } from "./window-diagnostics.js";
 import { getInitialFileFromHash, getInitialDeskFromHash, getCurrentWindowLabel } from "./multi-window.js";
@@ -111,6 +111,20 @@ export async function bootAppState(IS_TAURI) {
       await seedStylePresets(state);
     } catch (e) { console.warn("seedStylePresets failed:", e); }
   });
+
+  // Seed globalStyleId for existing users who have an activeStyleId but
+  // no globalStyleId yet, so the resolution below keeps their style.
+  // Written explicitly: settings writes are key-scoped, so a value only
+  // assigned into memory would never reach disk.
+  if (state.settings.activeStyleId && !state.settings.globalStyleId) {
+    void state.updateSettings({ globalStyleId: state.settings.activeStyleId });
+  }
+  // The style a window paints in is its own (`activeStyleId` is a
+  // per-window key): a second window opening on another desk would
+  // otherwise boot in the main window's saved style. Resolved in memory,
+  // before the editor is built from it — nothing changed that anyone
+  // else needs to hear about.
+  state.settings.activeStyleId = resolveWindowStyleId(state);
 
   phaseSync("apply appearance", () => {
     // On iOS, set html background to prevent black bars behind the webview

@@ -208,14 +208,8 @@ export async function setupModeSwitching(state) {
     c.state.notify("brainstormMode");
   });
 
-  // Seed globalStyleId for existing users who have an activeStyleId but
-  // no globalStyleId yet. Written explicitly: settings writes are
-  // key-scoped now, so a value only assigned into memory would never
-  // reach disk (it used to ride along on the next full-object save).
-  if (state.settings.activeStyleId && !state.settings.globalStyleId) {
-    void state.updateSettings({ globalStyleId: state.settings.activeStyleId });
-  }
-
+  // (This window's activeStyleId was resolved in main-boot.js, before
+  // the editor was built.)
   // Apply active style — runs even when activeStyleId is null so the
   // Default style's post-processing layers (settings.postLayers) mount
   // on startup. The no-style branch of applyActiveStyle is a near-no-op

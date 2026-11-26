@@ -10,6 +10,7 @@ import { resolveBackgroundLayersList, resolvePostLayersList } from "./sidebar/st
 import { themeBackgrounds, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 import { resolveHeadingColor } from "./editor/markdown-highlight.js";
 import { isMidnightActive, effectiveAppearanceSetting, MIDNIGHT_COLORS } from "./midnight/midnight-mode.js";
+import { findNodeByFileId } from "./state/tree-helpers.js";
 
 // Tracks whether the post-layers module has ever been loaded this
 // session. We only `import()` it when a style with at least one enabled
@@ -95,12 +96,44 @@ export function applyFocusModeOpacity(state) {
 /** Pull the active desk's saved global style id and pin it as the
  *  runtime `activeStyleId` if it isn't already. Emits `style-changed`
  *  so the editor / panes / shader runtime repaint. Used by the
- *  file-open and desk-switch handlers in main.js. */
+ *  "Unlock Style" palette command. */
 export function applyDeskGlobalStyle(state) {
   const next = state.getDeskGlobalStyleId();
   if (state.settings.activeStyleId === next) return;
   state.updateSettings({ activeStyleId: next });
   state.emit("style-changed");
+}
+
+/** The style this window should be showing: the open document's locked
+ *  style when it has one that still exists ("__default__" is the Default
+ *  style), else the active desk's own choice.
+ *
+ *  `activeStyleId` is a per-window key (session-state.js) because each
+ *  window runs its own desk. It used to be shared, so a second window
+ *  switching to a desk with another style wrote that style's id to
+ *  settings, the broadcast carried it into the first window, and the
+ *  first window repainted in a desk it wasn't on. Since a window now never
+ *  hears a sibling's pin, it derives its own from the facts that *are*
+ *  shared (the tree's locks, `desksMeta`) — here, on every occasion one
+ *  of them can change. */
+export function resolveWindowStyleId(state) {
+  const fileId = state.currentFileId;
+  const locked = fileId && state.fileTree
+    ? findNodeByFileId(state.fileTree, fileId)?.lockedStyleId || null
+    : null;
+  if (locked === "__default__") return null;
+  if (locked && (state.settings.styles || []).some(s => s.id === locked)) return locked;
+  return state.getDeskGlobalStyleId() || null;
+}
+
+/** Pin `resolveWindowStyleId` as this window's `activeStyleId` and
+ *  repaint when that changes anything. Returns whether it did. */
+export function syncWindowStyle(state) {
+  const next = resolveWindowStyleId(state);
+  if ((state.settings.activeStyleId || null) === next) return false;
+  state.updateSettings({ activeStyleId: next });
+  state.emit("style-changed");
+  return true;
 }
 
 /** Publish the resolved heading colour as `--heading-color` so chrome

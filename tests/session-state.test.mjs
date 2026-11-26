@@ -68,7 +68,7 @@ test('Local Folder sentinels never persist as library notebook/stack ids', () =>
 });
 
 test('shared settings merges and secondary writes protect every session key', () => {
-  for (const key of ['lastPdfId', 'lastStackId', 'lastLocalSync', 'activeDeskId']) assert.ok(PER_WINDOW_SETTINGS_KEYS.has(key), key);
+  for (const key of ['lastPdfId', 'lastStackId', 'lastLocalSync', 'activeDeskId', 'activeStyleId', 'wordCountVisible']) assert.ok(PER_WINDOW_SETTINGS_KEYS.has(key), key);
   const own = { lastFileId: 'draft', lastPdfId: null, lastStackId: null, activeDeskId: 'writing', appearance: 'dark' };
   const fresh = { lastPdfId: 'foreign', lastStackId: 'foreign-stack', activeDeskId: 'research', appearance: 'light' };
   const merged = { ...own, ...fresh, ...preserveWindowSettings(own) };

@@ -1,9 +1,17 @@
 /** Session identity is per window, and all last-surface slots are exclusive. */
 import { findNode, findNodeByFileId } from "./tree-helpers.js";
 
+// `activeStyleId` is the style the window is painted in, which follows
+// its own desk (and the open doc's lock) — see style-application.js
+// `resolveWindowStyleId`. Shared, a sibling's desk switch restyled every
+// window. `wordCountVisible` is the pill's switch: like typewriter and
+// the sidebar's pin, it describes one window, so turning it on in one
+// no longer turns it on in all of them (a new window starts from the
+// main window's choice, as those do).
 export const PER_WINDOW_SETTINGS_KEYS = new Set([
   "lastFileId", "lastNotebookId", "lastProjectId", "lastPdfId", "lastStackId", "lastLocalSync",
   "activeDeskId", "scrollPosition", "typewriterMode", "dryMode", "sidebarOpenPanel", "sidebarPinned",
+  "activeStyleId", "wordCountVisible",
 ]);
 
 export function preserveWindowSettings(settings) {

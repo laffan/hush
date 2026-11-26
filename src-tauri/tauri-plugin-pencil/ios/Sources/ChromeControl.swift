@@ -105,7 +105,20 @@ enum ChromeControl {
 
     static func statusBarHidden(for window: UIWindow?) -> Bool {
         guard let window = window, hidesStatusBar(in: window) else { return false }
-        return !(CornerHover.existing(on: window)?.peeking ?? false)
+        return !peeking(in: window)
+    }
+
+    /// Whether a corner peek is on anywhere in `window`'s scene. Read
+    /// scene-wide, not off `window` alone: the swizzled getter answers for
+    /// every view controller in the app, the roots of windows UIKit adds
+    /// to the scene included, and only tao's window carries a
+    /// `CornerHover`. Asked about its own window, any of those roots said
+    /// "hidden" in the middle of a peek — one of them becoming the
+    /// controller UIKit consults was enough to take the bar, and the
+    /// window controls in it, away from under the pointer.
+    static func peeking(in window: UIWindow) -> Bool {
+        let windows = window.windowScene?.windows ?? [window]
+        return windows.contains { CornerHover.existing(on: $0)?.peeking == true }
     }
 
     /// A settings push (every window pushes once as it boots, so this
@@ -260,14 +273,19 @@ enum ChromeControl {
 /// recognizer never sees a touch, so drawing is untouched.
 final class CornerHover: UIHoverGestureRecognizer, UIGestureRecognizerDelegate {
     /// Entering this box from the top-left corner shows the bar.
-    static let enter = CGSize(width: 120, height: 40)
+    static let enter = CGSize(width: 160, height: 48)
     /// Once shown, it stays while the pointer is anywhere in this larger
-    /// box — the controls, once expanded, reach past the entry box.
-    static let keep = CGSize(width: 280, height: 80)
-    static let hideDelay: TimeInterval = 0.6
+    /// box — the controls, once expanded, reach past the entry box, and a
+    /// hand heading for them rarely travels in a straight line.
+    static let keep = CGSize(width: 320, height: 120)
+    /// How long the bar outlasts the pointer leaving `keep`. 0.6 s took it
+    /// away from anyone who overshot on the way to a control.
+    static let hideDelay: TimeInterval = 1.2
 
     private(set) var peeking = false
     private var pendingHide: DispatchWorkItem?
+    /// Where the pointer was last seen inside the window.
+    private var last: CGPoint?
 
     static func existing(on window: UIWindow) -> CornerHover? {
         return window.gestureRecognizers?.first(where: { $0 is CornerHover }) as? CornerHover
@@ -293,20 +311,37 @@ final class CornerHover: UIHoverGestureRecognizer, UIGestureRecognizerDelegate {
         switch state {
         case .began, .changed:
             let p = location(in: window)
+            last = p
             if p.x <= Self.enter.width && p.y <= Self.enter.height {
-                cancelHide()
-                if !peeking { peeking = true; ChromeControl.refresh(animated: true) }
+                show("corner")
             } else if peeking && !(p.x <= Self.keep.width && p.y <= Self.keep.height) {
                 scheduleHide()
             } else {
                 cancelHide()
             }
+        case .ended:
+            // The pointer left the window's content. Out through the top
+            // of the corner, that is a reach for the controls: a pointer
+            // pushed into the corner meets the strip of the top edge the
+            // system keeps for its own menu-bar reveal, and the window can
+            // stop hearing it there before it has crossed the entry box —
+            // which left the bar down for exactly the gesture meant to
+            // raise it. Anywhere else (most likely onto the bar just
+            // revealed, to reach a control) whatever is showing stays;
+            // the next hover back inside the window decides.
+            if let p = last, p.x <= Self.enter.width, p.y <= Self.keep.height { show("left through the corner") }
+            last = nil
         default:
-            // The pointer left the window's content — most likely onto
-            // the bar just revealed, to reach a control. Keep it; the
-            // next hover back inside the window decides.
-            break
+            last = nil
         }
+    }
+
+    private func show(_ reason: String) {
+        cancelHide()
+        guard !peeking else { return }
+        peeking = true
+        NSLog("[ChromeControl] status bar peek on (\(reason))")
+        ChromeControl.refresh(animated: true)
     }
 
     func endPeek() {
@@ -320,6 +355,7 @@ final class CornerHover: UIHoverGestureRecognizer, UIGestureRecognizerDelegate {
             guard let self = self else { return }
             self.pendingHide = nil
             self.peeking = false
+            NSLog("[ChromeControl] status bar peek off (pointer left the corner)")
             ChromeControl.refresh(animated: true)
         }
         pendingHide = work

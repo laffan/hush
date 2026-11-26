@@ -650,3 +650,38 @@
   stroke-linejoin: round;
 }
 .desk-dash-section-tools .desk-dash-grip svg { width: 12px; height: 12px; fill: currentColor; stroke: none; }
+
+/* ---- Keyboard (desk-dashboard-keys.js) ---- */
+/* `.kb` is on the overlay from a navigation key until the pointer next
+   moves. The card the keys are on shows what pointing at it shows, and
+   a soft ring says which one it is (the desk you are on keeps its own
+   full-ink border under the ring). */
+.desk-dash-overlay.kb .desk-dash-card:focus-within {
+  border-color: color-mix(in srgb, var(--fg) 40%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fg) 12%, transparent);
+}
+.desk-dash-overlay.kb .desk-dash-card.active:focus-within { border-color: var(--fg); }
+.desk-dash-overlay.kb .desk-dash-card:focus-within .desk-dash-recent { opacity: 1; }
+.desk-dash-overlay.kb .desk-dash-card:focus-within .desk-dash-file .tree-type-icon,
+.desk-dash-overlay.kb .desk-dash-card:focus-within .desk-dash-file .custom-icon,
+.desk-dash-overlay.kb .desk-dash-card:focus-within .desk-dash-file-time {
+  visibility: visible;
+  transition: opacity 0.15s, visibility 0s;
+}
+.desk-dash-overlay.kb .desk-dash-card:focus-within .desk-dash-file-time { opacity: 0.45; }
+.desk-dash-overlay.kb .desk-dash-name:focus { text-decoration-color: color-mix(in srgb, var(--fg) 45%, transparent); }
+.desk-dash-overlay.kb .desk-dash-file:focus,
+.desk-dash-overlay.kb .desk-dash-recent-file:focus {
+  outline: none;
+  background: rgba(128, 128, 128, 0.16);
+}
+.desk-dash-overlay.kb .desk-dash-yah:focus { outline: none; }
+.desk-dash-overlay.kb .desk-dash-yah:focus .yah-badge {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fg) 35%, transparent);
+}
+/* Outside keyboard use, nothing here wears the platform's focus ring:
+   the focus is only parked on the desk you are on. */
+.desk-dash-overlay:not(.kb) .desk-dash-name:focus,
+.desk-dash-overlay:not(.kb) .desk-dash-file:focus,
+.desk-dash-overlay:not(.kb) .desk-dash-yah:focus,
+.desk-dash-overlay:not(.kb) .desk-dash-recent-file:focus { outline: none; }
