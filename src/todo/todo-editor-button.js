@@ -16,7 +16,8 @@
 import { statusOf } from "./todo-status.js";
 import { contextFile } from "./todo-file-context.js";
 
-const ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="6" height="6" rx="1.5"/><path d="M5 8 L6.3 9.3 L8.4 6.8"/><path d="M13 8 H20.5 M5 16 H20.5"/></svg>`;
+/** A checkbox — the list's own rounded box, ticked. */
+const ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4.5"/><path d="M8.3 12.4l2.5 2.5 4.9-5.3"/></svg>`;
 
 /** The to-dos still open for `fileId`. */
 function openCount(state, fileId) {
