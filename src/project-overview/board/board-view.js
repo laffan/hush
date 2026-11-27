@@ -22,8 +22,10 @@
  * embedded as a Doc, whose words link to its sections (section-links.js);
  * a click on a link scrolls the list to its section. A button in its
  * upper left corner puts the column away, and brings it back — one
- * choice for every project (`overviewDocHidden`); its border, out of
- * sight until pointed at, drags its width (board-doc-resize.js).
+ * choice for every project (`overviewDocHidden`). The list keeps to the
+ * right, as wide as its stack and outline columns, and the Doc takes the
+ * rest of the window; the faint border between them drags the outline
+ * column's width (board-doc-resize.js).
  *
  * Takes over the main view (project-overview.js is the entry point every
  * caller uses): `body.project-overview-active` hides what is underneath,
@@ -164,7 +166,7 @@ function buildFrame() {
   resizer.className = "po-doc-resizer";
   body.append(docColumn.el, resizer, scroller, docToggle);
   host.append(headEl, body);
-  docResize = wireDocResize(state, { body, col: docColumn.el, bar: resizer });
+  docResize = wireDocResize(state, { host, body, col: docColumn.el, list: scroller, bar: resizer });
   applyDocHidden();
 }
 

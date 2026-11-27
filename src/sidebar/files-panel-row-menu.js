@@ -109,7 +109,7 @@ export function renderRowMenuButton(nodeId, nodeType, inTrash, item, inProject) 
   const shelfBtn = isShelfRow
     ? `<button class="tree-action-shelf" data-tree-action="view-shelf" data-tooltip="View Shelf" aria-label="View Shelf">${SHELF_SVG}</button>`
     : isOverviewRow
-      ? `<button class="tree-action-shelf" data-tree-action="view-project-overview" data-tooltip="View Project Overview" aria-label="View Project Overview">${SHELF_SVG}</button>`
+      ? `<button class="tree-action-shelf" data-tree-action="view-project-overview" data-tooltip="View Project Overview" aria-label="View Project Overview">${OVERVIEW_SVG}</button>`
       : "";
   if (entries.length === 0 && !shelfBtn) return "";
   const menuBtn = entries.length
@@ -119,6 +119,11 @@ export function renderRowMenuButton(nodeId, nodeType, inTrash, item, inProject) 
     ${shelfBtn}${menuBtn}
   </span>`;
 }
+
+/** The Project Overview's button: a globe drawn as a grid — lens
+ *  meridians, the equator and two parallels (files-panel.css draws it
+ *  12 px, stroked). */
+const OVERVIEW_SVG = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3c-2.6 2.4-4 5.6-4 9s1.4 6.6 4 9M12 3c2.6 2.4 4 5.6 4 9s-1.4 6.6-4 9"/><path d="M3 12h18"/><path d="M4.6 7.5h14.8M4.6 16.5h14.8"/></svg>`;
 
 /** Real projects carry a Project Overview button in the shelf slot —
  *  the overview of everything inside them. The specials are internally

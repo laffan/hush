@@ -217,8 +217,9 @@ export function createDefaultSettings() {
     deskDashRecentsHeight: null,
     // The Project Overview's Doc column put away (board-view.js).
     overviewDocHidden: false,
-    // Its width, dragged at its border (board-doc-resize.js); null: the default.
-    overviewDocWidth: null,
+    // The Overview's outline column, dragged at the Doc's border
+    // (board-doc-resize.js); null: the default.
+    overviewOutlineWidth: null,
     // Per-desk sidebar toggle state (local, per-device), keyed by desk id:
     // `{ left, leftPinned, right }`. Switching desks restores that desk's
     // saved left files-panel and right outline-panel open/closed state.

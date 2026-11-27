@@ -114,13 +114,14 @@ export function buildOutline(content, { onHover, onPick, name = "" }) {
 
 const PLUS_BOX = `<svg viewBox="0 0 20 20"><rect x="3" y="2.5" width="14" height="15" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.4 2"/><path d="M10 7v6M7 10h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`;
 
-/** The stack column's width and the indent per nested project — the
- *  connector is drawn in pixels, so these are the stylesheet's
- *  `--board-stack-col` / `--board-indent` as numbers. */
-export const STACK_COL = 360;
+/** The stack's width — it sits at the left of its column, so the
+ *  connector runs down its middle — and the indent per nested project.
+ *  The connector is drawn in pixels, so these are the stylesheet's
+ *  `--board-stack-w` / `--board-indent` as numbers. */
+export const STACK_W = 312;
 export const INDENT = 56;
 const FOOT = 13;
-const xAt = (depth) => STACK_COL / 2 + depth * INDENT;
+const xAt = (depth) => STACK_W / 2 + depth * INDENT;
 
 /** The link between two rows — the sidebar's I-beam, drawn large: a
  *  foot under the upper stack, a stem, a foot over the lower one. When
