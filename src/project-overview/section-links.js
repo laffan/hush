@@ -1,6 +1,6 @@
 /**
  * The Overview Doc's section links — what makes the Doc down the
- * Project Overview's left side more than a pane.
+ * Project Overview's left side more than a Doc.
  *
  * Select any text in it and the project's sections (its documents and
  * placeholders, in reading order — board-model.js#sectionList) drop
@@ -12,9 +12,9 @@
  * its section; ⌘-click takes the link away and leaves the words. Both
  * are edits to the text, so ⌘Z brings either back.
  *
- * The extension rides the pane's own editor (createPane's
- * `editorExtensions`), on top of everything a Doc pane has; it claims
- * section links from the ordinary link renderer (`sectionLinksOwned`).
+ * The extension rides the embedded Doc's editor (board-doc-column.js,
+ * `extraExtensions`), on top of everything a Doc has; it claims section
+ * links from the ordinary link renderer (`sectionLinksOwned`).
  * `refreshSectionLinks` redraws the links after the board's sections
  * change (a document renamed, a placeholder removed).
  */

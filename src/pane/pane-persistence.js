@@ -67,8 +67,8 @@ export function schedulePersist() {
 export function serializePanes() {
   const serialized = [];
   for (const [, p] of panes) {
-    // A Project Overview board's own panes (a row's pane, the overview
-    // Doc) live only while the board is up (project-overview/board/).
+    // A Project Overview row's pane lives only while the board is up
+    // (project-overview/board/board-pane.js).
     if (p.overviewRow) continue;
     serialized.push({
       fileId: p.fileId,

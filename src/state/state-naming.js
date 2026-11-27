@@ -7,7 +7,7 @@
  * Pane-driven docs go through `maybeRenameFileFromContent` instead.
  */
 
-import { findNodeByFileId } from "./tree-helpers.js";
+import { findNodeByFileId, isOverviewDocFile } from "./tree-helpers.js";
 import { parseTabMarkerLine } from "../editor/tabs.js";
 import { stripFrontmatter } from "../editor/frontmatter.js";
 
@@ -97,6 +97,8 @@ export async function maybeRenameFromFirstLine(state, opts = {}) {
   // first-line auto-rename would silently overwrite it with the doc
   // body's first content line (or a tab marker).
   if (state.settings?.googleDocLinks?.[state.currentFileId]) return;
+  // A project's Overview Doc is called Overview whatever it says.
+  if (isOverviewDocFile(state.fileTree, state.currentFileId)) return;
   const content = state.editor.getContent();
   const derived = deriveName(content);
   if (!derived || derived === "Untitled") return;
@@ -129,8 +131,10 @@ function _contentHasTabMarker(content) {
  *  created in the main editor. */
 export async function maybeRenameFileFromContent(state, fileId, content) {
   if (!fileId) return;
-  // Match the gating above — linked docs keep their GDoc title.
+  // Match the gating above — linked docs keep their GDoc title, the
+  // Overview Doc its name.
   if (state.settings?.googleDocLinks?.[fileId]) return;
+  if (isOverviewDocFile(state.fileTree, fileId)) return;
   const derived = deriveName(content);
   if (!derived || derived === "Untitled") return;
   const node = findNodeByFileId(state.fileTree, fileId);

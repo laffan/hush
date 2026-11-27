@@ -130,6 +130,14 @@ async function maybeReloadOpenPanes() {
     const { refreshPanesFromDisk } = await import("../pane/pane-external.js");
     await refreshPanesFromDisk();
   } catch (e) { console.warn("pane reload failed:", e); }
+  // The Project Overview's Doc is embedded, not a pane, and keeps its own
+  // guard (project-overview/board/board-doc-column.js).
+  if (typeof window !== "undefined" && window.__hushProjectOverviewId) {
+    try {
+      const { refreshProjectOverviewFromDisk } = await import("../project-overview/project-overview.js");
+      await refreshProjectOverviewFromDisk();
+    } catch (e) { console.warn("Overview Doc reload failed:", e); }
+  }
 }
 
 function fileInDesk(state, deskId, fileId) {

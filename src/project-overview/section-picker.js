@@ -3,11 +3,10 @@
  * the Overview Doc (section-links.js decides when; this draws it and
  * reports the pick).
  *
- * It sits inside the Doc's pane element — so pressing it doesn't count
- * as a press outside the pane, which would lock the editor — at a fixed
- * position under the selection (over it when there is no room below),
- * kept within the pane's width. A press on it never takes the focus
- * from the editor, so the selection stays selected while you choose.
+ * It is mounted on the page at a fixed position under the selection
+ * (over it when there is no room below), kept within the Doc's column.
+ * A press on it never takes the focus from the editor, so the selection
+ * stays selected while you choose.
  * From the keyboard: ↓ / ↑ walk the list, Enter links, Escape puts the
  * list away and leaves the selection as it was.
  */
@@ -32,7 +31,8 @@ export function createSectionPicker({ view, sections, onPick }) {
   let items = [];
 
   const keyOf = (r) => `${r.from}:${r.to}`;
-  const host = () => view.dom.closest(".floating-pane") || document.body;
+  // What the list is kept inside: the Doc's column.
+  const bounds = () => view.dom.closest(".po-doc-col") || view.dom;
 
   function build() {
     const list = sections();
@@ -82,7 +82,7 @@ export function createSectionPicker({ view, sections, onPick }) {
     const start = view.coordsAtPos(range.from, 1);
     const end = view.coordsAtPos(range.to, -1);
     if (!start || !end) { hide(); return; }
-    const box = host().getBoundingClientRect();
+    const box = bounds().getBoundingClientRect();
     const margin = 8;
     el.style.maxWidth = Math.max(180, box.width - margin * 2) + "px";
     const w = el.offsetWidth;
@@ -112,7 +112,7 @@ export function createSectionPicker({ view, sections, onPick }) {
       // linked.
       el.addEventListener("pointerdown", (e) => e.preventDefault());
       el.addEventListener("mousedown", (e) => e.preventDefault());
-      host().appendChild(el);
+      document.body.appendChild(el);
       view.scrollDOM.addEventListener("scroll", onScroll, { passive: true });
       window.addEventListener("resize", onScroll);
       openCount++;

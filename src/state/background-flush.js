@@ -96,6 +96,15 @@ export async function flushEverythingNow(state, reason) {
       }
     } catch (e) { logActivity("files", "warn", "Background flush: stack", { error: String(e) }); }
 
+    // The Project Overview's Doc is its own writer too, on a 2 s timer.
+    try {
+      if (typeof window !== "undefined" && window.__hushProjectOverviewId) {
+        const m = await import("../project-overview/project-overview.js");
+        await m.flushProjectOverview();
+        wrote.push("overview-doc");
+      }
+    } catch (e) { logActivity("files", "warn", "Background flush: Overview Doc", { error: String(e) }); }
+
     logActivity("files", "info", "Flushed unsaved work on the way out", {
       reason, surfaces: wrote.join(",") || "none",
     });

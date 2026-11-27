@@ -342,8 +342,6 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
     // Opened from a Project Overview, which hides every other pane;
     // `.project-overview-pane` exempts this one (project-overview.css).
     overviewPane: !!opts.overviewPane,
-    // The Overview Doc: its editor's section links; it never drags out.
-    editorExtensions: opts.editorExtensions || null, fixedInline: !!opts.fixedInline,
   };
 
   buildPaneDOM(pane);

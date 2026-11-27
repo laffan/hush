@@ -86,49 +86,33 @@
   container: po-board / inline-size;
 }
 
-/* ── The Overview Doc's column (board-doc-column.js) ── */
+/* ── The Overview Doc's column (board-doc-column.js): the Doc itself,
+   embedded — no frame, no title bar — on the page, in the style's font
+   and size, its text lined up with the board's title. ── */
 .po-doc-col {
   flex: none;
   width: var(--po-doc-w);
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+.po-doc { position: relative; flex: 1; min-height: 0; }
+.po-doc .cm-editor { height: 100%; background: transparent; }
+.po-doc .cm-editor.cm-focused { outline: none; }
+.po-doc .cm-scroller { overflow: auto; }
+/* The bottom is the scroll runway, written inline (bottom-runway.js). */
+.po-doc .cm-content {
+  max-width: none;
   box-sizing: border-box;
-  padding: 18px 0 18px 24px;
+  padding-top: 18px;
+  padding-left: 40px;
+  padding-right: 16px;
 }
-.po-doc-slot.board-pane-slot {
-  flex: 1;
-  min-height: 0;
-  scroll-margin: 0;
-}
-/* Fixed in its column: no resize handles, and none of the pane buttons
-   that would move it, widen it or close it — only the type size. */
-.board-view .po-doc-slot > .floating-pane .fp-resize,
-.board-view .po-doc-slot > .floating-pane .fp-btn-widen,
-.board-view .po-doc-slot > .floating-pane .fp-btn-close,
-.board-view .po-doc-slot > .floating-pane .fp-btn-collapse { display: none !important; }
-.board-view .po-doc-slot > .floating-pane .floating-pane-titlebar { cursor: default; }
-/* An inactive pane's content takes no pointer events, so a press only
-   wakes it (floating-pane.css) — a guard for panes floating over other
-   work. The Doc floats over nothing: its first click or tap goes to the
-   text, or follows a link, while the press wakes the pane
-   (pane-toolbar.js focuses it on pointerdown, before the editor sees
-   the mousedown). */
-.board-view .po-doc-slot > .floating-pane:not(.active) .floating-pane-content { pointer-events: auto; }
-.po-doc-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 18px 20px;
-  border: 1.5px dashed color-mix(in srgb, var(--fg) 22%, transparent);
-  border-radius: 12px;
-}
-.po-doc-empty p {
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 1.5;
-  opacity: 0.6;
+/* The shared placeholder ("Start writing...") says what this Doc is for. */
+.po-doc .cm-placeholder { font-size: 0 !important; }
+.po-doc .cm-placeholder::after {
+  content: "An overview of the project. Select any words to link them to one of its documents.";
+  font-size: var(--font-size, 16px);
 }
 
 /* A section link in the Overview Doc (section-links.js): the words
@@ -159,7 +143,7 @@
 /* The sections that drop down from a selection (section-picker.js). */
 .po-section-picker {
   position: fixed;
-  z-index: 20;
+  z-index: var(--z-popover);
   width: 280px;
   max-height: min(340px, 60vh);
   display: flex;
@@ -663,9 +647,15 @@ button.board-row-name:focus-visible { background: rgba(128, 128, 128, 0.14); out
 @media (max-width: 900px) {
   .po-board-scroll { padding: 18px 18px 60px; }
   .board-head { padding-left: 18px; padding-right: 18px; }
-  .po-doc-col { padding-left: 18px; }
+  .po-doc .cm-content { padding-left: 18px; }
 }
 @media (max-width: 760px) {
   .po-body { flex-direction: column; }
-  .po-doc-col { width: auto; height: 42vh; padding: 12px 18px 0; }
+  /* Stacked, the Doc and the list meet edge to edge: the header's rule
+     between them. */
+  .po-doc-col {
+    width: auto;
+    height: 42vh;
+    border-bottom: 1px solid var(--panel-border, rgba(128, 128, 128, 0.25));
+  }
 }

@@ -10,12 +10,12 @@
  * so a tree save re-renders the row.
  */
 
-import { boardData } from "../project-overview/board/board-model.js";
+import { boardData, overviewDocNode } from "../project-overview/board/board-model.js";
 import { hasProjectOverview } from "./files-panel-row-menu.js";
 
 /** Whether `item`'s row keeps its Overview button in view. */
 export function showsOverviewButton(state, item, inTrash) {
   if (!hasProjectOverview(item.id, item.type, inTrash, item)) return false;
   const data = boardData(item);
-  return !!data.doc || data.placeholders.length > 0 || Object.keys(data.notes).length > 0;
+  return !!overviewDocNode(item) || data.placeholders.length > 0 || Object.keys(data.notes).length > 0;
 }

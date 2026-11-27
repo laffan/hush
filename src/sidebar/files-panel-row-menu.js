@@ -10,7 +10,7 @@
  * the panel's row-handling code.
  */
 
-import { findNode, findParentOfNode } from "../state/tree-helpers.js";
+import { findNode, findParentOfNode, overviewDocFileIdOf } from "../state/tree-helpers.js";
 import { AppState } from "../state/state.js";
 import { multiWindowAvailable } from "../multi-window.js";
 import { NEW_WINDOW_SVG, typeIcons } from "./files-panel-shared.js";
@@ -350,6 +350,11 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
       && parent.id !== "__inbox__" && !parent.id?.startsWith("__inbox__:");
     const inArchive = isInsideArchive(state.fileTree, nodeId);
     entries = getMenuEntries(nodeId, node.type, inTrash, inArchive ? { ...node, inArchive } : node, inProject);
+    // A project's Overview Doc stays a note: as part of the text it would
+    // be a chapter, not the Overview.
+    if (parent && node.fileId && overviewDocFileIdOf(parent) === node.fileId) {
+      entries = entries.filter((e) => e.action !== "use-as-note");
+    }
     if ((state.settings?.desks || []).length < 2) entries = entries.filter((e) => e.action !== "move-to-desk");
     // Local-desk actions need runtime state (the roots map), so they
     // join here rather than in the static entry builder.

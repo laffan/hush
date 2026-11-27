@@ -18,9 +18,9 @@
  * notebooks, stacks, notes, PDFs — sit at the foot as its material.
  *
  * Down the left, fixed beside that scrolling list, the **Overview Doc**
- * (board-doc-column.js): a document about the project as a whole whose
- * words link to its sections (section-links.js); a click on a link
- * scrolls the list to its section.
+ * (board-doc-column.js): the project's document called Overview,
+ * embedded as a Doc, whose words link to its sections (section-links.js);
+ * a click on a link scrolls the list to its section.
  *
  * Takes over the main view (project-overview.js is the entry point every
  * caller uses): `body.project-overview-active` hides what is underneath,
@@ -173,11 +173,21 @@ export function closeProjectBoard() {
   containerId = null;
   window.__hushProjectOverviewId = null;
   document.body.classList.remove("project-overview-active");
+  // The Doc writes what is unsaved on its way out.
+  void docColumn?.destroy();
   if (host) { host.classList.add("hidden"); host.innerHTML = ""; }
   headEl = scroller = docColumn = null;
   import("../../pane/pane-dock.js").then((m) => m.publishDockCssVars()).catch(() => {});
   state?.emit("project-overview-closed", closed);
 }
+
+/** Write the Overview Doc's unsaved edits now (the background flush —
+ *  state/background-flush.js). */
+export const flushOverviewDoc = () => docColumn?.flush() || Promise.resolve();
+
+/** A sync moved files under the open Overview: the Doc re-reads its own
+ *  (sync/desk-reload.js). The list re-renders on `files-changed`. */
+export const refreshOverviewDoc = () => docColumn?.refreshFromDisk() || Promise.resolve();
 
 /** Something in the list is being typed into — a title field, an
  *  outline module, a row's pane. A focused button doesn't count, nor

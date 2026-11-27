@@ -12,11 +12,17 @@
  * opened.
  */
 import { findNode } from "../state/tree-helpers.js";
-import { isBoardOpen, boardContainerId, openProjectBoard, closeProjectBoard } from "./board/board-view.js";
+import {
+  isBoardOpen, boardContainerId, openProjectBoard, closeProjectBoard, flushOverviewDoc, refreshOverviewDoc,
+} from "./board/board-view.js";
 
 export const isProjectOverviewOpen = () => isBoardOpen();
 export const currentProjectOverviewId = () => boardContainerId();
 export const closeProjectOverview = () => closeProjectBoard();
+/** The Overview Doc's unsaved edits, written now (background flush). */
+export const flushProjectOverview = () => flushOverviewDoc();
+/** The Overview Doc re-reads its file after a sync (desk reload). */
+export const refreshProjectOverviewFromDisk = () => refreshOverviewDoc();
 
 /** The project node an Overview belongs to, or null. */
 export function findOverviewProject(state, containerId) {

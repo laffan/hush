@@ -19,9 +19,11 @@
  *     created: { [placeholderId]: fileId } }
  *
  * `doc` is the **Overview Doc** — the column down the board's left: a
- * real document, kept in the project as a note ("Use as note"), whose
- * section links (editor/plugins/section-link-syntax.js) point at the
- * rows. It counts only while it is still inside the project. `created`
+ * real document called Overview, kept in the project as a note ("Use as
+ * note") and pinned first among its children (tree-helpers.js
+ * normalizeProjectChildren), whose section links
+ * (editor/plugins/section-link-syntax.js) point at the rows. It counts
+ * only while it is one of the project's own children. `created`
  * remembers which document each created placeholder became, so a
  * section link made to the placeholder follows it.
  *
@@ -35,7 +37,9 @@
  * its outline's first item (placeholderName); without one it can't be
  * created.
  */
-import { findNode, findNodeByFileId, findParentOfNode, isRealProjectNode, normalizeProjectChildren } from "../../state/tree-helpers.js";
+import {
+  findNode, findNodeByFileId, findParentOfNode, isRealProjectNode, normalizeProjectChildren, overviewDocFileIdOf,
+} from "../../state/tree-helpers.js";
 import { parseSectionTarget } from "../../editor/plugins/section-link-syntax.js";
 import { parseOutlineLine, stripInlineMarkdown } from "../../outline/outline-model.ts";
 import { findFrontmatterRange } from "../../editor/frontmatter.js";
@@ -97,12 +101,12 @@ export function materials(project) {
 }
 
 /** The project's Overview Doc's tree node, or null — none made yet, or
- *  the one it had has left the project (moved out, deleted). */
+ *  the one it had is no longer among the project's own children (moved
+ *  out, or into a folder; deleted). */
 export function overviewDocNode(project) {
-  const fileId = boardData(project).doc;
+  const fileId = overviewDocFileIdOf(project);
   if (!fileId) return null;
-  const node = findNodeByFileId(project.children || [], fileId);
-  return node && node.type === "document" ? node : null;
+  return (project.children || []).find((n) => n.type === "document" && n.fileId === fileId) || null;
 }
 
 /** The sections a piece of the Overview Doc can link to — the board's
@@ -247,25 +251,26 @@ function writeBoard(project, data) {
   project.board = board;
 }
 
-/** Make the project's Overview Doc: a document in the project, kept out
- *  of its text as a note, titled after the project. Returns
- *  `{ fileId, name }`, or null. */
-export async function createOverviewDoc(state, projectId) {
+/** Make the project's Overview Doc: a document called Overview in the
+ *  project, kept out of its text as a note, pinned first. Its name stays
+ *  (state-naming.js leaves it alone), so it needs no title line.
+ *  `content` is what it starts with — the board makes it at the first
+ *  keystroke in its column. Returns `{ fileId, name }`, or null. */
+export async function createOverviewDoc(state, projectId, content = "") {
   const project = findNode(state.fileTree, projectId);
   if (!project) return null;
-  const title = `${project.name || "Project"} Overview`;
   const made = await state.newFile(project.id, {
     openImmediately: false,
-    initialName: title,
-    initialContent: `# ${title}\n\n`,
+    initialName: "Overview",
+    initialContent: content,
   });
   if (!made) return null;
   const node = findNodeByFileId(project.children || [], made.fileId);
   if (node) node.useAsNote = true;
-  normalizeProjectChildren(state.fileTree);
   const data = boardData(project);
   data.doc = made.fileId;
   writeBoard(project, data);
+  normalizeProjectChildren(state.fileTree); // pins it first
   await state.saveFileTree();
   state.emit("files-changed");
   return made;
