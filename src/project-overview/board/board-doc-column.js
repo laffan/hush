@@ -18,6 +18,10 @@
  * column keeps the files cache current for that, and says when the
  * answer turns.
  *
+ * The whole column is the Doc's: a press anywhere in it that isn't on
+ * the text puts the caret in the Doc — at the end, as a click below a
+ * Doc's last line does — so the column never has to be hit just so.
+ *
  * Like a stack column it is its own writer: a 2 s autosave, a flush on
  * close and from the background flush (`flush`), and a re-read when a
  * sync brings the file in from elsewhere (`refreshFromDisk`, under the
@@ -63,11 +67,30 @@ export function createDocColumn({ state, projectId, onFollow }) {
   const node = () => (project() ? overviewDocNode(project()) : null);
 
   /** The style the document is locked to, if any, else the session's. */
+  let styledLock = null;
   const restyle = () => {
     if (!editor || destroyed) return;
-    editor.reconfigureTheme?.(state.settings, node()?.lockedStyleId || null);
+    styledLock = node()?.lockedStyleId || null;
+    editor.reconfigureTheme?.(state.settings, styledLock);
   };
-  const themeEvents = ["theme-changed", "style-changed", "style-preview-end", "files-changed"];
+  const themeEvents = ["theme-changed", "style-changed", "style-preview-end"];
+  // A tree change restyles only when it locked or unlocked the Doc's style:
+  // a restyle reconfigures the editor, and tree changes come often (every
+  // save of the tree, the Doc's own first words).
+  const onFilesChanged = () => { if ((node()?.lockedStyleId || null) !== styledLock) restyle(); };
+
+  // A press in the column that isn't on the editor's text (its margins,
+  // or below the editor where an engine sized it to its text) focuses
+  // the Doc with the caret at its end. A press on the text, or on the
+  // editor's own scroller — its scrollbar, the space under the last line
+  // — is CodeMirror's to place.
+  el.addEventListener("mousedown", (e) => {
+    if (e.button !== 0 || !editor || e.target.closest?.(".cm-content, .cm-scroller, button")) return;
+    e.preventDefault();
+    const view = editor.view;
+    view.focus();
+    view.dispatch({ selection: { anchor: view.state.doc.length }, scrollIntoView: true });
+  });
 
   /** Keep the files cache's copy current — the file browser reads it to
    *  decide whether the Doc is empty. */
@@ -159,6 +182,7 @@ export function createDocColumn({ state, projectId, onFollow }) {
     editor = createPaneEditor(host, state, onEdit, {
       modeContext: mc.proxy,
       runway: true,
+      placeholder: "Overview ...",
       getFileId: () => fileId,
       extraExtensions: [links.sectionLinks({
         resolve: (target) => resolveSectionTarget(project(), target),
@@ -171,6 +195,7 @@ export function createDocColumn({ state, projectId, onFollow }) {
     });
     restyle();
     for (const ev of themeEvents) state.on(ev, restyle);
+    state.on("files-changed", onFilesChanged);
     saveTimer = setInterval(() => { void flush(); }, SAVE_MS);
     import("../../pane/text-drag.js").then(({ attachEditorTextDrag }) => {
       if (!destroyed && editor) attachEditorTextDrag(editor.view, host);
@@ -224,6 +249,7 @@ export function createDocColumn({ state, projectId, onFollow }) {
     await flush();
     destroyed = true;
     for (const ev of themeEvents) state.off?.(ev, restyle);
+    state.off?.("files-changed", onFilesChanged);
     editor?.destroy();
     editor = null;
   }

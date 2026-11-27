@@ -96,8 +96,18 @@
   display: flex;
   flex-direction: column;
 }
-.po-doc { position: relative; flex: 1; min-height: 0; }
-.po-doc .cm-editor { height: 100%; background: transparent; }
+.po-doc-col { position: relative; cursor: text; }
+/* The editor's box is pinned to the column, and the editor is all of it.
+   A percentage height inside a flex item isn't resolved alike by every
+   engine, and an editor only as tall as its text left the rest of the
+   column dead to a click; an absolutely placed box with all four edges
+   set has a definite height everywhere. (Pinning `.cm-editor` itself
+   doesn't take: CodeMirror's theme holds it `position: relative
+   !important`.) CodeMirror's content fills the editor (its min-height),
+   so a click anywhere in it places the caret; board-doc-column.js
+   catches anything around it. */
+.po-doc { position: absolute; inset: 0; }
+.po-doc > .cm-editor { height: 100%; background: transparent; }
 .po-doc .cm-editor.cm-focused { outline: none; }
 .po-doc .cm-scroller { overflow: auto; }
 /* The bottom is the scroll runway, written inline (bottom-runway.js). */
@@ -107,14 +117,6 @@
   padding-top: 18px;
   padding-left: 40px;
   padding-right: 16px;
-}
-/* The shared placeholder ("Start writing...") names this Doc instead.
-   Inline, not CodeMirror's inline-block, so a prompt that wraps in a
-   narrow column still leaves the caret at the start of the line. */
-.po-doc .cm-placeholder { font-size: 0 !important; display: inline !important; }
-.po-doc .cm-placeholder::after {
-  content: "Overview ...";
-  font-size: var(--font-size, 16px);
 }
 
 /* The button that puts the Doc's column away and brings it back

@@ -56,6 +56,7 @@ export function createPaneEditor(container, appState, onChange, opts) {
       // panel) — see createBaseExtensions.
       fragment: !!opts?.fragment,
       lineIndicator: opts?.lineIndicator,
+      placeholder: opts?.placeholder,
     });
 
   const dryPlugin = createDryHighlightPlugin(modeRef);

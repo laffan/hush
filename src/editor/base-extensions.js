@@ -185,6 +185,11 @@ export function createStrikethroughFallback(state) {
  *   pane's. A caller with nothing to name (the Selection Focus
  *   fragment, a Local Folder file that has no tree node) passes none
  *   and the surface is uncapped.
+ * @param {string} [opts.placeholder] What an empty document shows in
+ *   grey — "Start writing..." unless the surface names itself (the
+ *   Project Overview's Doc: "Overview ..."). CodeMirror's own
+ *   placeholder, so the caret sits at the start of the line, at the
+ *   text's height.
  * @returns {{ extensions: Extension[], themeComp, highlightComp, shortcutComp }}
  */
 export function createBaseExtensions(state, onChange, opts) {
@@ -312,7 +317,7 @@ export function createBaseExtensions(state, onChange, opts) {
     createPrivacyExtensions(state),
     keymap.of([...hushDefaultKeymap, ...historyKeymap]),
     Prec.highest(keymap.of(buildFixedKeymap(state))),
-    placeholder("Start writing..."),
+    placeholder(opts?.placeholder || "Start writing..."),
     EditorView.lineWrapping,
     phoneTextInputAttributes(), // also in editor.js
     _editableComp.of(EditorView.editable.of(true)),
