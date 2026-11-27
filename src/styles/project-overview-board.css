@@ -108,14 +108,42 @@
   padding-left: 40px;
   padding-right: 16px;
 }
-/* The shared placeholder ("Start writing...") says what this Doc is for.
-   Inline, not CodeMirror's inline-block: the longer prompt wraps, and a
-   wrapped inline-block put the caret at the end of its first line. */
+/* The shared placeholder ("Start writing...") names this Doc instead.
+   Inline, not CodeMirror's inline-block, so a prompt that wraps in a
+   narrow column still leaves the caret at the start of the line. */
 .po-doc .cm-placeholder { font-size: 0 !important; display: inline !important; }
 .po-doc .cm-placeholder::after {
-  content: "An overview of the project. Select any words to link them to one of its documents.";
+  content: "Overview ...";
   font-size: var(--font-size, 16px);
 }
+
+/* The button that puts the Doc's column away and brings it back
+   (board-view.js applyDocHidden): in the upper left corner, in the
+   margin left of the Doc's text — or of the list's, once the column is
+   away. */
+.po-body { position: relative; }
+.po-doc-toggle {
+  position: absolute;
+  top: 14px;
+  left: 10px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--fg);
+  opacity: 0.4;
+  cursor: pointer;
+}
+.po-doc-toggle svg { width: 16px; height: 16px; }
+.po-doc-toggle:hover,
+.po-doc-toggle:focus-visible { opacity: 0.9; background: rgba(128, 128, 128, 0.14); outline: none; }
+.board-view.po-doc-hidden .po-doc-col { display: none; }
 
 /* A section link in the Overview Doc (section-links.js): the words
    alone, subtly underlined. The Markdown link's own underline
@@ -648,8 +676,8 @@ button.board-row-name:focus-visible { background: rgba(128, 128, 128, 0.14); out
    list instead of beside it. */
 @media (max-width: 900px) {
   .po-board-scroll { padding: 18px 18px 60px; }
+  .board-view.po-doc-hidden .po-board-scroll { padding-left: 44px; }
   .board-head { padding-left: 18px; padding-right: 18px; }
-  .po-doc .cm-content { padding-left: 18px; }
 }
 @media (max-width: 760px) {
   .po-body { flex-direction: column; }

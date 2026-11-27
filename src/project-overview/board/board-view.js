@@ -20,7 +20,9 @@
  * Down the left, fixed beside that scrolling list, the **Overview Doc**
  * (board-doc-column.js): the project's document called Overview,
  * embedded as a Doc, whose words link to its sections (section-links.js);
- * a click on a link scrolls the list to its section.
+ * a click on a link scrolls the list to its section. A button in its
+ * upper left corner puts the column away, and brings it back — one
+ * choice for every project (`overviewDocHidden`).
  *
  * Takes over the main view (project-overview.js is the entry point every
  * caller uses): `body.project-overview-active` hides what is underneath,
@@ -52,6 +54,7 @@ let host = null;
 let headEl = null;
 let scroller = null;
 let docColumn = null;
+let docToggle = null;
 let state = null;
 let containerId = null;
 let wired = false;
@@ -83,6 +86,7 @@ function wire() {
   state.on("files-changed", scheduleRender);
   state.on("doc-content-changed", scheduleRender);
   state.on("panes-changed", () => { if (containerId && sweepRowPanes().length) scheduleRender(); });
+  state.on("settings-changed", applyDocHidden);
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || !containerId || e.defaultPrevented) return;
     // An open section list takes its own Escape (section-links.js).
@@ -145,8 +149,33 @@ function buildFrame() {
   });
   scroller = document.createElement("div");
   scroller.className = "po-board-scroll";
-  body.append(docColumn.el, scroller);
+  docToggle = document.createElement("button");
+  docToggle.type = "button";
+  docToggle.className = "po-doc-toggle";
+  docToggle.innerHTML = DOC_TOGGLE_ICON;
+  docToggle.addEventListener("click", () => {
+    void state.updateSettings({ overviewDocHidden: !state.settings?.overviewDocHidden });
+    applyDocHidden();
+  });
+  body.append(docColumn.el, scroller, docToggle);
   host.append(headEl, body);
+  applyDocHidden();
+}
+
+const DOC_TOGGLE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 19V5c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2Z"/><path d="M9 3v18"/></svg>`;
+
+/** The Overview Doc's column shown or put away, as the setting says. A
+ *  Doc being written in when it goes away lets go of the keyboard (and
+ *  its section list goes with it). */
+function applyDocHidden() {
+  if (!host || !docToggle) return;
+  const hidden = !!state.settings?.overviewDocHidden;
+  host.classList.toggle("po-doc-hidden", hidden);
+  const label = hidden ? "Show the Overview" : "Hide the Overview";
+  docToggle.dataset.tooltip = label;
+  docToggle.setAttribute("aria-label", label);
+  docToggle.setAttribute("aria-pressed", String(!hidden));
+  if (hidden && docColumn?.el.contains(document.activeElement)) document.activeElement.blur?.();
 }
 
 /** Bring a row into view and pick it out for a moment — "View in
@@ -176,7 +205,7 @@ export function closeProjectBoard() {
   // The Doc writes what is unsaved on its way out.
   void docColumn?.destroy();
   if (host) { host.classList.add("hidden"); host.innerHTML = ""; }
-  headEl = scroller = docColumn = null;
+  headEl = scroller = docColumn = docToggle = null;
   import("../../pane/pane-dock.js").then((m) => m.publishDockCssVars()).catch(() => {});
   state?.emit("project-overview-closed", closed);
 }
