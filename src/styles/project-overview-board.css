@@ -16,7 +16,7 @@
   --board-ink: color-mix(in srgb, var(--fg) 55%, transparent);
   /* The outline column's width — dragged at the border beside the
      Overview Doc (board-doc-resize.js sets it from `overviewOutlineWidth`). */
-  --po-outline-w: 280px;
+  --po-outline-w: 250px;
   /* The list's margins. The left one is the gap between the border and
      the stacks — the same as between the header's rule and the first
      stack (the list's top padding). */
