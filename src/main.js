@@ -278,6 +278,9 @@ async function init() {
   // YOU ARE HERE — one marker per desk; save-pipeline detection +
   // one-per-desk enforcement (see src/you-are-here.js).
   import("./you-are-here.js").then(({ initYouAreHere }) => initYouAreHere(state));
+  // The to-do button in the editor's upper right, while the Doc in front
+  // has an outstanding to-do (todo/todo-editor-button.js).
+  import("./todo/todo-editor-button.js").then(({ installTodoEditorButton }) => installTodoEditorButton(state));
   // Session history journal — records workspace states (open surface,
   // pane layout, focus) for the History panel's 100-step timeline.
   import("./state/history-journal.js").then(({ initHistoryJournal }) => initHistoryJournal(state));

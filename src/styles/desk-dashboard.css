@@ -121,7 +121,7 @@
   opacity: 0.45;
 }
 /* A height dragged to (desk-dashboard-resize.js) holds whatever the rows
-   need, but always leaves the To-do list its search and a few rows. */
+   need, but always leaves the To-do list its composer and a few rows. */
 .desk-dash-recents.sized { max-height: calc(100% - 160px); }
 .desk-dash-recents .desk-dash-empty { padding: 4px 8px; }
 /* The list itself is todo-list.js, styled by todo.css; here only its
@@ -186,7 +186,7 @@
   .desk-dash-recents,
   .desk-dash-recents.sized { height: auto !important; }
   .desk-dash-todo { flex: none; min-height: 0; }
-  .desk-dash-todo .todo-body { overflow: visible; }
+  .desk-dash-todo .todo-scroll { overflow: visible; }
   .desk-dash-recents,
   .desk-dash-recents.sized { max-height: none; padding-top: 12px; }
   .desk-dash-recents-list { overflow: visible; }

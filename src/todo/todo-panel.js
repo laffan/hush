@@ -7,12 +7,14 @@
  *
  * The list inside is todo-list.js, which the Desk Dashboard's sidebar
  * mounts too. This module is only the shell: the element, its fly in and
- * out, the keyboard taken on open (into the head's search, so typing
- * after ⌘ ⌘ finds a file) and handed back on close.
+ * out, the keyboard taken on open and handed back on close. Here the
+ * list runs with `fileContext`: opened over a file, its top is that
+ * file's to-do (or a draft of one), and the keyboard goes into its note;
+ * otherwise into the composer's title.
  *
  * While the Desk Dashboard is open its own list is on screen, so the
- * toggle goes there — the keyboard into its search — rather than raising
- * a second list under the dashboard.
+ * toggle goes there — the keyboard into its composer — rather than
+ * raising a second list under the dashboard.
  */
 import { mountTodoList, embeddedTodoList } from "./todo-list.js";
 
@@ -21,14 +23,14 @@ let panel = null; // the live handle
 export function isTodoPanelOpen() { return !!panel; }
 
 export function toggleTodoPanel(state) {
-  if (!panel && embeddedTodoList()) { embeddedTodoList().focusSearch(); return; }
+  if (!panel && embeddedTodoList()) { embeddedTodoList().focusInput(); return; }
   if (panel) panel.close();
   else openTodoPanel(state);
 }
 
 export function openTodoPanel(state) {
   const embedded = embeddedTodoList();
-  if (embedded) { embedded.focusSearch(); return; }
+  if (embedded) { embedded.focusInput(); return; }
   if (panel) { panel.focusFirst(); return; }
   panel = mountPanel(state);
 }
@@ -45,7 +47,7 @@ function mountPanel(state) {
   document.body.appendChild(el);
 
   let closing = false;
-  const list = mountTodoList(state, el, { onClose: close, onEscape: close });
+  const list = mountTodoList(state, el, { onClose: close, onEscape: close, fileContext: true });
 
   function close() {
     if (closing) return;
@@ -67,10 +69,10 @@ function mountPanel(state) {
 
   // Fly in: one frame at the parked position, then the shown one.
   requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add("shown")));
-  // Take the keyboard — into the search, so typing after ⌘ ⌘ finds a
-  // file — so it stops going into the document and Escape reaches the
-  // panel.
-  list.focusSearch();
+  // Take the keyboard — into the file's to-do over a file, else the
+  // composer — so it stops going into the document and Escape reaches
+  // the panel.
+  list.focusInput();
 
   return { el, close, focusFirst: list.focusFirst };
 }

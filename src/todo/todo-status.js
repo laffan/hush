@@ -26,6 +26,14 @@
 
 export const STATES = ["inactive", "primed", "active", "complete"];
 
+/*
+ * Sub-to-dos (a to-do's `checklist`) step through the same four states
+ * with the same clicks, and a sub-to-do whose title ends in a length
+ * offers the same Start timer. "Only one active" holds across both: a
+ * sub-to-do made active sends whatever else was active — a to-do or
+ * another sub-to-do — back to primed.
+ */
+
 /** A stored to-do's status. Older items carried only `done`; for a while
  *  there was an "archived" state, which complete has taken over. */
 export function statusOf(todo) {
@@ -43,6 +51,22 @@ export function clickAction(status, back = false) {
   const i = STATES.indexOf(status);
   if (back) return i > 0 ? STATES[i - 1] : null;
   return i < STATES.length - 1 ? STATES[i + 1] : "delete";
+}
+
+/**
+ * Where a to-do sits in the list: its own status, lifted by its
+ * sub-to-dos — one active makes it count as active, one primed as
+ * primed — so a sub-to-do being worked on brings its parent up into the
+ * top block. A completed to-do stays complete whatever its sub-to-dos
+ * say.
+ */
+export function rankOf(todo) {
+  const own = statusOf(todo);
+  if (own === "complete" || own === "active") return own;
+  const subs = Array.isArray(todo?.checklist) ? todo.checklist : [];
+  if (subs.some((s) => statusOf(s) === "active")) return "active";
+  if (own === "primed" || subs.some((s) => statusOf(s) === "primed")) return "primed";
+  return own;
 }
 
 const LABEL = {

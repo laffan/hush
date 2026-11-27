@@ -4,10 +4,17 @@
  * Every to-do belongs to a desk, and may be linked to one file on it:
  *
  *   { id, deskId, title, notes, status, done, doneAt, timerStartedAt,
- *     fileId, fileType, createdAt }
+ *     fileId, fileType, createdAt, checklist }
  *
  * `status` is inactive / primed / active / complete (todo-status.js);
  * `done` mirrors "complete" for anything that reads the older field.
+ * `notes` is markdown. `checklist` is the to-do's sub-to-dos, in order:
+ *
+ *   [{ id, title, status, done, doneAt, timerStartedAt }]
+ *
+ * — the same states, the same clicks and the same timer as a to-do's
+ * own (todo-status.js). A to-do saved before there were sub-to-dos has
+ * no `checklist`; `subsOf` reads that as none.
  *
  * `settings.todos` (`todos` on the Rust side, opaque JSON) is the runtime
  * store, in the user's order. Like desk stickies, each desk's own
@@ -34,8 +41,18 @@ import { statusOf, clickAction, applyTimer, startTodoTimer } from "./todo-status
 const TEXT_SAVE_MS = 400;
 let textTimer = 0;
 
-function uid() {
-  return "todo-" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+function uid(prefix = "todo-") {
+  return prefix + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+/** A to-do's sub-to-dos, always an array. */
+export function subsOf(todo) {
+  return Array.isArray(todo?.checklist) ? todo.checklist.filter((s) => s && typeof s.id === "string") : [];
+}
+
+/** A new sub-to-do, not yet in any list. */
+export function makeSub(title = "") {
+  return { id: uid("sub-"), title, status: "inactive", done: false, doneAt: null };
 }
 
 /** The stored list, always an array of well-formed entries. */
@@ -48,6 +65,14 @@ export function readTodos(state) {
 /** One desk's to-dos, in list order. */
 export function deskTodos(state, deskId) {
   return readTodos(state).filter((t) => t.deskId === deskId);
+}
+
+/** The newest open (not completed) to-do linked to `fileId`, or null. */
+export function fileTodo(state, fileId) {
+  if (!fileId) return null;
+  return readTodos(state)
+    .filter((t) => t.fileId === fileId && statusOf(t) !== "complete")
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0] || null;
 }
 
 /** The tree node of a to-do's linked file, or null when it has none or
@@ -93,10 +118,12 @@ export function patchInPlace(state, id, patch) {
 
 /** Add a to-do on `deskId`, after `afterId` when given (else at the end
  *  of that desk's open items). Returns the new to-do. */
-export function addTodo(state, deskId, { afterId = null, title = "", fileId = null, fileType = null } = {}) {
+export function addTodo(state, deskId, {
+  afterId = null, title = "", notes = "", fileId = null, fileType = null, checklist = [],
+} = {}) {
   const todo = {
-    id: uid(), deskId, title, notes: "", status: "inactive", done: false, doneAt: null,
-    fileId, fileType: fileId ? fileType || "document" : null, createdAt: Date.now(),
+    id: uid(), deskId, title, notes, status: "inactive", done: false, doneAt: null,
+    fileId, fileType: fileId ? fileType || "document" : null, createdAt: Date.now(), checklist,
   };
   const list = [...readTodos(state)];
   let at = afterId ? list.findIndex((t) => t.id === afterId) + 1 : 0;
@@ -116,6 +143,52 @@ export function addTodo(state, deskId, { afterId = null, title = "", fileId = nu
 export function updateTodo(state, id, patch) {
   const list = readTodos(state).map((t) => (t.id === id ? { ...t, ...patch } : t));
   return commit(state, list);
+}
+
+/** Patch a to-do, or — with `subId` — one of its sub-to-dos. */
+function updateItem(state, id, subId, patch) {
+  if (!subId) return updateTodo(state, id, patch);
+  return commit(state, readTodos(state).map((t) => (t.id !== id ? t
+    : { ...t, checklist: subsOf(t).map((s) => (s.id === subId ? { ...s, ...patch } : s)) })));
+}
+
+/** Change a sub-to-do in memory, without persisting — the typing path. */
+export function patchSubInPlace(state, id, subId, patch) {
+  const s = subsOf(readTodos(state).find((x) => x.id === id)).find((x) => x.id === subId);
+  if (s) Object.assign(s, patch);
+}
+
+/**
+ * Add sub-to-dos to a to-do — one per title — after `afterSubId`, or at
+ * the end without one. Synchronous in memory, as `addTodo` is. Returns
+ * the new sub-to-dos (none when the to-do is gone).
+ */
+export function addSubs(state, id, titles = [""], afterSubId = null) {
+  const list = readTodos(state);
+  const t = list.find((x) => x.id === id);
+  if (!t) return [];
+  const subs = subsOf(t);
+  const made = titles.map((title) => makeSub(title));
+  const after = afterSubId ? subs.findIndex((s) => s.id === afterSubId) : -1;
+  subs.splice(after >= 0 ? after + 1 : subs.length, 0, ...made);
+  void commit(state, list.map((x) => (x.id === id ? { ...x, checklist: subs } : x)));
+  return made;
+}
+
+export function removeSub(state, id, subId) {
+  return commit(state, readTodos(state).map((t) => (t.id !== id ? t
+    : { ...t, checklist: subsOf(t).filter((s) => s.id !== subId) })));
+}
+
+/** Drop a to-do's sub-to-dos that were never written in — run as the
+ *  to-do closes, so an added and abandoned row doesn't linger. */
+export function pruneEmptySubs(state, id) {
+  const t = readTodos(state).find((x) => x.id === id);
+  const subs = subsOf(t);
+  if (!subs.some((s) => !(s.title || "").trim())) return false;
+  void commit(state, readTodos(state).map((x) => (x.id !== id ? x
+    : { ...x, checklist: subs.filter((s) => (s.title || "").trim()) })));
+  return true;
 }
 
 /**
@@ -141,14 +214,27 @@ export function removeTodo(state, id) {
   return commit(state, readTodos(state).filter((t) => t.id !== id));
 }
 
-/** Set a to-do's status. The list changes in memory at once (the panel
- *  re-renders on it); cancelling a timer it started follows behind.
- *  Making a to-do active sends any other active one back to primed. */
-export async function setTodoStatus(state, id, status) {
-  const list = readTodos(state);
-  const t = list.find((x) => x.id === id);
-  if (!t) return;
-  const from = statusOf(t);
+/** A to-do, or one of its sub-to-dos, by id: `{ todo, item }` (item is
+ *  the sub-to-do when `subId` is given), or null. */
+function findItem(state, id, subId = null) {
+  const todo = readTodos(state).find((x) => x.id === id);
+  const item = subId ? subsOf(todo).find((s) => s.id === subId) : todo;
+  return todo && item ? { todo, item } : null;
+}
+
+/**
+ * Set the status of a to-do, or — with `subId` — of one of its
+ * sub-to-dos. The list changes in memory at once (the panel re-renders
+ * on it); cancelling a timer that was running follows behind. Only one
+ * thing is active at a time, to-do or sub-to-do: making one active
+ * sends whatever else was active back to primed. Completing a to-do
+ * does the same to an active sub-to-do inside it — a finished to-do
+ * keeps nothing running.
+ */
+export async function setTodoStatus(state, id, status, subId = null) {
+  const found = findItem(state, id, subId);
+  if (!found) return;
+  const from = statusOf(found.item);
   if (from === status) return;
   const at = Date.now();
   // `doneAt` is when it was completed, and orders the Completed
@@ -156,36 +242,56 @@ export async function setTodoStatus(state, id, status) {
   const as = (x, s) => ({
     ...x, status: s, done: s === "complete", doneAt: s === "complete" ? at : null, archivedAt: undefined,
   });
-  const demoted = status === "active" ? list.filter((x) => x.id !== id && statusOf(x) === "active") : [];
-  void commit(state, list.map((x) => (x.id === id ? as(x, status) : demoted.includes(x) ? as(x, "primed") : x)));
+  const isActive = (x) => statusOf(x) === "active";
+  const demoted = []; // { id, subId, item }
+  const next = readTodos(state).map((t) => {
+    let y = t;
+    if (t.id === id && !subId) y = as(t, status);
+    else if (status === "active" && isActive(t)) { demoted.push({ id: t.id, subId: null, item: t }); y = as(t, "primed"); }
+    const subs = subsOf(t);
+    if (!subs.length) return y;
+    let touched = false;
+    const checklist = subs.map((s) => {
+      if (t.id === id && s.id === subId) { touched = true; return as(s, status); }
+      const completingOwner = status === "complete" && !subId && t.id === id;
+      if ((status === "active" || completingOwner) && isActive(s)) {
+        touched = true;
+        demoted.push({ id: t.id, subId: s.id, item: s });
+        return as(s, "primed");
+      }
+      return s;
+    });
+    return touched ? { ...y, checklist } : y;
+  });
+  void commit(state, next);
   // Demoted first, so its timer is gone before this one's starts.
   for (const d of demoted) {
-    const patch = await applyTimer(state, d, "active", "primed");
-    if ("timerStartedAt" in patch) await updateTodo(state, d.id, patch);
+    const patch = await applyTimer(state, d.item, "active", "primed");
+    if ("timerStartedAt" in patch) await updateItem(state, d.id, d.subId, patch);
   }
-  const patch = await applyTimer(state, t, from, status);
-  if ("timerStartedAt" in patch) await updateTodo(state, id, patch);
+  const patch = await applyTimer(state, found.item, from, status);
+  if ("timerStartedAt" in patch) await updateItem(state, id, subId, patch);
 }
 
-/** Start the focus timer for an active to-do's length, and remember it
- *  as this to-do's (so leaving active cancels it). */
-export async function startTimerFor(state, id) {
-  const t = readTodos(state).find((x) => x.id === id);
-  if (!t || statusOf(t) !== "active") return;
-  const startedAt = await startTodoTimer(state, t);
-  if (startedAt) await updateTodo(state, id, { timerStartedAt: startedAt });
+/** Start the focus timer for an active to-do's (or sub-to-do's) length,
+ *  and remember it as that item's (so leaving active cancels it). */
+export async function startTimerFor(state, id, subId = null) {
+  const found = findItem(state, id, subId);
+  if (!found || statusOf(found.item) !== "active") return;
+  const startedAt = await startTodoTimer(state, found.item);
+  if (startedAt) await updateItem(state, id, subId, { timerStartedAt: startedAt });
 }
 
 /** What a click on the toggle does (`back`: ⌘- or ⇧-click): one step
  *  through the states, or — a plain click on a completed to-do — delete
- *  it for good. Resolves to the action taken ("delete", a status, or
+ *  it for good. A sub-to-do's toggle (`subId`) works the same. Resolves to the action taken ("delete", a status, or
  *  null for none). */
-export async function clickTodo(state, id, back = false) {
-  const t = readTodos(state).find((x) => x.id === id);
-  if (!t) return null;
-  const action = clickAction(statusOf(t), back);
-  if (action === "delete") await removeTodo(state, id);
-  else if (action) await setTodoStatus(state, id, action);
+export async function clickTodo(state, id, back = false, subId = null) {
+  const found = findItem(state, id, subId);
+  if (!found) return null;
+  const action = clickAction(statusOf(found.item), back);
+  if (action === "delete") await (subId ? removeSub(state, id, subId) : removeTodo(state, id));
+  else if (action) await setTodoStatus(state, id, action, subId);
   return action;
 }
 

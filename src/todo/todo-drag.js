@@ -14,8 +14,11 @@ import { reorderTodos } from "./todo-store.js";
 function peersOf(row) {
   const list = row.parentElement;
   if (!list) return [];
+  // A to-do lifted into the top block by a sub-to-do (`is-lifted`) is
+  // not one of them: it has no grip, and the rows it sits among are not
+  // its kind.
   const kind = row.classList.contains("is-primed") ? ".is-primed" : ".is-inactive";
-  return [...list.querySelectorAll(`:scope > .todo-item${kind}`)];
+  return [...list.querySelectorAll(`:scope > .todo-item${kind}:not(.is-lifted)`)];
 }
 
 /**

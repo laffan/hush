@@ -5,8 +5,8 @@
  * the row it was opened from; ↑ / ↓ and Enter, or a click, pick;
  * Escape or a press outside closes it.
  *
- * Also the panel's header search (`mountFileSearch`): every file on every
- * desk, and picking one starts a to-do linked to it.
+ * Also the composer's attach field (`mountFileSearch`, todo-composer.js):
+ * every file on every desk, and picking one attaches it to the new to-do.
  */
 import { escHtml, leafIcon, typeIcons } from "../sidebar/files-panel-shared.js";
 import { allDeskLeaves } from "../state/cross-desk.js";
@@ -41,10 +41,10 @@ const rowHtml = (r, i, picked) => `<button type="button" class="todo-search-row$
   </button>`;
 
 /**
- * The header's search field: type, and the files that match drop down
+ * The composer's file search: type, and the files that match drop down
  * under it; ↑ / ↓ and Enter, or a click, pick one (`onPick(leaf)`), and
  * the field clears. Escape clears a field with something in it; on an
- * empty one it is left to the panel (which closes).
+ * empty one it is left to the list (which closes its host).
  *
  * @param {object} state
  * @param {HTMLInputElement} input

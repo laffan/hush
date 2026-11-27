@@ -5,37 +5,30 @@
  * (sidebar/desk-dashboard.js). The host makes the element and places
  * it; `mountTodoList` fills it and wires it, and `destroy` lets go.
  *
- * Modelled on Things: a list grouped under headings — here, desks; the
- * desk in front first, then the others that have something on them — a
- * status toggle and a title per item, and a note under the title for
- * when there is more to say. Clicking an item opens it: the note appears
- * and is typed into.
+ * Modelled on Things. Top to bottom, in one scrolling column:
  *
- * The toggle steps through inactive → primed → active → complete
- * (todo-status.js; ⌘-click steps back). Primed and active to-dos leave
- * their desks for a block at the top of the list — the active one first,
- * inverted — each tagged with its desk; completed ones leave for the
- * Completed section at the foot. An active to-do whose title ends in a
- * length (`30m`, `1h33m`) offers a Start timer button.
+ *   - the file section (the panel only, opened over a file —
+ *     todo-file-context.js): the file's to-do, open, or a draft of one
+ *     titled "Changes to <name>", which is kept only once it has a note
+ *     or a sub-to-do;
+ *   - the composer (todo-composer.js): a new to-do laid out as one —
+ *     title, notes, and a file search and desk menu to say where it goes;
+ *   - the list (todo-item-html.js): the primed and active block, the
+ *     desks, and Completed at the foot.
  *
- * In place of a heading, the head is a search across every file on
- * every desk (todo-search.js#mountFileSearch): picking a file adds an
- * empty to-do on that file's desk, linked to it, with the caret in its
- * title.
- *
- * An inactive or primed to-do also has a grip in its hover tools,
- * between "+" and ×: an inactive one drags within its desk, a primed one
- * within the primed (todo-drag.js). The active one stays first.
- *
- * On hover an item offers the magnifying glass (find a desk or a file —
- * todo-search.js — to move or link it), the "+" when it has no file
- * (make one in its desk's Inbox and link it), and delete. A linked file
- * shows under the title; clicking it opens it on its desk.
+ * A to-do is a status toggle, a title, a markdown note (todo-notes.js)
+ * and sub-to-dos, each with the same toggle and the same Start timer as
+ * a to-do (todo-status.js). Clicking a to-do opens it: its note becomes
+ * an editor and all its sub-to-dos show. A closed one shows only the
+ * sub-to-dos under way — the primed or active ones that put it in the
+ * top block.
  *
  * Keys in a title: Enter adds an item below, Backspace in an empty one
  * removes it, ↑ / ↓ at either end step between items, Tab goes to the
- * note. Escape leaves the field; an Escape anywhere else in the list is
- * the host's (`onEscape`: the panel closes, the dashboard closes).
+ * note. In a note, Tab goes to the sub-to-dos and ⇧Tab back to the
+ * title. In a sub-to-do, Enter adds one below, Backspace in an empty one
+ * removes it, ↑ / ↓ step between them. Escape leaves a field; an Escape
+ * anywhere else in the list is the host's (`onEscape`).
  *
  * The model is todo-store.js. Text edits write through `commitSoon`
  * without re-rendering (it would take the field out from under the
@@ -47,18 +40,18 @@
  * the `todos-changed` its own commits fire, so two live lists would not
  * see each other's edits.
  */
-import { escHtml, leafIcon, DRAG_HANDLE_SVG } from "../sidebar/files-panel-shared.js";
 import { wireTodoDrag } from "./todo-drag.js";
 import {
-  readTodos, linkedNode, patchInPlace, commitSoon, flushTodos, addTodo, removeTodo, clickTodo, startTimerFor,
-  setTodoDesk, linkTodoFile, unlinkTodoFile, createTodoFile,
+  readTodos, subsOf, linkedNode, fileTodo, patchInPlace, patchSubInPlace, commitSoon, flushTodos, addTodo,
+  removeTodo, addSubs, removeSub, pruneEmptySubs, makeSub, clickTodo, startTimerFor, setTodoDesk, linkTodoFile,
+  unlinkTodoFile, createTodoFile,
 } from "./todo-store.js";
-import { openTodoSearch, mountFileSearch } from "./todo-search.js";
-import { statusOf, clickAction, statusIcon, statusLabel, parseDuration, todoTimerRunning } from "./todo-status.js";
-
-const SEARCH = `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.25"/><path d="M10.25 10.25 13.5 13.5"/></svg>`;
-const PLUS = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>`;
-const CROSS = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>`;
+import { openTodoSearch } from "./todo-search.js";
+import { statusOf, clickAction } from "./todo-status.js";
+import { CROSS, paintStatus, previewStatus, bodyHtml, fileSectionHtml } from "./todo-item-html.js";
+import { mountNotes, notesEditorOf, notesPreviewHtml } from "./todo-notes.js";
+import { mountComposer } from "./todo-composer.js";
+import { contextFile, draftTitle, DRAFT_ID } from "./todo-file-context.js";
 
 /** How long a just-toggled item stays where it is before it moves (to
  *  the top block, or down its desk). */
@@ -69,138 +62,17 @@ let embedded = null; // the Desk Dashboard's list, while it is mounted
 /** The Desk Dashboard's list while it is on screen, else null. */
 export function embeddedTodoList() { return embedded; }
 
-function deskName(state, deskId) {
-  return (state.settings?.desks || []).find((d) => d.id === deskId)?.name
-    || (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId)?.name
-    || "Untitled desk";
-}
-
-/** The block at the top: the active to-do, then the primed ones, from
- *  every desk, in list order. */
-function nowItems(state) {
-  const todos = readTodos(state);
-  return [...todos.filter((t) => statusOf(t) === "active"), ...todos.filter((t) => statusOf(t) === "primed")];
-}
-
-/** The groups to show, in order: the desk in front (always, so there is
- *  somewhere to add), then every other desk with a to-do, in the user's
- *  desk order, then to-dos whose desk is gone. Only to-dos not yet
- *  started: primed and active ones are in the top block, completed ones
- *  in the Completed section at the foot. */
-function groups(state) {
-  const todos = readTodos(state).filter((t) => statusOf(t) === "inactive");
-  const active = state.settings?.activeDeskId;
-  const desks = (state.settings?.desks || []).map((d) => d.id)
-    .filter((id) => (state.fileTree || []).some((n) => n.type === "desk" && n.id === id));
-  const order = [active, ...desks.filter((id) => id !== active)].filter(Boolean);
-  const known = new Set(order);
-  const out = order
-    .map((deskId) => ({ deskId, name: deskName(state, deskId), items: todos.filter((t) => t.deskId === deskId) }))
-    .filter((g) => g.deskId === active || g.items.length);
-  const orphans = todos.filter((t) => !known.has(t.deskId));
-  if (orphans.length) out.push({ deskId: "", name: "No desk", items: orphans });
-  return out;
-}
-
-/** Draw a to-do's status onto its row (and its toggle). */
-function paintStatus(li, status) {
-  for (const s of ["inactive", "primed", "active", "complete"]) li.classList.toggle(`is-${s}`, s === status);
-  li.classList.toggle("done", status === "complete");
-  const btn = li.querySelector(".todo-status");
-  if (!btn) return;
-  btn.innerHTML = statusIcon(status);
-  btn.classList.remove("previewing", "will-delete", "no-action");
-  btn.dataset.tooltip = statusLabel(status);
-  btn.setAttribute("aria-label", statusLabel(status));
-}
-
-/** Hovering a toggle shows what a click will do — the state it would
- *  move to, as ⌘ / ⇧ say (back) or don't (forward); the red trash can
- *  on a completed to-do; the icon dimmed where a click does nothing
- *  (back from inactive). */
-function previewStatus(btn, status, back) {
-  const action = clickAction(status, back);
-  btn.innerHTML = statusIcon(action || status);
-  btn.classList.add("previewing");
-  btn.classList.toggle("will-delete", action === "delete");
-  btn.classList.toggle("no-action", !action);
-  btn.dataset.tooltip = statusLabel(status, back);
-  btn.setAttribute("aria-label", statusLabel(status, back));
-}
-
-function itemHtml(state, t, openId, { showDesk = false } = {}) {
-  const node = linkedNode(state, t);
-  const notes = t.notes || "";
-  const status = statusOf(t);
-  const cls = ["todo-item", `is-${status}`];
-  if (status === "complete") cls.push("done");
-  if (t.id === openId) cls.push("open");
-  if (notes) cls.push("has-notes");
-  const file = node
-    ? `<span class="todo-file"><button type="button" class="todo-file-open" data-act="open-file" data-tooltip="Open">${leafIcon({ ...node, type: node.type })}<span class="todo-file-name">${escHtml(node.name)}</span></button><button type="button" class="todo-file-unlink" data-act="unlink" data-tooltip="Unlink" aria-label="Unlink file">${CROSS}</button></span>`
-    : "";
-  // In the top block an item is away from its desk's heading, so it
-  // says which desk it belongs to.
-  const desk = showDesk ? `<span class="todo-desk-tag">${escHtml(deskName(state, t.deskId))}</span>` : "";
-  // An active to-do whose title ends in a length offers its timer, at
-  // the right of the line under the title.
-  const length = status === "active" ? parseDuration(t.title) : null;
-  const running = length && todoTimerRunning(state, t);
-  const timerBtn = length
-    ? `<button type="button" class="todo-timer" data-act="start-timer"${running ? " disabled" : ""}>${running ? "Timer running" : "Start timer"}</button>`
-    : "";
-  const meta = file || desk || timerBtn ? `<span class="todo-meta">${desk}${file}${timerBtn}</span>` : "";
-  return `<li class="${cls.join(" ")}" data-id="${escHtml(t.id)}">
-    <button type="button" class="todo-status" data-act="cycle" data-tooltip="${statusLabel(status)}" aria-label="${statusLabel(status)}">${statusIcon(status)}</button>
-    <div class="todo-main">
-      <textarea class="todo-title" rows="1" placeholder="New To-Do" spellcheck="false" aria-label="To-do">${escHtml(t.title || "")}</textarea>
-      <textarea class="todo-notes" rows="1" placeholder="Notes" aria-label="Notes">${escHtml(notes)}</textarea>
-      ${meta}
-    </div>
-    <span class="todo-tools">
-      <button type="button" data-act="search" data-tooltip="Find a desk or file" aria-label="Find a desk or file">${SEARCH}</button>
-      ${node ? "" : `<button type="button" data-act="new-file" data-tooltip="New document in the desk's Inbox" aria-label="New document in the desk's Inbox">${PLUS}</button>`}
-      ${status === "inactive" || status === "primed"
-        ? `<span class="todo-grip" data-act="drag" data-tooltip="Drag to reorder" aria-hidden="true">${DRAG_HANDLE_SVG}</span>` : ""}
-      <button type="button" data-act="delete" data-tooltip="Delete" aria-label="Delete">${CROSS}</button>
-    </span>
-  </li>`;
-}
-
-function groupHtml(state, g, openId) {
-  const items = g.items.map((t) => itemHtml(state, t, openId)).join("");
-  return `<section class="todo-group" data-desk-id="${escHtml(g.deskId)}">
-    <div class="todo-group-head">
-      <span class="todo-group-name">${escHtml(g.name)}</span>
-      ${g.deskId ? `<button type="button" class="todo-group-add" data-act="add-here" data-tooltip="New To-Do" aria-label="New To-Do on ${escHtml(g.name)}">${PLUS}</button>` : ""}
-    </div>
-    <ul class="todo-items">${items || `<li class="todo-empty" data-act="add-here">No to-dos</li>`}</ul>
-  </section>`;
-}
-
-/** Completed to-dos, the most recently completed first. */
-function completedItems(state) {
-  return readTodos(state).filter((t) => statusOf(t) === "complete")
-    .sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
-}
-
-/** The foot of the list: "Completed · n", and — while open — the
- *  completed to-dos, each tagged with its desk. Nothing when there are
- *  none. */
-function completedHtml(state, openId, shown) {
-  const items = completedItems(state);
-  if (!items.length) return "";
-  return `<section class="todo-completed${shown ? " shown" : ""}">
-    <button type="button" class="todo-completed-toggle" data-act="toggle-completed" aria-expanded="${shown}">Completed · ${items.length}</button>
-    ${shown ? `<ul class="todo-items">${items.map((t) => itemHtml(state, t, openId, { showDesk: true })).join("")}</ul>` : ""}
-  </section>`;
-}
-
 /** Fit a textarea to its text. */
 function fit(el) {
   el.style.height = "auto";
   el.style.height = `${el.scrollHeight}px`;
 }
+
+/** A field the keyboard writes into: a title, a note's editor, a search. */
+const isField = (n) => n instanceof HTMLTextAreaElement || n instanceof HTMLInputElement || !!notesEditorOf(n);
+
+/** A pasted line, without the list or checkbox marks it came with. */
+const cleanLine = (s) => s.replace(/^\s*(?:[-*+•]\s+)?(?:\[[ xX]?\]\s*)?/, "").trim();
 
 /**
  * Fill `el` with the list and wire it. The host has made `el` and placed
@@ -209,71 +81,168 @@ function fit(el) {
  * @param {object} state
  * @param {HTMLElement} el
  * @param {object} [opts]
- * @param {() => void} [opts.onClose]   Shows a × in the head that calls it.
+ * @param {() => void} [opts.onClose]   Shows a × in the corner that calls it.
  * @param {() => void} [opts.onEscape]  An Escape that isn't a field's.
  * @param {(fileId: string) => void} [opts.onOpenFile]  Before a linked
  *   file opens (the dashboard closes first).
  * @param {boolean} [opts.embedded]  The Desk Dashboard's list — the one
  *   `embeddedTodoList` answers with while it is mounted.
- * @returns {{ el, render, focusFirst, focusSearch, destroy }}
+ * @param {boolean} [opts.fileContext]  Show the file section for the
+ *   file in front (the floating panel).
+ * @returns {{ el, render, focusFirst, focusInput, destroy }}
  */
-export function mountTodoList(state, el, { onClose = null, onEscape = null, onOpenFile = null, embedded: isEmbedded = false } = {}) {
+export function mountTodoList(state, el, {
+  onClose = null, onEscape = null, onOpenFile = null, embedded: isEmbedded = false, fileContext = false,
+} = {}) {
   el.classList.add("todo-list");
-  el.innerHTML = `<header class="todo-head">
-      <span class="todo-find">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.25"/><path d="M10.25 10.25 13.5 13.5"/></svg>
-        <input class="todo-find-input" type="search" placeholder="New To-Do for a file…" spellcheck="false" autocomplete="off" aria-label="Find a file to make a to-do for" />
-      </span>
-      <button type="button" class="todo-head-btn" data-act="add" data-tooltip="New To-Do" aria-label="New To-Do">${PLUS}</button>
-      ${onClose ? `<button type="button" class="todo-head-btn" data-act="close" data-tooltip="Close" aria-label="Close">${CROSS}</button>` : ""}
-      <div class="todo-find-results" role="listbox" hidden></div>
-    </header>
-    <div class="todo-body"></div>`;
+  el.innerHTML = `${onClose ? `<button type="button" class="todo-head-btn todo-close" data-act="close" data-tooltip="Close" aria-label="Close">${CROSS}</button>` : ""}
+    <div class="todo-scroll">
+      <div class="todo-file-slot"></div>
+      <div class="todo-composer-slot"></div>
+      <div class="todo-body"></div>
+    </div>`;
+  const scroller = el.querySelector(".todo-scroll");
+  const fileSlot = el.querySelector(".todo-file-slot");
   const body = el.querySelector(".todo-body");
-  const find = el.querySelector(".todo-find-input");
 
-  let openId = null;     // the item showing its note
+  let openId = null;     // the list item that is open
   let pending = false;   // a render held off while a field had focus
   let search = null;
   let destroyed = false;
   let moveTimer = 0;
   let showCompleted = false; // the Completed section, shut on every open
-
   let dragging = false;
-  const editing = () => dragging || !!el.querySelector(".todo-title:focus, .todo-notes:focus") || !!search;
+  let ctx = null;        // the file in front (file section), as last drawn
+  let draft = null;      // its draft: { fileId, title }
+  const editors = new Map(); // row → its note's editor
 
-  /** Re-render, then put the focus back: `focus` is `{ id, field, at }`,
-   *  `at` a caret offset ("end" for the end). */
-  function render(focus = null) {
-    pending = false;
-    const scroll = body.scrollTop;
-    const now = nowItems(state);
-    body.innerHTML = (now.length
-      ? `<ul class="todo-items todo-now">${now.map((t) => itemHtml(state, t, openId, { showDesk: true })).join("")}</ul>`
-      : "") + groups(state).map((g) => groupHtml(state, g, openId)).join("")
-      + completedHtml(state, openId, showCompleted);
-    body.querySelectorAll("textarea").forEach(fit);
-    body.scrollTop = scroll;
-    if (focus) {
-      const f = body.querySelector(`.todo-item[data-id="${CSS.escape(focus.id)}"] .todo-${focus.field || "title"}`);
-      if (f) {
-        f.focus();
-        const at = focus.at === "end" || focus.at == null ? f.value.length : focus.at;
-        f.setSelectionRange(at, at);
-      }
-    }
-  }
-  const renderSoon = () => { if (editing()) pending = true; else render(); };
+  const focusedField = () => {
+    const a = document.activeElement;
+    return isField(a) && (fileSlot.contains(a) || body.contains(a)) ? a : null;
+  };
+  const editing = () => dragging || !!search || !!focusedField();
 
   const itemOf = (node) => node?.closest?.(".todo-item");
   const todoOf = (item) => readTodos(state).find((t) => t.id === item?.dataset.id);
-  const siblingsTitles = () => [...body.querySelectorAll(".todo-item .todo-title")];
+  const rowById = (id) => el.querySelector(`.todo-item[data-id="${CSS.escape(id)}"]`);
+  const isDraft = (item) => item?.dataset.id === DRAFT_ID;
 
+  // ── Notes editors: one on each open row ──
+  function mountRowNotes(li) {
+    const host = li.querySelector(":scope > .todo-main > .todo-notes-field");
+    if (!host || editors.has(li)) return;
+    const ed = mountNotes(host, {
+      value: todoOf(li)?.notes || "",
+      placeholder: "Notes",
+      onChange: (text) => onNotes(li, text),
+    });
+    editors.set(li, ed);
+  }
+  function unmountRowNotes(li) {
+    editors.get(li)?.destroy();
+    editors.delete(li);
+  }
+  function unmountAll() {
+    for (const ed of editors.values()) ed.destroy();
+    editors.clear();
+  }
+
+  /** Re-render, then put the focus back: `focus` is `{ id, field, subId,
+   *  at }` — `field` "title", "notes" or "sub", `at` a caret offset
+   *  ("end" for the end). */
+  function render(focus = null) {
+    pending = false;
+    const scroll = scroller.scrollTop;
+    // A button of a row that has the keyboard (Tab onto "Sub-to-do", say)
+    // gets it back in the new markup.
+    const keep = focus ? null : focusedButton();
+    unmountAll();
+    ctx = fileContext ? contextFile(state) : null;
+    if (!ctx) draft = null;
+    else if (draft?.fileId !== ctx.fileId) draft = { fileId: ctx.fileId, title: draftTitle(ctx.name) };
+    const pinned = ctx ? fileTodo(state, ctx.fileId) : null;
+    fileSlot.innerHTML = ctx ? fileSectionHtml(state, ctx, pinned, draft) : "";
+    body.innerHTML = bodyHtml(state, openId, showCompleted, pinned?.id || null);
+    for (const t of el.querySelectorAll(".todo-item textarea")) fit(t);
+    for (const li of el.querySelectorAll(".todo-item.open")) mountRowNotes(li);
+    scroller.scrollTop = scroll;
+    if (focus) restoreFocus(focus);
+    else if (keep) refocusButton(keep);
+  }
+
+  function focusedButton() {
+    const a = document.activeElement;
+    const li = a instanceof HTMLButtonElement && a.dataset.act ? itemOf(a) : null;
+    if (!li || !(fileSlot.contains(li) || body.contains(li))) return null;
+    return { id: li.dataset.id, act: a.dataset.act, subId: a.closest(".todo-sub")?.dataset.subId || null };
+  }
+  function refocusButton({ id, act, subId }) {
+    const li = rowById(id);
+    const scope = subId ? li?.querySelector(`.todo-sub[data-sub-id="${CSS.escape(subId)}"]`) : li;
+    scope?.querySelector(`[data-act="${CSS.escape(act)}"]`)?.focus({ preventScroll: true });
+  }
+  const renderSoon = () => { if (editing()) pending = true; else render(); };
+
+  function restoreFocus({ id, field = "title", subId = null, at = "end" }) {
+    const li = rowById(id);
+    if (!li) return;
+    if (field === "notes") { editors.get(li)?.focus(at); return; }
+    const f = field === "sub"
+      ? li.querySelector(`.todo-sub[data-sub-id="${CSS.escape(subId || "")}"] .todo-sub-title`)
+      : li.querySelector(":scope > .todo-main > .todo-title");
+    if (!f) return;
+    f.focus();
+    const pos = at === "end" || at == null ? f.value.length : at;
+    f.setSelectionRange(pos, pos);
+  }
+
+  /** Open a row of the list (the file section's is always open): its
+   *  note becomes an editor, its sub-to-dos all show. The row that was
+   *  open closes — its preview redrawn, any sub-to-do never written in
+   *  dropped. Classes only; nothing re-renders. */
   function setOpen(id) {
     if (openId === id) return;
+    const prev = openId ? body.querySelector(`.todo-item[data-id="${CSS.escape(openId)}"]`) : null;
+    const prevId = openId;
     openId = id;
-    body.querySelectorAll(".todo-item").forEach((li) => li.classList.toggle("open", li.dataset.id === id));
-    body.querySelectorAll(".todo-item.open .todo-notes").forEach(fit);
+    if (prev) {
+      prev.classList.remove("open");
+      unmountRowNotes(prev);
+      const notes = todoOf(prev)?.notes || "";
+      prev.querySelector(":scope > .todo-main > .todo-notes-preview").innerHTML = notesPreviewHtml(notes);
+      if (pruneEmptySubs(state, prevId)) {
+        prev.querySelectorAll(".todo-sub").forEach((r) => { if (!r.querySelector(".todo-sub-title").value.trim()) r.remove(); });
+      }
+    }
+    const li = id ? body.querySelector(`.todo-item[data-id="${CSS.escape(id)}"]`) : null;
+    if (li) {
+      li.classList.add("open");
+      mountRowNotes(li);
+      li.querySelectorAll("textarea").forEach(fit);
+    }
+  }
+
+  /** The file section's draft becomes a to-do — its title, the note
+   *  typed so far, and `checklist` — on the file's desk. Returns it. */
+  function materialize(li, { notes = "", checklist = [] } = {}) {
+    const title = li.querySelector(":scope > .todo-main > .todo-title")?.value.trim() || "";
+    const t = addTodo(state, ctx.deskId, { title, notes, fileId: ctx.fileId, fileType: ctx.type, checklist });
+    li.dataset.id = t.id;
+    li.classList.remove("is-draft");
+    paintStatus(li, "inactive");
+    return t;
+  }
+
+  function onNotes(li, text) {
+    if (isDraft(li)) {
+      if (!text.trim() || !ctx) return;
+      materialize(li, { notes: text });
+      // Its tools and toggle are the draft's until the next render; run
+      // one as soon as the keyboard leaves it.
+      pending = true;
+    } else patchInPlace(state, li.dataset.id, { notes: text });
+    li.classList.toggle("has-notes", !!text);
+    commitSoon(state);
   }
 
   function add(deskId, afterId = null) {
@@ -283,59 +252,92 @@ export function mountTodoList(state, el, { onClose = null, onEscape = null, onOp
     render({ id: t.id, field: "title" });
   }
 
-  // The header's search: a file picked there gets an empty to-do, on its
-  // desk, linked to it — caret in the title.
-  mountFileSearch(state, find, el.querySelector(".todo-find-results"), (leaf) => {
-    const t = addTodo(state, leaf.deskId, { fileId: leaf.fileId, fileType: leaf.type });
-    openId = t.id;
-    render({ id: t.id, field: "title" });
+  /** A sub-to-do added to a row — to the draft, which that makes a
+   *  to-do — after `afterSubId`, with the caret in it. */
+  function addSub(li, afterSubId = null) {
+    let id = li.dataset.id;
+    let subId;
+    if (isDraft(li)) {
+      if (!ctx) return;
+      const sub = makeSub("");
+      id = materialize(li, { notes: editors.get(li)?.value() || "", checklist: [sub] }).id;
+      subId = sub.id;
+    } else subId = addSubs(state, id, [""], afterSubId)[0]?.id;
+    if (!subId) return;
+    if (body.contains(li)) openId = id;
+    render({ id, field: "sub", subId });
+  }
+
+  const composer = mountComposer(state, el.querySelector(".todo-composer-slot"), {
+    onCreated: () => render(),
+  });
+
+  // Buttons on an open row keep the keyboard where it is, so a press on
+  // one doesn't close the row out from under the click (WebKit moves the
+  // focus off a field on a button press; Chromium onto the button). Not
+  // the toggles: a status clicked is the end of an edit, and the row
+  // closes and moves as it always has.
+  el.addEventListener("mousedown", (e) => {
+    const b = e.target instanceof Element ? e.target.closest("button") : null;
+    if (b && !b.classList.contains("todo-status") && itemOf(b)?.classList.contains("open") && focusedField()) {
+      e.preventDefault();
+    }
   });
 
   // ── Clicks ──
   el.addEventListener("click", async (e) => {
-    const btn = e.target instanceof Element ? e.target.closest("[data-act]") : null;
-    const item = itemOf(e.target);
-    if (!btn) {
-      // A click anywhere on an item opens it, title first.
-      if (item && !(e.target instanceof HTMLTextAreaElement)) {
-        setOpen(item.dataset.id);
-        item.querySelector(".todo-title")?.focus();
-      }
+    const t = e.target instanceof Element ? e.target : null;
+    const btn = t?.closest("[data-act]");
+    const item = itemOf(t);
+    if (!btn || !el.contains(btn)) {
+      // A click anywhere on a row opens it: on a sub-to-do, into that
+      // one; on the note, into the note; anywhere else, the title.
+      if (!item || isField(t)) return;
+      if (body.contains(item)) setOpen(item.dataset.id);
+      const sub = t.closest(".todo-sub");
+      if (sub) sub.querySelector(".todo-sub-title")?.focus();
+      else if (t.closest(".todo-notes-preview, .todo-notes-field")) editors.get(item)?.focus();
+      else item.querySelector(":scope > .todo-main > .todo-title")?.focus();
       return;
     }
     const act = btn.dataset.act;
     const todo = todoOf(item);
+    const subId = btn.closest(".todo-sub")?.dataset.subId || null;
     if (act === "drag") return; // the grip's press is the drag's (todo-drag.js)
     if (act === "close") { onClose?.(); return; }
     if (act === "toggle-completed") { showCompleted = !showCompleted; render(); return; }
-    if (act === "add") { add(state.settings?.activeDeskId || groups(state)[0]?.deskId); return; }
     if (act === "add-here") { add(btn.closest(".todo-group")?.dataset.deskId); return; }
-    if (!todo) return;
+    if (act === "sub-add" && item) { addSub(item); return; }
+    if (!todo) return; // the draft has nothing else to act on
     if (act === "cycle") {
       // ⌘-click steps back (⇧-click too). A ⌘-click can't count toward
       // the double-⌘ that toggles the panel: ui/triple-tap.js resets
       // on any pointer press.
       const back = e.metaKey || e.shiftKey;
-      const action = clickAction(statusOf(todo), back);
+      const target = subId ? subsOf(todo).find((s) => s.id === subId) : todo;
+      const action = target ? clickAction(statusOf(target), back) : null;
       if (!action) return;
       if (action === "delete") {
         // For good — and gone at once: there is nothing left to watch.
-        void clickTodo(state, todo.id, back);
+        void clickTodo(state, todo.id, back, subId);
         render();
         return;
       }
       // Shown at once where it is (the real state, not the next click's
       // preview, until the pointer leaves); it moves — to the top block,
       // back to its desk, or down into Completed — a moment later.
-      paintStatus(item, action);
+      paintStatus(btn.closest(".todo-sub") || item, action);
       hover.settled = btn;
-      void clickTodo(state, todo.id, back);
+      void clickTodo(state, todo.id, back, subId);
       clearTimeout(moveTimer);
       moveTimer = setTimeout(renderSoon, SINK_MS);
     } else if (act === "start-timer") {
       btn.disabled = true;
       btn.textContent = "Timer running";
-      await startTimerFor(state, todo.id);
+      await startTimerFor(state, todo.id, subId);
+    } else if (act === "sub-delete" && subId) {
+      void removeSub(state, todo.id, subId);
+      render();
     } else if (act === "delete") {
       void removeTodo(state, todo.id);
       render();
@@ -377,15 +379,22 @@ export function mountTodoList(state, el, { onClose = null, onEscape = null, onOp
   // `settled` a toggle just clicked, which shows its new state rather
   // than the next click's until the pointer leaves it.
   const hover = { btn: null, back: false, settled: null };
+  const rowOfToggle = (b) => b?.closest(".todo-sub") || itemOf(b);
+  /** The to-do or sub-to-do a toggle belongs to (none for the draft's). */
+  const itemOfToggle = (b) => {
+    const todo = todoOf(itemOf(b));
+    const sub = b?.closest(".todo-sub");
+    return sub ? subsOf(todo).find((s) => s.id === sub.dataset.subId) : todo;
+  };
   const showHover = () => {
     const b = hover.btn;
-    const todo = todoOf(itemOf(b));
-    if (!b || !todo) return;
-    if (hover.settled === b) paintStatus(itemOf(b), statusOf(todo));
-    else previewStatus(b, statusOf(todo), hover.back);
+    const it = itemOfToggle(b);
+    if (!b || !it) return;
+    if (hover.settled === b) paintStatus(rowOfToggle(b), statusOf(it));
+    else previewStatus(b, statusOf(it), hover.back);
   };
   el.addEventListener("pointerover", (e) => {
-    const b = e.target instanceof Element ? e.target.closest(".todo-status") : null;
+    const b = e.target instanceof Element ? e.target.closest(".todo-item .todo-status") : null;
     if (!b || b === hover.btn) return;
     hover.btn = b;
     hover.back = e.metaKey || e.shiftKey;
@@ -396,8 +405,8 @@ export function mountTodoList(state, el, { onClose = null, onEscape = null, onOp
     if (!b || (e.relatedTarget instanceof Node && b.contains(e.relatedTarget))) return;
     hover.btn = null;
     if (hover.settled === b) hover.settled = null;
-    const todo = todoOf(itemOf(b));
-    if (todo && b.isConnected) paintStatus(itemOf(b), statusOf(todo));
+    const it = itemOfToggle(b);
+    if (it && b.isConnected) paintStatus(rowOfToggle(b), statusOf(it));
   });
   // Pressing or letting go of ⌘ / ⇧ while over a toggle flips its preview.
   const onModifier = (e) => {
@@ -411,36 +420,61 @@ export function mountTodoList(state, el, { onClose = null, onEscape = null, onOp
   window.addEventListener("keydown", onModifier, true);
   window.addEventListener("keyup", onModifier, true);
 
-  // ── Typing ──
+  // ── Typing (titles; the notes write through `onNotes`) ──
   el.addEventListener("input", (e) => {
     const f = e.target;
     if (!(f instanceof HTMLTextAreaElement)) return;
     const item = itemOf(f);
     if (!item) return;
-    fit(f);
-    const field = f.classList.contains("todo-notes") ? "notes" : "title";
+    if (f.classList.contains("todo-sub-title")) { onSubInput(item, f); return; }
+    if (!f.classList.contains("todo-title")) return;
     // A title is one line: a pasted break becomes a space.
-    if (field === "title" && f.value.includes("\n")) {
+    if (f.value.includes("\n")) {
       const at = f.selectionStart;
       f.value = f.value.replace(/\n+/g, " ");
       f.setSelectionRange(at, at);
     }
-    patchInPlace(state, item.dataset.id, { [field]: f.value });
-    item.classList.toggle("has-notes", field === "notes" ? !!f.value : item.classList.contains("has-notes"));
+    fit(f);
+    if (isDraft(item)) { if (draft) draft.title = f.value; return; }
+    patchInPlace(state, item.dataset.id, { title: f.value });
     commitSoon(state);
   });
 
+  /** Typing in a sub-to-do. Pasted lines become a sub-to-do each, as a
+   *  list pasted into a Things checklist does. */
+  function onSubInput(item, f) {
+    const row = f.closest(".todo-sub");
+    const id = item.dataset.id;
+    const subId = row?.dataset.subId;
+    if (!subId) return;
+    if (f.value.includes("\n")) {
+      const [first, ...rest] = f.value.split(/\r?\n/).map(cleanLine);
+      f.value = first;
+      patchSubInPlace(state, id, subId, { title: first });
+      const more = rest.filter(Boolean);
+      if (more.length) {
+        const made = addSubs(state, id, more, subId);
+        render({ id, field: "sub", subId: made[made.length - 1].id });
+        return;
+      }
+    } else patchSubInPlace(state, id, subId, { title: f.value });
+    fit(f);
+    commitSoon(state);
+  }
+
   el.addEventListener("focusin", (e) => {
     const item = itemOf(e.target);
-    if (item && e.target instanceof HTMLTextAreaElement) setOpen(item.dataset.id);
+    if (item && body.contains(item) && isField(e.target)) setOpen(item.dataset.id);
   });
   el.addEventListener("focusout", () => {
-    // After the focus has landed: on another item's field, nothing to do.
+    // After the focus has landed: on a field of a row in the list, that
+    // row's focusin has opened it; anywhere else, the open row closes.
     setTimeout(() => {
-      if (el.contains(document.activeElement) && document.activeElement instanceof HTMLTextAreaElement) return;
-      if (search) return;
-      setOpen(null);
-      if (pending) render();
+      if (destroyed || search) return;
+      const a = document.activeElement;
+      const inList = isField(a) && body.contains(itemOf(a));
+      if (!inList) setOpen(null);
+      if (pending && !editing()) render();
     }, 0);
   });
 
@@ -450,57 +484,100 @@ export function mountTodoList(state, el, { onClose = null, onEscape = null, onOp
       if (search) return; // the search takes its own
       e.preventDefault();
       e.stopPropagation();
-      if (f instanceof HTMLTextAreaElement) f.blur();
+      // Out of a title or a note, the keyboard stays in the list (not
+      // on <body>, out of its reach), so the next Escape is the host's.
+      if (f instanceof HTMLTextAreaElement || notesEditorOf(f)) el.focus({ preventScroll: true });
       else onEscape?.();
       return;
     }
-    if (!(f instanceof HTMLTextAreaElement)) return;
     const item = itemOf(f);
-    const todo = todoOf(item);
-    if (!todo) return;
-    const isTitle = f.classList.contains("todo-title");
+    if (!item) return; // the composer's fields are its own
     const mods = e.metaKey || e.ctrlKey || e.altKey;
-    if (isTitle && e.key === "Enter" && !mods && !e.shiftKey && !e.isComposing) {
+    if (notesEditorOf(f)) { onNotesKey(e, item, mods); return; }
+    if (!(f instanceof HTMLTextAreaElement)) return;
+    if (f.classList.contains("todo-sub-title")) { onSubKey(e, item, f, mods); return; }
+    if (f.classList.contains("todo-title")) onTitleKey(e, item, f, mods);
+  });
+
+  function onTitleKey(e, item, f, mods) {
+    const inList = body.contains(item);
+    const todo = todoOf(item);
+    if (e.key === "Enter" && !mods && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
-      add(todo.deskId, todo.id);
-    } else if (isTitle && e.key === "Backspace" && !mods && !f.value && !(todo.notes || "")) {
+      // In the list, a new to-do below; in the file section, the note.
+      if (inList && todo) add(todo.deskId, todo.id);
+      else editors.get(item)?.focus();
+    } else if (inList && todo && e.key === "Backspace" && !mods && !f.value && !(todo.notes || "") && !subsOf(todo).length) {
       e.preventDefault();
-      const titles = siblingsTitles();
+      const titles = [...body.querySelectorAll(".todo-item .todo-title")];
       const i = titles.indexOf(f);
-      const prev = titles[i - 1] || titles[i + 1];
-      const prevId = itemOf(prev)?.dataset.id;
+      const prevId = itemOf(titles[i - 1] || titles[i + 1])?.dataset.id;
       void removeTodo(state, todo.id);
       openId = prevId || null;
       render(prevId ? { id: prevId, field: "title" } : null);
-    } else if (isTitle && (e.key === "ArrowUp" || e.key === "ArrowDown") && !mods && !e.shiftKey) {
+    } else if (inList && (e.key === "ArrowUp" || e.key === "ArrowDown") && !mods && !e.shiftKey) {
       const atEdge = e.key === "ArrowUp" ? f.selectionStart === 0 && f.selectionEnd === 0
         : f.selectionStart === f.value.length;
       if (!atEdge) return;
-      const titles = siblingsTitles();
+      const titles = [...body.querySelectorAll(".todo-item .todo-title")];
       const next = titles[titles.indexOf(f) + (e.key === "ArrowUp" ? -1 : 1)];
       if (!next) return;
       e.preventDefault();
       next.focus();
       const at = e.key === "ArrowUp" ? next.value.length : 0;
       next.setSelectionRange(at, at);
-    } else if (isTitle && e.key === "Tab" && !e.shiftKey && !mods) {
+    } else if (e.key === "Tab" && !e.shiftKey && !mods) {
       e.preventDefault();
-      setOpen(todo.id);
-      const n = item.querySelector(".todo-notes");
-      n?.focus();
-      n?.setSelectionRange(n.value.length, n.value.length);
-    } else if (!isTitle && e.key === "Tab" && e.shiftKey && !mods) {
-      e.preventDefault();
-      item.querySelector(".todo-title")?.focus();
+      if (inList) setOpen(item.dataset.id);
+      editors.get(item)?.focus();
     }
-  });
+  }
+
+  function onNotesKey(e, item, mods) {
+    if (e.key !== "Tab" || mods) return;
+    e.preventDefault();
+    if (e.shiftKey) { item.querySelector(":scope > .todo-main > .todo-title")?.focus(); return; }
+    const first = item.querySelector(".todo-sub-title");
+    if (first) { first.focus(); first.setSelectionRange(first.value.length, first.value.length); }
+    else item.querySelector(".todo-sub-add")?.focus();
+  }
+
+  function onSubKey(e, item, f, mods) {
+    const id = item.dataset.id;
+    const row = f.closest(".todo-sub");
+    const subId = row?.dataset.subId;
+    if (!subId) return;
+    const titles = [...item.querySelectorAll(".todo-sub-title")];
+    const i = titles.indexOf(f);
+    if (e.key === "Enter" && !mods && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      addSub(item, subId);
+    } else if (e.key === "Backspace" && !mods && !f.value) {
+      e.preventDefault();
+      const prev = titles[i - 1]?.closest(".todo-sub")?.dataset.subId;
+      void removeSub(state, id, subId);
+      render(prev ? { id, field: "sub", subId: prev } : { id, field: "notes" });
+    } else if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !mods && !e.shiftKey) {
+      const up = e.key === "ArrowUp";
+      const atEdge = up ? f.selectionStart === 0 && f.selectionEnd === 0 : f.selectionStart === f.value.length;
+      if (!atEdge) return;
+      const next = titles[i + (up ? -1 : 1)];
+      if (!next && !up) return;
+      e.preventDefault();
+      if (!next) { editors.get(item)?.focus(); return; }
+      next.focus();
+      const at = up ? next.value.length : 0;
+      next.setSelectionRange(at, at);
+    }
+  }
 
   // ── Outside changes ──
   // A local commit has already been drawn by whoever made it; a pull from
   // another device, a sibling window, a desk renamed or a file renamed
-  // has not.
+  // has not. Over a file, so has another file coming to the front.
   const onTodos = (info) => { if (!info?.local) renderSoon(); };
-  const EVENTS = ["desks-changed", "active-desk-changed", "files-changed", "remote-settings-merged"];
+  const EVENTS = ["desks-changed", "active-desk-changed", "files-changed", "remote-settings-merged",
+    ...(fileContext ? ["file-opened", "notebook-open", "stack-open", "pdf-open", "no-file-state"] : [])];
   state.on("todos-changed", onTodos);
   for (const ev of EVENTS) state.on(ev, renderSoon);
 
@@ -515,6 +592,9 @@ export function mountTodoList(state, el, { onClose = null, onEscape = null, onOp
     window.removeEventListener("keyup", onModifier, true);
     state.off("todos-changed", onTodos);
     for (const ev of EVENTS) state.off(ev, renderSoon);
+    if (openId) pruneEmptySubs(state, openId);
+    unmountAll();
+    composer.destroy();
     void flushTodos(state);
     if (embedded?.el === el) embedded = null;
   }
@@ -524,14 +604,18 @@ export function mountTodoList(state, el, { onClose = null, onEscape = null, onOp
     if (first) first.focus();
   }
 
-  /** The keyboard into the head's search, so typing finds a file. */
-  function focusSearch() {
-    find.focus({ preventScroll: true });
+  /** The keyboard into the list's input: over a file, the file's to-do
+   *  (its note); else the composer's title. */
+  function focusInput() {
+    const pinned = fileSlot.querySelector(".todo-item");
+    const ed = pinned ? editors.get(pinned) : null;
+    if (ed) ed.focus();
+    else composer.focus();
   }
 
   el.tabIndex = -1;
   render();
-  const handle = { el, render, focusFirst, focusSearch, destroy };
+  const handle = { el, render, focusFirst, focusInput, destroy };
   if (isEmbedded) embedded = handle;
   return handle;
 }
