@@ -12,7 +12,7 @@
  * caller knows it has to land the editor somewhere.
  *
  * Deliberately narrow: it closes *views*, never data. A pane whose file
- * lives in another desk is left alone, and so is a Desktop showing a
+ * lives in another desk is left alone, and so is a Project Overview showing a
  * project that isn't going anywhere.
  */
 
@@ -92,11 +92,11 @@ export async function tearDownDeskSurfaces(state, deskNode) {
   } catch (_) { /* panes unavailable in this window */ }
 
   // Takeover views, but only when they're showing something from this
-  // desk — a Desktop open on another desk's project is still valid.
+  // desk — an Overview open on another desk's project is still valid.
   try {
-    const m = await import("../desktop/desktop-view.js");
-    if (m.isDesktopOpen() && nodeIds.has(m.currentDesktopContainerId())) m.closeDesktop();
-  } catch (_) { /* desktop view not loaded */ }
+    const m = await import("../project-overview/project-overview.js");
+    if (m.isProjectOverviewOpen() && nodeIds.has(m.currentProjectOverviewId())) m.closeProjectOverview();
+  } catch (_) { /* Project Overview not loaded */ }
   try {
     const m = await import("../pdf/pdf-shelf.js");
     if (typeof m.currentShelfContainerId === "function" && nodeIds.has(m.currentShelfContainerId())) {

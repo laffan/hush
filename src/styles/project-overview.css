@@ -1,9 +1,10 @@
-/* ===== Desktop (a project's board — desktop/board/, desktop-board.css) =====
+/* ===== Project Overview (a project's board — project-overview/board/,
+   project-overview-board.css) =====
    Same takeover pattern as the PDF shelf: mounts inside #app,
-   `body.desktop-active` hides the editor surfaces underneath while
+   `body.project-overview-active` hides the editor surfaces underneath while
    they keep their layout, so closing is a single class flip. */
 
-.desktop-view {
+.project-overview-view {
   position: absolute;
   top: 0;
   left: 0;
@@ -18,37 +19,37 @@
   flex-direction: column;
 }
 
-.desktop-view.hidden {
+.project-overview-view.hidden {
   display: none;
 }
 
 /* Inset sidebar: shift with the panel exactly like the PDF shelf. */
-#panel-overlay.panel-inset:not(.hidden) ~ .desktop-view {
+#panel-overlay.panel-inset:not(.hidden) ~ .project-overview-view {
   left: var(--panel-width, 300px);
 }
-#panel-overlay.panel-inset.hidden ~ .desktop-view {
+#panel-overlay.panel-inset.hidden ~ .project-overview-view {
   left: var(--sidebar-grip-width, 24px);
 }
 
-body.desktop-active #editor-container,
-body.desktop-active #editor-empty-state,
-body.desktop-active #notebook-container,
-body.desktop-active #pdf-container,
-body.desktop-active #stack-container,
+body.project-overview-active #editor-container,
+body.project-overview-active #editor-empty-state,
+body.project-overview-active #notebook-container,
+body.project-overview-active #pdf-container,
+body.project-overview-active #stack-container,
 /* The Overview belongs to the doc that was open. Its panel and the
    hover-revealed edge trigger both hang off #app (position: fixed,
-   z-index above the Desktop), so without this the trigger floats over
-   the Desktop after opening a guttered doc and coming back. */
-body.desktop-active #right-panel-overlay,
-body.desktop-active .right-panel-trigger,
-body.desktop-active .side-panel-resize {
+   z-index above the Overview), so without this the trigger floats over
+   the Overview after opening a guttered doc and coming back. */
+body.project-overview-active #right-panel-overlay,
+body.project-overview-active .right-panel-trigger,
+body.project-overview-active .side-panel-resize {
   visibility: hidden;
 }
 
-/* Panes belonging to whatever file the Desktop replaced must not show
-   through it — but a pane the Desktop itself opened (a row's pane, a
+/* Panes belonging to whatever file the Overview replaced must not show
+   through it — but a pane the Overview itself opened (a row's pane, a
    material file's) must. Note this hides the *panes*, one by one, rather
-   than hiding #pane-container and letting Desktop panes opt back in
+   than hiding #pane-container and letting Overview panes opt back in
    with `visibility: visible`. That reads as equivalent (visibility is
    inherited, so a descendant can override a hidden ancestor) and it is
    — to everything except WebKit's paint invalidation. A pane appended
@@ -61,30 +62,30 @@ body.desktop-active .side-panel-resize {
    visible-inside-hidden nesting entirely.
 
    `onContextChange` already `display: none`s panes that don't belong to
-   the active context, and while a Desktop is up that context is its own
-   `dt:<id>`. This rule is what covers the gap: **pinned** panes stay
+   the active context, and while an Overview is up that context is its
+   own `po:<id>`. This rule is what covers the gap: **pinned** panes stay
    displayed across every context, so without it a pinned pane from the
-   replaced file would float over the Desktop. (Sticky notes live in
+   replaced file would float over the Overview. (Sticky notes live in
    #sticky-container and stay.) */
-body.desktop-active #pane-container > .floating-pane:not(.desktop-pane) {
+body.project-overview-active #pane-container > .floating-pane:not(.project-overview-pane) {
   visibility: hidden;
 }
 
 /* The board runs edge to edge — so the 30 px macOS title-bar strip
    goes away with it (notebook / PDF / stack modes drop it the same
    way). `display: none` rather than the visibility list above:
-   #drag-region is z-index 80, above .desktop-view, and a merely-invisible
+   #drag-region is z-index 80, above .project-overview-view, and a merely-invisible
    one would still swallow pointer events across the board's top edge. */
-body.desktop-active #drag-region {
+body.project-overview-active #drag-region {
   display: none;
 }
 
-/* ── "Back to <Project> Desktop" return crumb ──────────────────── */
+/* ── "Back to <Project> Overview" return crumb ─────────────────── */
 
 /* Fixed in the upper left of whatever surface you landed on — a doc, a
-   notebook, or a nested project's own Desktop. `top` clears the 30 px
-   macOS title-bar strip, which a Desktop hides but a doc does not. */
-.desktop-return {
+   notebook, or a nested project's own Overview. `top` clears the 30 px
+   macOS title-bar strip, which an Overview hides but a doc does not. */
+.project-overview-return {
   position: fixed;
   top: 38px;
   left: 12px;
@@ -101,25 +102,25 @@ body.desktop-active #drag-region {
   opacity: 0.9;
 }
 
-.desktop-return:hover {
+.project-overview-return:hover {
   opacity: 1;
 }
 
-.desktop-return.hidden {
+.project-overview-return.hidden {
   display: none;
 }
 
 /* Clear the files panel in either of its modes — inset (the surface
    shrinks) or overlay (the panel floats at z 200, well above this). */
-#panel-overlay:not(.hidden) ~ .desktop-return {
+#panel-overlay:not(.hidden) ~ .project-overview-return {
   left: calc(var(--panel-width, 300px) + 12px);
 }
-#panel-overlay.hidden ~ .desktop-return {
+#panel-overlay.hidden ~ .project-overview-return {
   left: calc(var(--sidebar-grip-width, 24px) + 12px);
 }
 
-.desktop-return-back,
-.desktop-return-close {
+.project-overview-return-back,
+.project-overview-return-close {
   background: transparent;
   border: none;
   color: inherit;
@@ -129,12 +130,12 @@ body.desktop-active #drag-region {
   font-size: inherit;
 }
 
-.desktop-return-back:hover,
-.desktop-return-close:hover {
+.project-overview-return-back:hover,
+.project-overview-return-close:hover {
   background: var(--panel-border, rgba(128, 128, 128, 0.2));
 }
 
-.desktop-return-close {
+.project-overview-return-close {
   padding: 4px 8px;
   border-left: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
   opacity: 0.7;

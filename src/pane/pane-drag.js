@@ -153,8 +153,9 @@ export function setupPaneDrag(pane, deps) {
     // Gutter panes can't be dragged — their geometry is doc-driven (full
     // height, docked to a side the user picks via the <-> toggle). Let the
     // pointerdown fall through to the el-level focus handler without starting
-    // a drag.
-    if (pane.gutter) return;
+    // a drag. A fixed inline pane (the Project Overview's Doc column) stays
+    // where it is embedded for the same reason.
+    if (pane.gutter || pane.fixedInline) return;
     e.preventDefault();
     e.stopPropagation();
     // Moving the pane by hand retires the geometry ⌘-double-click saved:

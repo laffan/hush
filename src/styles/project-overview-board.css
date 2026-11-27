@@ -1,8 +1,10 @@
-/* ===== Project Desktop board (src/desktop/board/) =====
+/* ===== Project Overview board (src/project-overview/board/) =====
    A project top to bottom: per row a stack of pages, its outline, and —
    when opened — a pane; rows linked by the sidebar's I-beam, drawn
-   large. The host is the canvas Desktop's takeover box (.desktop-view,
-   desktop.css), scrolling instead of panning. */
+   large. Beside them, fixed down the left, the Overview Doc's column.
+   The host is the takeover box (.project-overview-view,
+   project-overview.css): the header across the top, and under it the
+   Doc's column and the rows, which scroll on their own. */
 
 .board-view {
   /* A page large enough to read: twice the canvas Desktop's thumbnail. */
@@ -13,22 +15,23 @@
   --board-outline-w: 280px;
   --board-gap: 28px;
   --board-ink: color-mix(in srgb, var(--fg) 55%, transparent);
-  display: block;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 0 40px 80px;
+  /* The Overview Doc's column (board-doc-column.js). */
+  --po-doc-w: clamp(280px, 30vw, 440px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   font-family: var(--ui-font-family);
 }
 
 .board-head {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 3;
+  flex: none;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  margin: 0 -40px 18px;
+  margin: 0;
   padding: 46px 40px 14px;
   background: var(--theme-bg, var(--bg));
   border-bottom: 1px solid var(--panel-border, rgba(128, 128, 128, 0.25));
@@ -65,8 +68,154 @@
   opacity: 0.55;
 }
 
+/* ── The frame under the header: the Doc's column, the rows ── */
+.po-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.po-board-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 18px 40px 80px;
+  /* The rows lay out by the room the list has, not the window's
+     (the Doc's column takes its share) — see the container query at the
+     foot. */
+  container: po-board / inline-size;
+}
+
+/* ── The Overview Doc's column (board-doc-column.js) ── */
+.po-doc-col {
+  flex: none;
+  width: var(--po-doc-w);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 18px 0 18px 24px;
+}
+.po-doc-slot.board-pane-slot {
+  flex: 1;
+  min-height: 0;
+  scroll-margin: 0;
+}
+/* Fixed in its column: no resize handles, and none of the pane buttons
+   that would move it, widen it or close it — only the type size. */
+.board-view .po-doc-slot > .floating-pane .fp-resize,
+.board-view .po-doc-slot > .floating-pane .fp-btn-widen,
+.board-view .po-doc-slot > .floating-pane .fp-btn-close,
+.board-view .po-doc-slot > .floating-pane .fp-btn-collapse { display: none !important; }
+.board-view .po-doc-slot > .floating-pane .floating-pane-titlebar { cursor: default; }
+/* An inactive pane's content takes no pointer events, so a press only
+   wakes it (floating-pane.css) — a guard for panes floating over other
+   work. The Doc floats over nothing: its first click or tap goes to the
+   text, or follows a link, while the press wakes the pane
+   (pane-toolbar.js focuses it on pointerdown, before the editor sees
+   the mousedown). */
+.board-view .po-doc-slot > .floating-pane:not(.active) .floating-pane-content { pointer-events: auto; }
+.po-doc-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 18px 20px;
+  border: 1.5px dashed color-mix(in srgb, var(--fg) 22%, transparent);
+  border-radius: 12px;
+}
+.po-doc-empty p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  opacity: 0.6;
+}
+
+/* A section link in the Overview Doc (section-links.js): the words
+   alone, subtly underlined. The Markdown link's own underline
+   (markdown-highlight.js) is taken off the spans inside, and its colour
+   (`var(--link)`) falls back to the words' own — the text's, or in a
+   heading the heading's, which section-links.js measures. */
+.po-section-link {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 32%, transparent);
+  text-underline-offset: 0.22em;
+  cursor: pointer;
+  --link: currentColor;
+  transition: text-decoration-color 0.15s;
+}
+:is(.cm-md-h1, .cm-md-h2, .cm-md-h3, .cm-md-h4, .cm-md-h5, .cm-md-h6) .po-section-link {
+  --link: var(--po-heading-color, currentColor);
+}
+.po-section-link * { text-decoration: none !important; }
+.po-section-link:hover { text-decoration-color: color-mix(in srgb, currentColor 70%, transparent); }
+.po-section-link.broken {
+  text-decoration-style: dotted;
+  text-decoration-color: color-mix(in srgb, currentColor 30%, transparent);
+  cursor: default;
+}
+
+/* The sections that drop down from a selection (section-picker.js). */
+.po-section-picker {
+  position: fixed;
+  z-index: 20;
+  width: 280px;
+  max-height: min(340px, 60vh);
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  box-sizing: border-box;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.3));
+  border-radius: 10px;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.18);
+  font-family: var(--ui-font-family);
+  font-size: 12.5px;
+}
+.po-picker-head {
+  flex: none;
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.45;
+}
+.po-picker-list { overflow-y: auto; min-height: 0; }
+.po-picker-group {
+  padding: 6px 8px 2px calc(8px + var(--depth, 0) * 14px);
+  font-size: 11.5px;
+  font-weight: 600;
+  opacity: 0.5;
+}
+.po-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px 5px calc(8px + var(--depth, 0) * 14px);
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.po-picker-item svg { flex: none; width: 13px; height: 13px; opacity: 0.6; }
+.po-picker-item.active { background: rgba(128, 128, 128, 0.16); }
+.po-picker-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-picker-item.placeholder .po-picker-name { font-style: italic; opacity: 0.75; }
+.po-picker-note { flex: none; font-size: 11px; opacity: 0.45; }
+.po-picker-check { flex: none; opacity: 0.7; }
+.po-picker-empty { padding: 6px 8px 8px; opacity: 0.55; }
+
 /* ── A row ── */
-/* "View in Desktop" lands on a row and picks it out for a moment. */
+/* "View in Project Overview", or a section link, lands on a row and
+   picks it out for a moment. */
+.board-row { scroll-margin-top: 16px; }
 .board-row.flash { animation: board-row-flash 1.4s ease-out; border-radius: 8px; }
 @keyframes board-row-flash {
   from { background: color-mix(in srgb, var(--cursor, var(--fg)) 14%, transparent); }
@@ -384,13 +533,13 @@ button.board-row-name:focus-visible { background: rgba(128, 128, 128, 0.14); out
   position: relative;
   display: none;
   isolation: isolate;
-  /* Showing a pane scrolls the board only as far as it must, clear of
-     the sticky header (board-pane.js scrollTo). */
-  scroll-margin-top: 120px;
+  /* Showing a pane scrolls the board only as far as it must
+     (board-pane.js scrollTo). */
+  scroll-margin-top: 16px;
   scroll-margin-bottom: 24px;
 }
 /* A pane carries its stacking order inline (pane-manager's zForPane);
-   inside the row it sits in the page, under the sticky header. */
+   inside the board it sits in the page, under the header. */
 .board-view .board-pane-slot > .floating-pane { z-index: 0 !important; }
 .board-pane-slot.open { display: block; }
 .board-view .floating-pane.board-row-pane {
@@ -503,10 +652,20 @@ button.board-row-name:focus-visible { background: rgba(128, 128, 128, 0.14); out
 .board-material-item > .tree-type-icon { flex: none; width: 14px; height: 14px; }
 .board-material-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Narrow windows: the pane drops under its row. */
-@media (max-width: 900px) {
-  .board-view { padding: 0 18px 60px; }
-  .board-head { margin: 0 -18px 18px; padding-left: 18px; padding-right: 18px; }
+/* A narrow list: the pane drops under its row. */
+@container po-board (max-width: 1000px) {
   .board-row { grid-template-columns: var(--board-stack-col) minmax(0, 1fr); }
   .board-col-pane { grid-column: 1 / -1; }
+}
+
+/* Narrow windows: tighter margins, and the Doc's column goes over the
+   list instead of beside it. */
+@media (max-width: 900px) {
+  .po-board-scroll { padding: 18px 18px 60px; }
+  .board-head { padding-left: 18px; padding-right: 18px; }
+  .po-doc-col { padding-left: 18px; }
+}
+@media (max-width: 760px) {
+  .po-body { flex-direction: column; }
+  .po-doc-col { width: auto; height: 42vh; padding: 12px 18px 0; }
 }

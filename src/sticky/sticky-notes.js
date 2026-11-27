@@ -38,7 +38,7 @@ import {
 } from "../state/tree-helpers.js";
 import {
   DEFAULT_SIZE, HEADER_HEIGHT, FONT_STEP, DEFAULT_FONT, ICON_CLOSE,
-  ctxIconFor, excerptFor, desktopOpenId,
+  ctxIconFor, excerptFor, projectOverviewOpenId,
   clampAxis, clampSize, clampFont,
 } from "./sticky-shared.js";
 import { setupDrag, setupResize } from "./sticky-interact.js";
@@ -66,7 +66,7 @@ export function initStickyNotes(state) {
     // clearActiveFile ends on "no-file-state" (empty desk, deleted open
     // file, archived desk) — without it a file sticky outlives its file.
     "no-file-state",
-    "active-desk-changed", "desktop-opened", "desktop-closed",
+    "active-desk-changed", "project-overview-opened", "project-overview-closed",
   ]) state.on(ev, refresh);
   // The sidebar's file rows list a file's stickies (files-panel-pane-indicators.js).
   window.__hushFileStickies = fileStickiesFor;
@@ -262,11 +262,11 @@ function currentFileNode(s) {
 }
 
 /** The project the user is "in" right now: the open project itself, the
- *  project whose Desktop is open, or the nearest ancestor project of the
+ *  project whose Project Overview is open, or the nearest ancestor project of the
  *  open file. Null when none of those. */
 function activeProjectNodeId(s) {
   if (s.currentProjectId) return s.currentProjectId;
-  if (desktopOpenId()) return desktopOpenId();
+  if (projectOverviewOpenId()) return projectOverviewOpenId();
   const node = currentFileNode(s);
   return node ? nearestAncestorProjectId(s.fileTree || [], node.id) : null;
 }
@@ -568,8 +568,8 @@ function noteVisible(note) {
       return (s.getActiveDesk?.()?.id || null) === note.target;
     case "project": {
       if (s.currentProjectId === note.target) return true;
-      // A project's Desktop is a view of that project.
-      if (desktopOpenId() === note.target) return true;
+      // A project's Overview is a view of that project.
+      if (projectOverviewOpenId() === note.target) return true;
       const node = currentFileNode(s);
       if (!node) return false;
       const ancestors = findAncestorIds(s.fileTree || [], node.id) || [];

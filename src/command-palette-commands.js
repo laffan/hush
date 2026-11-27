@@ -14,7 +14,7 @@ import {
   isDesktopTauri,
   isIOSTauri,
   buildAppearanceCommands,
-  currentFileDesktopTarget,
+  currentFileOverviewTarget,
 } from "./command-palette-helpers.js";
 import {
   paneAnchorClickPoint, promptNewNotebookName, promptNewStackName,
@@ -249,20 +249,22 @@ function buildCommands(state) {
         const { x, y } = paneAnchorClickPoint(s);
         createPane(f.fileId, f.name, f.type, x, y);
       }) },
-    // === DESKTOPS (a project's board, desktop/board/) ===
-    { id: "open-project-desktop", section: "Desktops", label: "Open Project Desktop", icon: icons.project, shortcutKey: null, ctx: "shared",
+    // === PROJECT OVERVIEW (a project's board, project-overview/board/) ===
+    // Called the Project Desktop until it was renamed; the old wording
+    // stays searchable (`keywords`).
+    { id: "open-project-overview", section: "Project Overview", label: "Open Project Overview", keywords: "desktop", icon: icons.project, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.currentProjectId,
       action: async (s) => {
-        (await import("./desktop/desktop-view.js")).openDesktop(s, s.currentProjectId);
+        (await import("./project-overview/project-overview.js")).openProjectOverview(s, s.currentProjectId);
       } },
     // Shown while a file that lives inside a project is open: jumps to
-    // that project's Desktop, scrolled to the file's row.
-    { id: "view-in-desktop", section: "Desktops", label: "View in Desktop", icon: icons.project, shortcutKey: null, ctx: "shared",
-      hiddenIf: (s) => !currentFileDesktopTarget(s),
+    // that project's Overview, scrolled to the file's row.
+    { id: "view-in-project-overview", section: "Project Overview", label: "View in Project Overview", keywords: "desktop", icon: icons.project, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !currentFileOverviewTarget(s),
       action: async (s) => {
-        const target = currentFileDesktopTarget(s);
+        const target = currentFileOverviewTarget(s);
         if (!target) return;
-        (await import("./desktop/desktop-view.js")).openDesktop(s, target.projectId, { focusKey: target.focusKey });
+        (await import("./project-overview/project-overview.js")).openProjectOverview(s, target.projectId, { focusKey: target.focusKey });
       } },
     { id: "extract-selected", section: "Create", label: "Create New From Selected", icon: icons.newFile, shortcutKey: null, ctx: "shared",
       action: (s) => createNewFromSelected(s) },

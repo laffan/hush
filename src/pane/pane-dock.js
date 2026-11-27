@@ -358,11 +358,11 @@ function computeVisibleHeight() {
 export function publishDockCssVars() {
   let leftW = 0, rightW = 0, topH = 0, bottomH = 0;
   let leftEdge = 0, rightEdge = 0, topEdge = 0, bottomEdge = 0;
-  // A Desktop replaces whatever file was open and hides #pane-container
-  // wholesale, so no dock reserves space while it's up. Without this a
-  // doc's docked gutter keeps its width reserved and shoves the
-  // Desktop's own shelf (which offsets by these vars) into the canvas.
-  const suppressed = document.body.classList.contains("desktop-active");
+  // A Project Overview replaces whatever file was open and hides the
+  // panes that aren't its own, so no dock reserves space while it's up.
+  // Without this a doc's docked gutter keeps its width reserved and
+  // shoves chrome that offsets by these vars across the Overview.
+  const suppressed = document.body.classList.contains("project-overview-active");
   for (const [, p] of panes) {
     if (suppressed) break;
     if (!p.docked) continue;

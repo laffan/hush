@@ -160,10 +160,10 @@ export function canUseAsNote(state, wantNote) {
   return !!p && p.type === "project" && p.id !== "__inbox__" && !p.id?.startsWith("__inbox__:");
 }
 
-/** "View in Desktop" target: the nearest ancestor project of the open
- *  file, plus the fileRef key to focus (the fileId). Null when nothing
+/** "View in Project Overview" target: the nearest ancestor project of
+ *  the open file, plus the row to focus (the fileId). Null when nothing
  *  file-shaped inside a project is open. */
-export function currentFileDesktopTarget(s) {
+export function currentFileOverviewTarget(s) {
   const fileId = s.currentNotebookFileId || s.currentPdfFileId
     || s.currentStackFileId || s.currentFileId;
   if (!fileId) return null;

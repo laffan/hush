@@ -86,6 +86,9 @@ async function loadDocumentPane(pane) {
   }, {
     modeContext: mc.proxy,
     runway: true,
+    // Set by the pane's opener (createPane's `editorExtensions`) — e.g.
+    // the Project Overview Doc's section links.
+    extraExtensions: pane.editorExtensions || [],
     // The document this pane holds, for its word cap. A Local Folder
     // file isn't in the tree, so it can't carry one.
     getFileId: () => (pane.localSync ? null : pane.fileId),

@@ -8,11 +8,16 @@
  * moved into the row's slot rather than a CodeMirror widget: inline is
  * what makes the pane system leave its position alone, size it from
  * `pane.inline.height` (the bottom handle resizes the slot with it) and
- * turn a drag on its title bar into a floating pane. `desktopPane` keeps
- * it visible while the Desktop hides every other pane; `desktopRow`
+ * turn a drag on its title bar into a floating pane. `overviewPane` keeps
+ * it visible while the Overview hides every other pane; `overviewRow`
  * keeps it out of the saved pane list, since a row's pane only means
  * anything while the board is up. One pane per row: a second heading
  * scrolls the pane that is there.
+ *
+ * The **Overview Doc** down the board's left is one of these too, made
+ * with `doc`: `fixedInline` (it fills its column, and its title bar
+ * doesn't drag it out) and the section links' editor extensions
+ * (section-links.js).
  */
 import { panes } from "../../pane/pane-state.js";
 
@@ -38,7 +43,8 @@ export function adoptSlot(fileId, slot) {
 function mount(pane, slot) {
   pane._inlineHost = slot;
   slot.classList.add("open");
-  slot.style.height = (pane.inline.height || HEIGHT) + "px";
+  // The Overview Doc fills its column; a row's pane has its own height.
+  if (!pane.fixedInline) slot.style.height = (pane.inline.height || HEIGHT) + "px";
   slot.closest(".board-row")?.classList.add("has-pane");
   const el = pane.el;
   el.classList.add("inline-pane", "board-row-pane");
@@ -46,6 +52,12 @@ function mount(pane, slot) {
   if (el.parentNode !== slot) slot.appendChild(el);
   pane.width = slot.clientWidth || pane.width;
   requestAnimationFrame(() => pane.editor?.view?.requestMeasure?.());
+}
+
+/** The pane in the Overview Doc's column, once it is made. */
+export function docPaneView(fileId) {
+  const pane = rowPaneFor(fileId);
+  return pane?.fixedInline ? pane.editor?.view || null : null;
 }
 
 /** Scroll a pane's editor so `from` sits near the top, caret there.
@@ -74,7 +86,7 @@ function scrollTo(pane, from) {
 /** Open the row's pane in `slot`, or scroll the one already there. A
  *  material notebook's row is a pane from the start (`type: "notebook"`,
  *  the way a wikilink peeks one inline), with no place to scroll to. */
-export async function openRowPane(state, { fileId, name, slot, containerId, from = 0, type = "document", height = HEIGHT, focus = true }) {
+export async function openRowPane(state, { fileId, name, slot, containerId, from = 0, type = "document", height = HEIGHT, focus = true, doc = null }) {
   const existing = rowPaneFor(fileId);
   if (existing) {
     mount(existing, slot);
@@ -87,7 +99,7 @@ export async function openRowPane(state, { fileId, name, slot, containerId, from
     if (pane) mount(pane, slot);
     return pane;
   }
-  const job = makePane(fileId, name, type, containerId, height);
+  const job = makePane(fileId, name, type, containerId, height, doc);
   making.set(fileId, job);
   const pane = await job.finally(() => making.delete(fileId));
   if (!pane) return null;
@@ -98,17 +110,20 @@ export async function openRowPane(state, { fileId, name, slot, containerId, from
 
 const making = new Map();
 
-async function makePane(fileId, name, type, containerId, height) {
+/** `doc` — `{ extensions }` — makes the pane the Overview Doc: fixed in
+ *  its column (no drag out), its editor carrying the section links. */
+async function makePane(fileId, name, type, containerId, height, doc) {
   const { createPane } = await import("../../pane/pane-manager.js");
   const pane = await createPane(fileId, name, type, 0, 0, {
-    ownerContext: "dt:" + containerId,
+    ownerContext: "po:" + containerId,
     allowDuplicate: true,
-    desktopPane: true,
+    overviewPane: true,
     skipFocus: true,
     inline: { anchorTitle: "", occurrence: 0, height },
+    ...(doc ? { fixedInline: true, editorExtensions: doc.extensions } : {}),
   });
   if (!pane) return null;
-  pane.desktopRow = true;
+  pane.overviewRow = true;
   rowPanes.set(fileId, pane);
   return pane;
 }
@@ -120,11 +135,20 @@ export function sweepRowPanes() {
   const gone = [];
   for (const [fileId, pane] of rowPanes) {
     if (panes.get(pane.id) === pane && pane.inline) continue;
-    if (panes.get(pane.id) === pane) pane.desktopRow = false;
+    if (panes.get(pane.id) === pane) pane.overviewRow = false;
     rowPanes.delete(fileId);
     gone.push(fileId);
   }
   return gone;
+}
+
+/** Close one row's pane. */
+export async function closeRowPane(fileId) {
+  const pane = rowPanes.get(fileId);
+  rowPanes.delete(fileId);
+  if (!pane || panes.get(pane.id) !== pane) return;
+  const { closePane } = await import("../../pane/pane-manager.js");
+  closePane(pane.id);
 }
 
 /** Close every row pane (the board is closing). */

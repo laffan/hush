@@ -1,5 +1,5 @@
 /**
- * The Project Desktop board's model — what the rows are, and the data
+ * The Project Overview board's model — what the rows are, and the data
  * the board keeps of its own.
  *
  * **Rows** are the project's text, in reading order: every document that
@@ -13,8 +13,17 @@
  * **Board data** rides the project's tree node as `board` (Rust
  * `TreeNode.board`, opaque there), so it syncs with the desk:
  *
- *   { placeholders: [{ id, afterId, parentId?, outline }],
- *     notes: { [fileId]: "plain text" } }
+ *   { doc: fileId,
+ *     placeholders: [{ id, afterId, parentId?, outline }],
+ *     notes: { [fileId]: "plain text" },
+ *     created: { [placeholderId]: fileId } }
+ *
+ * `doc` is the **Overview Doc** — the column down the board's left: a
+ * real document, kept in the project as a note ("Use as note"), whose
+ * section links (editor/plugins/section-link-syntax.js) point at the
+ * rows. It counts only while it is still inside the project. `created`
+ * remembers which document each created placeholder became, so a
+ * section link made to the placeholder follows it.
  *
  * A placeholder sits after the node `afterId` (a document, or a nested
  * project, in whatever container holds it); with no `afterId` it sits at
@@ -26,7 +35,8 @@
  * its outline's first item (placeholderName); without one it can't be
  * created.
  */
-import { findNode, findParentOfNode, isRealProjectNode } from "../../state/tree-helpers.js";
+import { findNode, findNodeByFileId, findParentOfNode, isRealProjectNode, normalizeProjectChildren } from "../../state/tree-helpers.js";
+import { parseSectionTarget } from "../../editor/plugins/section-link-syntax.js";
 import { parseOutlineLine, stripInlineMarkdown } from "../../outline/outline-model.ts";
 import { findFrontmatterRange } from "../../editor/frontmatter.js";
 
@@ -36,8 +46,10 @@ export const EMPTY_OUTLINE = "- [ ] ";
 export const boardData = (project) => {
   const b = project?.board && typeof project.board === "object" ? project.board : {};
   return {
+    doc: typeof b.doc === "string" && b.doc ? b.doc : null,
     placeholders: Array.isArray(b.placeholders) ? b.placeholders : [],
     notes: b.notes && typeof b.notes === "object" ? b.notes : {},
+    created: b.created && typeof b.created === "object" ? b.created : {},
   };
 };
 
@@ -66,19 +78,71 @@ export function placeholderName(ph) {
 }
 
 /** The project's other files — notes, notebooks, stacks, PDFs — its
- *  nested projects' included, as tree nodes in tree order. */
+ *  nested projects' included, as tree nodes in tree order. Overview Docs
+ *  (the board's own, and nested projects') are the board's, not
+ *  material. */
 export function materials(project) {
   const out = [];
-  const walk = (nodes) => {
+  const walk = (nodes, owner) => {
+    const own = boardData(owner).doc;
     for (const n of nodes || []) {
       if (n.cardsHome || n.pdfAlias) continue;
-      if (n.type === "document" && n.useAsNote) out.push(n);
+      if (n.type === "document" && n.useAsNote) { if (!own || n.fileId !== own) out.push(n); }
       else if (["notebook", "stack", "pdf"].includes(n.type) && !n.gutter) out.push(n);
-      if (n.children?.length) walk(n.children);
+      if (n.children?.length) walk(n.children, n.type === "project" ? n : owner);
     }
   };
-  walk(project?.children);
+  walk(project?.children, project);
   return out;
+}
+
+/** The project's Overview Doc's tree node, or null — none made yet, or
+ *  the one it had has left the project (moved out, deleted). */
+export function overviewDocNode(project) {
+  const fileId = boardData(project).doc;
+  if (!fileId) return null;
+  const node = findNodeByFileId(project.children || [], fileId);
+  return node && node.type === "document" ? node : null;
+}
+
+/** The sections a piece of the Overview Doc can link to — the board's
+ *  rows that are documents or placeholders, in reading order:
+ *  `{ target: { fileId } | { phId }, name, depth, groups }`, `groups`
+ *  being the nested projects the row is the first of, outermost first
+ *  (for headings over it). An empty nested project is an entry with no
+ *  target. */
+export function sectionList(project) {
+  const out = [];
+  for (const row of boardRows(project)) {
+    if (row.kind === "doc") {
+      out.push({ target: { fileId: row.node.fileId }, name: row.node.name || "Untitled", depth: row.depth, groups: row.groups });
+    } else if (row.kind === "placeholder") {
+      out.push({ target: { phId: row.ph.id }, name: placeholderName(row.ph), depth: row.depth, groups: row.groups, placeholder: true });
+    } else if (row.groups?.length) {
+      // A nested project with nothing in it yet: only its name.
+      out.push({ target: null, name: "", depth: row.depth, groups: row.groups });
+    }
+  }
+  return out;
+}
+
+/** What a section link's target (a string — section-link-syntax.js)
+ *  points at on this board: `{ fileId, name }` for a document row,
+ *  `{ phId, name }` for a placeholder, null when it is on neither (the
+ *  document left the project's text, the placeholder was removed). A
+ *  placeholder that has been created points at the document it became. */
+export function resolveSectionTarget(project, target) {
+  if (!project) return null;
+  const { fileId, phId } = parseSectionTarget(target);
+  const rows = boardRows(project);
+  if (phId) {
+    const ph = rows.find((r) => r.kind === "placeholder" && r.ph.id === phId);
+    if (ph) return { phId, name: placeholderName(ph.ph) || "Untitled placeholder" };
+    const made = boardData(project).created[phId];
+    return made ? resolveSectionTarget(project, made) : null;
+  }
+  const doc = rows.find((r) => r.kind === "doc" && r.node.fileId === fileId);
+  return doc ? { fileId, name: doc.node.name || "Untitled" } : null;
 }
 
 /** The board's rows, in order:
@@ -177,7 +241,34 @@ export function headingsOf(content) {
 // ── Writing board data ─────────────────────────────────────────────
 
 function writeBoard(project, data) {
-  project.board = { placeholders: data.placeholders, notes: data.notes };
+  const board = { placeholders: data.placeholders, notes: data.notes };
+  if (data.doc) board.doc = data.doc;
+  if (Object.keys(data.created || {}).length) board.created = data.created;
+  project.board = board;
+}
+
+/** Make the project's Overview Doc: a document in the project, kept out
+ *  of its text as a note, titled after the project. Returns
+ *  `{ fileId, name }`, or null. */
+export async function createOverviewDoc(state, projectId) {
+  const project = findNode(state.fileTree, projectId);
+  if (!project) return null;
+  const title = `${project.name || "Project"} Overview`;
+  const made = await state.newFile(project.id, {
+    openImmediately: false,
+    initialName: title,
+    initialContent: `# ${title}\n\n`,
+  });
+  if (!made) return null;
+  const node = findNodeByFileId(project.children || [], made.fileId);
+  if (node) node.useAsNote = true;
+  normalizeProjectChildren(state.fileTree);
+  const data = boardData(project);
+  data.doc = made.fileId;
+  writeBoard(project, data);
+  await state.saveFileTree();
+  state.emit("files-changed");
+  return made;
 }
 
 /** Add a placeholder in a gap: after node `afterId`, or at the head of
@@ -291,6 +382,8 @@ export async function createFromPlaceholder(state, projectId, phId) {
     }
   }
   data.placeholders = data.placeholders.filter((p) => p.id !== phId);
+  // A section link made to the placeholder follows its document.
+  data.created = { ...data.created, [phId]: made.fileId };
   writeBoard(project, data);
   await state.saveFileTree();
   await state.syncProjectOrdering?.(projectId);

@@ -133,13 +133,13 @@
 }
 
 /* The main editor's column means nothing over a stack, a PDF or a
-   Desktop — back to the window's centre there. */
+   Project Overview — back to the window's centre there. */
 body.stack-mode .word-count-display,
 body.stack-mode .ratchet-timer,
 body.pdf-mode .word-count-display,
 body.pdf-mode .ratchet-timer,
-body.desktop-active .word-count-display,
-body.desktop-active .ratchet-timer {
+body.project-overview-active .word-count-display,
+body.project-overview-active .ratchet-timer {
   left: 50%;
 }
 

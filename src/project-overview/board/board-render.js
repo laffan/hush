@@ -4,9 +4,9 @@
  * **connector** between two rows — the sidebar's project I-beam, drawn
  * large, carrying the add-a-placeholder button at its middle.
  *
- * A stack is the pile the canvas Desktop drew (a sheet more for every
- * WORDS_PER_PAGE words), with the top sheet carrying the first page's
- * text in miniature. `reveal(i)` lifts page i to the top — the outline's
+ * A stack is the pile the canvas Desktop (the Overview's predecessor)
+ * drew (a sheet more for every WORDS_PER_PAGE words), with the top
+ * sheet carrying the first page's text in miniature. `reveal(i)` lifts page i to the top — the outline's
  * hover — and `reveal(null)` drops it back.
  */
 import { escHtml } from "../../sidebar/files-panel-shared.js";
@@ -126,7 +126,7 @@ const xAt = (depth) => STACK_COL / 2 + depth * INDENT;
  *  foot under the upper stack, a stem, a foot over the lower one. When
  *  the rows sit at different depths (a nested project begins or ends)
  *  the stem bends across between them, and entering a nested project it
- *  names it (`groups`, each a click to that project's own Desktop).
+ *  names it (`groups`, each a click to that project's own Overview).
  *  Midway down the lower stretch is the add-a-placeholder button.
  *  `last` runs the stem down past the last row — back out to the
  *  board's own depth — with no foot below. */
@@ -164,7 +164,7 @@ export function buildConnector({ from = 0, to = 0, last = false, groups = [], on
     label.style.left = (x2 + FOOT + 14) + "px";
     label.style.top = (bend ? turn : 8) + "px";
     label.innerHTML = groups.map((g) => `<span>${escHtml(g.name || "Project")}</span>`).join(`<span class="sep">/</span>`);
-    label.title = "Open this project's own Desktop";
+    label.title = "Open this project's own Project Overview";
     label.addEventListener("click", () => onGroup?.(groups[groups.length - 1]));
     el.appendChild(label);
   }

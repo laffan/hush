@@ -174,13 +174,9 @@ async function init() {
   });
 
   state.on("toggle-overview-panel", async () => {
-    // Desktop takeover: the shortcut targets the Desktop canvas's shape
-    // shelf, not whatever hidden surface sits underneath.
-    if (document.body.classList.contains("desktop-active")) {
-      const grip = document.querySelector(".desktop-canvas-host .notebook-shelf > button");
-      if (grip) grip.click();
-      return;
-    }
+    // Project Overview takeover: there is no Overview panel of its own
+    // to toggle, and the surface underneath is hidden — leave it alone.
+    if (document.body.classList.contains("project-overview-active")) return;
     // A focused docked pane owns the shortcut: its own sidebar — the
     // Overview for a doc, the shelf for a notebook or a PDF.
     {

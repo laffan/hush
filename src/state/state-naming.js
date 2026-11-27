@@ -29,7 +29,11 @@ export function deriveName(content) {
     const trimmed = rawLine.trim();
     if (!trimmed) continue;
     if (parseTabMarkerLine(trimmed)) continue;
-    const cleaned = trimmed.replace(/^#+\s*/, "").replace(/[<>:"/\\|?*]/g, "").trim();
+    // A Markdown link names the document by its words, not its address
+    // (the Project Overview's Doc links words on its first line too).
+    const cleaned = trimmed.replace(/^#+\s*/, "")
+      .replace(/(?<!!)\[([^\[\]\n]+)\]\([^()\s]*\)/g, "$1")
+      .replace(/[<>:"/\\|?*]/g, "").trim();
     if (!cleaned) continue;
     return cleaned.length <= 50 ? cleaned : cleaned.slice(0, 50);
   }

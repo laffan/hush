@@ -318,24 +318,24 @@
   pointer-events: auto;
 }
 
-/* A project whose Desktop holds content (files-panel-desktop-badge.js)
-   keeps its Desktop button in view, exactly where the hover shows it;
+/* A project whose Overview holds content (files-panel-overview-badge.js)
+   keeps its Overview button in view, exactly where the hover shows it;
    the menu beside it still waits for the hover. Off hover the strip
    drops its backing — it only masks a name running under it, and the
    name now stops short of it (20px menu + 1px gap + 4px + 20px button,
    and 4px to spare) rather than run under a button that never leaves. */
-.tree-item-row.has-desktop-content .tree-actions {
+.tree-item-row.has-overview-content .tree-actions {
   opacity: 1;
   pointer-events: auto;
 }
-.sl-item:not(.sl-hovered) > .sl-item-content .tree-item-row.has-desktop-content .tree-actions {
+.sl-item:not(.sl-hovered) > .sl-item-content .tree-item-row.has-overview-content .tree-actions {
   background: transparent;
 }
-.sl-item:not(.sl-hovered) > .sl-item-content .tree-item-row.has-desktop-content .tree-action-menu {
+.sl-item:not(.sl-hovered) > .sl-item-content .tree-item-row.has-overview-content .tree-action-menu {
   opacity: 0;
   pointer-events: none;
 }
-.tree-item-row.has-desktop-content .tree-item-name {
+.tree-item-row.has-overview-content .tree-item-name {
   margin-right: 49px;
 }
 
@@ -1747,7 +1747,7 @@ html[data-theme="dark"] .tree-item-inbox-edited.stale {
 }
 .modal-shortcuts-visible .modal-shortcut-hint { display: inline; }
 
-/* A Project Desktop placeholder (files-panel-placeholders.js): where a
+/* A Project Overview placeholder (files-panel-placeholders.js): where a
    document will go, under the name it will take — a dashed page, the
    name in italics and faded, since nothing is written yet. */
 .tree-placeholder-row { cursor: pointer; }

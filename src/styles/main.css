@@ -46,8 +46,8 @@
 @import './pdf-shelf.css';
 @import './pdf-bookmarks.css';
 @import './pdf-reading.css';
-@import './desktop.css';
-@import './desktop-board.css';
+@import './project-overview.css';
+@import './project-overview-board.css';
 @import './stack.css';
 @import './shortcuts-modal.css';
 @import './folding.css';
