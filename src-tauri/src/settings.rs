@@ -600,6 +600,11 @@ pub struct AppSettings {
     /// left corner), in every project, on this device.
     #[serde(default)]
     pub overview_doc_hidden: bool,
+    /// Its width in px, dragged at its border
+    /// (`project-overview/board/board-doc-resize.js`); `None` is the
+    /// stylesheet's default, and a double-click on the border puts it back.
+    #[serde(default)]
+    pub overview_doc_width: Option<u32>,
     /// Active desk id for this device. Null when desks are off.
     #[serde(default)]
     pub active_desk_id: Option<String>,
@@ -1058,6 +1063,7 @@ impl Default for AppSettings {
             desk_dash_side_width: None,
             desk_dash_recents_height: None,
             overview_doc_hidden: false,
+            overview_doc_width: None,
             active_desk_id: None,
             desk_display_mode: default_desk_display_mode(),
             last_local_sync: serde_json::Value::Null,

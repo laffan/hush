@@ -22,7 +22,8 @@
  * embedded as a Doc, whose words link to its sections (section-links.js);
  * a click on a link scrolls the list to its section. A button in its
  * upper left corner puts the column away, and brings it back — one
- * choice for every project (`overviewDocHidden`).
+ * choice for every project (`overviewDocHidden`); its border, out of
+ * sight until pointed at, drags its width (board-doc-resize.js).
  *
  * Takes over the main view (project-overview.js is the entry point every
  * caller uses): `body.project-overview-active` hides what is underneath,
@@ -38,6 +39,7 @@ import { getIcon } from "../../sidebar/files-panel-rows.js";
 import { armOverviewReturn } from "../return-crumb.js";
 import { isSectionPickerOpen } from "../section-picker.js";
 import { createDocColumn } from "./board-doc-column.js";
+import { wireDocResize } from "./board-doc-resize.js";
 import { openLeaf } from "../../state/cross-desk.js";
 import {
   boardRows, boardData, materials, EMPTY_OUTLINE, addPlaceholder, updatePlaceholder,
@@ -55,6 +57,7 @@ let headEl = null;
 let scroller = null;
 let docColumn = null;
 let docToggle = null;
+let docResize = null;
 let state = null;
 let containerId = null;
 let wired = false;
@@ -157,8 +160,11 @@ function buildFrame() {
     void state.updateSettings({ overviewDocHidden: !state.settings?.overviewDocHidden });
     applyDocHidden();
   });
-  body.append(docColumn.el, scroller, docToggle);
+  const resizer = document.createElement("div");
+  resizer.className = "po-doc-resizer";
+  body.append(docColumn.el, resizer, scroller, docToggle);
   host.append(headEl, body);
+  docResize = wireDocResize(state, { body, col: docColumn.el, bar: resizer });
   applyDocHidden();
 }
 
@@ -204,6 +210,8 @@ export function closeProjectBoard() {
   document.body.classList.remove("project-overview-active");
   // The Doc writes what is unsaved on its way out.
   void docColumn?.destroy();
+  docResize?.destroy();
+  docResize = null;
   if (host) { host.classList.add("hidden"); host.innerHTML = ""; }
   headEl = scroller = docColumn = docToggle = null;
   import("../../pane/pane-dock.js").then((m) => m.publishDockCssVars()).catch(() => {});

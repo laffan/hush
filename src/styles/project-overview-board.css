@@ -145,6 +145,40 @@
 .po-doc-toggle:focus-visible { opacity: 0.9; background: rgba(128, 128, 128, 0.14); outline: none; }
 .board-view.po-doc-hidden .po-doc-col { display: none; }
 
+/* The border between the Doc's column and the list (board-doc-resize.js):
+   out of sight until pointed at, then a hairline that drags the column's
+   width. The strip lies on the list's side of the edge — the list's left
+   margin is empty, and the Doc's scrollbar is at its own right edge —
+   with the line on the edge itself. A dragged width is capped live so the
+   list keeps its room (the script clamps to the same numbers). */
+.po-doc-col { min-width: 220px; max-width: calc(100% - 420px); }
+.po-doc-resizer {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  width: 9px;
+  margin-right: -9px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.po-doc-resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: transparent;
+  transition: background 0.15s;
+}
+.po-doc-resizer:hover::before,
+.po-doc-resizer.dragging::before { background: color-mix(in srgb, var(--fg) 30%, transparent); }
+/* Mid-drag the pointer crosses the Doc and the rows: their cursors and
+   text selection stay out of it. */
+.po-body.po-resizing,
+.po-body.po-resizing * { cursor: col-resize !important; user-select: none; }
+.board-view.po-doc-hidden .po-doc-resizer { display: none; }
+
 /* A section link in the Overview Doc (section-links.js): the words
    alone, subtly underlined. The Markdown link's own underline
    (markdown-highlight.js) is taken off the spans inside, and its colour
@@ -684,8 +718,10 @@ button.board-row-name:focus-visible { background: rgba(128, 128, 128, 0.14); out
   /* Stacked, the Doc and the list meet edge to edge: the header's rule
      between them. */
   .po-doc-col {
-    width: auto;
+    width: auto !important; /* over a dragged width: stacked, it spans */
+    max-width: none;
     height: 42vh;
     border-bottom: 1px solid var(--panel-border, rgba(128, 128, 128, 0.25));
   }
+  .po-doc-resizer { display: none; }
 }
