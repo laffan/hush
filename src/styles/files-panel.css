@@ -1747,6 +1747,10 @@ html[data-theme="dark"] .tree-item-inbox-edited.stale {
 }
 .modal-shortcuts-visible .modal-shortcut-hint { display: inline; }
 
+/* A project's Overview Doc with nothing in it yet
+   (files-panel-overview-badge.js): drawn, and out of sight. */
+.sl-item.overview-empty { display: none; }
+
 /* A Project Overview placeholder (files-panel-placeholders.js): where a
    document will go, under the name it will take — a dashed page, the
    name in italics and faded, since nothing is written yet. */

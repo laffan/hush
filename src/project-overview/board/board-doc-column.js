@@ -11,8 +11,12 @@
  * to that section.
  *
  * Until the project has an Overview Doc the column is an empty Doc, and
- * the first keystroke makes the document (createOverviewDoc) with what
- * was typed — opening the Overview never makes a file by itself.
+ * the first words typed make the document (createOverviewDoc) — opening
+ * the Overview, or typing only spaces and returns, never makes a file.
+ * An Overview Doc emptied again stays, but the file browser leaves it
+ * out until it has words in it (board-model.js#overviewDocHasText); the
+ * column keeps the files cache current for that, and says when the
+ * answer turns.
  *
  * Like a stack column it is its own writer: a 2 s autosave, a flush on
  * close and from the background flush (`flush`), and a re-read when a
@@ -48,6 +52,7 @@ export function createDocColumn({ state, projectId, onFollow }) {
   let editor = null;
   let refresh = null;      // section-links.js's refresh effect
   let fileId = null;       // the document the editor holds; null until made
+  let hasText = false;     // whether it holds anything but white space
   let dirty = false;
   let snapKeystrokes = 0;
   let creating = null;
@@ -64,19 +69,42 @@ export function createDocColumn({ state, projectId, onFollow }) {
   };
   const themeEvents = ["theme-changed", "style-changed", "style-preview-end", "files-changed"];
 
+  /** Keep the files cache's copy current — the file browser reads it to
+   *  decide whether the Doc is empty. */
+  function cacheContent(text) {
+    const cached = fileId ? (state.files || []).find((f) => f.id === fileId) : null;
+    if (cached) cached.content = text;
+  }
+
+  /** Note whether the Doc has words in it; when that turns, the file
+   *  browser shows or hides its row. */
+  function noteText(text) {
+    const has = /\S/.test(text);
+    if (has === hasText) return;
+    hasText = has;
+    cacheContent(text);
+    // Never from inside an editor update: a `files-changed` restyles
+    // this editor, and an editor can't be dispatched to mid-update.
+    queueMicrotask(() => { if (!destroyed) state.emit("files-changed"); });
+  }
+
+  // Runs inside the editor's update (createBaseExtensions' listener).
   function onEdit() {
     dirty = true;
     snapKeystrokes++;
-    if (!fileId) void ensureDoc();
+    const text = editor.getContent();
+    if (fileId) noteText(text);
+    else if (/\S/.test(text)) queueMicrotask(() => void ensureDoc());
   }
 
-  /** The first keystroke in an empty column makes the Overview Doc. */
+  /** The first words typed in an empty column make the Overview Doc. */
   function ensureDoc() {
     if (creating) return creating;
+    if (fileId || destroyed || !/\S/.test(editor.getContent())) return null;
     creating = (async () => {
       try {
         const made = await createOverviewDoc(state, projectId, editor.getContent());
-        if (made && !destroyed) { fileId = made.fileId; dirty = true; restyle(); }
+        if (made && !destroyed) { fileId = made.fileId; hasText = true; dirty = true; restyle(); }
       } finally {
         creating = null;
       }
@@ -91,6 +119,7 @@ export function createDocColumn({ state, projectId, onFollow }) {
     if (IS_TAURI) {
       try { await invoke("save_file", { id: fileId, content: text }); }
       catch (e) { dirty = true; console.error("Overview Doc save failed:", e); return; }
+      cacheContent(text);
       // A version snapshot every 30 keystrokes, as panes and stack
       // columns take theirs.
       if (snapKeystrokes >= 30) {
@@ -113,6 +142,8 @@ export function createDocColumn({ state, projectId, onFollow }) {
     if (destroyed || fileId !== id) return;
     // A programmatic load: no undo step, no `onEdit`.
     editor.setContent(text);
+    hasText = /\S/.test(text);
+    cacheContent(text);
     restyle();
   }
 
@@ -160,7 +191,7 @@ export function createDocColumn({ state, projectId, onFollow }) {
       void flush().then(() => {
         if (destroyed) return;
         if (id) void load(id);
-        else { fileId = null; dirty = false; editor.setContent(""); }
+        else { fileId = null; hasText = false; dirty = false; editor.setContent(""); }
       });
       return;
     }
@@ -175,7 +206,11 @@ export function createDocColumn({ state, projectId, onFollow }) {
     try {
       const file = await invoke("load_file", { id: fileId });
       if (dirty || destroyed || typeof file?.content !== "string") return;
-      if (file.content !== editor.getContent()) editor.setContent(file.content);
+      if (file.content !== editor.getContent()) {
+        editor.setContent(file.content);
+        noteText(file.content);
+        cacheContent(file.content);
+      }
     } catch (_) { /* removed or unreadable — keep what is shown */ }
   }
 

@@ -35,7 +35,7 @@ import {
   isCardItem, augmentTreeWithCards, foldCardParents, noteCardFolds, stripCardsFromTree, renderCardRow, renderCardsHomeRow, cardsHomeIsEmpty, openCard,
   dropCardOnRow, dropCardOutside, trackCardRowHover, onCardIndexChange,
 } from "./files-panel-cards.js";
-import { showsOverviewButton } from "./files-panel-overview-badge.js";
+import { showsOverviewButton, hidesOverviewDoc } from "./files-panel-overview-badge.js";
 import { importFileIntoPdf } from "../pdf/pdf-manual-import.js"; // static: its picker must open inside the click
 import { renderFlaggedSection } from "./files-panel-flagged.js";
 import { renderDeskYouAreHere } from "./files-panel-you-are-here.js";
@@ -197,6 +197,8 @@ export function createFilesPanel(container, state, hidePanel) {
         if (item.fileId) context.li.dataset.fileId = item.fileId;
         // A fold arrow that only reveals cards shows under the pointer (cards.css).
         context.li.classList.toggle("card-fold", !!item.children?.length && item.children.every(isCardItem));
+        // An Overview Doc with nothing in it yet stays out of sight.
+        context.li.classList.toggle("overview-empty", hidesOverviewDoc(state, item, _p));
       }
       if (isCardsHome(item)) {
         context?.li?.classList.add("cards-home");

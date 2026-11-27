@@ -109,6 +109,17 @@ export function overviewDocNode(project) {
   return (project.children || []).find((n) => n.type === "document" && n.fileId === fileId) || null;
 }
 
+/** Whether an Overview Doc has anything in it but white space — until
+ *  it does it stays out of the file browser (files-panel-overview-badge.js).
+ *  Read from the main editor while it holds the document, else from the
+ *  files cache, which the Overview's own column keeps current
+ *  (board-doc-column.js). Content not on this device counts as something. */
+export function overviewDocHasText(state, fileId) {
+  if (fileId && state.currentFileId === fileId && state.editor) return /\S/.test(state.editor.getContent());
+  const content = (state.files || []).find((f) => f.id === fileId)?.content;
+  return typeof content === "string" ? /\S/.test(content) : true;
+}
+
 /** The sections a piece of the Overview Doc can link to — the board's
  *  rows that are documents or placeholders, in reading order:
  *  `{ target: { fileId } | { phId }, name, depth, groups }`, `groups`

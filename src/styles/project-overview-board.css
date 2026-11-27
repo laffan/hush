@@ -108,8 +108,10 @@
   padding-left: 40px;
   padding-right: 16px;
 }
-/* The shared placeholder ("Start writing...") says what this Doc is for. */
-.po-doc .cm-placeholder { font-size: 0 !important; }
+/* The shared placeholder ("Start writing...") says what this Doc is for.
+   Inline, not CodeMirror's inline-block: the longer prompt wraps, and a
+   wrapped inline-block put the caret at the end of its first line. */
+.po-doc .cm-placeholder { font-size: 0 !important; display: inline !important; }
 .po-doc .cm-placeholder::after {
   content: "An overview of the project. Select any words to link them to one of its documents.";
   font-size: var(--font-size, 16px);
