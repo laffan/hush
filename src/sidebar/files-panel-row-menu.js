@@ -10,7 +10,7 @@
  * the panel's row-handling code.
  */
 
-import { findNode, findParentOfNode } from "../state/tree-helpers.js";
+import { findNode, findParentOfNode, overviewDocFileIdOf } from "../state/tree-helpers.js";
 import { AppState } from "../state/state.js";
 import { multiWindowAvailable } from "../multi-window.js";
 import { NEW_WINDOW_SVG, typeIcons } from "./files-panel-shared.js";
@@ -105,11 +105,11 @@ export const SHELF_SVG = `<svg viewBox="0 0 24 24"><path d="M14 20.4V14.6C14 14.
 export function renderRowMenuButton(nodeId, nodeType, inTrash, item, inProject) {
   const entries = getMenuEntries(nodeId, nodeType, inTrash, item, inProject);
   const isShelfRow = !inTrash && (isPdfsId(nodeId) || item?.pdfFolder === true);
-  const isDesktopRow = hasDesktop(nodeId, nodeType, inTrash, item);
+  const isOverviewRow = hasProjectOverview(nodeId, nodeType, inTrash, item);
   const shelfBtn = isShelfRow
     ? `<button class="tree-action-shelf" data-tree-action="view-shelf" data-tooltip="View Shelf" aria-label="View Shelf">${SHELF_SVG}</button>`
-    : isDesktopRow
-      ? `<button class="tree-action-shelf" data-tree-action="view-desktop" data-tooltip="View Desktop" aria-label="View Desktop">${SHELF_SVG}</button>`
+    : isOverviewRow
+      ? `<button class="tree-action-shelf" data-tree-action="view-project-overview" data-tooltip="View Project Overview" aria-label="View Project Overview">${OVERVIEW_SVG}</button>`
       : "";
   if (entries.length === 0 && !shelfBtn) return "";
   const menuBtn = entries.length
@@ -120,11 +120,17 @@ export function renderRowMenuButton(nodeId, nodeType, inTrash, item, inProject) 
   </span>`;
 }
 
-/** Real projects carry a Desktop button in the shelf slot — the canvas
- *  overview of everything inside them. The specials are internally
- *  typed as projects but aren't Desktops. (Desk-wide Desktops were
- *  tried and shelved — Desktops are a project feature for now.) */
-export function hasDesktop(nodeId, nodeType, inTrash, item) {
+/** The Project Overview's button: a globe drawn as a grid — lens
+ *  meridians, the equator and two parallels (files-panel.css draws it
+ *  12 px, stroked). */
+const OVERVIEW_SVG = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3c-2.6 2.4-4 5.6-4 9s1.4 6.6 4 9M12 3c2.6 2.4 4 5.6 4 9s-1.4 6.6-4 9"/><path d="M3 12h18"/><path d="M4.6 7.5h14.8M4.6 16.5h14.8"/></svg>`;
+
+/** Real projects carry a Project Overview button in the shelf slot —
+ *  the overview of everything inside them. The specials are internally
+ *  typed as projects but have no Overview. (Desk-wide Desktops, as the
+ *  Overview was called then, were tried and shelved — the Overview is a
+ *  project feature for now.) */
+export function hasProjectOverview(nodeId, nodeType, inTrash, item) {
   return !inTrash
     && nodeType === "project" && !isInboxId(nodeId) && !isImagesId(nodeId)
     && !isArchiveId(nodeId) && !item?.pdfFolder && !item?.syncFolderId;
@@ -349,6 +355,11 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
       && parent.id !== "__inbox__" && !parent.id?.startsWith("__inbox__:");
     const inArchive = isInsideArchive(state.fileTree, nodeId);
     entries = getMenuEntries(nodeId, node.type, inTrash, inArchive ? { ...node, inArchive } : node, inProject);
+    // A project's Overview Doc stays a note: as part of the text it would
+    // be a chapter, not the Overview.
+    if (parent && node.fileId && overviewDocFileIdOf(parent) === node.fileId) {
+      entries = entries.filter((e) => e.action !== "use-as-note");
+    }
     if ((state.settings?.desks || []).length < 2) entries = entries.filter((e) => e.action !== "move-to-desk");
     // Local-desk actions need runtime state (the roots map), so they
     // join here rather than in the static entry builder.

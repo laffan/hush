@@ -9,6 +9,7 @@ import { RangeSetBuilder } from "@codemirror/state";
 import { isIOS } from "../../settings/settings-ui.js";
 import { focusSentenceBounds } from "./focus-mode.js";
 import { bookmarkLinkInfo, BOOKMARK_COLORS_EVENT } from "../../links/bookmark-colors.js";
+import { sectionLinksOwned, isSectionUrl } from "./section-link-syntax.js";
 
 /** The ribbon cropped to its own bounds, so CSS can size it to the text
  *  (styles/editor.css `.cm-link-bm-icon`). */
@@ -53,7 +54,8 @@ class LinkWidget extends WidgetType {
     } else {
       span.textContent = this.text;
     }
-    span.title = this.url;
+    // A section link's address is an id; say where it goes instead.
+    span.title = isSectionUrl(this.url) ? "A section of a project — ⌘-click to open it on the Project Overview" : this.url;
     span.dataset.linkUrl = this.url;
     if (isIOS()) span.style.cursor = "pointer"; // reads as tappable on touch
     // Open on `pointerdown` directly on the widget element, not through a
@@ -110,6 +112,9 @@ function buildDecorations(view, appState) {
   // their own elements outside that span — so links would otherwise
   // stay at full opacity even when the rest of the line is dimmed.
   const focusBounds = appState ? focusSentenceBounds(view, appState) : null;
+  // The Project Overview's Doc draws its section links itself
+  // (section-link-syntax.js).
+  const skipSections = view.state.facet(sectionLinksOwned);
 
   for (let i = 1; i <= doc.lines; i++) {
     const line = doc.line(i);
@@ -123,6 +128,7 @@ function buildDecorations(view, appState) {
       const to = from + match[0].length;
       const text = match[1];
       const url = match[2];
+      if (skipSections && isSectionUrl(url)) continue;
 
       // Reveal the raw markdown only while the selection is *inside*
       // this link — a caret in it, or a range picking out part of it.
@@ -164,6 +170,15 @@ export async function openUrl(url, anchor) {
       const { openPdfBookmarkUrl } = await import("../../pdf/pdf-bookmarks.js");
       openPdfBookmarkUrl(url);
     } catch (e) { console.warn("PDF bookmark link failed:", e); }
+    return;
+  }
+  // A Project Overview section link (`hush-section://<target>`) opens the
+  // project's Overview, scrolled to that section.
+  if (isSectionUrl(url)) {
+    try {
+      const { openSectionLinkUrl } = await import("../../project-overview/section-link-open.js");
+      await openSectionLinkUrl(url);
+    } catch (e) { console.warn("Section link failed:", e); }
     return;
   }
   // Notebook bookmarks (`hush-nb://<notebookFileId>/<bookmarkId>`, and
@@ -213,7 +228,7 @@ function tryOpenLinkAt(e, view) {
   const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
   if (pos != null) {
     const link = linkAtPos(view.state.doc, pos);
-    if (link) {
+    if (link && !(isSectionUrl(link.url) && view.state.facet(sectionLinksOwned))) {
       e.preventDefault();
       openUrl(link.url, { x: e.clientX, y: e.clientY });
       return true;

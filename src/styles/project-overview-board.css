@@ -1,34 +1,42 @@
-/* ===== Project Desktop board (src/desktop/board/) =====
+/* ===== Project Overview board (src/project-overview/board/) =====
    A project top to bottom: per row a stack of pages, its outline, and —
    when opened — a pane; rows linked by the sidebar's I-beam, drawn
-   large. The host is the canvas Desktop's takeover box (.desktop-view,
-   desktop.css), scrolling instead of panning. */
+   large. Beside them, fixed down the left, the Overview Doc's column.
+   The host is the takeover box (.project-overview-view,
+   project-overview.css): the header across the top, and under it the
+   Doc's column and the rows, which scroll on their own. */
 
 .board-view {
   /* A page large enough to read: twice the canvas Desktop's thumbnail. */
-  --board-stack-w: 312px;
+  --board-stack-w: 312px;   /* board-render.js STACK_W */
   --board-stack-h: 404px;
-  --board-stack-col: 360px; /* board-render.js STACK_COL */
+  --board-stack-col: 360px; /* the stack's column, the stack at its left */
   --board-indent: 56px;     /* board-render.js INDENT: per nested project */
-  --board-outline-w: 280px;
   --board-gap: 28px;
   --board-ink: color-mix(in srgb, var(--fg) 55%, transparent);
-  display: block;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 0 40px 80px;
+  /* The outline column's width — dragged at the border beside the
+     Overview Doc (board-doc-resize.js sets it from `overviewOutlineWidth`). */
+  --po-outline-w: 250px;
+  /* The list's margins. The left one is the gap between the border and
+     the stacks — the same as between the header's rule and the first
+     stack (the list's top padding). */
+  --po-list-pad-l: 18px;
+  --po-list-pad-r: 40px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   font-family: var(--ui-font-family);
 }
 
 .board-head {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 3;
+  flex: none;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  margin: 0 -40px 18px;
+  margin: 0;
   padding: 46px 40px 14px;
   background: var(--theme-bg, var(--bg));
   border-bottom: 1px solid var(--panel-border, rgba(128, 128, 128, 0.25));
@@ -65,26 +73,244 @@
   opacity: 0.55;
 }
 
+/* ── The frame under the header: the Doc's column, the rows ── */
+.po-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+/* The list keeps to the right: exactly the stack's column and the
+   outline's, so the Overview Doc beside it takes whatever the window
+   gives or takes away. Capped so the Doc keeps 220 px. With the Doc put
+   away the list has the whole width again (and a row's pane goes back
+   beside its outline when there is room — the container query at the
+   foot). */
+.po-board-scroll {
+  flex: none;
+  box-sizing: border-box;
+  width: calc(var(--po-list-pad-l) + var(--board-stack-col) + var(--board-gap) + var(--po-outline-w) + var(--po-list-pad-r));
+  max-width: calc(100% - 220px);
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 18px var(--po-list-pad-r) 80px var(--po-list-pad-l);
+  container: po-board / inline-size;
+}
+.board-view.po-doc-hidden .po-board-scroll {
+  --po-list-pad-l: 44px; /* clear of the show/hide button */
+  flex: 1;
+  width: auto;
+  max-width: none;
+}
+
+/* ── The Overview Doc's column (board-doc-column.js): the Doc itself,
+   embedded — no frame, no title bar — on the page, in the style's font
+   and size, its text lined up with the board's title. ── */
+.po-doc-col {
+  flex: 1 1 auto;
+  min-width: 220px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.po-doc-col { position: relative; cursor: text; }
+/* The editor's box is pinned to the column, and the editor is all of it.
+   A percentage height inside a flex item isn't resolved alike by every
+   engine, and an editor only as tall as its text left the rest of the
+   column dead to a click; an absolutely placed box with all four edges
+   set has a definite height everywhere. (Pinning `.cm-editor` itself
+   doesn't take: CodeMirror's theme holds it `position: relative
+   !important`.) CodeMirror's content fills the editor (its min-height),
+   so a click anywhere in it places the caret; board-doc-column.js
+   catches anything around it. */
+.po-doc { position: absolute; inset: 0; }
+.po-doc > .cm-editor { height: 100%; background: transparent; }
+.po-doc .cm-editor.cm-focused { outline: none; }
+.po-doc .cm-scroller { overflow: auto; }
+/* The bottom is the scroll runway, written inline (bottom-runway.js). */
+.po-doc .cm-content {
+  max-width: none;
+  box-sizing: border-box;
+  padding-top: 18px;
+  padding-left: 40px;
+  padding-right: 16px;
+}
+
+/* The button that puts the Doc's column away and brings it back
+   (board-view.js applyDocHidden): in the upper left corner, in the
+   margin left of the Doc's text — or of the list's, once the column is
+   away. */
+.po-body { position: relative; }
+.po-doc-toggle {
+  position: absolute;
+  top: 14px;
+  left: 10px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--fg);
+  opacity: 0.4;
+  cursor: pointer;
+}
+.po-doc-toggle svg { width: 16px; height: 16px; }
+.po-doc-toggle:hover,
+.po-doc-toggle:focus-visible { opacity: 0.9; background: rgba(128, 128, 128, 0.14); outline: none; }
+.board-view.po-doc-hidden .po-doc-col { display: none; }
+
+/* The border between the Doc's column and the list (board-doc-resize.js):
+   a hairline barely there, deeper when pointed at, that drags the outline
+   column's width (and so the list's, and so the Doc's). The strip lies on
+   the list's side of the edge — the list's left margin is empty, and the
+   Doc's scrollbar is at its own right edge — with the line on the edge
+   itself. */
+.po-doc-resizer {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  width: 9px;
+  margin-right: -9px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.po-doc-resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  transition: background 0.15s;
+}
+.po-doc-resizer:hover::before,
+.po-doc-resizer.dragging::before { background: color-mix(in srgb, var(--fg) 30%, transparent); }
+/* Mid-drag the pointer crosses the Doc and the rows: their cursors and
+   text selection stay out of it. */
+.po-body.po-resizing,
+.po-body.po-resizing * { cursor: col-resize !important; user-select: none; }
+.board-view.po-doc-hidden .po-doc-resizer { display: none; }
+
+/* A section link in the Overview Doc (section-links.js): the words
+   alone, subtly underlined. The Markdown link's own underline
+   (markdown-highlight.js) is taken off the spans inside, and its colour
+   (`var(--link)`) falls back to the words' own — the text's, or in a
+   heading the heading's, which section-links.js measures. */
+.po-section-link {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 32%, transparent);
+  text-underline-offset: 0.22em;
+  cursor: pointer;
+  --link: currentColor;
+  transition: text-decoration-color 0.15s;
+}
+:is(.cm-md-h1, .cm-md-h2, .cm-md-h3, .cm-md-h4, .cm-md-h5, .cm-md-h6) .po-section-link {
+  --link: var(--po-heading-color, currentColor);
+}
+.po-section-link * { text-decoration: none !important; }
+.po-section-link:hover { text-decoration-color: color-mix(in srgb, currentColor 70%, transparent); }
+.po-section-link.broken {
+  text-decoration-style: dotted;
+  text-decoration-color: color-mix(in srgb, currentColor 30%, transparent);
+  cursor: default;
+}
+
+/* The sections that drop down from a selection (section-picker.js). */
+.po-section-picker {
+  position: fixed;
+  z-index: var(--z-popover);
+  width: 280px;
+  max-height: min(340px, 60vh);
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  box-sizing: border-box;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.3));
+  border-radius: 10px;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.18);
+  font-family: var(--ui-font-family);
+  font-size: 12.5px;
+}
+.po-picker-head {
+  flex: none;
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.45;
+}
+.po-picker-list { overflow-y: auto; min-height: 0; }
+.po-picker-group {
+  padding: 6px 8px 2px calc(8px + var(--depth, 0) * 14px);
+  font-size: 11.5px;
+  font-weight: 600;
+  opacity: 0.5;
+}
+.po-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px 5px calc(8px + var(--depth, 0) * 14px);
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.po-picker-item svg { flex: none; width: 13px; height: 13px; opacity: 0.6; }
+.po-picker-item.active { background: rgba(128, 128, 128, 0.16); }
+.po-picker-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-picker-item.placeholder .po-picker-name { font-style: italic; opacity: 0.75; }
+.po-picker-note { flex: none; font-size: 11px; opacity: 0.45; }
+.po-picker-check { flex: none; opacity: 0.7; }
+.po-picker-empty { padding: 6px 8px 8px; opacity: 0.55; }
+
 /* ── A row ── */
-/* "View in Desktop" lands on a row and picks it out for a moment. */
+/* "View in Project Overview", or a section link, lands on a row and
+   picks it out for a moment. */
+.board-row { scroll-margin-top: 16px; }
 .board-row.flash { animation: board-row-flash 1.4s ease-out; border-radius: 8px; }
 @keyframes board-row-flash {
   from { background: color-mix(in srgb, var(--cursor, var(--fg)) 14%, transparent); }
   to { background: transparent; }
 }
+/* Beside the Doc a row is its stack and its outline, the outline taking
+   the rest (less a nested row's indent); a row's pane opens under the two.
+   With the Doc put away the pane has a column of its own. */
 .board-row {
   display: grid;
-  grid-template-columns: var(--board-stack-col) var(--board-outline-w) minmax(0, 1fr);
+  grid-template-columns: var(--board-stack-col) minmax(0, 1fr);
   gap: var(--board-gap);
   align-items: start;
 }
+.board-col-pane { grid-column: 1 / -1; }
+.board-view.po-doc-hidden .board-row {
+  grid-template-columns: var(--board-stack-col) var(--po-outline-w) minmax(0, 1fr);
+}
+.board-view.po-doc-hidden .board-col-pane { grid-column: auto; }
 
+/* The stack at the column's left edge, its label centred under it; the
+   connector between rows runs from its middle (board-render.js STACK_W). */
 .board-col-stack {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
 }
 .board-stack-label {
+  width: var(--board-stack-w);
   margin-top: 10px;
   font-size: 11px;
   opacity: 0.5;
@@ -384,13 +610,13 @@ button.board-row-name:focus-visible { background: rgba(128, 128, 128, 0.14); out
   position: relative;
   display: none;
   isolation: isolate;
-  /* Showing a pane scrolls the board only as far as it must, clear of
-     the sticky header (board-pane.js scrollTo). */
-  scroll-margin-top: 120px;
+  /* Showing a pane scrolls the board only as far as it must
+     (board-pane.js scrollTo). */
+  scroll-margin-top: 16px;
   scroll-margin-bottom: 24px;
 }
 /* A pane carries its stacking order inline (pane-manager's zForPane);
-   inside the row it sits in the page, under the sticky header. */
+   inside the board it sits in the page, under the header. */
 .board-view .board-pane-slot > .floating-pane { z-index: 0 !important; }
 .board-pane-slot.open { display: block; }
 .board-view .floating-pane.board-row-pane {
@@ -503,10 +729,28 @@ button.board-row-name:focus-visible { background: rgba(128, 128, 128, 0.14); out
 .board-material-item > .tree-type-icon { flex: none; width: 14px; height: 14px; }
 .board-material-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Narrow windows: the pane drops under its row. */
+/* With the Doc put away, a narrow list: the pane drops under its row. */
+@container po-board (max-width: 1000px) {
+  .board-view.po-doc-hidden .board-row { grid-template-columns: var(--board-stack-col) minmax(0, 1fr); }
+  .board-view.po-doc-hidden .board-col-pane { grid-column: 1 / -1; }
+}
+
+/* Narrow windows: tighter margins, and the Doc's column goes over the
+   list instead of beside it. */
 @media (max-width: 900px) {
-  .board-view { padding: 0 18px 60px; }
-  .board-head { margin: 0 -18px 18px; padding-left: 18px; padding-right: 18px; }
-  .board-row { grid-template-columns: var(--board-stack-col) minmax(0, 1fr); }
-  .board-col-pane { grid-column: 1 / -1; }
+  .board-view { --po-list-pad-r: 18px; }
+  .po-board-scroll { padding-bottom: 60px; }
+  .board-head { padding-left: 18px; padding-right: 18px; }
+}
+@media (max-width: 760px) {
+  .po-body { flex-direction: column; }
+  /* Stacked, the Doc and the list meet edge to edge: the header's rule
+     between them; each spans the window. */
+  .po-doc-col {
+    flex: none;
+    height: 42vh;
+    border-bottom: 1px solid var(--panel-border, rgba(128, 128, 128, 0.25));
+  }
+  .po-board-scroll { flex: 1; width: auto; max-width: none; }
+  .po-doc-resizer { display: none; }
 }

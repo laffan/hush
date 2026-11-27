@@ -22,7 +22,7 @@ let _persistTimer = null;
 
 // Panes that are saved but not built. A pane is only turned into DOM,
 // an editor and a loaded file when its context is the one on screen
-// (its owning doc / notebook / PDF / stack / Desktop is open, or it is
+// (its owning doc / notebook / PDF / stack / Project Overview is open, or it is
 // pinned) and that context's panes aren't hidden. Every other entry of
 // `settings.persistedPanes` waits here in its serialized form until
 // `wakeDormantPanes` is asked for its context.
@@ -67,9 +67,9 @@ export function schedulePersist() {
 export function serializePanes() {
   const serialized = [];
   for (const [, p] of panes) {
-    // A Desktop board row's pane lives only while the board is up
-    // (desktop/board/board-pane.js).
-    if (p.desktopRow) continue;
+    // A Project Overview row's pane lives only while the board is up
+    // (project-overview/board/board-pane.js).
+    if (p.overviewRow) continue;
     serialized.push({
       fileId: p.fileId,
       fileName: p.fileName,
@@ -77,9 +77,9 @@ export function serializePanes() {
       collapsed: !!p.collapsed,
       attached: !!p.attached,
       pinned: !!p.pinned,
-      // Opened from a Desktop thumbnail — needs the `.desktop-pane`
+      // Opened from a Project Overview — needs the `.project-overview-pane`
       // visibility opt-in again on restore.
-      desktopPane: !!p.desktopPane,
+      overviewPane: !!p.overviewPane,
       gutter: !!p.gutter,
       gutterSide: p.gutterSide || null,
       gutterPrev: p._gutterPrev || null,
@@ -214,10 +214,11 @@ export async function restorePanes(deps, listOverride) {
   const ctx = getCurrentContext();
   const hidden = isContextHidden(ctx);
   const now = [];
-  for (const s of list) {
-    if (!s || !s.fileId || !s.fileType) continue;
+  for (const raw of list) {
+    if (!raw || !raw.fileId || !raw.fileType) continue;
     // A canvas-Desktop pane: that view is gone, so the pane goes too.
-    if (s.fileType === "desktop") continue;
+    if (raw.fileType === "desktop") continue;
+    const s = upgradeOverviewRecord(raw);
     if (!hidden && participates(s, ctx)) now.push(s);
     else _dormant.push(s);
   }
@@ -226,6 +227,21 @@ export async function restorePanes(deps, listOverride) {
   // Hide panes that don't belong in the current context and start sync
   // for those that do.
   onContextChange();
+}
+
+/** A pane saved while the Project Overview was called the Project
+ *  Desktop: its context was `dt:<projectId>` and its opt-in flag
+ *  `desktopPane`. Read as the Overview's `po:` / `overviewPane`, so it
+ *  comes back on that project's Overview. */
+function upgradeOverviewRecord(s) {
+  const legacyCtx = typeof s.ownerContext === "string" && s.ownerContext.startsWith("dt:");
+  if (!legacyCtx && !("desktopPane" in s)) return s;
+  const { desktopPane, ...rest } = s;
+  return {
+    ...rest,
+    overviewPane: !!(s.overviewPane || desktopPane),
+    ownerContext: legacyCtx ? "po:" + s.ownerContext.slice(3) : s.ownerContext,
+  };
 }
 
 /** Turn serialized records into live panes, in order. */
@@ -302,7 +318,7 @@ async function materialize(deps, records, force) {
       notebookCamera: s.notebookCamera
         ? { x: s.notebookCamera.x, y: s.notebookCamera.y, zoom: s.notebookCamera.zoom }
         : null,
-      desktopPane: !!s.desktopPane,
+      overviewPane: !!s.overviewPane,
       gutter: !!s.gutter,
       gutterSide: s.gutterSide || null,
       docked: !!s.docked,
@@ -329,7 +345,7 @@ async function materialize(deps, records, force) {
     }
 
     buildPaneDOM(pane);
-    if (pane.desktopPane) pane.el.classList.add("desktop-pane");
+    if (pane.overviewPane) pane.el.classList.add("project-overview-pane");
     applyPaneFontSize(pane);
     if (pane.inline) {
       // Park off-screen inside #pane-container so CodeMirror has a real

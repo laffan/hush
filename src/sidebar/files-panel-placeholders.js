@@ -1,17 +1,17 @@
 /**
- * Placeholder documents in the files panel. A Project Desktop's
- * placeholders (desktop/board/board-model.js) are listed where their
+ * Placeholder documents in the files panel. A Project Overview's
+ * placeholders (project-overview/board/board-model.js) are listed where their
  * documents will go — after the document (or nested project) they follow,
  * or at the head of their container — under the name the document will
  * take: the first item of the placeholder's outline. They are synthetic
  * rows, like heading and tab-marker rows: added to the tree for each
  * render (`augmentTreeWithPlaceholders`), stripped before any tree write
  * (`stripPlaceholdersFromTree`), never dragged or dropped on. Clicking
- * one opens its project's Desktop scrolled to it (or scrolls the
- * Desktop already open).
+ * one opens its project's Overview scrolled to it (or scrolls the
+ * Overview already open).
  */
 import { findNode, findParentOfNode } from "../state/tree-helpers.js";
-import { boardData, placeholderName } from "../desktop/board/board-model.js";
+import { boardData, placeholderName } from "../project-overview/board/board-model.js";
 import { escHtml } from "./files-panel-shared.js";
 
 const PREFIX = "__ph__:";
@@ -87,16 +87,16 @@ export function stripPlaceholdersFromTree(tree) {
 }
 
 /** A placeholder's row: a dashed page and its tentative name. Clicking
- *  it opens its Desktop at it; `afterOpen` closes an overlay sidebar. */
+ *  it opens its Overview at it; `afterOpen` closes an overlay sidebar. */
 export function renderPlaceholderRow(state, item, afterOpen) {
   const row = document.createElement("span");
   row.className = "tree-item-row tree-placeholder-row";
-  row.title = "Not written yet — opens its place on the Project Desktop";
+  row.title = "Not written yet — opens its place on the Project Overview";
   row.innerHTML = `${PH_ICON}<span class="tree-item-name">${escHtml(item.name)}</span>`;
   row.addEventListener("click", (e) => {
     e.stopPropagation();
     if (state.selectedDocIds?.length) state.clearSelectedDocs();
-    import("../desktop/desktop-view.js").then((m) => m.openDesktop(state, item.boardId, { focusPlaceholder: item.phId }));
+    import("../project-overview/project-overview.js").then((m) => m.openProjectOverview(state, item.boardId, { focusPlaceholder: item.phId }));
     afterOpen?.();
   });
   return row;

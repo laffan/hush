@@ -8,8 +8,8 @@
  * moved into the row's slot rather than a CodeMirror widget: inline is
  * what makes the pane system leave its position alone, size it from
  * `pane.inline.height` (the bottom handle resizes the slot with it) and
- * turn a drag on its title bar into a floating pane. `desktopPane` keeps
- * it visible while the Desktop hides every other pane; `desktopRow`
+ * turn a drag on its title bar into a floating pane. `overviewPane` keeps
+ * it visible while the Overview hides every other pane; `overviewRow`
  * keeps it out of the saved pane list, since a row's pane only means
  * anything while the board is up. One pane per row: a second heading
  * scrolls the pane that is there.
@@ -101,14 +101,14 @@ const making = new Map();
 async function makePane(fileId, name, type, containerId, height) {
   const { createPane } = await import("../../pane/pane-manager.js");
   const pane = await createPane(fileId, name, type, 0, 0, {
-    ownerContext: "dt:" + containerId,
+    ownerContext: "po:" + containerId,
     allowDuplicate: true,
-    desktopPane: true,
+    overviewPane: true,
     skipFocus: true,
     inline: { anchorTitle: "", occurrence: 0, height },
   });
   if (!pane) return null;
-  pane.desktopRow = true;
+  pane.overviewRow = true;
   rowPanes.set(fileId, pane);
   return pane;
 }
@@ -120,7 +120,7 @@ export function sweepRowPanes() {
   const gone = [];
   for (const [fileId, pane] of rowPanes) {
     if (panes.get(pane.id) === pane && pane.inline) continue;
-    if (panes.get(pane.id) === pane) pane.desktopRow = false;
+    if (panes.get(pane.id) === pane) pane.overviewRow = false;
     rowPanes.delete(fileId);
     gone.push(fileId);
   }

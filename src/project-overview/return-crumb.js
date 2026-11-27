@@ -1,26 +1,26 @@
 /**
- * "Back to <Project> Desktop" — the return crumb.
+ * "Back to <Project> Overview" — the return crumb.
  *
- * A Desktop *replaces* whatever was open, so opening a file from one is
- * a one-way trip: the Desktop is gone and there's no obvious way back to
+ * A Project Overview *replaces* whatever was open, so opening a file
+ * from one is a one-way trip: the Overview is gone and there's no obvious way back to
  * the project you were looking at. This is that way back — a small
- * fixed bar in the upper left carrying the Desktop's project name, plus
+ * fixed bar in the upper left carrying the Overview's project name, plus
  * an `×` for users who'd rather it weren't there.
  *
  * It's strictly a *navigation* crumb, not a history stack: it shows only
- * when the current surface was reached from a Desktop, and only ever
+ * when the current surface was reached from an Overview, and only ever
  * points one hop back. Drilling A → B → doc leaves "Back to B", not a
- * trail — B's own Desktop is where the doc came from.
+ * trail — B's own Overview is where the doc came from.
  *
- * The mechanism is arm-then-consume. Every Desktop-initiated open calls
- * `armDesktopReturn` immediately before it opens anything; the next
+ * The mechanism is arm-then-consume. Every Overview-initiated open calls
+ * `armOverviewReturn` immediately before it opens anything; the next
  * surface-change event adopts the armed target and shows the bar. A
  * surface change with nothing armed means the user navigated some other
  * way (sidebar, palette, wikilink), so the crumb clears itself — which
  * is what keeps it from following you around the app.
  */
 
-import { findDesktopContainer } from "./desktop-view.js";
+import { findOverviewProject } from "./project-overview.js";
 
 let _state = null;
 let _pending = null;  // armed for the next open: { containerId, name }
@@ -30,30 +30,30 @@ let _backBtn = null;
 let _wired = false;
 
 function nameFor(state, containerId) {
-  return findDesktopContainer(state, containerId)?.name || "Project";
+  return findOverviewProject(state, containerId)?.name || "Project";
 }
 
 function ensureBar() {
   if (_bar) return _bar;
   _bar = document.createElement("div");
-  _bar.className = "desktop-return hidden";
+  _bar.className = "project-overview-return hidden";
 
   _backBtn = document.createElement("button");
   _backBtn.type = "button";
-  _backBtn.className = "desktop-return-back";
+  _backBtn.className = "project-overview-return-back";
   _backBtn.addEventListener("click", async () => {
     const target = _target;
     hide();
     if (!target) return;
-    // Not armed — going *back* to a Desktop shouldn't leave a crumb
-    // pointing at the Desktop you just left.
-    const m = await import("./desktop-view.js");
-    await m.openDesktop(_state, target.containerId);
+    // Not armed — going *back* to an Overview shouldn't leave a crumb
+    // pointing at the Overview you just left.
+    const m = await import("./project-overview.js");
+    await m.openProjectOverview(_state, target.containerId);
   });
 
   const dismiss = document.createElement("button");
   dismiss.type = "button";
-  dismiss.className = "desktop-return-close";
+  dismiss.className = "project-overview-return-close";
   dismiss.textContent = "×";
   dismiss.setAttribute("aria-label", "Dismiss");
   dismiss.addEventListener("click", hide);
@@ -66,7 +66,7 @@ function ensureBar() {
 function show(target) {
   _target = target;
   ensureBar();
-  _backBtn.textContent = `Back to ${target.name} Desktop`;
+  _backBtn.textContent = `Back to ${target.name} Overview`;
   _bar.classList.remove("hidden");
 }
 
@@ -76,7 +76,7 @@ function hide() {
 }
 
 /** Every surface change either consumes the armed crumb or clears the
- *  one on screen — a navigation that didn't come from a Desktop is
+ *  one on screen — a navigation that didn't come from an Overview is
  *  exactly the signal that the crumb no longer applies. */
 function onSurfaceChange() {
   const armed = _pending;
@@ -87,23 +87,24 @@ function onSurfaceChange() {
 
 /**
  * Arm the crumb for the open that's about to happen. Call immediately
- * before any `state.open*` / `openDesktop` initiated from a Desktop —
+ * before any `state.open*` / `openProjectOverview` initiated from an
+ * Overview —
  * a stack's double-click, a row's Open, a material item, a nested
  * project.
  */
-export function armDesktopReturn(state, containerId) {
+export function armOverviewReturn(state, containerId) {
   if (!state || !containerId) return;
   _state = state;
   _pending = { containerId, name: nameFor(state, containerId) };
   if (_wired) return;
   _wired = true;
-  for (const ev of ["file-opened", "notebook-open", "pdf-open", "stack-open", "desktop-opened"]) {
+  for (const ev of ["file-opened", "notebook-open", "pdf-open", "stack-open", "project-overview-opened"]) {
     state.on(ev, onSurfaceChange);
   }
   // The crumb is a promise to get you back somewhere. If that project is
   // deleted the promise can't be kept, so drop it rather than offer a
   // dead link.
   state.on("files-changed", () => {
-    if (_target && !findDesktopContainer(_state, _target.containerId)) hide();
+    if (_target && !findOverviewProject(_state, _target.containerId)) hide();
   });
 }

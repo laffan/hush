@@ -35,7 +35,7 @@ import {
   isCardItem, augmentTreeWithCards, foldCardParents, noteCardFolds, stripCardsFromTree, renderCardRow, renderCardsHomeRow, cardsHomeIsEmpty, openCard,
   dropCardOnRow, dropCardOutside, trackCardRowHover, onCardIndexChange,
 } from "./files-panel-cards.js";
-import { showsDesktopButton } from "./files-panel-desktop-badge.js";
+import { showsOverviewButton, hidesOverviewDoc } from "./files-panel-overview-badge.js";
 import { importFileIntoPdf } from "../pdf/pdf-manual-import.js"; // static: its picker must open inside the click
 import { renderFlaggedSection } from "./files-panel-flagged.js";
 import { renderDeskYouAreHere } from "./files-panel-you-are-here.js";
@@ -197,6 +197,8 @@ export function createFilesPanel(container, state, hidePanel) {
         if (item.fileId) context.li.dataset.fileId = item.fileId;
         // A fold arrow that only reveals cards shows under the pointer (cards.css).
         context.li.classList.toggle("card-fold", !!item.children?.length && item.children.every(isCardItem));
+        // An Overview Doc with nothing in it yet stays out of sight.
+        context.li.classList.toggle("overview-empty", hidesOverviewDoc(state, item, _p));
       }
       if (isCardsHome(item)) {
         context?.li?.classList.add("cards-home");
@@ -240,8 +242,8 @@ export function createFilesPanel(container, state, hidePanel) {
           const nameHtml = (isInboxItem(state.fileTree, item) && inboxNameHtml(state, item, label))
             || (isArchiveItem(state.fileTree, item) && inboxNameHtml(state, item, label, false))
             || `<span class="tree-item-name">${label}</span>`;
-          // A Desktop with content in it keeps its hover button in view.
-          if (showsDesktopButton(state, item, inTrash)) row.classList.add("has-desktop-content");
+          // An Overview with content in it keeps its hover button in view.
+          if (showsOverviewButton(state, item, inTrash)) row.classList.add("has-overview-content");
           row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}${nameHtml}${trailing}`;
           // A folder, project or Inbox: the expanded-view button, left of
           // its menu (expanded-view.js); kept in view while it's on.
@@ -484,11 +486,11 @@ function dispatchRowAction(action, nodeId, opts) {
     handleEmptyTrash(storedState, refresh);
   } else if (action === "view-shelf") {
     // The two takeover views are mutually exclusive — opening the shelf
-    // dismisses an open Desktop and vice versa.
-    import("../desktop/desktop-view.js").then((m) => m.closeDesktop()).catch(() => {});
+    // dismisses an open Project Overview and vice versa.
+    import("../project-overview/project-overview.js").then((m) => m.closeProjectOverview()).catch(() => {});
     import("../pdf/pdf-shelf.js").then((m) => m.openPdfShelf(storedState, nodeId));
-  } else if (action === "view-desktop") {
-    import("../desktop/desktop-view.js").then((m) => m.openDesktop(storedState, nodeId));
+  } else if (action === "view-project-overview") {
+    import("../project-overview/project-overview.js").then((m) => m.openProjectOverview(storedState, nodeId));
   } else if (action === "open-as-stack") {
     handleOpenAsStack(nodeId, storedState, refresh);
   } else if (action === "open-in-new-window") {

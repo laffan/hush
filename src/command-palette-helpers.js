@@ -2,7 +2,7 @@
  * Small helpers used by the command palette. Extracted from
  * command-palette.js so that file stays under the 700-line cap.
  */
-import { findNodeByFileId, findParentOfNode, nearestAncestorProjectId } from "./state/tree-helpers.js";
+import { findNodeByFileId, findParentOfNode, nearestAncestorProjectId, isOverviewDocFile } from "./state/tree-helpers.js";
 import { chooseAppearance, currentAppearanceChoice } from "./midnight/midnight-controller.js";
 import { MIDNIGHT_ICON } from "./midnight/midnight-icon.js";
 import { buildNightVisionCommands } from "./night-vision/night-vision-commands.js";
@@ -154,16 +154,18 @@ export function canUseAsNote(state, wantNote) {
   if (!state.currentFileId || state.currentNotebookFileId) return false;
   const n = findNodeByFileId(state.fileTree, state.currentFileId);
   if (!n || n.type !== "document") return false;
+  // A project's Overview Doc stays a note (project-overview/).
+  if (isOverviewDocFile(state.fileTree, state.currentFileId)) return false;
   if (wantNote) return !!n.useAsNote;
   if (n.useAsNote) return false;
   const p = findParentOfNode(state.fileTree, n.id);
   return !!p && p.type === "project" && p.id !== "__inbox__" && !p.id?.startsWith("__inbox__:");
 }
 
-/** "View in Desktop" target: the nearest ancestor project of the open
- *  file, plus the fileRef key to focus (the fileId). Null when nothing
+/** "View in Project Overview" target: the nearest ancestor project of
+ *  the open file, plus the row to focus (the fileId). Null when nothing
  *  file-shaped inside a project is open. */
-export function currentFileDesktopTarget(s) {
+export function currentFileOverviewTarget(s) {
   const fileId = s.currentNotebookFileId || s.currentPdfFileId
     || s.currentStackFileId || s.currentFileId;
   if (!fileId) return null;

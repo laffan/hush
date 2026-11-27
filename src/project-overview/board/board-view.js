@@ -1,6 +1,6 @@
 /**
- * The Project Desktop — a project's command centre, top to bottom in
- * reading order.
+ * The Project Overview — a project's command centre, top to bottom in
+ * reading order. (Called the Project Desktop until it was renamed.)
  *
  * Each document of the project's text is a row: its **stack** of pages
  * (a sheet per WORDS_PER_PAGE words, the first page drawn on top), its
@@ -17,17 +17,31 @@
  * written in as headings (board-model.js). The project's other files —
  * notebooks, stacks, notes, PDFs — sit at the foot as its material.
  *
- * Takes over the main view (desktop-view.js is the entry point every
- * caller uses): `body.desktop-active` hides what is underneath,
- * `__hushDesktopOpenId` makes it the pane context (`dt:<projectId>`) and
- * the project stickies' project, and `desktop-opened` / `desktop-closed`
- * tell the return crumb and the stickies. Re-renders on file changes, deferred while anything on the
- * board has the keyboard so typing is never pulled out from under.
+ * Down the left, fixed beside that scrolling list, the **Overview Doc**
+ * (board-doc-column.js): the project's document called Overview,
+ * embedded as a Doc, whose words link to its sections (section-links.js);
+ * a click on a link scrolls the list to its section. A button in its
+ * upper left corner puts the column away, and brings it back — one
+ * choice for every project (`overviewDocHidden`). The list keeps to the
+ * right, as wide as its stack and outline columns, and the Doc takes the
+ * rest of the window; the faint border between them drags the outline
+ * column's width (board-doc-resize.js).
+ *
+ * Takes over the main view (project-overview.js is the entry point every
+ * caller uses): `body.project-overview-active` hides what is underneath,
+ * `__hushProjectOverviewId` makes it the pane context (`po:<projectId>`)
+ * and the project stickies' project, and `project-overview-opened` /
+ * `-closed` tell the return crumb and the stickies. Re-renders the list
+ * on file changes, deferred while anything in it has the keyboard so
+ * typing is never pulled out from under; the Doc's column is kept.
  */
 import { findNode } from "../../state/tree-helpers.js";
 import { escHtml } from "../../sidebar/files-panel-shared.js";
 import { getIcon } from "../../sidebar/files-panel-rows.js";
-import { armDesktopReturn } from "../desktop-return.js";
+import { armOverviewReturn } from "../return-crumb.js";
+import { isSectionPickerOpen } from "../section-picker.js";
+import { createDocColumn } from "./board-doc-column.js";
+import { wireDocResize } from "./board-doc-resize.js";
 import { openLeaf } from "../../state/cross-desk.js";
 import {
   boardRows, boardData, materials, EMPTY_OUTLINE, addPlaceholder, updatePlaceholder,
@@ -39,6 +53,13 @@ import { openRowPane, adoptSlot, sweepRowPanes, closeRowPanes } from "./board-pa
 const PERSIST_MS = 700;
 
 let host = null;
+// The frame inside the host: the header, the Doc's column, and the
+// scrolling list of rows (built per opening — buildFrame).
+let headEl = null;
+let scroller = null;
+let docColumn = null;
+let docToggle = null;
+let docResize = null;
 let state = null;
 let containerId = null;
 let wired = false;
@@ -70,8 +91,11 @@ function wire() {
   state.on("files-changed", scheduleRender);
   state.on("doc-content-changed", scheduleRender);
   state.on("panes-changed", () => { if (containerId && sweepRowPanes().length) scheduleRender(); });
+  state.on("settings-changed", applyDocHidden);
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || !containerId || e.defaultPrevented) return;
+    // An open section list takes its own Escape (section-links.js).
+    if (isSectionPickerOpen()) return;
     const a = document.activeElement;
     if (a && a !== document.body && (host?.contains(a) || a.closest?.(".floating-pane"))) {
       a.blur?.();
@@ -83,8 +107,8 @@ function wire() {
 }
 
 /** Open a project's board. `opts.focusKey` (a fileId — "View in
- *  Desktop") or `opts.focusPlaceholder` (a placeholder's id — its row in
- *  the sidebar) scrolls that row into view. */
+ *  Project Overview") or `opts.focusPlaceholder` (a placeholder's id —
+ *  its row in the sidebar) scrolls that row into view. */
 export async function openProjectBoard(appState, projectId, opts = {}) {
   state = appState;
   wire();
@@ -96,11 +120,11 @@ export async function openProjectBoard(appState, projectId, opts = {}) {
   if (state.dirty) await state.saveCurrentFile();
   await state.clearActiveFile();
   containerId = projectId;
-  window.__hushDesktopOpenId = projectId;
-  document.body.classList.add("desktop-active");
+  window.__hushProjectOverviewId = projectId;
+  document.body.classList.add("project-overview-active");
   if (!host) {
     host = document.createElement("div");
-    host.className = "desktop-view board-view";
+    host.className = "project-overview-view board-view";
     document.getElementById("app")?.appendChild(host);
     // A deferred render runs once the keyboard leaves the board.
     host.addEventListener("focusout", () => {
@@ -108,19 +132,68 @@ export async function openProjectBoard(appState, projectId, opts = {}) {
     });
   }
   host.classList.remove("hidden");
+  buildFrame();
   import("../../pane/pane-dock.js").then((m) => m.publishDockCssVars()).catch(() => {});
   render();
-  host.scrollTop = 0;
+  scroller.scrollTop = 0;
   focusRow(opts.focusKey, opts.focusPlaceholder);
-  state.emit("desktop-opened", projectId);
+  state.emit("project-overview-opened", projectId);
 }
 
-function focusRow(fileId, phId) {
-  if ((!fileId && !phId) || !host) return;
-  const row = [...host.querySelectorAll(".board-row")]
+/** The header across the top; under it the Overview Doc's column, fixed,
+ *  and the rows, scrolling. */
+function buildFrame() {
+  host.innerHTML = "";
+  headEl = document.createElement("header");
+  headEl.className = "board-head";
+  const body = document.createElement("div");
+  body.className = "po-body";
+  docColumn = createDocColumn({
+    state, projectId: containerId,
+    onFollow: ({ fileId, phId }) => focusRow(fileId, phId, { block: "start", smooth: true }),
+  });
+  scroller = document.createElement("div");
+  scroller.className = "po-board-scroll";
+  docToggle = document.createElement("button");
+  docToggle.type = "button";
+  docToggle.className = "po-doc-toggle";
+  docToggle.innerHTML = DOC_TOGGLE_ICON;
+  docToggle.addEventListener("click", () => {
+    void state.updateSettings({ overviewDocHidden: !state.settings?.overviewDocHidden });
+    applyDocHidden();
+  });
+  const resizer = document.createElement("div");
+  resizer.className = "po-doc-resizer";
+  body.append(docColumn.el, resizer, scroller, docToggle);
+  host.append(headEl, body);
+  docResize = wireDocResize(state, { host, body, col: docColumn.el, list: scroller, bar: resizer });
+  applyDocHidden();
+}
+
+const DOC_TOGGLE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 19V5c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2Z"/><path d="M9 3v18"/></svg>`;
+
+/** The Overview Doc's column shown or put away, as the setting says. A
+ *  Doc being written in when it goes away lets go of the keyboard (and
+ *  its section list goes with it). */
+function applyDocHidden() {
+  if (!host || !docToggle) return;
+  const hidden = !!state.settings?.overviewDocHidden;
+  host.classList.toggle("po-doc-hidden", hidden);
+  const label = hidden ? "Show the Overview" : "Hide the Overview";
+  docToggle.dataset.tooltip = label;
+  docToggle.setAttribute("aria-label", label);
+  docToggle.setAttribute("aria-pressed", String(!hidden));
+  if (hidden && docColumn?.el.contains(document.activeElement)) document.activeElement.blur?.();
+}
+
+/** Bring a row into view and pick it out for a moment — "View in
+ *  Project Overview" centres it; a section link puts it at the top. */
+function focusRow(fileId, phId, { block = "center", smooth = false } = {}) {
+  if ((!fileId && !phId) || !scroller) return;
+  const row = [...scroller.querySelectorAll(".board-row")]
     .find((r) => (fileId && r.dataset.fileId === fileId) || (phId && r.dataset.phId === phId));
   if (!row) return;
-  row.scrollIntoView({ block: "center" });
+  row.scrollIntoView({ block, behavior: smooth ? "smooth" : "auto" });
   row.classList.remove("flash");
   void row.offsetWidth;
   row.classList.add("flash");
@@ -135,18 +208,32 @@ export function closeProjectBoard() {
   modules.clear();
   noteFields.clear();
   containerId = null;
-  window.__hushDesktopOpenId = null;
-  document.body.classList.remove("desktop-active");
+  window.__hushProjectOverviewId = null;
+  document.body.classList.remove("project-overview-active");
+  // The Doc writes what is unsaved on its way out.
+  void docColumn?.destroy();
+  docResize?.destroy();
+  docResize = null;
   if (host) { host.classList.add("hidden"); host.innerHTML = ""; }
+  headEl = scroller = docColumn = docToggle = null;
   import("../../pane/pane-dock.js").then((m) => m.publishDockCssVars()).catch(() => {});
-  state?.emit("desktop-closed", closed);
+  state?.emit("project-overview-closed", closed);
 }
 
-/** Something on the board is being typed into — a title field, an
- *  outline module, a row's pane. A focused button doesn't count. */
+/** Write the Overview Doc's unsaved edits now (the background flush —
+ *  state/background-flush.js). */
+export const flushOverviewDoc = () => docColumn?.flush() || Promise.resolve();
+
+/** A sync moved files under the open Overview: the Doc re-reads its own
+ *  (sync/desk-reload.js). The list re-renders on `files-changed`. */
+export const refreshOverviewDoc = () => docColumn?.refreshFromDisk() || Promise.resolve();
+
+/** Something in the list is being typed into — a title field, an
+ *  outline module, a row's pane. A focused button doesn't count, nor
+ *  does the Overview Doc: its column isn't rebuilt by a render. */
 function boardHasFocus() {
   const a = document.activeElement;
-  if (!a || !host || !host.contains(a) || a === host) return false;
+  if (!a || !scroller || !scroller.contains(a)) return false;
   return !!(a.closest(".cm-editor") || a.matches("input, textarea, [contenteditable]:not([contenteditable='false'])"));
 }
 
@@ -182,7 +269,7 @@ async function outlineModule(key, text, onEdit) {
   let m = modules.get(key);
   if (m) return m;
   const { createOutlineCanvasElement } = await import("../../outline/outline-canvas-element.js");
-  // The board's outlines have no footer (desktop-board.css hides it):
+  // The board's outlines have no footer (project-overview-board.css hides it):
   // no type size of their own, nothing to pin to, nothing hidden.
   m = createOutlineCanvasElement({
     appState: state, text, hideDone: false, pinned: false,
@@ -221,7 +308,7 @@ const OPEN_ICON = `<svg viewBox="0 0 16 16"><path d="M6 3H3v10h10v-3M9 3h4v4M13 
 const PANE_ICON = `<svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><line x1="2" y1="5.5" x2="14" y2="5.5" stroke="currentColor" stroke-width="1.4"/></svg>`;
 
 function openFull(leaf) {
-  armDesktopReturn(state, containerId);
+  armOverviewReturn(state, containerId);
   void openLeaf(state, leaf);
 }
 
@@ -230,27 +317,26 @@ function openFull(leaf) {
 async function openFloating(node) {
   const { createPane } = await import("../../pane/pane-manager.js");
   await createPane(node.fileId, node.name, node.type,
-    window.innerWidth * 0.7, window.innerHeight * 0.35, { desktopPane: true, ownerContext: "dt:" + containerId });
+    window.innerWidth * 0.7, window.innerHeight * 0.35, { overviewPane: true, ownerContext: "po:" + containerId });
 }
 
 function render() {
   pendingRender = false;
   const project = projectNode();
-  if (!host || !project) return;
-  const scroll = host.scrollTop;
+  if (!host || !scroller || !project) return;
+  const scroll = scroller.scrollTop;
   const rows = boardRows(project);
   const docs = rows.filter((r) => r.kind === "doc");
   const words = docs.reduce((n, r) => n + (fileContent(r.node.fileId).match(/\S+/g)?.length || 0), 0);
-  host.innerHTML = "";
+  scroller.innerHTML = "";
 
-  const head = document.createElement("header");
-  head.className = "board-head";
+  const head = headEl;
   head.innerHTML = `<div class="board-head-titles"><h1 class="board-title">${escHtml(project.name || "Project")}</h1>`
     + `<div class="board-stats">${docs.length} document${docs.length === 1 ? "" : "s"} · ${words.toLocaleString()} words</div></div>`
     + `<div class="board-head-actions">`
     + `<button type="button" class="board-head-btn board-close" data-act="close" title="Close (Esc)" aria-label="Close">×</button></div>`;
   head.querySelector('[data-act="close"]').addEventListener("click", closeProjectBoard);
-  host.appendChild(head);
+  docColumn.update();
 
   const list = document.createElement("div");
   list.className = "board-rows";
@@ -269,12 +355,12 @@ function render() {
     empty.textContent = "This project has no documents yet. Add a placeholder to plan the first one.";
     list.prepend(empty);
   }
-  host.appendChild(list);
-  host.appendChild(materialSection(project, live));
+  scroller.appendChild(list);
+  scroller.appendChild(materialSection(project, live));
 
   for (const [key, m] of modules) if (!live.has(key)) { m.destroy(); modules.delete(key); }
   for (const key of noteFields.keys()) if (!liveNotes.has(key)) noteFields.delete(key);
-  host.scrollTop = scroll;
+  scroller.scrollTop = scroll;
 }
 
 const indent = (el, depth) => { if (depth) el.style.marginLeft = depth * INDENT + "px"; return el; };
@@ -285,7 +371,7 @@ function rowFor(row, project, live) {
   return groupRow(row.node);
 }
 
-const openGroup = (node) => { armDesktopReturn(state, containerId); void openProjectBoard(state, node.id); };
+const openGroup = (node) => { armOverviewReturn(state, containerId); void openProjectBoard(state, node.id); };
 
 /** Add a placeholder, open it, and put the caret in its outline. */
 async function addAndFocus(where) {

@@ -595,6 +595,17 @@ pub struct AppSettings {
     pub desk_dash_side_width: Option<u32>,
     #[serde(default)]
     pub desk_dash_recents_height: Option<u32>,
+    /// The Project Overview's Overview Doc column is put away
+    /// (`project-overview/board/board-view.js`, the button in its upper
+    /// left corner), in every project, on this device.
+    #[serde(default)]
+    pub overview_doc_hidden: bool,
+    /// The Project Overview's outline column, in px — dragged at the
+    /// border beside the Overview Doc
+    /// (`project-overview/board/board-doc-resize.js`); `None` is the
+    /// stylesheet's default, and a double-click on the border puts it back.
+    #[serde(default)]
+    pub overview_outline_width: Option<u32>,
     /// Active desk id for this device. Null when desks are off.
     #[serde(default)]
     pub active_desk_id: Option<String>,
@@ -1052,6 +1063,8 @@ impl Default for AppSettings {
             todos: serde_json::json!([]),
             desk_dash_side_width: None,
             desk_dash_recents_height: None,
+            overview_doc_hidden: false,
+            overview_outline_width: None,
             active_desk_id: None,
             desk_display_mode: default_desk_display_mode(),
             last_local_sync: serde_json::Value::Null,

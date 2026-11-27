@@ -196,6 +196,22 @@ export function isProjectSupplementary(c) {
     || (c.type === "folder" && !!c.pdfFolder));
 }
 
+/** The fileId of a project's Overview Doc (`board.doc` —
+ *  project-overview/board/board-model.js), or null. It is the Overview
+ *  Doc only while it is one of the project's own children. */
+export function overviewDocFileIdOf(project) {
+  const id = project?.type === "project" ? project.board?.doc : null;
+  return typeof id === "string" && id ? id : null;
+}
+
+/** True when `fileId` is the Overview Doc of the project it sits in. */
+export function isOverviewDocFile(nodes, fileId) {
+  const node = fileId ? findNodeByFileId(nodes || [], fileId) : null;
+  if (!node) return false;
+  const parent = findParentOfNode(nodes, node.id);
+  return !!parent && overviewDocFileIdOf(parent) === fileId;
+}
+
 export function normalizeProjectChildren(nodes) {
   if (!Array.isArray(nodes)) return nodes;
   for (const n of nodes) {
@@ -233,6 +249,11 @@ export function normalizeProjectChildren(nodes) {
       // Orphan gutter notebooks (their doc isn't here) fall to the bottom.
       for (const g of gutterFor.values()) below.push(g);
       n.children = [...top, ...below];
+      // The project's Overview Doc — a note, so outside the text — is
+      // pinned above everything, the cards notebook included.
+      const overview = overviewDocFileIdOf(n);
+      const at = overview ? n.children.findIndex((c) => c.type === "document" && c.fileId === overview) : -1;
+      if (at > 0) n.children.unshift(...n.children.splice(at, 1));
     }
     normalizeProjectChildren(n.children);
   }

@@ -41,9 +41,10 @@ function suspended(e) {
 }
 
 /** The main surface under the pointer, or null for anything else
- *  (sidebars, stickies, the clock, modals). */
+ *  (sidebars, stickies, the clock, modals). The Project Overview's Doc
+ *  counts: it is the writing surface of the view that replaced them. */
 function overMainSurface(target) {
-  return !!target.closest?.("#editor-container, #notebook-container, #pdf-container, #stack-container");
+  return !!target.closest?.("#editor-container, #notebook-container, #pdf-container, #stack-container, .po-doc-col");
 }
 
 export function installPaneHoverFocus({ focusPane, deactivateAllPanes, saveAllPanes }) {
@@ -71,6 +72,8 @@ export function installPaneHoverFocus({ focusPane, deactivateAllPanes, saveAllPa
     // active"; only the doc editor wants the DOM focus back.
     const view = appState?.editor?.view;
     if (view && target.closest("#editor-container")) view.focus();
+    // Back onto the Overview Doc from a row's pane: it takes the keys again.
+    target.closest(".po-doc-col")?.querySelector(".cm-content")?.focus({ preventScroll: true });
   }, { passive: true });
   // A click decides on its own; resync so the next move starts from it.
   window.addEventListener("pointerdown", () => { lastPaneId = undefined; }, true);

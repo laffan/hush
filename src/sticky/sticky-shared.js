@@ -1,7 +1,7 @@
 /**
  * Sticky-note shared constants + pure helpers — extracted from
  * sticky-notes.js (700-line cap): sizing/font clamps, the scope glyphs,
- * the collapsed-header excerpt, and the open Desktop's project.
+ * the collapsed-header excerpt, and the open Project Overview's project.
  */
 
 export const DEFAULT_SIZE = 300;
@@ -47,10 +47,11 @@ export function excerptFor(text) {
   return t.length > 42 ? t.slice(0, 42).trimEnd() + "…" : t;
 }
 
-/** The project whose Desktop is open, or null (desktop/board/board-view.js
- *  sets it) — a project sticky added there belongs to that project. */
-export function desktopOpenId() {
-  return (typeof window !== "undefined" && window.__hushDesktopOpenId) || null;
+/** The project whose Project Overview is open, or null
+ *  (project-overview/board/board-view.js sets it) — a project sticky
+ *  added there belongs to that project. */
+export function projectOverviewOpenId() {
+  return (typeof window !== "undefined" && window.__hushProjectOverviewId) || null;
 }
 
 export function clampAxis(requested, size, viewport) {

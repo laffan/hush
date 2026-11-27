@@ -32,7 +32,7 @@ export const SECTION_ORDER = [
   "Panes",
   "Stacks",
   "Notebook",
-  "Desktops",
+  "Project Overview",
   "Sticky Notes",
   "Research",
   "Google",
